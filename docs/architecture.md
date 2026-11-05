@@ -1,0 +1,83 @@
+# 架构 — Cogent
+
+## 1. 项目定位
+
+Cogent 是基于 Electron + [pi](https://github.com/earendil-works/pi) 的桌面 Agent 客户端，
+对标主流 Agent 产品（多会话、工具可视化、审批流、设置页），**本地优先存储**。
+
+核心架构决策（已定，不再讨论）：
+
+- **引擎服务化**：pi 封装为独立 Node 进程（`agent-service`），与 Electron 彻底解耦，
+  通过 stdio JSON-RPC 通信 —— 任何 Node ≥ 22.19 的宿主都能复用它（含 Electron 22 旧项目）；
+- **main 是壳不是业务**：窗口、IPC、引擎代理、凭据；业务（会话/工具/存储）全在引擎进程；
+- **本地优先**：存储走 StorageDriver 接口，本地 JSON 先行，将来接云接口只换实现。
+
+## 2. 一图看懂
+
+```
+Renderer（纯 UI，无 Node）
+  │  window.cogent.*（preload 白名单窄接口）
+  ▼ Electron IPC
+Main（Electron 主进程 = 壳）
+  │  窗口 / IPC 注册 / 凭据(safeStorage) / 引擎代理
+  │  spawn 系统 Node（COGENT_NODE_BIN 可覆盖，版本守卫 >=22.19）
+  ▼ stdio JSON-RPC（一行一帧 JSON）
+AgentService（独立 Node 进程 = 引擎）
+  │  会话管理 / pi Agent / 工具执行 / 审批拦截 / 本地存储
+  ▼ 只依赖 pi-* + protocol，零 Electron import
+```
+
+消息旅程示例：用户发送 → renderer `window.cogent.send()` → main 校验 →
+`agent.submit` 写入引擎 stdin → 引擎跑 pi 循环，事件流写 stdout →
+main 转发 `webContents.send` → renderer store → UI。
+审批流同路：引擎 `approval.request` → main → renderer 弹窗 → 用户裁决 → 原路回 `approval.respond`。
+
+**为什么引擎不直接进 main**：pi 要求 Node ≥ 22.19 且 ESM-only；Electron 22 内置 Node 18.12
+且主进程不支持 ESM —— 进程内集成在旧宿主上物理不可行。服务化同时白送崩溃隔离与进程级 abort。
+
+## 3. 目录地图
+
+```
+src/
+├─ protocol/          # 引擎对外协议：帧类型、method/event 映射、兼容性约定
+│  │                  # ★ 跨项目复用边界：零运行时依赖，只增不破（协议纪律见 conventions）
+│  ├─ types.ts
+│  └─ index.ts        # 唯一出口，外部只 import 这里
+├─ agent-service/     # 独立 Node 进程（引擎）
+│  │                  # ★ 目录即边界：禁止 import Electron / renderer 代码
+│  │                  # 计划子目录：runtime/(会话+pi) tools/(工具+审批) storage/(持久化)
+│  └─ index.ts        # 入口：stdio JSON-RPC 主循环 + 方法注册表
+├─ electron/          # 桌面壳（生命周期同生共死的两层）
+│  ├─ main/
+│  │  ├─ index.ts     # 入口：窗口、生命周期、启动引擎
+│  │  ├─ ipc/         # 按域注册（每域一个文件，index.ts 统一挂载）
+│  │  └─ service/manager.ts  # 引擎代理：spawn/握手/请求关联/事件转发/版本守卫
+│  └─ preload/index.ts       # contextBridge → window.cogent（白名单窄接口）
+├─ shared/            # 壳内三端契约（renderer↔preload↔main）：channel 常量 + 类型
+│  │                  # ★ 与 protocol/ 分开：壳契约 ≠ 引擎协议，不混用
+│  └─ ipc.ts
+└─ renderer/          # 渲染层（纯 web app：React 19 + Tailwind v4 + shadcn）
+   ├─ index.html
+   └─ src/
+      ├─ main.tsx / App.tsx   # 入口（当前空白页，等页面指令）
+      ├─ globals.css          # Tailwind v4 + shadcn 主题变量
+      ├─ lib/utils.ts         # cn()
+      └─ env.d.ts             # window.cogent 类型声明
+```
+
+**依赖方向（唯一，禁止反向）**：
+`renderer → shared ← electron/main → protocol ← agent-service`
+
+**构建**：`electron.vite.config.ts` 三目标；main 双入口
+（`index`=主进程，`service`=引擎，产物同在 `out/main/`）。
+pi 依赖保持 external（provider SDK 懒加载，打进 bundle 会破坏该机制）。
+
+## 4. 集成（供将来参考）
+
+旧 Electron 项目复用引擎 = 复用两个东西：
+
+1. `agent-service/` 构建产物（`out/main/service.js`，纯 ESM，靠 `node_modules` 加载 pi）；
+2. `protocol/` 类型与常量（实现同一套 JSON-RPC 即可驱动）。
+
+宿主差异只在"怎么拉起进程"：Cogent 用 main spawn；旧项目同样 spawn，
+用系统 Node ≥ 22.19（引擎内部零 Electron import，宿主版本无关）。

@@ -1,8 +1,10 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
-import { registerAgentIpc } from './ipc'
+import { AgentServiceManager } from './service/manager'
+import { registerIpc } from './ipc'
 
 let mainWindow: BrowserWindow | null = null
+let agentService: AgentServiceManager | null = null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -44,8 +46,25 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
-  registerAgentIpc(() => mainWindow)
+// 入口 fire-and-forget（void 标记）：whenReady 之后的失败都在各自边界内处理
+void app.whenReady().then(() => {
+  // 引擎事件出口：骨架期先打到终端日志，便于诊断"两跳"链路；
+  // TODO(事件转发)：renderer 按域订阅后，在 ipc/ 里接入 webContents.send。
+  agentService = new AgentServiceManager({
+    entryPath: join(import.meta.dirname, 'service.js'),
+    onEvent: (event) => {
+      console.log('[main] engine event:', JSON.stringify(event))
+    }
+  })
+  registerIpc({ service: agentService, getWindow: () => mainWindow })
+
+  // 壳与引擎解耦：引擎起不来（缺 Node / 版本不符）不阻塞窗口，状态经 app:status
+  // 暴露给 UI 呈现（preload.getStatus）。fire-and-forget 是刻意为之（void 标记）。
+  void agentService.start().then(
+    () => console.log(`[main] agent service ready (node ${agentService?.getStatus().nodeVersion ?? '?'})`),
+    (error: unknown) => console.error('[main] agent service start failed:', error)
+  )
+
   createWindow()
 
   app.on('activate', () => {
@@ -54,5 +73,6 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  agentService?.stop()
   if (process.platform !== 'darwin') app.quit()
 })

@@ -1,0 +1,34 @@
+# 开发与验证 — Cogent
+
+## 命令
+
+| 命令 | 说明 |
+| --- | --- |
+| `npm run dev` | 开发模式（renderer HMR + main 热重启 + 引擎重启） |
+| `npm run build` | 产出 `out/`（main 双入口 / preload / renderer） |
+| `npm run lint` | ESLint（类型感知规则，防御政策的机械强制，见 conventions.md） |
+| `npm run typecheck` | 严格类型检查（node 工程 + web 工程） |
+
+完成标准：lint / typecheck / build 三关全绿 + 对 diff 过一遍防御反模式清单
+（conventions.md §1.2，产出义务见 §1.3）。
+
+## 引擎冒烟（无需窗口，直接验证协议链路）
+
+```bash
+npm run build
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"client":"smoke","protocolVersion":1}}\n' | node out/main/service.js
+# 期望：{"jsonrpc":"2.0","id":1,"result":{"service":"cogent-agent","protocolVersion":1,"node":"vX.Y.Z"}}
+```
+
+## dev 启动自检
+
+终端出现 `[main] agent service ready (node vX.Y.Z)` 即两跳链路健康；
+出现 `agent service start failed` 说明引擎没起来（查 Node 版本 / `COGENT_NODE_BIN`）。
+
+## 环境排障
+
+- **引擎 Node 版本要求 ≥ 22.19**（pi 的 engines）；可用环境变量
+  `COGENT_NODE_BIN` 指定其他 Node 路径。
+- **Electron 二进制下载失败**（国内网络）：
+  `cd node_modules/electron && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node install.js`
+- **端口 5173 被占**：vite 自动降级到 5174+，无害；要回收端口先找到残留 node 进程。

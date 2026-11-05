@@ -1,0 +1,18 @@
+# AGENTS.md — Cogent 项目地图（入口）
+
+> Cogent：基于 Electron + [pi](https://github.com/earendil-works/pi) 的桌面 Agent 客户端。
+> 完整地图按主题拆在 `docs/`，**本文件只做索引** —— 内容多了不再往这里堆。
+
+## 地图索引（动手前按需读）
+
+| 文件 | 内容 | 什么时候读 |
+| --- | --- | --- |
+| [docs/architecture.md](docs/architecture.md) | 定位、既定决策、进程图、目录地图、依赖方向、构建 | 第一次接触项目 / 要动结构时 |
+| [docs/conventions.md](docs/conventions.md) | 硬规则：防御代码政策（AI 行为规则 + 高频反模式清单）、协议纪律、其他约定 | **每次写代码前**；交付前过一遍 §1.3 产出义务 |
+| [docs/development.md](docs/development.md) | 命令、引擎冒烟、dev 自检、环境排障 | 开发 / 验证时 |
+| [docs/roadmap.md](docs/roadmap.md) | 已实现清单、路线空位、建议实现顺序 | 接到新任务、找该做的事时 |
+
+## 维护纪律
+
+- 架构、约定、目录、路线变更时**必须同步更新对应文档**，地图失效比没有更糟；
+- 新主题优先建新文件放进 `docs/`，索引表加一行；单文件超过 ~150 行就考虑再拆。

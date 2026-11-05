@@ -4,13 +4,28 @@ import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
 export default defineConfig({
-  // 主进程 / preload：pi 依赖保持 external（运行时直接从 node_modules 加载，
-  // pi 内部懒加载的 provider SDK 不会被卷进产物）。
+  // main 双入口：index = Electron 主进程；service = Agent 服务。
+  // service 与主进程同管线构建（产物 out/main/service.js），但运行时由独立
+  // 系统 Node 拉起，与 Electron 无关（架构见 AGENTS.md）。
+  // pi 依赖保持 external：provider SDK 是懒加载的，打进 bundle 会破坏该机制。
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/electron/main/index.ts'),
+          service: resolve('src/agent-service/index.ts')
+        }
+      }
+    }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: resolve('src/electron/preload/index.ts')
+      }
+    }
   },
   renderer: {
     resolve: {

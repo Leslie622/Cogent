@@ -1,28 +1,21 @@
-import type { AgentEvent } from '@earendil-works/pi-agent-core'
-
 /**
- * IPC 契约：channel 名与载荷类型在这里定义，main / preload / renderer 三端共用。
- * 只允许出现类型与常量，禁止引入任何运行时依赖。
+ * Electron 三端契约（renderer ↔ preload ↔ main）。
+ * 只放 channel 常量与载荷类型，禁止任何运行时依赖。
+ *
+ * 注意分界：这是"壳内部"的契约；跨项目复用的引擎协议在 src/protocol/，
+ * 两者不要混用 —— 引擎换宿主时壳契约不受影响。
  */
 
 export const IPC = {
-  /** renderer → main：查询 Agent 配置状态 */
-  agentStatus: 'agent:status',
-  /** renderer → main：发送一条用户消息，触发一轮 agent run */
-  agentPrompt: 'agent:prompt',
-  /** renderer → main：中止当前 run */
-  agentAbort: 'agent:abort',
-  /** main → renderer：Agent 事件流（pi AgentEvent 透传） */
-  agentEvent: 'agent:event'
+  /** renderer → main：查询 Agent 引擎服务连接状态 */
+  appStatus: 'app:status'
 } as const
 
-export interface AgentStatus {
-  /** 是否已有可用的 Provider 凭据 */
-  configured: boolean
-  provider: string | null
-  modelId: string | null
-  modelLabel: string | null
+/** 引擎服务连接状态（诊断用；UI 可据此提示"引擎未就绪"） */
+export interface AppStatus {
+  state: 'starting' | 'running' | 'stopped' | 'failed'
+  /** 引擎实际运行的 Node 版本（握手时上报） */
+  nodeVersion: string | null
+  /** state=failed 时的原因，供日志/UI 呈现 */
+  error: string | null
 }
-
-/** main 进程转发给 renderer 的 pi Agent 事件（可 JSON 序列化） */
-export type AgentEventPayload = AgentEvent

@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { CogentApi } from '../../preload/index'
+import type { CogentApi } from '../../../electron/preload/index'
 
 declare global {
   interface Window {
