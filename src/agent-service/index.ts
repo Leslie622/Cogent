@@ -1,7 +1,7 @@
 /**
  * Agent 服务 —— 独立 Node 进程入口，Cogent 的"引擎"。
  *
- * 为什么是独立进程（决策见 docs/architecture.md）：
+ * 为什么是独立进程（决策见 docs/架构.md）：
  * - pi 要求 Node >= 22.19 且 ESM-only，Electron 22 等旧宿主无法进程内集成；
  * - 工具执行（shell / 文件写入）需要崩溃隔离：引擎挂了不拖垮宿主；
  * - abort 可以硬杀到进程级。
@@ -117,5 +117,5 @@ stdin.on('line', (line) => {
 stdin.on('close', () => process.exit(0))
 process.on('SIGTERM', () => process.exit(0))
 
-// 冒烟自检：无需宿主，直接管道喂数据即可验证协议链路，命令见 docs/development.md。
+// 冒烟自检：无需宿主，直接管道喂数据即可验证协议链路，命令见 docs/开发.md。
 void notify // 骨架期尚无事件源；保留导出位，pi 接入后由 runtime 调用

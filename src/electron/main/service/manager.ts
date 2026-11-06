@@ -6,8 +6,11 @@
  * 只动这个文件。
  *
  * 决策：
- * - 引擎跑在系统 Node（COGENT_NODE_BIN 可覆盖）—— 与 Electron 运行时彻底解耦，
- *   旧 Electron 项目可以用同一个引擎（见 docs/architecture.md「集成」）；
+ * - 引擎默认跑在 Electron 自带的 Node 上（process.execPath + ELECTRON_RUN_AS_NODE=1，
+ *   等价纯 Node，版本随 Electron 发版可控），不依赖用户系统 PATH 里的 node ——
+ *   用户可能没装、版本不受控。要独立版本时再构建期放官方 node.exe 到 resources
+ *   并让它成为 COGENT_NODE_BIN 的默认值；COGENT_NODE_BIN 始终是覆盖口（开发调试、
+ *   旧 Electron 项目复用引擎时指向任意 Node ≥ 22.19，见 docs/架构.md「集成」）；
  * - Node 版本守卫借握手完成：服务在 initialize 响应里上报 process.version，
  *   无需额外 spawn 一次 `node -v`；
  * - 引擎崩溃不拖垮壳：状态置 failed、在途请求全部拒绝，UI 呈现，重启策略后续加。
@@ -67,8 +70,11 @@ export class AgentServiceManager {
     this.status = { state: 'starting', nodeVersion: null, error: null }
 
     // 信任边界：引擎是外部进程。spawn 失败、秒退、挂起都是常态错误。
-    const nodeBin = process.env.COGENT_NODE_BIN || 'node'
+    // 默认用 Electron 自带 Node：execPath 就是本应用的 electron.exe，配上
+    // ELECTRON_RUN_AS_NODE=1 后行为与纯 Node 一致（无 Chromium、无窗口 API）。
+    const nodeBin = process.env.COGENT_NODE_BIN || process.execPath
     const child = spawn(nodeBin, [this.opts.entryPath], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true
     })
@@ -114,7 +120,7 @@ export class AgentServiceManager {
   ): Promise<ProtocolMethods[M]['result']> {
     const stdin = this.child?.stdin
     if (!stdin) {
-      // 内部不变量：未启动就发请求是编程错误，fail-fast（docs/conventions.md 防御边界政策）
+      // 内部不变量：未启动就发请求是编程错误，fail-fast（docs/约定.md 防御边界政策）
       throw new Error(`agent service not running (state=${this.status.state})`)
     }
     const id = this.nextId++
