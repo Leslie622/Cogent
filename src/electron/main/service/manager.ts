@@ -38,8 +38,11 @@ interface Pending {
 export interface AgentServiceOptions {
   /** 服务入口（构建产物 out/main/service.js） */
   entryPath: string
-  /** 引擎事件出口（main 转发给 renderer 的源头） */
-  onEvent: (event: RpcEvent) => void
+  /**
+   * 握手时注入引擎的凭据（宿主持久化存储 → 引擎内存表）。
+   * optional：冒烟脚本/老宿主可不带。
+   */
+  handshakeCredentials?: Record<string, { apiKey: string }>
 }
 
 export class AgentServiceManager {
@@ -50,9 +53,25 @@ export class AgentServiceManager {
   private status: AppStatus = { state: 'stopped', nodeVersion: null, error: null }
   private manualStop = false
   private closed = true
+  /** 引擎事件出口：registerIpc 时注入（main 收到事件即转发给 renderer） */
+  private eventSink: ((event: RpcEvent) => void) | null = null
 
   constructor(options: AgentServiceOptions) {
     this.opts = options
+  }
+
+  /** 注册引擎事件出口（ipc/engine.ts 在 IPC 挂载阶段调用） */
+  setEventSink(sink: (event: RpcEvent) => void): void {
+    this.eventSink = sink
+  }
+
+  /** 事件出口的触发点（onLine 帧路由调用）；未注册出口时事件丢弃并记日志 */
+  private emitEvent(event: RpcEvent): void {
+    if (!this.eventSink) {
+      console.error('[main] engine event arrived before sink registered:', event.method)
+      return
+    }
+    this.eventSink(event)
   }
 
   getStatus(): AppStatus {
@@ -92,7 +111,11 @@ export class AgentServiceManager {
     })
 
     const handshake = withTimeout(
-      this.request('initialize', { client: 'cogent-main', protocolVersion: PROTOCOL_VERSION }),
+      this.request('initialize', {
+        client: 'cogent-main',
+        protocolVersion: PROTOCOL_VERSION,
+        ...(this.opts.handshakeCredentials ? { credentials: this.opts.handshakeCredentials } : {})
+      }),
       HANDSHAKE_TIMEOUT_MS,
       '引擎握手'
     )
@@ -166,7 +189,7 @@ export class AgentServiceManager {
     }
 
     if (isRpcEvent(frame)) {
-      this.opts.onEvent(frame)
+      this.emitEvent(frame)
       return
     }
 

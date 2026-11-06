@@ -30,4 +30,6 @@
 
 | 笔记 | 对应路线项 | 状态 |
 | --- | --- | --- |
-| （暂无 —— 随实现逐篇落） | | |
+| [pi Agent 接入与会话管理](pi-agent-integration.md) | 路线 2（SessionManager + pi Agent） | 已完成（2026-11-06） |
+| [凭据存储与模型目录](credential-storage.md) | 路线 5（safeStorage 凭据存取） | 已完成（2026-11-06） |
+| [自定义 Provider 与模型目录管理](custom-providers.md) | 模型设置扩展（createProvider/setProvider 机制） | 已完成（2026-11-06） |

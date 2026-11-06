@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import { AgentServiceManager } from './service/manager'
+import { CredentialStore } from './credentials/store'
+import { CustomProvidersStore } from './custom-providers/store'
 import { registerIpc } from './ipc'
 import { IPC } from '../../shared/ipc'
 
@@ -61,15 +63,22 @@ function createWindow(): void {
 
 // 入口 fire-and-forget（void 标记）：whenReady 之后的失败都在各自边界内处理
 void app.whenReady().then(() => {
-  // 引擎事件出口：骨架期先打到终端日志，便于诊断"两跳"链路；
-  // TODO(事件转发)：renderer 按域订阅后，在 ipc/ 里接入 webContents.send。
+  // 凭据存取（safeStorage）：先守可用性再建引擎代理 —— key 落不了盘时让问题
+  // 在启动期暴露，而不是用户第一次保存 key 时才炸。
+  const credentialStore = new CredentialStore()
+  try {
+    credentialStore.assertAvailable()
+  } catch (error) {
+    console.error('[main] credential store unavailable:', error)
+  }
+  const customProvidersStore = new CustomProvidersStore()
+
+  // 引擎代理：握手时把宿主持久化的 key 灌进引擎内存表
   agentService = new AgentServiceManager({
     entryPath: join(import.meta.dirname, 'service.js'),
-    onEvent: (event) => {
-      console.log('[main] engine event:', JSON.stringify(event))
-    }
+    handshakeCredentials: credentialStore.readAll()
   })
-  registerIpc({ service: agentService, getWindow: () => mainWindow })
+  registerIpc({ service: agentService, getWindow: () => mainWindow }, credentialStore, customProvidersStore)
 
   // 壳与引擎解耦：引擎起不来（缺 Node / 版本不符）不阻塞窗口，状态经 app:status
   // 暴露给 UI 呈现（preload.getStatus）。fire-and-forget 是刻意为之（void 标记）。

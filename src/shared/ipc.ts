@@ -9,6 +9,18 @@
 export const IPC = {
   /** renderer → main：查询 Agent 引擎服务连接状态 */
   appStatus: 'app:status',
+  /** renderer → main：引擎方法通用代理（载荷 { method, params }；白名单校验在 ipc/engine.ts） */
+  engineRequest: 'engine:request',
+  /** main → renderer：引擎事件流转发（载荷 = protocol RpcEvent） */
+  engineEvent: 'engine:event',
+  /** renderer → main：写入 API key（safeStorage 落盘 + 推给引擎） */
+  credentialsSet: 'credentials:set',
+  /** renderer → main：查询 key 配置状态（只回布尔位，不回明文） */
+  credentialsList: 'credentials:list',
+  /** renderer → main：读自定义 provider 定义（name/baseUrl/模型列表 + 内置覆盖） */
+  customProvidersGet: 'custom-providers:get',
+  /** renderer → main：全量写自定义 provider 定义（落盘 + 推引擎 sync） */
+  customProvidersSet: 'custom-providers:set',
   /** renderer → main：窗口控制（最小化 / 切换最大化 / 关闭）——自绘 header 专用 */
   windowMinimize: 'window:minimize',
   windowMaximizeToggle: 'window:maximize-toggle',
@@ -24,4 +36,10 @@ export interface AppStatus {
   nodeVersion: string | null
   /** state=failed 时的原因，供日志/UI 呈现 */
   error: string | null
+}
+
+/** key 配置状态（credentials:list 响应）：只回布尔位，key 明文永不出 main */
+export interface ApiKeyStatus {
+  providerId: string
+  keyConfigured: boolean
 }

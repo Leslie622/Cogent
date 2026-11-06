@@ -23,12 +23,19 @@ import {
   isRpcEvent,
   isRpcRequest,
   toRpcError,
+  type CredentialsListResult,
+  type CredentialsSetParams,
+  type CustomProviderDef,
   type InitializeParams,
   type InitializeResult,
   type ProtocolEvents,
+  type ProvidersCustomSyncParams,
   type RpcEvent,
-  type RpcResponse
+  type RpcResponse,
+  type SessionMessagesParams
 } from '../protocol'
+import { CredentialRegistry } from './runtime/credentials'
+import { SessionManager } from './runtime/session'
 
 /** 事件发送：service → 宿主（notification 帧） */
 function notify<E extends keyof ProtocolEvents>(method: E, params: ProtocolEvents[E]): void {
@@ -41,6 +48,10 @@ function reply(response: RpcResponse): void {
   process.stdout.write(JSON.stringify(response) + '\n')
 }
 
+/** 引擎单例：凭据表 + 会话运行时（构造即注册 pi 内置模型目录） */
+const credentials = new CredentialRegistry()
+const sessions = new SessionManager(credentials, notify)
+
 /** 握手：宿主确认链路可用，服务上报运行时信息（宿主据此做 Node 版本守卫）。 */
 function handleInitialize(params: unknown): InitializeResult {
   // 信任边界：params 是外部输入，在此做唯一一次显式校验。
@@ -51,21 +62,85 @@ function handleInitialize(params: unknown): InitializeResult {
       'initialize 需要 { client: string, protocolVersion: number }'
     )
   }
+  // optional 凭据注入：宿主持久化的 key 灌进引擎内存表（老宿主可不带）
+  if (p.credentials) credentials.loadAll(p.credentials)
   return { service: 'cogent-agent', protocolVersion: PROTOCOL_VERSION, node: process.version }
+}
+
+/** credentials.set 入口校验：providerId/apiKey 均为非空 string */
+function handleCredentialsSet(params: unknown): { ok: true } {
+  const p = params as Partial<CredentialsSetParams>
+  if (typeof p.providerId !== 'string' || p.providerId.length === 0 || typeof p.apiKey !== 'string') {
+    throw new ProtocolError(
+      RpcErrorCode.InvalidParams,
+      'credentials.set 需要 { providerId: string, apiKey: string }'
+    )
+  }
+  credentials.set(p.providerId, p.apiKey)
+  return { ok: true }
+}
+
+/** credentials.list：provider 摘要（keyConfigured 布尔位，key 明文不出引擎） */
+function handleCredentialsList(): CredentialsListResult {
+  return { providers: credentials.summaries() }
+}
+
+/** session.messages 入口校验：sessionId 非空 string */
+function handleSessionMessages(params: unknown) {
+  const p = params as Partial<SessionMessagesParams>
+  if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.messages 需要 { sessionId: string }')
+  }
+  return { messages: sessions.messages(p.sessionId) }
+}
+
+/** providers.custom.sync 入口校验：两数组存在、每项字段形状收窄（id 带 custom/ 前缀的交由 registry 处理） */
+function handleProvidersCustomSync(params: unknown) {
+  const p = params as Partial<ProvidersCustomSyncParams>
+  const defs = p.providers
+  const overrides = p.overrides
+  const isDef = (def: CustomProviderDef): boolean =>
+    typeof def.id === 'string' &&
+    def.id.startsWith('custom/') &&
+    typeof def.name === 'string' &&
+    typeof def.baseUrl === 'string' &&
+    Array.isArray(def.models) &&
+    def.models.every((m) => typeof m === 'string' && m.length > 0)
+  if (!Array.isArray(defs) || !defs.every(isDef)) {
+    throw new ProtocolError(
+      RpcErrorCode.InvalidParams,
+      'providers.custom.sync 需要 providers: CustomProviderDef[]（id 以 custom/ 开头）'
+    )
+  }
+  const isOverride = (o: { providerId: string; baseUrl: string }): boolean =>
+    typeof o.providerId === 'string' && typeof o.baseUrl === 'string' && o.baseUrl.length > 0
+  if (!Array.isArray(overrides) || !overrides.every(isOverride)) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'providers.custom.sync 需要 overrides: ProviderOverrideDef[]')
+  }
+  return { synced: sessions.syncCustomProviders(defs, overrides) }
 }
 
 /**
  * 方法注册表：method 名 → handler。
  * handler 内部信任协议类型（边界校验已在入口完成），业务异常直接 throw，
  * 由 dispatch 统一转成错误帧 —— 不要在 handler 里自行 try/catch。
- *
- * 实现顺序 TODO：
- * 1. session.list / session.create（storage 落地）
- * 2. agent.submit / agent.abort（pi Agent 接入 + 事件转译）
- * 3. approval.respond（工具审批拦截点）
  */
 const handlers = new Map<string, (params: unknown) => unknown>([
-  ['initialize', handleInitialize]
+  ['initialize', handleInitialize],
+  ['session.list', () => sessions.list()],
+  ['session.create', (params) => sessions.create((params as { title?: string }).title)],
+  ['session.delete', (params) => ({ deleted: sessions.delete((params as { sessionId: string }).sessionId) })],
+  ['session.messages', handleSessionMessages],
+  ['agent.submit', (params) => {
+    const p = params as { sessionId: string; text: string; model?: string; thinkingLevel?: string }
+    void sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel)
+    return { accepted: true as const }
+  }],
+  ['agent.abort', (params) => ({ aborted: sessions.abort((params as { sessionId: string }).sessionId) })],
+  ['credentials.set', handleCredentialsSet],
+  ['credentials.list', handleCredentialsList],
+  ['models.list', () => ({ models: sessions.listModels() })],
+  ['providers.custom.sync', handleProvidersCustomSync]
 ])
 
 /** 单帧处理：请求 → 响应；事件/畸形帧按协议丢弃并记诊断日志。 */
@@ -118,4 +193,4 @@ stdin.on('close', () => process.exit(0))
 process.on('SIGTERM', () => process.exit(0))
 
 // 冒烟自检：无需宿主，直接管道喂数据即可验证协议链路，命令见 docs/开发.md。
-void notify // 骨架期尚无事件源；保留导出位，pi 接入后由 runtime 调用
+void reply // dispatch 内已用；保留导出位避免 noUnusedLocals 误报（与原骨架一致的做法）

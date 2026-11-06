@@ -5,6 +5,9 @@
  * tsconfig.web —— eslint 的 projectService 解析不了跨工程引用（报 cannot be
  * resolved），改为本地声明窄接口，同时呼应"白名单窄接口"纪律：这里写的就是
  * renderer 能看到的全部能力。preload 侧形状变更时两处同步改。
+ *
+ * 协议类型（ChatMessage/ModelSummary/SessionSummary 等）从 @shared 不可达（它们在
+ * src/protocol，属于引擎协议而非壳契约），故此处按需内联渲染所需的最小形状。
  */
 declare global {
   interface Window {
@@ -15,6 +18,24 @@ declare global {
         nodeVersion: string | null
         error: string | null
       }>
+      /** 引擎方法代理（method 白名单在 main 侧 ipc/engine.ts 收窄） */
+      engineRequest: <M extends EngineMethod>(
+        method: M,
+        params: EngineMethodParams[M]
+      ) => Promise<EngineMethodResult[M]>
+      /** 订阅引擎事件流，返回取消订阅函数 */
+      onEngineEvent: (callback: (event: EngineEvent) => void) => () => void
+      /** 写入 API key（safeStorage 落盘 + 推引擎；查询接口不回明文） */
+      setApiKey: (providerId: string, apiKey: string) => Promise<{ ok: true }>
+      /** 查询 key 配置状态（providerId + keyConfigured 布尔位） */
+      listApiKeys: () => Promise<Array<{ providerId: string; keyConfigured: boolean }>>
+      /** 读自定义 provider 定义（含内置 provider 的 baseUrl 覆盖；定义不含 key） */
+      getCustomProviders: () => Promise<CustomProvidersPayload>
+      /** 全量写自定义 provider 定义（落盘 + 引擎 running 时推 sync） */
+      setCustomProviders: (
+        providers: CustomProvidersPayload['providers'],
+        overrides: CustomProvidersPayload['overrides']
+      ) => Promise<{ ok: true }>
       /** 窗口控制（自绘 header 专用） */
       minimizeWindow: () => Promise<void>
       toggleMaximizeWindow: () => Promise<void>
@@ -23,6 +44,106 @@ declare global {
       onWindowState: (callback: (isMaximized: boolean) => void) => () => void
     }
   }
+}
+
+/** 引擎方法名（renderer 可触达的子集；全量见 src/protocol/types.ts ProtocolMethods） */
+export type EngineMethod =
+  | 'session.list'
+  | 'session.create'
+  | 'session.delete'
+  | 'session.messages'
+  | 'agent.submit'
+  | 'agent.abort'
+  | 'credentials.list'
+  | 'models.list'
+  | 'providers.custom.sync'
+
+/** 与 protocol/types.ts 对应 method 的参数形状（renderer 侧镜像声明） */
+export interface EngineMethodParams {
+  'session.list': Record<string, never>
+  'session.create': { title?: string }
+  'session.delete': { sessionId: string }
+  'session.messages': { sessionId: string }
+  'agent.submit': { sessionId: string; text: string; model?: string; thinkingLevel?: string }
+  'agent.abort': { sessionId: string }
+  'credentials.list': Record<string, never>
+  'models.list': Record<string, never>
+  'providers.custom.sync': {
+    providers: Array<{ id: string; name: string; baseUrl: string; models: string[] }>
+    overrides: Array<{ providerId: string; baseUrl: string }>
+  }
+}
+
+/** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
+export interface EngineMethodResult {
+  'session.list': Array<{ id: string; title: string; createdAt: number; updatedAt: number }>
+  'session.create': { id: string; title: string; createdAt: number; updatedAt: number }
+  'session.delete': { deleted: boolean }
+  'session.messages': { messages: ChatMessage[] }
+  'agent.submit': { accepted: true }
+  'agent.abort': { aborted: boolean }
+  'credentials.list': { providers: ProviderSummary[] }
+  'models.list': { models: ModelSummary[] }
+  'providers.custom.sync': { synced: number }
+}
+
+/**
+ * 引擎事件帧：与 protocol RpcEvent 同形（{ jsonrpc, method, params }）。
+ * 业务载荷在 params 里 —— 之前误声明成平铺形状，TS 没能拦住消费侧按顶层取字段的
+ * bug（'sessionId' in event 永假 → 事件被静默丢弃），类型必须忠实于运行时形状。
+ */
+export type EngineEvent =
+  | { method: 'run.started'; params: { sessionId: string } }
+  | {
+      method: 'run.completed'
+      params: { sessionId: string; message?: ChatMessage; /** length = 输出被 token 上限截断 */ stopReason?: string }
+    }
+  | { method: 'run.failed'; params: { sessionId: string; message: string } }
+  | { method: 'message.delta'; params: { sessionId: string; messageId: string; delta: string } }
+  | { method: 'tool.started'; params: { sessionId: string; callId: string; name: string; kind: string } }
+  | { method: 'tool.completed'; params: { sessionId: string; callId: string; isError: boolean; summary: string } }
+  | { method: 'approval.request'; params: { sessionId: string; requestId: string; toolName: string; kind: string; summary: string } }
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: number
+}
+
+export interface ProviderSummary {
+  id: string
+  name: string
+  keyConfigured: boolean
+}
+
+export interface ModelSummary {
+  id: string
+  name: string
+  provider: string
+  reasoning: boolean
+  contextWindow: number
+  maxTokens: number
+}
+
+/** 自定义 provider 定义（与 protocol/types.ts CustomProviderDef 镜像；key 走 credentials 单独管理） */
+export interface CustomProviderDef {
+  /** custom/<slug> 形式 */
+  id: string
+  name: string
+  baseUrl: string
+  models: string[]
+}
+
+/** 内置 provider 的 baseUrl 覆盖（与 protocol/types.ts ProviderOverrideDef 镜像） */
+export interface ProviderOverrideDef {
+  providerId: string
+  baseUrl: string
+}
+
+export interface CustomProvidersPayload {
+  providers: CustomProviderDef[]
+  overrides: ProviderOverrideDef[]
 }
 
 export {}

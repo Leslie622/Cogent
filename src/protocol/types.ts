@@ -92,12 +92,48 @@ export function isRpcEvent(frame: unknown): frame is RpcEvent {
 
 // ———— 领域类型 ————
 
-/** 会话摘要（列表/创建返回；完整消息模型随实现细化） */
+/**
+ * 会话摘要（列表/创建返回）。
+ * 存储落地前会话只活在引擎内存（docs/路线.md 第 3 项另做），因此没有持久化相关字段。
+ */
 export interface SessionSummary {
   id: string
   title: string
   createdAt: number
   updatedAt: number
+}
+
+/**
+ * 对话消息（协议侧的最小形状）。
+ * 刻意不含 pi 的 content blocks / thinking / toolCall —— 协议只暴露 UI 渲染所需，
+ * pi 消息模型细化为路线第 1 项，届时以 optional 字段扩展。
+ */
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: number
+}
+
+/** provider 摘要：凭据状态用布尔位表达，key 明文永远不出引擎（安全边界） */
+export interface ProviderSummary {
+  id: string
+  name: string
+  keyConfigured: boolean
+  /** 自定义 provider（custom/ 前缀，用户在设置页添加） */
+  custom?: boolean
+}
+
+/** 模型摘要（models.list 返回；模型选择下拉的数据源） */
+export interface ModelSummary {
+  id: string
+  name: string
+  /** 所属 provider id（如 'anthropic' / 'openai'） */
+  provider: string
+  /** 是否支持推理（thinking） */
+  reasoning: boolean
+  contextWindow: number
+  maxTokens: number
 }
 
 /** 工具的风险类别：审批策略按此分级 */
@@ -123,9 +159,33 @@ export interface InitializeResult {
   node: string
 }
 
+export interface InitializeParams {
+  /** 宿主标识，如 'cogent-main' / 'legacy-electron22' / 'smoke-test' */
+  client: string
+  /** 宿主实现的协议版本 */
+  protocolVersion: number
+  /**
+   * 握手时注入的凭据（宿主持有的持久化凭据灌进引擎内存表）。
+   * optional：老宿主/冒烟脚本可以不带；key 只在引擎内存存活，不落引擎侧磁盘。
+   */
+  credentials?: Record<string, { apiKey: string }>
+}
+
+export interface InitializeResult {
+  service: string
+  /** 服务实现的协议版本 */
+  protocolVersion: number
+  /** 服务运行时的 Node 版本，宿主据此做版本守卫 */
+  node: string
+}
+
 export interface AgentSubmitParams {
   sessionId: string
   text: string
+  /** 本次请求使用的模型（provider 内模型 id）；省略时沿用会话当前模型 */
+  model?: string
+  /** 推理力度（pi ThinkingLevel）；省略时沿用会话当前值 */
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 }
 export interface AgentSubmitResult {
   /** 已受理；执行结果经事件流推送（run.* / message.* / tool.*） */
@@ -140,6 +200,57 @@ export interface ApprovalRespondResult {
   ok: true
 }
 
+export interface CredentialsSetParams {
+  providerId: string
+  apiKey: string
+}
+export interface CredentialsSetResult {
+  ok: true
+}
+
+/** provider id → 是否已配 key（不含 key 明文，见 ProviderSummary 注释） */
+export interface CredentialsListResult {
+  providers: ProviderSummary[]
+}
+
+export interface ModelsListResult {
+  models: ModelSummary[]
+}
+
+export interface SessionMessagesParams {
+  sessionId: string
+}
+export interface SessionMessagesResult {
+  messages: ChatMessage[]
+}
+
+/**
+ * 自定义 provider 定义（OpenAI-compatible 端点：中转站/网关/Ollama）。
+ * 引擎侧经 createProvider 注入；key 不在本定义里（走 credentials.set 单独管理）。
+ */
+export interface CustomProviderDef {
+  /** `custom/<slug>` 形式，与内置 provider id 空间隔离 */
+  id: string
+  name: string
+  baseUrl: string
+  /** 模型 id 列表（端点上可用的模型，用户自填） */
+  models: string[]
+}
+
+/** 内置 provider 的 baseUrl 覆盖（代理/中转），对齐 pi models.json 原生能力 */
+export interface ProviderOverrideDef {
+  providerId: string
+  baseUrl: string
+}
+
+export interface ProvidersCustomSyncParams {
+  providers: CustomProviderDef[]
+  overrides: ProviderOverrideDef[]
+}
+export interface ProvidersCustomSyncResult {
+  synced: number
+}
+
 /**
  * method 注册表：键名即线上协议。新增 method = 在此加一行 + 服务端加 handler。
  */
@@ -148,16 +259,31 @@ export interface ProtocolMethods {
   'session.list': { params: Record<string, never>; result: SessionSummary[] }
   'session.create': { params: { title?: string; permissionMode?: PermissionMode }; result: SessionSummary }
   'session.delete': { params: { sessionId: string }; result: { deleted: boolean } }
+  'session.messages': { params: SessionMessagesParams; result: SessionMessagesResult }
   'agent.submit': { params: AgentSubmitParams; result: AgentSubmitResult }
   'agent.abort': { params: { sessionId: string }; result: { aborted: boolean } }
   'approval.respond': { params: ApprovalRespondParams; result: ApprovalRespondResult }
+  'credentials.set': { params: CredentialsSetParams; result: CredentialsSetResult }
+  'credentials.list': { params: Record<string, never>; result: CredentialsListResult }
+  'models.list': { params: Record<string, never>; result: ModelsListResult }
+  'providers.custom.sync': { params: ProvidersCustomSyncParams; result: ProvidersCustomSyncResult }
 }
 
 // ———— 事件映射（service → 宿主；骨架期先定形状，随实现细化） ————
 
 export interface ProtocolEvents {
   'run.started': { sessionId: string }
-  'run.completed': { sessionId: string }
+  'run.completed': {
+    sessionId: string
+    /** 最终完整 assistant 回复；renderer 用它替换流式累积，免拼 delta */
+    message?: ChatMessage
+    /**
+     * pi 停止原因（stop/length/toolUse…）。length = 输出被 token 上限截断
+     * （模型上限或端点侧强制上限），UI 据此提示"回复被截断"——截断不是错误，
+     * pi 也按正常结束处理，不透出就无从呈现。
+     */
+    stopReason?: string
+  }
   'run.failed': { sessionId: string; message: string }
   /** TODO(实现时细化)：delta 先按纯文本，后续换结构化 content blocks */
   'message.delta': { sessionId: string; messageId: string; delta: string }
