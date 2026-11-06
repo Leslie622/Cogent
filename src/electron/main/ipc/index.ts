@@ -6,6 +6,7 @@
 import type { BrowserWindow } from 'electron'
 import type { AgentServiceManager } from '../service/manager'
 import { registerAppIpc } from './app'
+import { registerWindowIpc } from './window'
 
 export interface IpcDeps {
   service: AgentServiceManager
@@ -15,4 +16,5 @@ export interface IpcDeps {
 
 export function registerIpc(deps: IpcDeps): void {
   registerAppIpc(deps.service)
+  registerWindowIpc(deps.getWindow)
 }

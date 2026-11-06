@@ -8,7 +8,13 @@
 
 export const IPC = {
   /** renderer → main：查询 Agent 引擎服务连接状态 */
-  appStatus: 'app:status'
+  appStatus: 'app:status',
+  /** renderer → main：窗口控制（最小化 / 切换最大化 / 关闭）——自绘 header 专用 */
+  windowMinimize: 'window:minimize',
+  windowMaximizeToggle: 'window:maximize-toggle',
+  windowClose: 'window:close',
+  /** main → renderer：最大化状态变化（payload: boolean isMaximized） */
+  windowState: 'window:state-changed'
 } as const
 
 /** 引擎服务连接状态（诊断用；UI 可据此提示"引擎未就绪"） */

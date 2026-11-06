@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import { AgentServiceManager } from './service/manager'
 import { registerIpc } from './ipc'
+import { IPC } from '../../shared/ipc'
 
 let mainWindow: BrowserWindow | null = null
 let agentService: AgentServiceManager | null = null
@@ -15,6 +16,9 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'Cogent',
+    // 无边框：系统标题栏去掉，由 renderer 自绘 header（拖拽区 + 窗口控制按钮，
+    // 见 features/shell/TitleBar.tsx 与 ipc/window.ts）。
+    frame: false,
     webPreferences: {
       // ESM preload（.mjs）要求关闭 sandbox；contextIsolation 始终保持开启，
       // renderer 只能通过 preload 暴露的窄接口访问主进程。
@@ -26,6 +30,15 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+
+  // 最大化状态变化推给 renderer：自绘 header 的最大化/还原图标需要跟随切换
+  const sendWindowState = (): void => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC.windowState, mainWindow.isMaximized())
+    }
+  }
+  mainWindow.on('maximize', sendWindowState)
+  mainWindow.on('unmaximize', sendWindowState)
 
   // 外部链接交给系统浏览器打开
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
