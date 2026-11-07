@@ -10,7 +10,8 @@
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['out/**', 'dist/**', 'node_modules/**', 'eslint.config.mjs'] },
+  // legacy/：旧界面备份（2026-11-06 UI 重置移入，仅借鉴素材，不参与构建/类型检查）
+  { ignores: ['out/**', 'dist/**', 'node_modules/**', 'legacy/**', 'eslint.config.mjs'] },
   ...tseslint.configs.recommendedTypeChecked,
   {
     languageOptions: {

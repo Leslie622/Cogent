@@ -1,18 +1,13 @@
 /**
- * 应用壳：全局自绘标题栏 + 按 uiStore.view 切换聊天页 / 设置页。
- * 挂载时：接引擎事件流 + 拉模型目录/key 状态 + 载入会话。
+ * 应用入口（UI 重写期）：引擎接线（事件流 + 初始数据）+ 三块骨架。
+ * 界面按 AGENTS.md「UI 设计方针」逐件重写，旧界面在 legacy/renderer 借鉴。
  */
 import { useEffect } from 'react'
-import { useUiStore } from '@/stores/ui'
 import { useEngineStore } from '@/stores/engine'
 import { bindEngineEvents, useChatStore } from '@/stores/chat'
-import { TitleBar } from '@/features/shell/TitleBar'
-import { ChatPage } from '@/features/chat/ChatPage'
-import { SettingsPage } from '@/features/settings/SettingsPage'
+import { AppShell } from '@/features/shell/AppShell'
 
 export default function App() {
-  const view = useUiStore((s) => s.view)
-
   useEffect(() => {
     // 事件订阅先行（避免 load 期间漏事件），再拉初始数据
     const unbind = bindEngineEvents()
@@ -21,10 +16,5 @@ export default function App() {
     return unbind
   }, [])
 
-  return (
-    <div className="flex h-screen flex-col">
-      <TitleBar />
-      <div className="min-h-0 flex-1">{view === 'chat' ? <ChatPage /> : <SettingsPage />}</div>
-    </div>
-  )
+  return <AppShell />
 }

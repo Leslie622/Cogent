@@ -18,8 +18,8 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'Cogent',
-    // 无边框：系统标题栏去掉，由 renderer 自绘 header（拖拽区 + 窗口控制按钮，
-    // 见 features/shell/TitleBar.tsx 与 ipc/window.ts）。
+    // 无边框：系统标题栏去掉，由 renderer 自绘头部（拖拽区 + 窗口控制按钮，
+    // 窗口控制走 ipc/window.ts；头部视觉按 UI 设计方针逐件重写）。
     frame: false,
     webPreferences: {
       // ESM preload（.mjs）要求关闭 sandbox；contextIsolation 始终保持开启，
@@ -48,6 +48,20 @@ function createWindow(): void {
       void shell.openExternal(url)
     }
     return { action: 'deny' }
+  })
+
+  // DevTools：F12 切换（Electron 不内建此键；Ctrl+Shift+I 是 Chromium 内建键）。
+  // 显式 openDevTools({ mode: 'detach' }) 而非 toggleDevTools()：后者无参数，
+  // 会沿用 Chromium 默认的右停靠（吃掉应用窗口宽度）——这里始终开成独立窗口
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.type !== 'keyDown' || input.key !== 'F12') return
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    const wc = mainWindow.webContents
+    if (wc.isDevToolsOpened()) {
+      wc.closeDevTools()
+    } else {
+      wc.openDevTools({ mode: 'detach' })
+    }
   })
 
   mainWindow.on('closed', () => {

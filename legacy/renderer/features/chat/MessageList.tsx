@@ -13,8 +13,8 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport
 } from '@/components/ui/message-scroller'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { CircleAlert, MessageSquare, TriangleAlert } from 'lucide-react'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { CircleAlert, Code2, TriangleAlert } from 'lucide-react'
 import { useChatStore } from '@/stores/chat'
 import type { ChatMessage } from '@/env.d'
 
@@ -34,14 +34,16 @@ export function MessageList() {
   const truncated = useChatStore((s) => s.truncated)
 
   if (messages.length === 0 && !lastError) {
+    // v0 稿空状态：圆环 </> 图标 + 38px 大标题，垂直居中
     return (
       <Empty className="flex-1">
         <EmptyHeader>
-          <EmptyMedia>
-            <MessageSquare />
+          <EmptyMedia className="mb-5 size-14 rounded-full border-[3px] border-muted-foreground/45 text-muted-foreground/55">
+            <Code2 className="size-7" strokeWidth={1.7} />
           </EmptyMedia>
-          <EmptyTitle>开始新的会话</EmptyTitle>
-          <EmptyDescription>向 Agent 提问，或让它帮你完成任务。</EmptyDescription>
+          <EmptyTitle className="text-[38px] font-medium tracking-[-0.04em]">
+            我们应该构建什么？
+          </EmptyTitle>
         </EmptyHeader>
       </Empty>
     )
@@ -51,7 +53,8 @@ export function MessageList() {
     <MessageScrollerProvider>
       <MessageScroller>
         <MessageScrollerViewport>
-          <MessageScrollerContent className="mx-auto max-w-3xl px-4 py-4">
+          {/* pt-16：给悬浮在顶部的折叠/面板按钮留位（ChatArea） */}
+          <MessageScrollerContent className="mx-auto max-w-3xl px-4 pt-16 pb-4">
             {messages.map((m) => (
               <MessageScrollerItem key={m.id} scrollAnchor={m.role === 'user'}>
                 {/* 官方 pattern 的角色分支：只有用户消息是气泡，助手回复是正文流 */}

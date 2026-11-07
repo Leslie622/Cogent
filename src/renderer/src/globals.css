@@ -3,8 +3,38 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* 打包字体（assets/fonts，随应用分发，不依赖系统安装；设计方针见 AGENTS.md）：
+   英文 Inter（可变字重单文件）+ 中文 HarmonyOS Sans SC（静态 400/500/700）。
+   字体栈 Inter 在前 —— 拉丁字符命中 Inter，CJK 回落 HarmonyOS Sans SC */
+@font-face {
+  font-family: Inter;
+  src: url('./assets/fonts/InterVariable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('./assets/fonts/HarmonyOS_Sans_SC_Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('./assets/fonts/HarmonyOS_Sans_SC_Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('./assets/fonts/HarmonyOS_Sans_SC_Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-display: swap;
+}
+
 :root {
   --radius: 0.625rem;
+  /* 内容卡圆角（卡片自描边 border-l 天然贴弧线走，分屏线不单独画） */
+  --shell-radius: 1rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -24,6 +54,17 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+  /* chrome 底色（UI 重写期：头部+侧栏的融合面）：暖灰 ≈ #F5F5F4 系 */
+  --sidebar: oklch(0.968 0.002 106);
+  --sidebar-foreground: oklch(0.205 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.916 0.003 106);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  /* 分屏线光带强调色（拖拽反馈）：亮色饱和蓝，暗色提亮一档降刺激 */
+  --chrome-accent: #0231fa;
 }
 
 .dark {
@@ -46,9 +87,23 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+  /* 深色 chrome 与主背景仅一档之差，保持中性 */
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --chrome-accent: oklch(0.72 0.21 264);
 }
 
 @theme inline {
+  /* font-sans 工具类与页面默认字体同源（见 @layer base body） */
+  --font-sans:
+    Inter, 'HarmonyOS Sans SC', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    'Microsoft YaHei', sans-serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -72,6 +127,48 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  /* sidebar* 此前未映射：sidebar.tsx 里的 bg-sidebar 等类生成不了 CSS（侧栏透明），
+     必须与上面 :root 的变量成对存在 */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* ── 分屏线光带（拖拽时跟随指针；hooks/use-divider-glow 逐帧直写变量） ──
+   双层渐变：2px×140px 强调色核心 + 100%×160px 45% 透明度晕光，都以 --glow-y 定位；
+   亮度 --glow-strength 做透明度，归零时 0.18s 过渡防闪断。
+   现分栏在白卡内部、顶端不挨圆角弧线，旧布局防"光柱切弧"的顶部蒙版不再需要 */
+.divider-glow::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 3px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: var(--glow-strength, 0);
+  transition: opacity 0.18s linear;
+  background:
+    linear-gradient(to bottom, transparent, var(--chrome-accent) 50%, transparent)
+      center calc(var(--glow-y, -9999px) - 70px) / 2px 140px no-repeat,
+    linear-gradient(
+        to bottom,
+        transparent,
+        color-mix(in oklch, var(--chrome-accent) 45%, transparent) 50%,
+        transparent
+      )
+      center calc(var(--glow-y, -9999px) - 80px) / 100% 160px no-repeat;
+}
+/* 把手默认灰，光带纵向扫到它（--glow-knob 非零）才混入强调色。
+   混色必须用 oklab：oklch 下蓝(色相 264)与灰(色相 0)插值会绕经粉/红区 */
+.divider-glow > div {
+  background: color-mix(in oklab, var(--chrome-accent) calc(var(--glow-knob, 0) * 100%), var(--border));
+  transition: background-color 0.18s linear;
 }
 
 @layer base {
@@ -87,5 +184,15 @@
 
   body {
     @apply bg-background text-foreground;
+    /* 双字体栈（设计方针）：拉丁走 Inter，中文走 HarmonyOS Sans SC，其后系统回退 */
+    font-family:
+      Inter,
+      'HarmonyOS Sans SC',
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      'Microsoft YaHei',
+      sans-serif;
   }
 }

@@ -14,6 +14,32 @@
    这是本项目的核心产出之一，与代码同等重要：**没写笔记 = 没完成**；
 3. **所有代码写清晰注释**：中文，讲"为什么"与"边界"，不复述代码（细则见 约定.md §3）。
 
+## UI 设计方针（2026-11-06 起，取代 v0 复刻路线）
+
+1. **协作方式**：不用 v0、不照搬外部成品 —— 用户出「描述 + 截图」，AI 直接实现；
+   **写一点、验收一点**，每步保持三关全绿可运行；
+2. **技术栈**：React + Tailwind + shadcn（目标风格 **Rhea**，registry
+   `r/styles/base-rhea/`，2026-11-06 验证可用）+ 图标 lucide-react。存量
+   `components/ui/` 是 base-luma 版，随界面逐件重写时按 Rhea 源替换；
+3. **字体随包分发**（不依赖系统安装）：中文 **HarmonyOS Sans SC**（400/500/700）、
+   英文 **Inter**（可变字重）；文件在 `src/renderer/src/assets/fonts/`
+   （含两份 LICENSE），@font-face 见 globals.css；
+4. **旧界面**：v0 定稿版整体移入 `legacy/renderer/`，只作借鉴素材，
+   不参与构建/类型检查/lint；引擎接线（stores / IPC / main）未动。
+
+### 区域代号（2026-11-07 定，件 1 布局的叫法 —— 描述/注释/组件命名统一用代号）
+
+```
+shell
+├─ header            头部：40px 拖拽区，chrome 底色（菜单/窗口按钮属后续件）
+└─ body              主体：header 下方全部
+   ├─ app-sidebar    应用侧边栏：固定 50px 图标栏，chrome 底色与 header 融合
+   └─ content        内容区：白卡（左上圆角 --shell-radius + border-l 自描边 +
+      │              紧投影），浮在 chrome 上
+      ├─ content-sidebar  内容区侧边栏：240–360px 可拖可折叠（折成 0），微灰底
+      └─ content-main     内容区主体：纯白
+```
+
 ## 地图索引（动手前按需读）
 
 | 文件 | 内容 | 什么时候读 |

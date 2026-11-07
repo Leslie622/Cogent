@@ -99,10 +99,13 @@ export function ChatInput() {
   }
 
   return (
-    <div className="shrink-0 p-3">
-      <form ref={formRef} onSubmit={onSubmit} className="mx-auto max-w-3xl">
+    // v0 稿悬浮输入卡：更宽的 990px 列 + 底部留白更大
+    <div className="shrink-0 px-5 pb-5">
+      <form ref={formRef} onSubmit={onSubmit} className="mx-auto w-full max-w-[990px]">
         <input ref={fileInputRef} type="file" multiple className="sr-only" tabIndex={-1} onChange={onAttach} />
-        <InputGroup>
+        {/* v0 卡片样式覆盖：25px 大圆角 + 边框 + 投影；原语的 has-* 圆角变体
+            需同变体覆盖（变体类与普通类不互相覆盖）；聚焦不加 ring，保持稿的克制观感 */}
+        <InputGroup className="rounded-[25px] border border-border/90 bg-card shadow-[0_12px_36px_rgba(0,0,0,0.1)] has-[textarea]:rounded-[25px] has-data-[align=block-start]:rounded-[25px] has-data-[align=block-end]:rounded-[25px] has-[[data-slot=input-group-control]:focus-visible]:ring-0">
           {files.length > 0 && (
             <InputGroupAddon align="block-start" className="flex-wrap">
               {files.map((file) => (
@@ -128,26 +131,26 @@ export function ChatInput() {
           <InputGroupTextarea
             value={text}
             onChange={(event) => setText(event.target.value)}
-            placeholder={modelUsable ? '输入消息，Enter 发送，Shift+Enter 换行' : '请先在设置-模型设置配置 API key'}
+            placeholder={modelUsable ? '做任何事' : '请先在设置-模型设置配置 API key'}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
                 formRef.current?.requestSubmit()
               }
             }}
-            className="p-3"
+            className="min-h-10 px-1 pt-3 text-lg"
           />
           {/* addon 必须放在 textarea 之后（官方 Callout：焦点管理依赖 DOM 顺序） */}
-          <InputGroupAddon align="block-end">
+          <InputGroupAddon align="block-end" className="px-4 pb-3">
             <InputGroupButton
               type="button"
               size="icon-sm"
-              variant="outline"
-              className="rounded-full"
+              variant="ghost"
+              className="rounded-lg text-muted-foreground"
               aria-label="添加附件"
               onClick={() => fileInputRef.current?.click()}
             >
-              <PlusIcon />
+              <PlusIcon size={18} />
             </InputGroupButton>
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -155,9 +158,9 @@ export function ChatInput() {
                   <InputGroupButton
                     type="button"
                     size="sm"
-                    variant="outline"
+                    variant="ghost"
                     aria-label={`模型：${currentModel?.name ?? '加载中'}`}
-                    className="ml-auto"
+                    className="ml-auto rounded-lg px-2 text-[15px]"
                   />
                 }
               >
@@ -194,12 +197,12 @@ export function ChatInput() {
                   <InputGroupButton
                     type="button"
                     size="sm"
-                    variant="outline"
+                    variant="ghost"
                     aria-label={`推理力度：${currentEffort.name}`}
+                    className="rounded-lg px-2 text-[15px] text-muted-foreground"
                   />
                 }
               >
-                <span className="text-muted-foreground">力度</span>
                 {currentEffort.name}
                 <ChevronDownIcon />
               </DropdownMenuTrigger>
@@ -217,13 +220,14 @@ export function ChatInput() {
               </DropdownMenuContent>
             </DropdownMenu>
             {/* 官方 demo 布局：仅 Model 带 ml-auto（把右侧按钮组推到右端），
-                Effort 紧随其后、Send 收尾 —— 不再加第二个 ml-auto，避免组内被撑开 */}
+                Effort 紧随其后、Send 收尾 —— 不再加第二个 ml-auto，避免组内被撑开。
+                发送按钮 = v0 稿的 size-10 圆形黑底（bg-foreground）+ hover 微放大 */}
             {running ? (
               <InputGroupButton
                 type="button"
                 size="icon-sm"
                 variant="outline"
-                className="rounded-full"
+                className="size-10 rounded-full"
                 aria-label="停止"
                 onClick={() => void abort()}
               >
@@ -233,11 +237,11 @@ export function ChatInput() {
               <InputGroupButton
                 type="submit"
                 size="icon-sm"
-                className="rounded-full"
+                className="size-10 rounded-full bg-foreground text-background transition-transform hover:scale-105 hover:bg-foreground hover:text-background disabled:opacity-40"
                 disabled={!canSend}
                 aria-label="发送"
               >
-                <ArrowUpIcon />
+                <ArrowUpIcon size={18} />
               </InputGroupButton>
             )}
           </InputGroupAddon>
