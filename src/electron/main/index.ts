@@ -6,6 +6,11 @@ import { CustomProvidersStore } from './custom-providers/store'
 import { registerIpc } from './ipc'
 import { IPC } from '../../shared/ipc'
 
+// Windows 分数 DPI（125%/150%）下，LCD 亚像素文字经合成缩放会被 smear 成
+// "虚肥 + 红蓝彩边"（用户对比 ChatGPT 发现笔画发糊的主因：我们侧彩边明显、
+// ChatGPT 侧是干净灰度抗锯齿）。关掉 LCD 走灰度，边缘干净。
+app.commandLine.appendSwitch('disable-lcd-text')
+
 let mainWindow: BrowserWindow | null = null
 let agentService: AgentServiceManager | null = null
 

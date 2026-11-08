@@ -40,11 +40,14 @@ const ITEMS: ReadonlyArray<{
   { view: 'plugins', label: '插件', icon: IconPuzzle, iconActive: IconPuzzleFilled },
 ]
 
-/** 图标钮样式：hover 半透明块底（通透，不压成死色），active 实心块 + 实心图标 */
+/** 图标钮样式：黑低透明度软叠（同 ChatGPT：hover ~8%、active ~12%），不用
+    白/灰实心块 —— 实心块在薄荷渐变上生硬发灰。active 仍配实心图标。
+    未激活图标用实色 muted-foreground —— 透明度文字/图标会被 Chromium 降级
+    光栅化而发虚（字体清晰度问题的同源规则，见 HomeSidebar 注释） */
 const railButton = (active: boolean) =>
   cn(
-    'rounded-lg text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
-    active && 'bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent'
+    'rounded-lg text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
+    active && 'bg-foreground/5 text-foreground hover:bg-foreground/5'
   )
 
 export function AppSidebar() {

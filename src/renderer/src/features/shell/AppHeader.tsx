@@ -25,8 +25,9 @@ import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties
-/** chrome 面上的 ghost hover 覆盖（见文件头注释）；半透明块底更通透 */
-const CHROME_HOVER = 'hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground'
+/** chrome 面上的 ghost hover 覆盖（见文件头注释）：黑低透明度软叠（同 ChatGPT
+    配方），比白/灰块底通透、不压薄荷色相；深度按用户意见压到 5% */
+const CHROME_HOVER = 'hover:bg-foreground/5 hover:text-foreground'
 
 /** 菜单名：点击行为空位（后续件接菜单），先只出形 */
 const MENUS = ['文件', '编辑', '视图', '帮助'] as const
@@ -44,8 +45,10 @@ export function AppHeader({
   useEffect(() => window.cogent.onWindowState(setMaximized), [])
 
   return (
+    /* 内容整体降一档灰（用户定的规则：头部图标/文字不用主字体色，与 rail
+       未激活图标同档；hover 经 CHROME_HOVER 加深作反馈，关闭钮红底白字不变） */
     <header
-      className="flex h-10 shrink-0 items-center pr-2 select-none"
+      className="flex h-10 shrink-0 items-center pr-2 text-muted-foreground"
       style={{ WebkitAppRegion: 'drag' } as CSSProperties}
     >
       <div className="flex items-center gap-2 pl-2" style={NO_DRAG}>
