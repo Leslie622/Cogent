@@ -11,8 +11,10 @@
  * （pl-8 对齐父级文字），置顶/最近项 pl-2 与分区标题文字对齐。
  * 高亮色阶（浅灰底太浅的统一修正）：行 hover = accent-foreground/10，
  * active = /15 且不加粗（底色深浅区分，不动字重），行内动作钮 hover = /15
- * （比行底再深一档，钮在行上才可辨）。数据静态样例、动作全空位 —— 项目/聊天
- * CRUD 属引擎后续件。
+ * （比行底再深一档，钮在行上才可辨）。聊天域已接引擎（chat store）：三类
+ * 发起入口真建引擎会话（否则消息会发进旧会话造成串话，见
+ * docs/技术笔记/pi-agent-integration-isolation.md）；打开已有会话仍是演示
+ * 数据（真实会话列表进侧栏属后续件），项目域也还是样例。
  * 布局手法：行 = 相对定位容器（hover 底色 + group），主点击区是占满的
  * button，动作钮 absolute 贴其右 —— 避免 button 嵌 button（非法结构），
  * 也无需 stopPropagation。
@@ -41,6 +43,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useChatStore } from '@/stores/chat'
 import { useHomeStore } from '@/stores/home'
 import { PINNED, PROJECTS, RECENT, type ChatSummary, type ProjectSummary } from './data'
 
@@ -255,7 +258,17 @@ export function HomeSidebar() {
   const session = useHomeStore((s) => s.session)
   const openChat = useHomeStore((s) => s.openChat)
   const startNewChat = useHomeStore((s) => s.startNewChat)
+  const createSession = useChatStore((s) => s.createSession)
   const activeChat = session.kind === 'chat' ? session.chatId : null
+
+  // 发起新聊天 = 两件事一起做：①chat store 真建引擎会话并选中（消息由此进新会话，
+  // 否则会发进 activeSessionId 的旧会话造成串话）；②home store 视图态（项目会话
+  // 信息区/侧栏无行选中，仍是演示数据域）。createSession 的拒绝不在组件层捕获，
+  // 与 load() 同一口径（边界在 engine IPC，见 约定.md 1.1）
+  const startNew = (projectId?: string) => {
+    void createSession()
+    startNewChat(projectId)
+  }
 
   const toggleProject = (id: string) =>
     setExpanded((prev) => {
@@ -287,7 +300,7 @@ export function HomeSidebar() {
             主体信息区出"选择项目" */}
         <button
           type="button"
-          onClick={() => startNewChat()}
+          onClick={() => startNew()}
           className={cn(
             'flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground',
             ROW_HOVER,
@@ -357,7 +370,7 @@ export function HomeSidebar() {
                 activeChat={activeChat}
                 onToggle={() => toggleProject(project.id)}
                 onSelectChat={openChat}
-                onStartChat={() => startNewChat(project.id)}
+                onStartChat={() => startNew(project.id)}
               />
             ))}
         </section>
@@ -379,7 +392,7 @@ export function HomeSidebar() {
                   size="icon-xs"
                   className={ACTION_BUTTON}
                   aria-label="新建聊天"
-                  onClick={() => startNewChat()}
+                  onClick={() => startNew()}
                 >
                   <IconMessagePlus className="size-4" />
                 </Button>

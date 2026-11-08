@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent 引擎手册 — Cogent</title>
+<style>
+  /*
+   * Agent 引擎手册 —— 单文件、零依赖、浏览器直接打开。
+   * 维护规则见文末「维护指南」节；改动代码后同步本手册的对应小节。
+   */
+  :root {
+    --ink: #1f1f1e;
+    --muted: #6f6b66;
+    --faint: #8a857f;
+    --mint: #2f9e6f;
+    --mint-deep: #146c4a;
+    --mint-bg: #eef7f2;
+    --line: #e5e2de;
+    --card: #ffffff;
+    --red: #c2413f;
+    --chrome: #e0f3e9;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: #faf9f8;
+    color: var(--ink);
+    font-family: "Inter", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout { display: flex; min-height: 100vh; }
+
+  /* ———— 目录侧栏 ———— */
+  nav {
+    width: 230px; flex: none; padding: 28px 14px 40px 22px;
+    background: linear-gradient(160deg, #e0f3e9, #eef7f2 55%, #fbfdfb);
+    border-right: 1px solid #d8ecdf;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  nav .brand { font-size: 15px; font-weight: 700; margin: 2px 0 2px 8px; }
+  nav .brand small { display: block; font-size: 11px; font-weight: 500; color: var(--faint); margin-top: 3px; }
+  nav ol { margin: 18px 0 0; padding: 0 0 0 16px; }
+  nav li { margin: 7px 0; font-size: 13px; line-height: 1.45; list-style: none; }
+  nav li a { color: #2b4a3c; text-decoration: none; display: block; padding: 4px 8px; border-radius: 7px; }
+  nav li a:hover { background: rgba(0,0,0,0.05); }
+  nav li.sub { margin-left: 14px; font-size: 12.5px; }
+  nav li.sub a { color: #4f7a63; }
+  nav .stamp { margin: 26px 8px 0; font-size: 11px; color: var(--faint); line-height: 1.7; }
+
+  /* ———— 正文 ———— */
+  main { flex: 1; min-width: 0; max-width: 1080px; margin: 0 auto; padding: 44px 48px 80px; }
+  h1 { font-size: 26px; font-weight: 700; margin: 0 0 10px; letter-spacing: -0.01em; }
+  .lede { font-size: 14px; color: var(--muted); line-height: 1.8; margin: 0 0 8px; max-width: 800px; }
+  h2 {
+    font-size: 20px; font-weight: 700; margin: 52px 0 6px;
+    padding-top: 12px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2:first-of-type { margin-top: 28px; border-top: none; padding-top: 0; }
+  h2 .num {
+    flex: none; width: 27px; height: 27px; border-radius: 8px;
+    background: var(--ink); color: #fff; font-size: 14px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  h3 { font-size: 15.5px; font-weight: 700; margin: 30px 0 4px; }
+  p { font-size: 13.5px; line-height: 1.85; margin: 6px 0 10px; max-width: 820px; }
+  p, li { color: #3c3936; }
+  b { color: var(--ink); }
+  code {
+    font-family: Consolas, "JetBrains Mono", monospace; font-size: 12.5px;
+    background: #f0efed; border: 1px solid #e5e2de; border-radius: 5px; padding: 1px 6px;
+  }
+  ul.plain { padding-left: 20px; margin: 6px 0 12px; }
+  ul.plain li { margin: 5px 0; font-size: 13.5px; line-height: 1.75; }
+
+  .figure {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 18px 14px 10px; margin: 14px 0 6px; overflow-x: auto;
+  }
+  .figure svg { display: block; margin: 0 auto; width: 100%; min-width: 820px; height: auto; max-width: 1100px; }
+  .figcaption { font-size: 12px; color: var(--faint); margin: 10px 2px 22px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 8px 0 4px; font-size: 12.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 34px; height: 0; border-top: 2.4px solid; display: inline-block; }
+  .legend .call { border-color: #3f3f3a; }
+  .legend .evt  { border-color: var(--mint); border-top-style: dashed; }
+  .legend .err  { border-color: var(--red); border-top-style: dashed; }
+  .legend .gray { border-color: #8a857f; border-top-style: dashed; }
+
+  .callout {
+    background: var(--mint-bg); border: 1px solid #d4eade; border-radius: 12px;
+    padding: 13px 16px; margin: 12px 0; font-size: 13px; line-height: 1.8; max-width: 820px;
+  }
+  .callout.red { background: #fdf3f2; border-color: #efd3d2; }
+  .callout b { display: block; margin-bottom: 4px; }
+  .callout p { margin: 0; font-size: 13px; }
+
+  table {
+    border-collapse: collapse; width: 100%; max-width: 860px; margin: 10px 0 18px;
+    font-size: 12.5px; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #efece8; vertical-align: top; line-height: 1.6; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; background: #faf9f8; }
+  tr:last-child td { border-bottom: none; }
+  td code { padding: 0 4px; }
+  .st { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .st.ok   { background: #dcf2e6; color: var(--mint-deep); }
+  .st.plan { background: #efece8; color: #78716c; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 14px 0 6px; max-width: 900px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+  }
+  .card b { display: block; font-size: 13.5px; margin-bottom: 6px; }
+  .card p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+
+  footer { margin-top: 60px; padding-top: 16px; border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--faint); line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav>
+  <div class="brand">Agent 引擎手册<small>pi · Cogent</small></div>
+  <ol>
+    <li><a href="#s1">1 架构总览</a></li>
+    <li><a href="#s2">2 通信协议</a></li>
+    <li class="sub"><a href="#s2-methods">方法一览</a></li>
+    <li class="sub"><a href="#s2-events">事件一览</a></li>
+    <li><a href="#s3">3 对话时序</a></li>
+    <li class="sub"><a href="#s3-lifecycle">消息生命周期</a></li>
+    <li><a href="#s4">4 模块详解</a></li>
+    <li class="sub"><a href="#s4-session">SessionManager</a></li>
+    <li class="sub"><a href="#s4-cred">凭据旅程</a></li>
+    <li class="sub"><a href="#s4-custom">CustomProviderRegistry</a></li>
+    <li><a href="#s5">5 pi 能力接线</a></li>
+    <li class="sub"><a href="#s5-gaps">路线空位对照</a></li>
+    <li><a href="#s6">6 维护指南</a></li>
+  </ol>
+  <div class="stamp">
+    基于 main @ d98cb57<br>整理于 2026-11-08<br>代码变更后按第 6 节同步
+  </div>
+</nav>
+
+<main>
+  <h1>Agent 引擎手册</h1>
+  <p class="lede">
+    Cogent 的 Agent 能力全部住在独立引擎进程 <code>src/agent-service</code> 里，核心是
+    <b>每会话一个 pi Agent</b>（<code>@earendil-works/pi-agent-core</code> + <code>pi-ai</code>）。
+    本手册记录它的架构、协议、对话流程与各模块细节 —— 图文一体，随功能演进持续更新。
+  </p>
+  <p class="lede">
+    当前阶段一句话：<b>纯聊天链路已通</b>（选模型 · 配 key · 流式出字 · 中止），
+    pi 的工具执行 / 审批 / 思考流等差异化能力尚未接线（见第 5 节）。
+  </p>
+
+  <!-- ================= 1. 架构 ================= -->
+  <h2 id="s1"><span class="num">1</span>架构总览：三个进程，两层边界</h2>
+  <p>
+    UI 不直接碰引擎。Renderer 经 preload IPC 到 Electron main，main 再经 <b>stdio JSON-RPC</b> 驱动引擎进程。
+    引擎目录（<code>agent-service</code> / <code>protocol</code>）零 Electron import —— 目录即边界，
+    任何宿主（现在的 Electron main、以后的测试脚本）实现协议即可驱动引擎。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 1280 420" xmlns="http://www.w3.org/2000/svg" font-family="inherit">
+      <defs>
+        <marker id="arr-ink-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#3f3f3a"/>
+        </marker>
+        <marker id="arr-mint-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#2f9e6f"/>
+        </marker>
+      </defs>
+
+      <text x="170" y="52" text-anchor="middle" font-size="15" font-weight="700" fill="#1f1f1e">Renderer 进程</text>
+      <text x="530" y="52" text-anchor="middle" font-size="15" font-weight="700" fill="#1f1f1e">Electron main 进程（壳）</text>
+      <text x="905" y="52" text-anchor="middle" font-size="15" font-weight="700" fill="#1f1f1e">Agent 引擎进程（agent-service）</text>
+
+      <rect x="30" y="70" width="280" height="270" rx="14" fill="#ffffff" stroke="#e5e2de"/>
+      <text x="50" y="100" font-size="13" font-weight="600" fill="#1f1f1e">React · 聊天 UI</text>
+      <line x1="30" y1="114" x2="310" y2="114" stroke="#efece8"/>
+      <g font-size="12.5" fill="#4b4844">
+        <circle cx="52" cy="146" r="3.5" fill="#c9e5d6"/><text x="64" y="150">ChatInput：输入 · 模型下拉 · 力度档</text>
+        <circle cx="52" cy="176" r="3.5" fill="#c9e5d6"/><text x="64" y="180">stores/chat：消息流累积拼字</text>
+        <circle cx="52" cy="206" r="3.5" fill="#c9e5d6"/><text x="64" y="210">stores/engine：模型目录 / key 状态</text>
+        <circle cx="52" cy="236" r="3.5" fill="#c9e5d6"/><text x="64" y="240">会话栏 CRUD · 设置页（key / provider）</text>
+        <circle cx="52" cy="266" r="3.5" fill="#c9e5d6"/><text x="64" y="270">项目区 / 标签页区（静态占位）</text>
+      </g>
+
+      <rect x="400" y="70" width="260" height="270" rx="14" fill="#ffffff" stroke="#e5e2de"/>
+      <text x="420" y="100" font-size="13" font-weight="600" fill="#1f1f1e">壳 · 权限边界</text>
+      <line x1="400" y1="114" x2="660" y2="114" stroke="#efece8"/>
+      <g font-size="12.5" fill="#4b4844">
+        <circle cx="422" cy="146" r="3.5" fill="#cfcac4"/><text x="434" y="150">ipc/engine：方法白名单代理</text>
+        <circle cx="422" cy="176" r="3.5" fill="#cfcac4"/><text x="434" y="180">事件转发 webContents.send</text>
+        <circle cx="422" cy="206" r="3.5" fill="#cfcac4"/><text x="434" y="210">credentials store（safeStorage 加密）</text>
+        <circle cx="422" cy="236" r="3.5" fill="#cfcac4"/><text x="434" y="240">custom-providers store（定义落盘）</text>
+      </g>
+
+      <rect x="740" y="70" width="320" height="270" rx="14" fill="#f3faf6" stroke="#bfe3cf"/>
+      <text x="760" y="100" font-size="13" font-weight="600" fill="#146c4a">pi 托管层 · 零 Electron 依赖</text>
+      <line x1="740" y1="114" x2="1060" y2="114" stroke="#d8ecdf"/>
+      <g font-size="12.5" fill="#2b4a3c">
+        <circle cx="762" cy="146" r="3.5" fill="#7cc9a3"/><text x="774" y="150">SessionManager：CRUD · submit · abort</text>
+        <circle cx="762" cy="176" r="3.5" fill="#7cc9a3"/><text x="774" y="180">每会话 1 个 pi Agent（pi-agent-core）</text>
+        <circle cx="762" cy="206" r="3.5" fill="#7cc9a3"/><text x="774" y="210">模型目录 builtinModels()（pi-ai）</text>
+        <circle cx="762" cy="236" r="3.5" fill="#7cc9a3"/><text x="774" y="240">CredentialRegistry：key 只进不出</text>
+        <circle cx="762" cy="266" r="3.5" fill="#7cc9a3"/><text x="774" y="270">CustomProviderRegistry：运行时注入</text>
+      </g>
+
+      <line x1="314" y1="200" x2="396" y2="200" stroke="#3f3f3a" stroke-width="2"
+            marker-start="url(#arr-ink-r)" marker-end="url(#arr-ink-r)"/>
+      <text x="355" y="188" text-anchor="middle" font-size="12" font-weight="600" fill="#1f1f1e">IPC · preload 桥</text>
+
+      <line x1="664" y1="200" x2="736" y2="200" stroke="#3f3f3a" stroke-width="2"
+            marker-start="url(#arr-ink-r)" marker-end="url(#arr-ink-r)"/>
+      <text x="700" y="188" text-anchor="middle" font-size="12" font-weight="600" fill="#1f1f1e">stdio JSON-RPC</text>
+      <text x="700" y="216" text-anchor="middle" font-size="11" fill="#8a857f">请求/响应 ↔ 事件推送</text>
+
+      <line x1="1060" y1="205" x2="1094" y2="205" stroke="#2f9e6f" stroke-width="2" marker-end="url(#arr-mint-r)"/>
+      <text x="1077" y="192" text-anchor="middle" font-size="11" fill="#2f9e6f" font-weight="600">HTTPS</text>
+      <ellipse cx="1180" cy="205" rx="86" ry="42" fill="#ffffff" stroke="#bfe3cf" stroke-dasharray="5 4"/>
+      <text x="1180" y="196" text-anchor="middle" font-size="14" font-weight="700" fill="#146c4a">LLM API</text>
+      <text x="1180" y="214" text-anchor="middle" font-size="10.5" fill="#6f6b66">Anthropic · OpenAI</text>
+      <text x="1180" y="229" text-anchor="middle" font-size="10.5" fill="#6f6b66">自定义兼容端点</text>
+
+      <text x="640" y="382" text-anchor="middle" font-size="12" fill="#8a857f">
+        pi 事件经 agent.subscribe 转译为协议事件；引擎目录（agent-service / protocol）零 Electron import —— 目录即边界
+      </text>
+    </svg>
+  </div>
+  <div class="figcaption">图 1-1 · 三进程架构。绿色区 = 引擎内部（本手册第 4 节逐一展开）。</div>
+
+  <div class="cards">
+    <div class="card"><b>为什么引擎是独立进程</b>
+      <p>pi 是 AI 代码助手同源的 Agent 引擎，依赖重、迭代快。隔离在子进程里：崩溃不连坐、Node 版本可控（spawn 前有版本守卫）、协议天然可测试。</p></div>
+    <div class="card"><b>main 是壳不是业务</b>
+      <p>main 只做三件事：方法白名单代理、事件转发、持有持久化存储（凭据/自定义 provider 定义）。业务判断全部下沉引擎。</p></div>
+    <div class="card"><b>key 的安全边界</b>
+      <p>明文只存在两处：main 的 safeStorage 解密结果（不落明文盘）、引擎进程内存 Map。Renderer 只见「已配置/未配置」布尔位。</p></div>
+  </div>
+
+  <!-- ================= 2. 协议 ================= -->
+  <h2 id="s2"><span class="num">2</span>通信协议：newline JSON-RPC</h2>
+  <p>
+    传输层是 <b>stdio 上的一行一帧 JSON</b>（newline-delimited），JSON-RPC 2.0 极简子集。
+    三种帧：<b>请求</b>（带 id，宿主→引擎）、<b>响应</b>（带 id，引擎→宿主）、<b>事件</b>（无 id，引擎→宿主单向推送）。
+    协议定义在 <code>src/protocol/types.ts</code>，有兼容性纪律：
+  </p>
+  <ul class="plain">
+    <li><b>只增不破</b>：method / event 名一经发布不可改名、不可删；字段只增 optional；</li>
+    <li>破坏性变更必须递增 <code>PROTOCOL_VERSION</code>（当前 1），引擎在 initialize 响应里上报；</li>
+    <li>protocol 目录零运行时依赖（纯类型 + 纯函数），任何 Node 版本可加载；</li>
+    <li>错误码不自造，用 JSON-RPC 标准码（ParseError / InvalidParams / MethodNotFound / InternalError）。</li>
+  </ul>
+  <div class="callout">
+    <b>为什么长任务是事件驱动</b>
+    <p>LLM 循环以分钟计，请求-响应式会让宿主挂死在管道上。所以 <code>agent.submit</code> 受理即返回
+    <code>{ accepted: true }</code>，执行进度全部经事件流（run.* / message.* / 将来的 tool.*）推送 ——
+    受理与执行分离是整份协议最重要的设计决定。</p>
+    <p><b>受理 ≠ 收下就完</b>（2026-11-09 修复）：受理含<b>同步校验</b>（会话存在、会话空闲、模型已知），
+    校验失败同步 throw → dispatch 转错误响应帧（忙 = InvalidRequest，不存在 = InternalError）。
+    校验绝不能放进异步段 —— dispatch 的 try/catch 只包住 handler 同步步，异步拒绝会变成
+    unhandledRejection 直接崩掉引擎进程（全部会话随之丢失）。</p>
+  </div>
+
+  <h3 id="s2-methods">方法一览（宿主 → 引擎）</h3>
+  <table>
+    <tr><th style="width:210px">method</th><th>语义</th><th style="width:96px">状态</th></tr>
+    <tr><td><code>initialize</code></td><td>握手：交换 client / protocolVersion / node 版本；<code>params.credentials</code> 可选注入凭据（宿主把持久化 key 灌进引擎内存表）</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>session.list / create / delete</code></td><td>会话 CRUD；create 可带 title / permissionMode（后者未消费）</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>session.messages</code></td><td>拉某会话的完整转录（pi Message[] → ChatMessage[] 纯文本化）</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>agent.submit</code></td><td>提交输入：text + 可选 model / thinkingLevel；受理（同步校验：会话存在/空闲，失败回错误帧）即返回，进度走事件流</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>agent.abort</code></td><td>中止某会话正在进行的流（直达 pi Agent.abort()）</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>credentials.set / list</code></td><td>运行中更新 key / 查各 provider 配置状态（只回布尔位）</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>models.list</code></td><td>pi 模型目录摘要（UI 下拉数据源）</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>providers.custom.sync</code></td><td>自定义 provider + 内置 provider 本地调整（baseUrl 覆盖 / 模型增删 / 目录禁用）的<b>全量替换</b>同步</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>approval.respond</code></td><td>用户对审批请求的裁决回执 —— 空位 2（工具+审批）接线时启用</td><td><span class="st plan">协议已定</span></td></tr>
+  </table>
+
+  <h3 id="s2-events">事件一览（引擎 → 宿主）</h3>
+  <table>
+    <tr><th style="width:180px">event</th><th>语义</th><th style="width:96px">状态</th></tr>
+    <tr><td><code>run.started</code></td><td>一次执行开始（submit 受理后立刻发）</td><td><span class="st ok">已发射</span></td></tr>
+    <tr><td><code>message.delta</code></td><td>流式文本增量；<b>目前只转译 text_delta</b>，thinking / toolcall 增量被丢弃</td><td><span class="st ok">已发射</span></td></tr>
+    <tr><td><code>run.completed</code></td><td>执行正常结束：最终完整 assistant 消息（UI 用它替换流式累积，免拼 delta）+ stopReason（length = 被 token 上限截断）</td><td><span class="st ok">已发射</span></td></tr>
+    <tr><td><code>run.failed</code></td><td>执行失败：message 来自 pi 约定的 <code>Agent.state.errorMessage</code>（stream error / 中止后异常都汇于此）</td><td><span class="st ok">已发射</span></td></tr>
+    <tr><td><code>tool.started / tool.completed</code></td><td>工具调用起止（带 ToolKind 分级）—— 空位 2 接线时开始发射</td><td><span class="st plan">协议已定</span></td></tr>
+    <tr><td><code>approval.request</code></td><td>审批拦截：引擎暂停等待宿主（最终是用户）以 <code>approval.respond</code> 裁决</td><td><span class="st plan">协议已定</span></td></tr>
+  </table>
+
+  <!-- ================= 3. 时序 ================= -->
+  <h2 id="s3"><span class="num">3</span>一次对话的完整时序</h2>
+  <p>
+    从用户按下发送，到气泡落定，一条消息要走完 <b>受理 → 启动 → 流式 → 收尾</b> 四个阶段。
+    背景色带即阶段分界；箭头颜色区分同步调用（深灰实线）与事件推送（绿虚线）。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 1120 770" xmlns="http://www.w3.org/2000/svg" font-family="inherit">
+      <defs>
+        <marker id="a-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#3f3f3a"/>
+        </marker>
+        <marker id="a-mint" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#2f9e6f"/>
+        </marker>
+        <marker id="a-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#c2413f"/>
+        </marker>
+        <marker id="a-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#8a857f"/>
+        </marker>
+      </defs>
+
+      <rect x="0" y="84" width="1120" height="128" fill="#f7f6f4"/>
+      <rect x="0" y="212" width="1120" height="140" fill="#f0f8f3"/>
+      <rect x="0" y="520" width="1120" height="148" fill="#fdf6ec"/>
+      <text x="14" y="104" font-size="12" font-weight="600" fill="#8a857f">受理 · 请求即答</text>
+      <text x="14" y="232" font-size="12" font-weight="600" fill="#8a857f">启动 · pi 接管</text>
+      <text x="14" y="540" font-size="12" font-weight="600" fill="#8a857f">收尾 · 定案</text>
+
+      <g>
+        <rect x="50" y="14" width="180" height="48" rx="10" fill="#f5f5f4" stroke="#e5e2de"/>
+        <text x="140" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#1f1f1e">Renderer · UI</text>
+        <text x="140" y="52" text-anchor="middle" font-size="11" fill="#8a857f">stores/chat 消息累积</text>
+
+        <rect x="340" y="14" width="180" height="48" rx="10" fill="#eceae7" stroke="#e5e2de"/>
+        <text x="430" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#1f1f1e">Electron main</text>
+        <text x="430" y="52" text-anchor="middle" font-size="11" fill="#8a857f">ipc/engine 代理</text>
+
+        <rect x="610" y="14" width="180" height="48" rx="10" fill="#e3f2e9" stroke="#cbe7d8"/>
+        <text x="700" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#146c4a">SessionManager</text>
+        <text x="700" y="52" text-anchor="middle" font-size="11" fill="#6f8a7c">agent-service 引擎</text>
+
+        <rect x="850" y="14" width="180" height="48" rx="10" fill="#d5efe0" stroke="#bfe3cf"/>
+        <text x="940" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#146c4a">pi Agent</text>
+        <text x="940" y="52" text-anchor="middle" font-size="11" fill="#6f8a7c">pi-agent-core · pi-ai</text>
+      </g>
+
+      <g stroke="#d6d3d1" stroke-width="1.5" stroke-dasharray="4 4">
+        <line x1="140" y1="62" x2="140" y2="742"/>
+        <line x1="430" y1="62" x2="430" y2="742"/>
+        <line x1="700" y1="62" x2="700" y2="742"/>
+        <line x1="940" y1="62" x2="940" y2="742"/>
+      </g>
+
+      <line x1="140" y1="110" x2="424" y2="110" stroke="#3f3f3a" stroke-width="2" marker-end="url(#a-ink)"/>
+      <text x="285" y="99" text-anchor="middle" font-size="13" fill="#1f1f1e">① agent.submit { text, model?, thinkingLevel? }</text>
+
+      <line x1="430" y1="158" x2="694" y2="158" stroke="#3f3f3a" stroke-width="2" marker-end="url(#a-ink)"/>
+      <text x="565" y="147" text-anchor="middle" font-size="13" fill="#1f1f1e">② JSON-RPC 转发</text>
+
+      <line x1="700" y1="200" x2="436" y2="200" stroke="#8a857f" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a-gray)"/>
+      <text x="565" y="189" text-anchor="middle" font-size="12.5" fill="#6f6b66">③ { accepted: true } —— 受理即返回，长任务走事件流</text>
+
+      <line x1="700" y1="248" x2="146" y2="248" stroke="#2f9e6f" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a-mint)"/>
+      <text x="423" y="237" text-anchor="middle" font-size="12.5" fill="#1c7a54">④ 事件 run.started → UI 进入「生成中」</text>
+
+      <line x1="700" y1="296" x2="934" y2="296" stroke="#3f3f3a" stroke-width="2" marker-end="url(#a-ink)"/>
+      <text x="820" y="285" text-anchor="middle" font-size="13" fill="#1f1f1e">⑤ agent.prompt(text)</text>
+
+      <rect x="948" y="308" width="168" height="52" rx="9" fill="#ffffff" stroke="#bfe3cf"/>
+      <text x="1032" y="327" text-anchor="middle" font-size="11" fill="#146c4a" font-weight="600">⑥ streamSimple</text>
+      <text x="1032" y="342" text-anchor="middle" font-size="11" fill="#6f6b66">→ LLM API（流式）</text>
+      <text x="1032" y="355" text-anchor="middle" font-size="11" fill="#6f6b66">getApiKey 查凭据表取 key</text>
+
+      <rect x="110" y="366" width="948" height="140" rx="12" fill="#eefbf3" stroke="#86cfa4" stroke-dasharray="7 5"/>
+      <text x="124" y="386" font-size="12.5" font-weight="700" fill="#1c7a54">循环 · 每收到一个 text_delta（token 块）</text>
+
+      <line x1="940" y1="420" x2="706" y2="420" stroke="#3f3f3a" stroke-width="2" marker-end="url(#a-ink)"/>
+      <text x="823" y="409" text-anchor="middle" font-size="12.5" fill="#1f1f1e">⑦ message_update( text_delta )</text>
+
+      <line x1="700" y1="476" x2="146" y2="476" stroke="#2f9e6f" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a-mint)"/>
+      <text x="423" y="465" text-anchor="middle" font-size="12.5" fill="#1c7a54">⑧ message.delta → main 转发 webContents.send → UI 累积拼字</text>
+
+      <line x1="940" y1="546" x2="706" y2="546" stroke="#3f3f3a" stroke-width="2" marker-end="url(#a-ink)"/>
+      <text x="823" y="535" text-anchor="middle" font-size="12.5" fill="#1f1f1e">⑨ turn_end（记 stopReason）→ agent_end</text>
+
+      <line x1="700" y1="594" x2="146" y2="594" stroke="#2f9e6f" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a-mint)"/>
+      <text x="423" y="583" text-anchor="middle" font-size="12.5" fill="#1c7a54">⑩ run.completed：最终消息 + stopReason（length = 被 token 上限截断）</text>
+
+      <line x1="700" y1="642" x2="146" y2="642" stroke="#c2413f" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a-red)"/>
+      <text x="423" y="631" text-anchor="middle" font-size="12.5" fill="#a33634">⑪ 失败分支：run.failed（读 agent.state.errorMessage）</text>
+
+      <rect x="235" y="676" width="650" height="44" rx="10" fill="#ffffff" stroke="#c2413f" stroke-dasharray="6 4"/>
+      <text x="560" y="694" text-anchor="middle" font-size="12.5" fill="#a33634" font-weight="600">随时中止：agent.abort → pi Agent.abort()，流立即终止</text>
+      <text x="560" y="711" text-anchor="middle" font-size="11" fill="#8a857f">UI 目前仅复位 running 态，「已停止」占位是路线空位</text>
+    </svg>
+  </div>
+  <div class="figcaption">图 3-1 · 对话时序泳道图。四条泳道即四个代码位置：stores/chat → ipc/engine → SessionManager → pi。</div>
+  <div class="legend">
+    <span><i class="call"></i>同步调用 / 请求</span>
+    <span><i class="evt"></i>事件推送（引擎 → UI，非阻塞）</span>
+    <span><i class="err"></i>失败 / 中止路径</span>
+    <span><i class="gray"></i>受理回执（请求-响应）</span>
+  </div>
+
+  <h3 id="s3-lifecycle">一条消息在引擎内的生命周期</h3>
+  <p>
+    ⑧⑨⑩ 之间引擎里其实有个不显眼的<b>流式累积缓冲</b>（<code>StreamingState</code>）：
+    <code>messageId</code> 在 submit 时就预生成（UUID），此后每个 text_delta 都往同一个缓冲追加文本并推 delta 事件；
+    <code>turn_end</code> 到达时顺手记下 pi 的 stopReason；<code>agent_end</code> 时缓冲一次性转成完整
+    <code>ChatMessage</code> 挂在 <code>run.completed</code> 上 —— 所以 UI 流式渲染的是「半成品」，
+    最终以 completed 的完整消息为准替换，不怕 delta 乱序或丢失。
+  </p>
+  <table>
+    <tr><th style="width:150px">pi 事件</th><th>转译处置</th></tr>
+    <tr><td><code>message_update</code></td><td>只转译 <code>text_delta</code> 增量 → <code>message.delta</code>；thinking / toolcall 增量直接丢弃（呈现属空位 4）</td></tr>
+    <tr><td><code>turn_end</code></td><td>assistant 消息时记 <code>stopReason</code> 到缓冲（agent_end 事件本身不带此信息）</td></tr>
+    <tr><td><code>agent_end</code></td><td>定案：有 <code>errorMessage</code> → <code>run.failed</code>；否则缓冲文本 → <code>run.completed</code></td></tr>
+    <tr><td><code>agent_start</code> / <code>message_start</code> / <code>message_end</code></td><td>协议暂无对应事件，静默丢弃</td></tr>
+  </table>
+
+  <!-- ================= 4. 模块详解 ================= -->
+  <h2 id="s4"><span class="num">4</span>模块详解</h2>
+
+  <h3 id="s4-session">4.1 SessionManager（runtime/session.ts）</h3>
+  <p>
+    引擎的业务中枢。持有 <code>Map&lt;sessionId, { summary, agent }&gt;</code>，每个会话一个独立 pi Agent 实例，
+    transcript（对话历史）天然隔离在 <code>agent.state.messages</code> 里 —— 引擎自己不维护消息数组，pi 即存储。
+  </p>
+  <ul class="plain">
+    <li><b>建 Agent</b>：默认模型 <code>anthropic/claude-sonnet-4-5</code>、systemPrompt「You are Cogent, a helpful desktop agent.」、
+    thinkingLevel off；<code>streamFn</code> 绑 <code>models.streamSimple</code>（auth 解析、provider 分发、重试全部 pi-ai 承担）；
+    <code>getApiKey</code> 回调查凭据表（每轮请求前解析，支持运行中换 key）。</li>
+    <li><b>submit</b>：可选换模型（先按 provider/model 精确找，再退化为全目录按 id 找）与思考档（六档）；
+    首条消息自动截 24 字作会话标题（命中后不再覆盖）；发 <code>run.started</code>、开流式缓冲、<code>agent.prompt(text)</code>。</li>
+    <li><b>session.messages</b>：pi Message[] → ChatMessage[]。只取 user/assistant 的纯文本；
+    system 消息是 prompt 载体不对 UI 暴露；content blocks 也压平成文本（结构化是空位 1）。</li>
+    <li><b>会话 id</b>：<code>s-&lt;自增&gt;</code>，引擎重启从 1 重来（持久化是空位 3）。</li>
+  </ul>
+
+  <h3 id="s4-cred">4.2 凭据旅程（credentials.ts + 壳侧 store）</h3>
+  <p>
+    key 从用户输入到 LLM 请求头，全程不落明文盘、不出 main 进程：
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 1080 150" xmlns="http://www.w3.org/2000/svg" font-family="inherit">
+      <defs>
+        <marker id="k-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#2f9e6f"/>
+        </marker>
+      </defs>
+      <g font-size="12.5">
+        <rect x="20"  y="30" width="150" height="64" rx="10" fill="#ffffff" stroke="#e5e2de"/>
+        <text x="95" y="55" text-anchor="middle" font-weight="700" fill="#1f1f1e">设置页输入 key</text>
+        <text x="95" y="76" text-anchor="middle" fill="#8a857f" font-size="11">ModelsSection 表单</text>
+
+        <rect x="230" y="30" width="180" height="64" rx="10" fill="#ffffff" stroke="#e5e2de"/>
+        <text x="320" y="55" text-anchor="middle" font-weight="700" fill="#1f1f1e">safeStorage 加密落盘</text>
+        <text x="320" y="76" text-anchor="middle" fill="#8a857f" font-size="11">main · userData/credentials.json</text>
+
+        <rect x="470" y="30" width="180" height="64" rx="10" fill="#ffffff" stroke="#e5e2de"/>
+        <text x="560" y="55" text-anchor="middle" font-weight="700" fill="#1f1f1e">灌入引擎内存 Map</text>
+        <text x="560" y="76" text-anchor="middle" fill="#8a857f" font-size="11">initialize 握手 / credentials.set</text>
+
+        <rect x="710" y="30" width="150" height="64" rx="10" fill="#f3faf6" stroke="#bfe3cf"/>
+        <text x="785" y="55" text-anchor="middle" font-weight="700" fill="#146c4a">pi getApiKey</text>
+        <text x="785" y="76" text-anchor="middle" fill="#8a857f" font-size="11">每轮请求前解析</text>
+
+        <rect x="920" y="30" width="140" height="64" rx="10" fill="#f3faf6" stroke="#bfe3cf"/>
+        <text x="990" y="55" text-anchor="middle" font-weight="700" fill="#146c4a">LLM 请求头</text>
+        <text x="990" y="76" text-anchor="middle" fill="#8a857f" font-size="11">Authorization</text>
+
+        <line x1="170" y1="62" x2="226" y2="62" stroke="#2f9e6f" stroke-width="2" marker-end="url(#k-arr)"/>
+        <line x1="410" y1="62" x2="466" y2="62" stroke="#2f9e6f" stroke-width="2" marker-end="url(#k-arr)"/>
+        <line x1="650" y1="62" x2="706" y2="62" stroke="#2f9e6f" stroke-width="2" marker-end="url(#k-arr)"/>
+        <line x1="860" y1="62" x2="916" y2="62" stroke="#2f9e6f" stroke-width="2" marker-end="url(#k-arr)"/>
+
+        <text x="540" y="128" text-anchor="middle" fill="#8a857f" font-size="11">
+          对外只有两个口：credentials.set（写入）/ credentials.list（回「已配置」布尔位）—— 不存在列出 key 明文的路径
+        </text>
+      </g>
+    </svg>
+  </div>
+  <div class="figcaption">图 4-1 · key 旅程。引擎侧 CredentialRegistry 是 key 的唯一运行时存放点，引擎零磁盘持久化。</div>
+
+  <h3 id="s4-custom">4.3 CustomProviderRegistry（runtime/custom-providers.ts）</h3>
+  <p>
+    用户自建的 OpenAI-compatible 端点（中转站 / 网关 / Ollama）。把 pi coding-agent 的 models.json 胶水
+    换成了「设置页表单 → 协议全量同步」：引擎只收定义、不持久化（宿主落盘，握手 / sync 注入）。
+  </p>
+  <ul class="plain">
+    <li><b>全量替换语义</b>：每次 sync 以传入列表为准 —— 本轮没出现的 custom id 被
+    <code>deleteProvider</code> 移除；撤掉某条调整（override 清空）= 重新 <code>setProvider</code> 原实例还原。</li>
+    <li><b>id 空间隔离</b>：自定义 provider 一律 <code>custom/&lt;slug&gt;</code> 前缀，与内置 provider 不冲突。</li>
+    <li><b>覆盖 = 委托 + 模型合并</b>：内置 provider 的本地调整版（ProviderOverrideDef：baseUrl 覆盖 +
+    models 用户新增 + disabledModels 目录禁用，2026-11-08 扩展）是同 id 新实例，但 <code>stream / streamSimple</code>
+    委托原实例闭包 —— 保持 pi 内部的懒加载与重试行为（所以不能用对象浅拷贝，方法绑定原实例状态）；
+    模型清单 = 目录（滤 disabledModels）∪ 用户新增（ModelDef 构建补默认值），目录快照滞后 / 缺模型由用户补齐。
+    用户新增模型的 api 取目录首个模型（绝大多数厂商单方言）。</li>
+    <li><b>兜底参数</b>：自定义模型（ModelDef 未填的字段）统一 128k 上下文 / 32k 输出、
+    <code>reasoning: false</code>、<code>input: ['text']</code>（pi 输入模态只有 text | image）、
+    cost 全 0（计费不可知，UI 不显示价格）。</li>
+    <li><b>auth 契约</b>：pi 的 <code>ApiKeyAuth.resolve</code> 要求返回 Promise，自定义 provider 的
+    resolve 以 async 形式满足；未配 key 返回 undefined = provider 未配置。</li>
+  </ul>
+
+  <!-- ================= 5. 能力接线 ================= -->
+  <h2 id="s5"><span class="num">5</span>pi 能力接线：接了什么，还空着什么</h2>
+  <p>
+    左列是当前真实生效的 pi 能力（实线连进引擎）；右列是 pi 已提供、但 Cogent 尚未接线的部分
+    （虚线，留有断口 —— 尚未连通）。
+  </p>
+
+  <div class="figure">
+    <svg viewBox="0 0 1120 500" xmlns="http://www.w3.org/2000/svg" font-family="inherit">
+      <text x="190" y="28" text-anchor="middle" font-size="14" font-weight="700" fill="#146c4a">已接线 · 实际生效（6 项）</text>
+      <text x="930" y="28" text-anchor="middle" font-size="14" font-weight="700" fill="#78716c">未接线 · 路线空位（6 项）</text>
+
+      <g stroke="#2f9e6f" stroke-width="1.6">
+        <line x1="340" y1="72"  x2="398" y2="72"/>
+        <line x1="340" y1="148" x2="398" y2="148"/>
+        <line x1="340" y1="224" x2="398" y2="224"/>
+        <line x1="340" y1="300" x2="398" y2="300"/>
+        <line x1="340" y1="376" x2="398" y2="376"/>
+        <line x1="340" y1="452" x2="398" y2="452"/>
+        <line x1="398" y1="72"  x2="398" y2="452"/>
+        <line x1="398" y1="280" x2="450" y2="280"/>
+      </g>
+      <g stroke="#a8a29e" stroke-width="1.6" stroke-dasharray="5 4">
+        <line x1="722" y1="72"  x2="780" y2="72"/>
+        <line x1="722" y1="148" x2="780" y2="148"/>
+        <line x1="722" y1="224" x2="780" y2="224"/>
+        <line x1="722" y1="300" x2="780" y2="300"/>
+        <line x1="722" y1="376" x2="780" y2="376"/>
+        <line x1="722" y1="452" x2="780" y2="452"/>
+        <line x1="722" y1="72"  x2="722" y2="452"/>
+        <line x1="700" y1="280" x2="722" y2="280"/>
+      </g>
+      <text x="692" y="266" text-anchor="middle" font-size="11" font-weight="700" fill="#a8a29e">未连</text>
+
+      <rect x="450" y="222" width="220" height="116" rx="14" fill="#e8f6ee" stroke="#8ecda9" stroke-width="1.6"/>
+      <text x="560" y="252" text-anchor="middle" font-size="16" font-weight="700" fill="#146c4a">pi 引擎</text>
+      <text x="560" y="272" text-anchor="middle" font-size="11.5" fill="#4f7a63">@earendil-works/pi-agent-core</text>
+      <text x="560" y="288" text-anchor="middle" font-size="11.5" fill="#4f7a63">pi-ai</text>
+      <text x="560" y="312" text-anchor="middle" font-size="12" fill="#2b4a3c">Agent 循环 · streamSimple</text>
+      <text x="560" y="328" text-anchor="middle" font-size="12" fill="#2b4a3c">builtinModels · 事件流</text>
+
+      <g>
+        <rect x="40" y="40" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
+        <text x="56" y="64" font-size="13.5" font-weight="700" fill="#1f1f1e">会话管理</text>
+        <text x="56" y="84" font-size="11.5" fill="#6f6b66">每会话一个 pi Agent，transcript 隔离</text>
+
+        <rect x="40" y="116" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
+        <text x="56" y="140" font-size="13.5" font-weight="700" fill="#1f1f1e">模型目录与切换</text>
+        <text x="56" y="160" font-size="11.5" fill="#6f6b66">builtinModels() 全目录；submit 可换模型</text>
+
+        <rect x="40" y="192" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
+        <text x="56" y="216" font-size="13.5" font-weight="700" fill="#1f1f1e">思考力度</text>
+        <text x="56" y="236" font-size="11.5" fill="#6f6b66">ThinkingLevel 六档（off → max）随请求传入</text>
+
+        <rect x="40" y="268" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
+        <text x="56" y="292" font-size="13.5" font-weight="700" fill="#1f1f1e">凭据回调</text>
+        <text x="56" y="312" font-size="11.5" fill="#6f6b66">getApiKey 查内存表；key 走 safeStorage</text>
+
+        <rect x="40" y="344" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
+        <text x="56" y="368" font-size="13.5" font-weight="700" fill="#1f1f1e">自定义 Provider</text>
+        <text x="56" y="388" font-size="11.5" fill="#6f6b66">OpenAI 兼容端点 + baseUrl 覆盖，运行时注入</text>
+
+        <rect x="40" y="420" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
+        <text x="56" y="444" font-size="13.5" font-weight="700" fill="#1f1f1e">事件转译</text>
+        <text x="56" y="464" font-size="11.5" fill="#6f6b66">仅 text_delta；stopReason / errorMessage 汇流 run.*</text>
+      </g>
+
+      <g>
+        <rect x="780" y="40" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
+        <text x="796" y="64" font-size="13.5" font-weight="700" fill="#78716c">工具系统</text>
+        <text x="796" y="84" font-size="11.5" fill="#8a857f">tools / ToolKind / 审批拦截全未接 —— 纯聊天</text>
+
+        <rect x="780" y="116" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
+        <text x="796" y="140" font-size="13.5" font-weight="700" fill="#78716c">thinking 呈现</text>
+        <text x="796" y="160" font-size="11.5" fill="#8a857f">思考流事件不转发，UI 无呈现</text>
+
+        <rect x="780" y="192" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
+        <text x="796" y="216" font-size="13.5" font-weight="700" fill="#78716c">toolcall 呈现</text>
+        <text x="796" y="236" font-size="11.5" fill="#8a857f">工具调用事件被转译层丢弃</text>
+
+        <rect x="780" y="268" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
+        <text x="796" y="292" font-size="13.5" font-weight="700" fill="#78716c">content blocks</text>
+        <text x="796" y="312" font-size="11.5" fill="#8a857f">消息模型仅纯文本，无图片 / 结构块</text>
+
+        <rect x="780" y="344" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
+        <text x="796" y="368" font-size="13.5" font-weight="700" fill="#78716c">会话持久化</text>
+        <text x="796" y="388" font-size="11.5" fill="#8a857f">只存在引擎内存，重启即丢</text>
+
+        <rect x="780" y="420" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
+        <text x="796" y="444" font-size="13.5" font-weight="700" fill="#78716c">Markdown 渲染</text>
+        <text x="796" y="464" font-size="11.5" fill="#8a857f">助手消息未接 Streamdown 渲染</text>
+      </g>
+    </svg>
+  </div>
+  <div class="figcaption">图 5-1 · pi 能力接线图。</div>
+
+  <h3 id="s5-gaps">路线空位对照（docs/路线.md 空位清单）</h3>
+  <table>
+    <tr><th style="width:56px">空位</th><th>内容</th><th>接线后本手册要补什么</th></tr>
+    <tr><td>1</td><td>protocol：消息域类型细化（content blocks、消息模型）</td><td>第 2 节 ChatMessage 形状更新；第 3 节转译表加新 block 类型</td></tr>
+    <tr><td>2</td><td>工具注册 + ToolKind 分级 + 审批拦截（approval.request）</td><td>第 2 节 approval.respond / tool.* 状态翻绿；新增「工具系统」一节 + 时序图补工具循环</td></tr>
+    <tr><td>3</td><td>StorageDriver：会话/消息持久化</td><td>第 4 节新增 storage 小节；架构图引擎框加 storage 行</td></tr>
+    <tr><td>4</td><td>thinking / toolcall 事件的 UI 呈现</td><td>第 3 节转译表更新；能力接线图右列对应项移到左列</td></tr>
+    <tr><td>5</td><td>credentials 演进：per-provider 删除、key 脱敏展示</td><td>第 4.2 节 key 旅程图更新</td></tr>
+    <tr><td>6</td><td>agent.abort 的 UI 反馈（「已停止」占位）</td><td>第 3 节时序图 abort 注更新</td></tr>
+  </table>
+
+  <!-- ================= 6. 维护指南 ================= -->
+  <h2 id="s6"><span class="num">6</span>维护指南（给未来的 AI / 人）</h2>
+  <p>这份手册与代码同寿命，地图失效比没有更糟（同 AGENTS.md 维护纪律）。按改动类型对应更新：</p>
+  <table>
+    <tr><th style="width:230px">改了什么</th><th>这里要动哪里</th></tr>
+    <tr><td>新协议 method / event</td><td>第 2 节两张表各加一行；注意「只增不破」纪律标注状态徽章（已实现 / 协议已定）</td></tr>
+    <tr><td>对话流程变化（新事件、新阶段）</td><td>第 3 节时序图：泳道对应四个固定代码位置，新增行插进对应阶段色带，编号顺延</td></tr>
+    <tr><td>新引擎模块（tools / storage / …）</td><td>第 4 节加 4.x 小节 + 侧栏加子项；架构图引擎框加一行</td></tr>
+    <tr><td>接线一个空位</td><td>第 5 节：右列卡片移左列、断口接实线；空位对照表标注「已完成」并写实际落点</td></tr>
+    <tr><td>pi 依赖升级 / 行为变化</td><td>核对第 4 节引用的 pi 内部约定（errorMessage、stopReason、getApiKey 时机）是否仍成立</td></tr>
+  </table>
+  <div class="callout">
+    <b>SVG 改图约定</b>
+    <p>本页所有图都是手写 SVG（零依赖，浏览器直接开）。改图时保持既有坐标系约定：
+    架构图三框 x=30/400/740；时序图泳道中心 x=140/430/700/940、行距约 48px；
+    能力图卡片 y=40 起步、行高 76px。新图先在浏览器里过目再提交 —— 坐标是手工定的，没人替你校对。</p>
+  </div>
+
+  <footer>
+    手册本身是文档不是代码：改引擎功能时随代码同 commit 更新对应小节，并在 nav 的 stamp 处更新基准 commit 与日期。
+    图例：绿色 = 引擎 / pi 侧，灰 = 壳或 UI 侧，虚线 = 事件推送或未接线。
+  </footer>
+</main>
+
+</div>
+</body>
+</html>

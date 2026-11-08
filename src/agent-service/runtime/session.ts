@@ -15,6 +15,7 @@ import { Agent } from '@earendil-works/pi-agent-core'
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core'
 import { builtinModels } from '@earendil-works/pi-ai/providers/all'
 import type { MutableModels } from '@earendil-works/pi-ai'
+import { ProtocolError, RpcErrorCode } from '../../protocol'
 import type {
   ChatMessage,
   CustomProviderDef,
@@ -130,11 +131,21 @@ export class SessionManager {
   // ———— Agent 主链路 ————
 
   /**
-   * 提交用户输入。受理即返回（accepted），执行进度经事件流推送 ——
-   * 协议刻意把"长任务"设计为事件驱动：LLM 循环以分钟计，请求-响应会挂死宿主。
+   * 提交用户输入。同步校验（会话存在、会话空闲、模型已知）后立即受理返回，
+   * LLM 循环异步执行、进度经事件流推送 —— 协议刻意把"长任务"设计为事件驱动：
+   * LLM 循环以分钟计，请求-响应会挂死宿主。
+   *
+   * 为什么校验必须同步 throw（→ dispatch 转错误响应帧）：dispatch 的 try/catch
+   * 只包住 handler 的同步段，异步拒绝会变成 unhandledRejection 直接崩掉引擎
+   * 进程（全部会话随之丢失）——此前 `void sessions.submit(...)` 正是踩了这一坑。
    */
-  async submit(sessionId: string, text: string, model?: string, thinkingLevel?: string): Promise<void> {
+  submit(sessionId: string, text: string, model?: string, thinkingLevel?: string): void {
     const session = this.requireSession(sessionId)
+    // pi 约定同一 Agent 同时只跑一个 prompt（agent.js prompt 入口对 activeRun 抛错）。
+    // 在受理入口显式拒绝成协议错误，而不是放它落进异步段崩进程
+    if (session.agent.state.isStreaming) {
+      throw new ProtocolError(RpcErrorCode.InvalidRequest, `会话正在回复中，请先停止或等待完成: ${sessionId}`)
+    }
     if (model) {
       const target = this.models.getModel(DEFAULT_PROVIDER, model) ?? this.models.getModels().find((m) => m.id === model)
       if (!target) throw new Error(`未知模型: ${model}`)
@@ -152,7 +163,17 @@ export class SessionManager {
 
     this.notify('run.started', { sessionId })
     this.streaming.set(sessionId, { messageId: `m-${crypto.randomUUID()}`, text: '', thinking: '' })
-    await session.agent.prompt(text)
+    // prompt() 的运行期失败（流错误/中止）由 pi 事件流转译为 run.failed
+    // （handleRunFailure → agent_end，见 pi-agent-integration.md §2.3），不会走到这层；
+    // catch 只兜"受理检查通过后、pi 尚未发出任何事件前"的启动窗口拒绝 ——
+    // 外部世界失败是常态（约定.md 1.1），必须转成 run.failed 给 UI 一个终态
+    void session.agent.prompt(text).catch((error: unknown) => {
+      this.streaming.delete(sessionId)
+      this.notify('run.failed', {
+        sessionId,
+        message: error instanceof Error ? error.message : String(error)
+      })
+    })
   }
 
   abort(sessionId: string): boolean {
