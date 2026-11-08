@@ -1,6 +1,7 @@
 /**
- * credentials 域 IPC：API key 的写入与状态查询。
- * main 是 key 明文唯一的家：safeStorage 落盘 + 推给引擎内存；renderer 只见布尔位。
+ * credentials 域 IPC：API key 的写入、单取与状态查询。
+ * main 是 key 明文的唯一的家：safeStorage 落盘 + 推给引擎内存；批量状态只回
+ * 布尔位，明文只经 credentials:get 按 provider 单取（设置页全量回显，产品决策）。
  */
 import { ipcMain } from 'electron'
 import { IPC } from '../../../shared/ipc'
@@ -22,7 +23,15 @@ export function registerCredentialsIpc(service: AgentServiceManager, store: Cred
     return { ok: true as const }
   })
 
-  ipcMain.handle(IPC.credentialsList, (): Array<{ providerId: string; keyConfigured: boolean }> => {
+  ipcMain.handle(IPC.credentialsGet, (_event, raw: unknown) => {
+    const payload = raw as Partial<{ providerId: unknown }>
+    if (typeof payload.providerId !== 'string' || payload.providerId.length === 0) {
+      throw new Error('credentials:get 需要 { providerId: string }')
+    }
+    return store.read(payload.providerId)
+  })
+
+  ipcMain.handle(IPC.credentialsList, () => {
     return store.listConfigured()
   })
 }

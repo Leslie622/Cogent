@@ -29,7 +29,9 @@ import {
   type InitializeParams,
   type InitializeResult,
   type ProtocolEvents,
+  type ProviderOverrideDef,
   type ProvidersCustomSyncParams,
+  type ProvidersCustomSyncResult,
   type RpcEvent,
   type RpcResponse,
   type SessionMessagesParams
@@ -94,26 +96,55 @@ function handleSessionMessages(params: unknown) {
   return { messages: sessions.messages(p.sessionId) }
 }
 
-/** providers.custom.sync 入口校验：两数组存在、每项字段形状收窄（id 带 custom/ 前缀的交由 registry 处理） */
-function handleProvidersCustomSync(params: unknown) {
+/** providers.custom.sync 入口校验：两数组存在、每项字段形状收窄（id 带 custom/ 前缀的交由 registry 处理）。
+    载荷实为外部任意 JSON，协议类型只是声明 —— 按 unknown 收窄，不依赖标注类型 */
+function handleProvidersCustomSync(params: unknown): ProvidersCustomSyncResult {
   const p = params as Partial<ProvidersCustomSyncParams>
   const defs = p.providers
   const overrides = p.overrides
+  const API_FORMATS = ['openai-completions', 'anthropic-messages'] as const
+  // ModelDef 按 unknown 逐字段收窄（id 必填非空；其余 optional 限值域）
+  const isModelDef = (value: unknown): boolean => {
+    if (typeof value !== 'object' || value === null) return false
+    const m = value as Record<string, unknown>
+    if (typeof m.id !== 'string' || m.id.length === 0) return false
+    if (m.name !== undefined && typeof m.name !== 'string') return false
+    if (m.contextWindow !== undefined && typeof m.contextWindow !== 'number') return false
+    if (m.maxTokens !== undefined && typeof m.maxTokens !== 'number') return false
+    if (m.reasoning !== undefined && typeof m.reasoning !== 'boolean') return false
+    if (m.input !== undefined) {
+      if (!Array.isArray(m.input) || !m.input.every((v) => v === 'text' || v === 'image')) return false
+    }
+    return true
+  }
   const isDef = (def: CustomProviderDef): boolean =>
     typeof def.id === 'string' &&
     def.id.startsWith('custom/') &&
     typeof def.name === 'string' &&
     typeof def.baseUrl === 'string' &&
     Array.isArray(def.models) &&
-    def.models.every((m) => typeof m === 'string' && m.length > 0)
+    def.models.every((m) => typeof m === 'string' && m.length > 0) &&
+    // 四个 optional 开关/过滤字段：缺省合法，带了就约束值域
+    (def.modelDefs === undefined || (Array.isArray(def.modelDefs) && def.modelDefs.every(isModelDef))) &&
+    (def.apiFormat === undefined || (API_FORMATS as readonly string[]).includes(def.apiFormat)) &&
+    (def.disabledModels === undefined ||
+      (Array.isArray(def.disabledModels) &&
+        def.disabledModels.every((m) => typeof m === 'string' && m.length > 0))) &&
+    (def.disabled === undefined || typeof def.disabled === 'boolean')
   if (!Array.isArray(defs) || !defs.every(isDef)) {
     throw new ProtocolError(
       RpcErrorCode.InvalidParams,
       'providers.custom.sync 需要 providers: CustomProviderDef[]（id 以 custom/ 开头）'
     )
   }
-  const isOverride = (o: { providerId: string; baseUrl: string }): boolean =>
-    typeof o.providerId === 'string' && typeof o.baseUrl === 'string' && o.baseUrl.length > 0
+  // baseUrl 空串合法 = 不覆盖端点、只做模型调整
+  const isOverride = (o: ProviderOverrideDef): boolean =>
+    typeof o.providerId === 'string' &&
+    typeof o.baseUrl === 'string' &&
+    (o.models === undefined || (Array.isArray(o.models) && o.models.every(isModelDef))) &&
+    (o.disabledModels === undefined ||
+      (Array.isArray(o.disabledModels) &&
+        o.disabledModels.every((m) => typeof m === 'string' && m.length > 0)))
   if (!Array.isArray(overrides) || !overrides.every(isOverride)) {
     throw new ProtocolError(RpcErrorCode.InvalidParams, 'providers.custom.sync 需要 overrides: ProviderOverrideDef[]')
   }

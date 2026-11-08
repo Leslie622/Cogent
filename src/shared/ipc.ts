@@ -15,7 +15,9 @@ export const IPC = {
   engineEvent: 'engine:event',
   /** renderer → main：写入 API key（safeStorage 落盘 + 推给引擎） */
   credentialsSet: 'credentials:set',
-  /** renderer → main：查询 key 配置状态（只回布尔位，不回明文） */
+  /** renderer → main：读单个 provider 的 key 明文（设置页全量回显用） */
+  credentialsGet: 'credentials:get',
+  /** renderer → main：查询 key 配置状态（只回布尔位） */
   credentialsList: 'credentials:list',
   /** renderer → main：读自定义 provider 定义（name/baseUrl/模型列表 + 内置覆盖） */
   customProvidersGet: 'custom-providers:get',
@@ -38,7 +40,7 @@ export interface AppStatus {
   error: string | null
 }
 
-/** key 配置状态（credentials:list 响应）：只回布尔位，key 明文永不出 main */
+/** key 配置状态（credentials:list 响应）：只回布尔位；明文只走 credentials:get 单取 */
 export interface ApiKeyStatus {
   providerId: string
   keyConfigured: boolean

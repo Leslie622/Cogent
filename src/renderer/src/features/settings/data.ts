@@ -16,6 +16,7 @@ import {
   IconMoodSmile,
   IconPalette,
   IconPointer,
+  IconRobot,
   IconSettings,
   IconShield,
   IconSun,
@@ -39,6 +40,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
     label: '个人',
     items: [
       { id: 'general', label: '常规', icon: IconSettings },
+      { id: 'models', label: '模型设置', icon: IconRobot },
       { id: 'import', label: '导入', icon: IconDownload },
       { id: 'appearance', label: '外观', icon: IconSun },
       { id: 'archived-chats', label: '已归档的聊天', icon: IconArchive },

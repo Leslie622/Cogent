@@ -16,12 +16,34 @@ function isDef(def: CustomProviderDef): boolean {
     typeof def.name === 'string' &&
     typeof def.baseUrl === 'string' &&
     Array.isArray(def.models) &&
-    def.models.every((m) => typeof m === 'string')
+    def.models.every((m) => typeof m === 'string') &&
+    (def.modelDefs === undefined || (Array.isArray(def.modelDefs) && def.modelDefs.every(isModelDef)))
   )
 }
 
+/** 模型定义校验：载荷实为 renderer 任意 JSON，协议类型只是契约声明 —— 按
+    unknown 逐字段收窄，字段检查不依赖标注类型（否则"类型已保证"是假象） */
+function isModelDef(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const m = value as Record<string, unknown>
+  if (typeof m.id !== 'string' || m.id.length === 0) return false
+  if (m.name !== undefined && typeof m.name !== 'string') return false
+  if (m.contextWindow !== undefined && typeof m.contextWindow !== 'number') return false
+  if (m.maxTokens !== undefined && typeof m.maxTokens !== 'number') return false
+  if (m.reasoning !== undefined && typeof m.reasoning !== 'boolean') return false
+  if (m.input !== undefined) {
+    if (!Array.isArray(m.input) || !m.input.every((v) => v === 'text' || v === 'image')) return false
+  }
+  return true
+}
+
 function isOverride(o: ProviderOverrideDef): boolean {
-  return typeof o.providerId === 'string' && typeof o.baseUrl === 'string'
+  return (
+    typeof o.providerId === 'string' &&
+    typeof o.baseUrl === 'string' &&
+    (o.models === undefined || (Array.isArray(o.models) && o.models.every(isModelDef))) &&
+    (o.disabledModels === undefined || (Array.isArray(o.disabledModels) && o.disabledModels.every((m) => typeof m === 'string')))
+  )
 }
 
 export function registerCustomProvidersIpc(service: AgentServiceManager, store: CustomProvidersStore): void {

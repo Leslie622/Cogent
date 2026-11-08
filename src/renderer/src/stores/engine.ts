@@ -9,6 +9,28 @@ import type { CustomProviderDef, CustomProvidersPayload, ModelSummary, ProviderO
 /** 默认选中模型（与引擎侧 SessionManager 的 DEFAULT_MODEL 一致） */
 const DEFAULT_MODEL = 'claude-sonnet-4-5'
 
+/**
+ * 常用内置 provider 的显示名册（模型下拉分组/设置页卡片共用）。
+ * pi 目录有 40+ 家，全量名册维护不过来 —— 没收录的兜底显示原始 id。
+ */
+export const BUILTIN_PROVIDER_NAMES: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  google: 'Google',
+  deepseek: 'DeepSeek',
+  openrouter: 'OpenRouter',
+  xai: 'xAI',
+  zai: 'Z.AI',
+}
+
+/** provider 显示名：自定义走 def.name；内置查名册，未收录兜底原 id */
+export function providerDisplayName(providerId: string, providers: CustomProviderDef[]): string {
+  if (providerId.startsWith('custom/')) {
+    return providers.find((p) => p.id === providerId)?.name ?? providerId
+  }
+  return BUILTIN_PROVIDER_NAMES[providerId] ?? providerId
+}
+
 interface EngineState {
   /** pi 目录 + 自定义 provider 的全部模型（models.list） */
   models: ModelSummary[]
@@ -16,12 +38,12 @@ interface EngineState {
   keyConfigured: Record<string, boolean>
   /** 自定义 provider 定义（设置页编辑的数据源） */
   customProviders: CustomProviderDef[]
-  /** 内置 provider 的 baseUrl 覆盖（providerId → baseUrl） */
-  overrides: Record<string, string>
+  /** 内置 provider 的本地调整（baseUrl 覆盖 + 模型增删），providerId → 完整定义 */
+  overrides: Record<string, ProviderOverrideDef>
   /** 当前选中模型 id（session 提交时随 agent.submit 下发） */
   activeModelId: string
   /** 推理力度（pi ThinkingLevel；随 agent.submit 下发） */
-  thinkingLevel: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   loaded: boolean
   load: () => Promise<void>
   refreshKeys: () => Promise<void>
@@ -40,10 +62,10 @@ function toKeyMap(status: Array<{ providerId: string; keyConfigured: boolean }>)
   return map
 }
 
-function toOverrideMap(payload: CustomProvidersPayload): Record<string, string> {
-  const map: Record<string, string> = {}
-  for (const { providerId, baseUrl } of payload.overrides) {
-    map[providerId] = baseUrl
+function toOverrideMap(payload: CustomProvidersPayload): Record<string, ProviderOverrideDef> {
+  const map: Record<string, ProviderOverrideDef> = {}
+  for (const override of payload.overrides) {
+    map[override.providerId] = override
   }
   return map
 }
@@ -54,7 +76,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   customProviders: [],
   overrides: {},
   activeModelId: DEFAULT_MODEL,
-  thinkingLevel: 'off' as EngineState['thinkingLevel'],
+  thinkingLevel: 'off',
   loaded: false,
 
   load: async () => {
@@ -63,9 +85,10 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       window.cogent.listApiKeys(),
       window.cogent.getCustomProviders()
     ])
+    const keys = toKeyMap(keyStatus)
     set({
       models: modelsResult.models,
-      keyConfigured: toKeyMap(keyStatus),
+      keyConfigured: keys,
       customProviders: customPayload.providers,
       overrides: toOverrideMap(customPayload),
       loaded: true

@@ -25,8 +25,10 @@ declare global {
       ) => Promise<EngineMethodResult[M]>
       /** 订阅引擎事件流，返回取消订阅函数 */
       onEngineEvent: (callback: (event: EngineEvent) => void) => () => void
-      /** 写入 API key（safeStorage 落盘 + 推引擎；查询接口不回明文） */
+      /** 写入 API key（safeStorage 落盘 + 推引擎；明文只此一路出 renderer） */
       setApiKey: (providerId: string, apiKey: string) => Promise<{ ok: true }>
+      /** 读单个 provider 的 key 明文（设置页全量回显；无记录返回空串） */
+      getApiKey: (providerId: string) => Promise<string>
       /** 查询 key 配置状态（providerId + keyConfigured 布尔位） */
       listApiKeys: () => Promise<Array<{ providerId: string; keyConfigured: boolean }>>
       /** 读自定义 provider 定义（含内置 provider 的 baseUrl 覆盖；定义不含 key） */
@@ -69,7 +71,7 @@ export interface EngineMethodParams {
   'credentials.list': Record<string, never>
   'models.list': Record<string, never>
   'providers.custom.sync': {
-    providers: Array<{ id: string; name: string; baseUrl: string; models: string[] }>
+    providers: CustomProviderDef[]
     overrides: Array<{ providerId: string; baseUrl: string }>
   }
 }
@@ -99,7 +101,10 @@ export type EngineEvent =
       params: { sessionId: string; message?: ChatMessage; /** length = 输出被 token 上限截断 */ stopReason?: string }
     }
   | { method: 'run.failed'; params: { sessionId: string; message: string } }
-  | { method: 'message.delta'; params: { sessionId: string; messageId: string; delta: string } }
+  | {
+      method: 'message.delta'
+      params: { sessionId: string; messageId: string; delta: string; kind?: 'text' | 'thinking' }
+    }
   | { method: 'tool.started'; params: { sessionId: string; callId: string; name: string; kind: string } }
   | { method: 'tool.completed'; params: { sessionId: string; callId: string; isError: boolean; summary: string } }
   | { method: 'approval.request'; params: { sessionId: string; requestId: string; toolName: string; kind: string; summary: string } }
@@ -108,6 +113,8 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  /** 思考文本（仅 assistant 且模型开了思考才有；与 protocol ChatMessage.thinking 镜像） */
+  thinking?: string
   timestamp: number
 }
 
@@ -126,19 +133,51 @@ export interface ModelSummary {
   maxTokens: number
 }
 
+/**
+ * 用户自定义模型定义（与 protocol/types.ts ModelDef 镜像；引擎侧补默认值构建）。
+ * pi 输入模态只有 text | image（视频/PDF 无对应字段）。
+ * thinkingLevels：支持的思考等级子集（缺省 = 跟随端点默认），引擎据此构建
+ * thinkingLevelMap（选中透传 / 未选中 null）。
+ */
+export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+export interface ModelDef {
+  id: string
+  name?: string
+  contextWindow?: number
+  maxTokens?: number
+  input?: Array<'text' | 'image'>
+  reasoning?: boolean
+  thinkingLevels?: ThinkingLevel[]
+}
+
 /** 自定义 provider 定义（与 protocol/types.ts CustomProviderDef 镜像；key 走 credentials 单独管理） */
 export interface CustomProviderDef {
   /** custom/<slug> 形式 */
   id: string
   name: string
   baseUrl: string
+  /** 模型 id 简写列表（与 modelDefs 合并注册，同 id 时 modelDefs 优先） */
   models: string[]
+  /** 模型完整定义（带上下文/输出/模态/推理） */
+  modelDefs?: ModelDef[]
+  /** 端点 API 方言（缺省 openai-completions；anthropic 时 baseUrl 填根地址） */
+  apiFormat?: 'openai-completions' | 'anthropic-messages'
+  /** 禁用模型：不注册进 provider，下拉不出现 */
+  disabledModels?: string[]
+  /** 整 provider 禁用：保留定义不注册 */
+  disabled?: boolean
 }
 
-/** 内置 provider 的 baseUrl 覆盖（与 protocol/types.ts ProviderOverrideDef 镜像） */
+/**
+ * 内置 provider 的本地调整（与 protocol/types.ts ProviderOverrideDef 镜像）：
+ * baseUrl 空串 = 沿用官方端点；models = 用户新增（与目录并存）；disabledModels = 目录禁用。
+ */
 export interface ProviderOverrideDef {
   providerId: string
   baseUrl: string
+  models?: ModelDef[]
+  disabledModels?: string[]
 }
 
 export interface CustomProvidersPayload {

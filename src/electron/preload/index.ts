@@ -30,9 +30,13 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.engineEvent, listener)
   },
 
-  /** 写入 API key：safeStorage 落盘 + 推给引擎内存（key 明文只此一路，查询接口不回明文） */
+  /** 写入 API key：safeStorage 落盘 + 推给引擎内存（key 明文只此一路出 renderer） */
   setApiKey: (providerId: string, apiKey: string): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.credentialsSet, { providerId, apiKey }),
+
+  /** 读单个 provider 的 key 明文（设置页全量回显用；无记录返回空串） */
+  getApiKey: (providerId: string): Promise<string> =>
+    ipcRenderer.invoke(IPC.credentialsGet, { providerId }),
 
   /** 查询 key 配置状态（只回 providerId + keyConfigured 布尔位） */
   listApiKeys: (): Promise<ApiKeyStatus[]> => ipcRenderer.invoke(IPC.credentialsList),

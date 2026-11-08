@@ -95,7 +95,7 @@ export function GeneralSection() {
           desc="在项目外发起的聊天，其数据的默认存储位置。"
         >
           <div className="flex items-center gap-3">
-            <span className="max-w-52 truncate font-mono text-xs text-muted-foreground">
+            <span className="max-w-52 truncate text-xs text-muted-foreground">
               C:\Users\41631\...\Documents\Cogent
             </span>
             <SecondaryAction label="更改" />
