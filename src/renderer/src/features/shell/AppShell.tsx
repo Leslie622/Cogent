@@ -26,6 +26,10 @@ import { ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { GlowResizeHandle } from '@/components/GlowResizeHandle'
 import { AppHeader } from '@/features/shell/AppHeader'
 import { AppSidebar } from '@/features/shell/AppSidebar'
+import { HomeSidebar } from '@/features/home/HomeSidebar'
+import { HomeMain } from '@/features/home/HomeMain'
+import { SettingsSidebar } from '@/features/settings/SettingsSidebar'
+import { SettingsMain } from '@/features/settings/SettingsMain'
 import { useUiStore, VIEW_LABELS } from '@/stores/ui'
 
 export function AppShell() {
@@ -43,7 +47,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-sidebar text-sidebar-foreground">
+    <div className="chrome-surface flex h-dvh flex-col text-sidebar-foreground">
       <AppHeader sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar} />
       <div className="flex min-h-0 flex-1">
         {/* 应用侧栏：上/下两组路由钮（chrome 底色与 header 融合） */}
@@ -63,20 +67,35 @@ export function AppShell() {
               minSize="240px"
               maxSize="360px"
               defaultSize="300px"
-              className="bg-muted/50"
+              className="bg-content-sidebar"
             >
-              {/* content-sidebar 内容空位：随 AppView 换，各视图侧栏属后续件 */}
-              <div className="flex h-full items-center justify-center text-xs text-muted-foreground/70">
-                {VIEW_LABELS[view]}
-              </div>
+              {/* content-sidebar 内容随 AppView 换：首页（件 4）与设置（件 6）
+                  已落地，其余视图侧栏属后续件 */}
+              {view === 'home' ? (
+                <HomeSidebar />
+              ) : view === 'settings' ? (
+                <SettingsSidebar />
+              ) : (
+                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                  {VIEW_LABELS[view]}
+                </div>
+              )}
             </ResizablePanel>
             {/* shadcn 默认形态：1px 线 + 中点把手；拖拽光带见 GlowResizeHandle */}
             <GlowResizeHandle withHandle />
             <ResizablePanel>
-              {/* content-main 内容空位：随 AppView 换，各视图主体属后续件 */}
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                {VIEW_LABELS[view]}
-              </div>
+              {/* content-main 内容随 AppView 换：首页（HomeMain，件 5 —— 内部
+                  再分 [主要区 | 标签页区]）与设置（SettingsMain，件 6 占位）
+                  已落地，其余视图主体属后续件 */}
+              {view === 'home' ? (
+                <HomeMain />
+              ) : view === 'settings' ? (
+                <SettingsMain />
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  {VIEW_LABELS[view]}
+                </div>
+              )}
             </ResizablePanel>
           </ResizablePanelGroup>
         </main>
