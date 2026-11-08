@@ -18,9 +18,10 @@
 
 1. **协作方式**：不用 v0、不照搬外部成品 —— 用户出「描述 + 截图」，AI 直接实现；
    **写一点、验收一点**，每步保持三关全绿可运行；
-2. **技术栈**：React + Tailwind + shadcn。存量 `components/ui/` 是 base-luma 版，
-   随界面逐件重写沿用（风格实际自成配方，未走 Rhea registry —— 配方汇总见
-   [docs/UI布局.md](docs/UI布局.md)）；**图标 @tabler/icons-react**（2026-11-08
+2. **技术栈**：React + Tailwind + shadcn。组件风格 = **base-luma**（2026-11-08 用户
+   澄清，此前文档误记 Rhea）：存量 `components/ui/` 即该版，新组件经 base-luma
+   registry（`r/styles/base-luma/`）安装，配方汇总见
+   [docs/UI布局.md](docs/UI布局.md)；**图标 @tabler/icons-react**（2026-11-08
    转正：实心 Filled 变体成对选型，用前 node require 验证存在；lucide 仅存于
    shadcn 原语内部小图标）；
 3. **字体随包分发**（不依赖系统安装）：中文 **HarmonyOS Sans SC**（400/500/700）、
@@ -60,6 +61,7 @@ shell
 | [docs/技术笔记/](docs/技术笔记/README.md) | 按技术模块一文件的原理笔记 + DeepAgent/主流 Agent 对比（学习项目核心产出） | **实现一个模块后必须写**；做某模块设计前先查有没有前人笔记 |
 | [docs/开发.md](docs/开发.md) | 命令、引擎冒烟、dev 自检、环境排障 | 开发 / 验证时 |
 | [docs/UI布局.md](docs/UI布局.md) | UI 布局结构、视觉配方、组件配方、技术坑（布局阶段收官总结） | **动任何 UI 前必读** |
+| [docs/Agent引擎.html](docs/Agent引擎.html) | Agent 引擎（pi）图文手册：架构、协议方法/事件表、对话时序、模块详解、能力接线、维护指南（单文件零依赖 HTML，改引擎须同步对应节） | **动 agent-service / protocol 前**；了解 Agent 能力现状时 |
 | [docs/路线.md](docs/路线.md) | 已实现清单、路线空位、建议实现顺序 | 接到新任务、找该做的事时 |
 
 ## 维护纪律

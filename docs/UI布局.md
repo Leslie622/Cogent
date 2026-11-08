@@ -58,10 +58,34 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   divide-y 行分隔）+ SettingsRow（左标题/描述右控件）；控件四款：Switch（选中
   黑底）/ SelectControl（描边圆角 + 值 + 箭头，静态空位）/ SecondaryAction
   （灰底小钮）/ 路径行（mono 截断 + 更改钮）
-- **对话流**：message-scroller（吸底/滚到底悬浮钮库自带）；对话索引轨道手搓
+- **设置 · 模型设置（master-detail，2026-11-08）**：页内自撑 `h-full flex-col`
+  （SettingsMain 的外层滚动不参与）—— 页头（标题 + 描述行右挂 [圆形刷新钮 +
+  黑色添加供应商]）+ `mx-10 mb-8 flex-1 min-h-0 rounded-xl border` 主体卡
+  （overflow-hidden，内部两栏各自滚）：左栏 w-72 border-r（分组标签 text-xs 灰 +
+  h-9 圆角行 = 品牌标 20px + 名称 + `ml-auto` 状态点 size-1.5 emerald-500/warning），
+  右栏 max-w-2xl 居中详情。详情头 = 品牌标 28px + 名称（自定义是行内编辑 input）
+  + 右挂开关/更多；字段 = FIELD_LABEL 上 + Input rounded-lg h-9 下（mt-5 组距）；
+  模型行容器 = divide-y + rounded-lg border（行 h-12 px-4，徽标紧跟名称不贴右、
+  动作簇 w-13 ml-auto hover 显形防跳动）。选中回落派生（selected 缺失 → 首个内置），
+  详情组件按 id 挂 key 重置草稿态
+- **品牌图标 ProviderLogo**（components/，模型菜单等按 providerId 复用）：
+  @lobehub/icons 按名导入（sideEffects:false 摇树）—— 单色标（Anthropic/OpenAI/
+  Grok/ZAI）走 currentColor 随文字色，彩色用 `.Color` 变体（Gemini/DeepSeek/
+  OpenRouter 等，OpenRouter 官方色即荧光绿 #C8FF00 非黑）；自定义 provider =
+  黑底首字方标。坑：查找表值类型必须显式 `| undefined`（Record 索引访问默认非
+  可空，`if (表值)` 会撞 no-unnecessary-condition；`?? 兜底` 则合法）
+- **对话流**：message-scroller（吸底/滚到底悬浮钮库自带；Provider 开 `autoScroll`
+  才会跟随流式增长，Item **不标 `scrollAnchor`** —— 官方语义是"回合起始行"专用，
+  标了会在追加时把该行钉到视口顶且流式不跟随，ChatGPT 式吸底两者都不要）；
+  **发送即回底**（主流产品语义）：Provider 包到 Composer 外层，send 时调
+  `scrollToEnd()` —— 库的 autoScroll 只在"本来就在底部"时跟随（翻上去看历史
+  会释放跟随），发送这个动作本身就是回底意图，翻历史/索引刻度跳转后发送
+  照样吸底并恢复跟随；
+  对话索引轨道手搓
   （每消息一颗刻度，激活项**自算**：视口顶边压着的消息 + 真实 scrollHeight 口径
   吸底点亮末条 —— 库的 visibility/scrollable 快照挂载后为空且受 content-visibility
-  干扰，勿用；点击 scrollToMessage 平滑定位）；索引 hover 阶梯 = 悬停 24px、
+  干扰，勿用；点击 scrollToMessage 平滑定位，按 messageId 查表不依赖锚点）；
+  索引 hover 阶梯 = 悬停 24px、
   两侧 17/14/10 递减、颜色同步减淡
 - **滚动渐隐** `.scroll-fade-b/-y/-x`（mask 两端 24px 渐变，ChatGPT 同款不硬截；
   base-luma 组件引用了这组类，已补定义）
