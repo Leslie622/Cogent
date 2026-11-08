@@ -46,20 +46,34 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  /* 次级文字/图标灰：0.556 偏浅（对比 ChatGPT 观感"发灰发飘"），压深一档 */
+  --muted-foreground: oklch(0.5 0 0);
+  /* 占位符灰：比次级灰再浅一档（输入框 placeholder 观感要"虚"，实色 token
+     不用透明度 —— 方针 3；muted-foreground 做 placeholder 偏黑，视觉 diff
+     对标 ChatGPT ~#B8B8B8） */
+  --placeholder: oklch(0.71 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
+  /* 警示色（琥珀）：权限/风险类提示用（如"完全访问"），区别于 error 红 */
+  --warning: oklch(0.666 0.155 70);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
-  /* chrome 底色（UI 重写期：头部+侧栏的融合面）：暖灰 ≈ #F5F5F4 系 */
-  --sidebar: oklch(0.968 0.002 106);
+  /* chrome 底色（UI 重写期：头部+应用侧栏的融合 L 面）：参考稿为薄荷绿微渐变
+     （见 .chrome-surface，135° 同色相仅明度递减），token 留中档薄荷作纯色回退。
+     按用户意见两轮调淡；chrome 面上的 hover/active 用 foreground 低透明叠层
+     （黑 alpha 软叠，同 ChatGPT），不用本 token 系块底 */
+  --sidebar: #eef7f2;
+  /* 内容区侧栏底：比 chrome L 面浅一档（浅于外部、深于纯白主体，三层递进：
+     薄荷渐变 L → 更浅的侧栏 → 纯白主体）；实色不用 alpha */
+  --content-sidebar: #f2f8f4;
   --sidebar-foreground: oklch(0.205 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.916 0.003 106);
+  /* 薄荷渐变面上的块底（rail active / chrome hover）用白系：暖灰贴薄荷会发闷 */
+  --sidebar-accent: #ffffff;
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
@@ -120,9 +134,11 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-placeholder: var(--placeholder);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -130,6 +146,7 @@
   /* sidebar* 此前未映射：sidebar.tsx 里的 bg-sidebar 等类生成不了 CSS（侧栏透明），
      必须与上面 :root 的变量成对存在 */
   --color-sidebar: var(--sidebar);
+  --color-content-sidebar: var(--content-sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
@@ -171,6 +188,82 @@
   transition: background-color 0.18s linear;
 }
 
+/* ── chrome L 面（头部+应用侧栏）底色：薄荷绿微渐变 ──
+   参考稿取色后按用户意见调淡（同色相 ~150°，仅明度/饱和度递减的"呼吸感"底）；
+   深色模式属后续件 */
+.chrome-surface {
+  background: linear-gradient(135deg, #e0f3e9 0%, #eef7f2 45%, #fbfdfb 100%);
+}
+
+/* ── 滚动渐隐（scroll-fade-*）：内容滚出视口边界处透明度渐隐，不硬截断 ──
+   ChatGPT 同款手法：mask 渐变（不是叠色块，任意底色通用，滚动条也随带渐隐）。
+   base-luma 组件（message-scroller / attachment / code-block）类名里引用了这组
+   工具类但样式表从未定义（一直是空引用），在此补齐。
+   --scroll-fade-size 可按需覆盖；默认 24px = 消息流 py-6 的呼吸垫 —— 静置在
+   顶/底时首末条消息恰好落在渐隐带外，不吃虚。 */
+.scroll-fade-b,
+.scroll-fade-y {
+  --scroll-fade-size: 24px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--scroll-fade-size),
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+}
+.scroll-fade-x {
+  --scroll-fade-size: 24px;
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--scroll-fade-size),
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+}
+
+/* ── 全局滚动条：细 + 浅 + 离边有缝（ChatGPT 同款手法）──
+   轨道 13px、滑块两侧各 4px 透明 border（background-clip: padding-box 让
+   背景不吃 border）→ 可视滑块 5px 且浮在轨道中间，不贴边框；命中区是整条
+   13px 好抓。黑低透明软叠同全局配方，hover 加深一档。
+   Electron = Chromium，webkit 伪元素全应用生效 */
+::-webkit-scrollbar {
+  width: 13px;
+  height: 13px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border: 4px solid transparent;
+  border-radius: 9999px;
+  background-color: oklch(0.205 0 0 / 0.18);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: oklch(0.205 0 0 / 0.3);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* base-luma 空引用补齐第二批：message-scroller 视口引用，滚动条不占布局跳动 */
+.scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+/* message-scroller 视口自带 Tailwind v4.1 的 scrollbar 工具类，两处都会绕过
+   上面的 webkit 伪元素定制（Chromium：标准 scrollbar-width/color 非-auto 即
+   走原生条）：① scrollbar-thin → 原生细条 Win11 自动隐藏；② 吸底跟随态挂
+   data-autoscrolling，data-autoscrolling:scrollbar-thumb/track-transparent
+   编译成 scrollbar-color: transparent → 滑块轨道全透明。两项都拉回 auto，
+   全局定制接管（本文件未分 layer，稳定压过 utilities 层的变体规则） */
+[data-slot='message-scroller-viewport'] {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -184,6 +277,10 @@
 
   body {
     @apply bg-background text-foreground;
+    /* UI 文字默认不可选中（ChatGPT 同款）：chrome/侧栏/菜单文字在拖拽（拖窗、
+       拖分栏、划过列表）时会蓝底成片选中，纯噪音。正文类内容（聊天消息等）
+       到件时在容器上 select-text 逐处放开；input/textarea 不受影响，照常可选可编辑 */
+    user-select: none;
     /* 双字体栈（设计方针）：拉丁走 Inter，中文走 HarmonyOS Sans SC，其后系统回退 */
     font-family:
       Inter,
