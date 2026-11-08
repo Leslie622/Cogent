@@ -18,14 +18,25 @@
 
 1. **协作方式**：不用 v0、不照搬外部成品 —— 用户出「描述 + 截图」，AI 直接实现；
    **写一点、验收一点**，每步保持三关全绿可运行；
-2. **技术栈**：React + Tailwind + shadcn（目标风格 **Rhea**，registry
-   `r/styles/base-rhea/`，2026-11-06 验证可用）+ 图标 lucide-react。存量
-   `components/ui/` 是 base-luma 版，随界面逐件重写时按 Rhea 源替换；
+2. **技术栈**：React + Tailwind + shadcn。存量 `components/ui/` 是 base-luma 版，
+   随界面逐件重写沿用（风格实际自成配方，未走 Rhea registry —— 配方汇总见
+   [docs/UI布局.md](docs/UI布局.md)）；**图标 @tabler/icons-react**（2026-11-08
+   转正：实心 Filled 变体成对选型，用前 node require 验证存在；lucide 仅存于
+   shadcn 原语内部小图标）；
 3. **字体随包分发**（不依赖系统安装）：中文 **HarmonyOS Sans SC**（400/500/700）、
    英文 **Inter**（可变字重）；文件在 `src/renderer/src/assets/fonts/`
    （含两份 LICENSE），@font-face 见 globals.css；
-4. **旧界面**：v0 定稿版整体移入 `legacy/renderer/`，只作借鉴素材，
-   不参与构建/类型检查/lint；引擎接线（stores / IPC / main）未动。
+   **文字色一律实色 token，禁透明度文字色**（`text-x/75` 之类）—— Chromium 对
+   半透明文字降级光栅化，笔画发糊发灰、叠不到深黑（2026-11-08 用户对比 ChatGPT
+   发现"鸿蒙字体发虚"的根因，字形/字体文件无关）；层级靠实色深浅（次级文字用
+   muted-foreground），透明度只许用在背景/hover 底色；
+4. **旧界面**：v0 定稿版移入 `legacy/renderer/` 仅作借鉴（引擎接线 stores / IPC /
+   main 未动）；2026-11-08 布局收官后**已删除**（git 历史可考），配方沉淀见
+   [docs/UI布局.md](docs/UI布局.md)；
+5. **UI 文字默认不可选中**（globals.css body `user-select: none`）：chrome/侧栏/
+   菜单文字在拖窗、拖分栏、划列表时会蓝底成片选中，纯噪音；正文类内容
+   （聊天消息等）到件时在**容器**上 `select-text` 逐处放开。input/textarea
+   不受影响（UA 样式表强制可编辑控件内部可选）。
 
 ### 区域代号（2026-11-07 定，件 1 布局的叫法 —— 描述/注释/组件命名统一用代号）
 
@@ -48,6 +59,7 @@ shell
 | [docs/约定.md](docs/约定.md) | 硬规则：防御代码政策（AI 行为规则 + 高频反模式清单）、协议纪律、其他约定 | **每次写代码前**；交付前过一遍 §1.3 产出义务 |
 | [docs/技术笔记/](docs/技术笔记/README.md) | 按技术模块一文件的原理笔记 + DeepAgent/主流 Agent 对比（学习项目核心产出） | **实现一个模块后必须写**；做某模块设计前先查有没有前人笔记 |
 | [docs/开发.md](docs/开发.md) | 命令、引擎冒烟、dev 自检、环境排障 | 开发 / 验证时 |
+| [docs/UI布局.md](docs/UI布局.md) | UI 布局结构、视觉配方、组件配方、技术坑（布局阶段收官总结） | **动任何 UI 前必读** |
 | [docs/路线.md](docs/路线.md) | 已实现清单、路线空位、建议实现顺序 | 接到新任务、找该做的事时 |
 
 ## 维护纪律
