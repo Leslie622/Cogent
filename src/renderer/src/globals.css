@@ -223,6 +223,40 @@
   );
 }
 
+/* ── 文字 shimmer（"思考中"标题流光，trace 运行态引用）──
+   base-luma trace 组件类名里引用了 shimmer / shimmer-none 但样式表未定义
+   （空引用，同 scroll-fade 当初的情况），在此补齐。手法 = 渐变高光扫过文字
+   （background-clip: text，ChatGPT 思考标题同款）：可见字形由渐变 stop 的
+   实色承担（muted-foreground 底 + foreground 高光），不走透明度文字色 ——
+   方针 3 的"文字实色"对 clip 文字同样成立。shimmer-none = 动效降级出口
+   （trace 标题在 motion-reduce 下引用），恢复继承色、去掉动画。 */
+@keyframes shimmer-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-muted-foreground) 35%,
+    var(--color-foreground) 50%,
+    var(--color-muted-foreground) 65%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: shimmer-sweep 2.2s linear infinite;
+}
+.shimmer-none {
+  animation: none;
+  background-image: none;
+  color: inherit;
+}
+
 /* ── 全局滚动条：细 + 浅 + 离边有缝（ChatGPT 同款手法）──
    轨道 13px、滑块两侧各 4px 透明 border（background-clip: padding-box 让
    背景不吃 border）→ 可视滑块 5px 且浮在轨道中间，不贴边框；命中区是整条

@@ -133,21 +133,37 @@ export function bindEngineEvents(): () => void {
     switch (method) {
       case 'message.delta': {
         const messages = state.messagesBySession[sessionId] ?? []
-        // 流式累积进最后一条 assistant 消息；首条 delta 时占位消息尚不存在，先建
+        // 流式累积进最后一条 assistant 消息；首条 delta 时占位消息尚不存在，先建。
+        // kind 分流：thinking 进思考缓冲、text 进正文（同一条消息的两路，引擎保证同 messageId）
         const last = messages.at(-1)
         const delta = typeof params.delta === 'string' ? params.delta : ''
+        const isThinking = params.kind === 'thinking'
         if (last !== undefined && last.role === 'assistant' && last.id === 'streaming') {
           useChatStore.setState({
             messagesBySession: {
               ...state.messagesBySession,
-              [sessionId]: [...messages.slice(0, -1), { ...last, content: last.content + delta }]
+              [sessionId]: [
+                ...messages.slice(0, -1),
+                isThinking
+                  ? { ...last, thinking: (last.thinking ?? '') + delta }
+                  : { ...last, content: last.content + delta }
+              ]
             }
           })
         } else {
           useChatStore.setState({
             messagesBySession: {
               ...state.messagesBySession,
-              [sessionId]: [...messages, { id: 'streaming', role: 'assistant', content: delta, timestamp: Date.now() }]
+              [sessionId]: [
+                ...messages,
+                {
+                  id: 'streaming',
+                  role: 'assistant',
+                  content: isThinking ? '' : delta,
+                  thinking: isThinking ? delta : undefined,
+                  timestamp: Date.now()
+                }
+              ]
             }
           })
         }

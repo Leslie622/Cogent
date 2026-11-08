@@ -41,6 +41,8 @@ interface Session {
 interface StreamingState {
   messageId: string
   text: string
+  /** 思考缓冲（thinking_delta 累积；正文与思考是同一条 assistant 消息的两路） */
+  thinking: string
   /** pi 停止原因（turn_end 时记录；length = 输出被 token 上限截断） */
   stopReason?: string
 }
@@ -149,7 +151,7 @@ export class SessionManager {
     session.summary.updatedAt = Date.now()
 
     this.notify('run.started', { sessionId })
-    this.streaming.set(sessionId, { messageId: `m-${crypto.randomUUID()}`, text: '' })
+    this.streaming.set(sessionId, { messageId: `m-${crypto.randomUUID()}`, text: '', thinking: '' })
     await session.agent.prompt(text)
   }
 
@@ -202,15 +204,18 @@ export class SessionManager {
 
     switch (event.type) {
       case 'message_update': {
-        // 流式增量只在 text_delta 转发；thinking/toolcall 的 UI 呈现是后续路线项
+        // 正文/思考两路增量各自转发（kind 分流）；toolcall 的 UI 呈现是后续路线项
         const delta = event.assistantMessageEvent
-        if (delta.type !== 'text_delta') return
+        if (delta.type !== 'text_delta' && delta.type !== 'thinking_delta') return
+        const kind = delta.type === 'thinking_delta' ? ('thinking' as const) : ('text' as const)
         const streaming = this.streaming.get(sessionId)
         if (!streaming) return
-        streaming.text += delta.delta
+        if (kind === 'thinking') streaming.thinking += delta.delta
+        else streaming.text += delta.delta
         this.notify('message.delta', {
           sessionId,
           messageId: streaming.messageId,
+          kind,
           delta: delta.delta
         })
         return
@@ -237,8 +242,15 @@ export class SessionManager {
         }
         this.notify('run.completed', {
           sessionId,
-          message: streaming && streaming.text
-            ? { id: streaming.messageId, role: 'assistant', content: streaming.text, timestamp: Date.now() }
+          // 思考/正文任一非空都落消息（只有思考没有正文的极端截断也可见）
+          message: streaming && (streaming.text || streaming.thinking)
+            ? {
+                id: streaming.messageId,
+                role: 'assistant',
+                content: streaming.text,
+                thinking: streaming.thinking || undefined,
+                timestamp: Date.now()
+              }
             : undefined,
           stopReason: streaming?.stopReason
         })
@@ -271,12 +283,17 @@ export class SessionManager {
           timestamp: message.timestamp
         })
       } else if (message.role === 'assistant') {
+        // 思考块拼整段挂 thinking（历史回查与流式结束态共用此映射）；正文仍取 text 块
+        const thinking = message.content
+          .map((block) => (block.type === 'thinking' ? block.thinking : ''))
+          .join('')
         result.push({
           id: `a-${result.length}`,
           role: 'assistant',
           content: message.content
             .map((block) => (block.type === 'text' ? block.text : ''))
             .join(''),
+          thinking: thinking || undefined,
           timestamp: Date.now()
         })
       }
