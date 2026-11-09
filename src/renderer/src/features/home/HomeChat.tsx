@@ -746,6 +746,11 @@ function ChatComposer({ session }: { session: HomeSession }) {
   const abort = useChatStore((s) => s.abort)
   const activeModelId = useEngineStore((s) => s.activeModelId)
   const thinkingLevel = useEngineStore((s) => s.thinkingLevel)
+  // 活动模型的 provider（经 usableModels 过滤后再查：同名模型跨 provider 收录时
+  // 直接在全集里按 id find 会命中未配 key 的那家，如 azure 也收录 deepseek-v4-pro）
+  const activeProvider = useEngineStore((s) =>
+    usableModels(s.models, s.keyConfigured).find((m) => m.id === s.activeModelId)?.provider
+  )
   const projects = useProjectStore((s) => s.projects)
   const sessions = useChatStore((s) => s.sessions)
   const { scrollToEnd } = useMessageScroller()
@@ -769,7 +774,7 @@ function ChatComposer({ session }: { session: HomeSession }) {
     const text = value.trim()
     if (!text || running) return
     setValue('')
-    void submit(text, activeModelId, thinkingLevel)
+    void submit(text, activeModelId, thinkingLevel, activeProvider)
     // 发首条消息即脱离"新聊天进行中"视图态（信息区消失，对齐 ChatGPT：
     // 提交后进入正常对话态）；此时 chat store 的 activeSessionId 已是接收
     // 消息的会话（startNew 建好的或复用的空会话），kind:'chat' 指向它

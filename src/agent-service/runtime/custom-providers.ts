@@ -181,8 +181,14 @@ export class CustomProviderRegistry {
     )
     const addedIds = new Set(added.map((m) => m.id))
     const models: Model<Api>[] = [
-      // 目录在前（保 pi 快照原序），用户新增排后；同 id 目录项被新增覆盖（不重复注册）
-      ...original.getModels().filter((m) => !disabled.has(m.id) && !addedIds.has(m.id)),
+      // 目录在前（保 pi 快照原序），用户新增排后；同 id 目录项被新增覆盖（不重复注册）。
+      // 目录模型浅拷贝重写 baseUrl（目录模型是纯数据对象）：baseUrl 覆盖要对整个
+      // provider 生效 —— 此前只有 override.models 新增条目走新端点，目录透传模型
+      // 仍打官方端点（流式又委托原实例，覆盖形同虚设，直到 401/连接错误才暴露）
+      ...original
+        .getModels()
+        .filter((m) => !disabled.has(m.id) && !addedIds.has(m.id))
+        .map((m) => ({ ...m, baseUrl })),
       ...added
     ]
     return createProvider({

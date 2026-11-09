@@ -32,7 +32,7 @@ interface ChatState {
   deleteSession: (sessionId: string) => Promise<void>
   setPinned: (sessionId: string, pinned: boolean) => Promise<void>
   archive: (sessionId: string, archived: boolean) => Promise<void>
-  submit: (text: string, model?: string, thinkingLevel?: string) => Promise<void>
+  submit: (text: string, model?: string, thinkingLevel?: string, provider?: string) => Promise<void>
   abort: () => Promise<void>
 }
 
@@ -115,7 +115,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
   },
 
-  submit: async (text, model, thinkingLevel) => {
+  submit: async (text, model, thinkingLevel, provider) => {
     const sessionId = get().activeSessionId
     if (!sessionId) return
     // 乐观上屏用户消息；assistant 回复由引擎事件流驱动
@@ -134,7 +134,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         [sessionId]: [...(state.messagesBySession[sessionId] ?? []), userMessage]
       }
     }))
-    await window.cogent.engineRequest('agent.submit', { sessionId, text, model, thinkingLevel })
+    // provider 随 model 下发：同名模型被多家目录收录（azure 也收录 deepseek-v4-pro），
+    // 只传 id 引擎全局查找有歧义（详见 protocol AgentSubmitParams.provider 注释）
+    await window.cogent.engineRequest('agent.submit', { sessionId, text, model, thinkingLevel, provider })
   },
 
   abort: async () => {

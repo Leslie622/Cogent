@@ -274,7 +274,7 @@
     <tr><td><code>initialize</code></td><td>握手：交换 client / protocolVersion / node 版本；<code>params.credentials</code> 可选注入凭据（宿主把持久化 key 灌进引擎内存表）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>session.list / create / delete</code></td><td>会话 CRUD；create 可带 title / permissionMode（后者未消费）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>session.messages</code></td><td>拉某会话的完整转录（pi Message[] → ChatMessage[] 纯文本化）</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>agent.submit</code></td><td>提交输入：text + 可选 model / thinkingLevel；受理（同步校验：会话存在/空闲，失败回错误帧）即返回，进度走事件流</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>agent.submit</code></td><td>提交输入：text + 可选 model / provider / thinkingLevel（provider = 同名模型消歧键：azure 目录也收录 deepseek-v4-pro，id 单键全局查找会撞未配置的那家）；受理（同步校验：会话存在/空闲，失败回错误帧）即返回，进度走事件流</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>agent.abort</code></td><td>中止某会话正在进行的流（直达 pi Agent.abort()）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>credentials.set / list</code></td><td>运行中更新 key / 查各 provider 配置状态（只回布尔位）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>models.list</code></td><td>pi 模型目录摘要（UI 下拉数据源）</td><td><span class="st ok">已实现</span></td></tr>

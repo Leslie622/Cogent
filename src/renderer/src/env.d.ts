@@ -112,7 +112,7 @@ export interface EngineMethodParams {
   'project.rename': { projectId: string; name: string }
   'project.delete': { projectId: string }
   'project.setPinned': { projectId: string; pinned: boolean }
-  'agent.submit': { sessionId: string; text: string; model?: string; thinkingLevel?: string }
+  'agent.submit': { sessionId: string; text: string; model?: string; provider?: string; thinkingLevel?: string }
   'agent.abort': { sessionId: string }
   'credentials.list': Record<string, never>
   'models.list': Record<string, never>

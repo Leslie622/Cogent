@@ -354,7 +354,7 @@ export class SessionManager {
    * 只包住 handler 的同步段，异步拒绝会变成 unhandledRejection 直接崩掉引擎
    * 进程（全部会话随之丢失）——此前 `void sessions.submit(...)` 正是踩了这一坑。
    */
-  submit(sessionId: string, text: string, model?: string, thinkingLevel?: string): void {
+  submit(sessionId: string, text: string, model?: string, thinkingLevel?: string, provider?: string): void {
     const session = this.requireSession(sessionId)
     // 工作区复查（多根）：任一根目录被删/移动 → 显式报错（外部世界会变，
     // 静默继续 = 模型对不存在的目录输出幻觉操作）。同步 throw → dispatch 错误帧
@@ -370,7 +370,13 @@ export class SessionManager {
       throw new ProtocolError(RpcErrorCode.InvalidRequest, `会话正在回复中，请先停止或等待完成: ${sessionId}`)
     }
     if (model) {
-      const target = this.models.getModel(DEFAULT_PROVIDER, model) ?? this.models.getModels().find((m) => m.id === model)
+      // provider 双键限定优先：同名模型会被多家目录收录（azure 目录也有
+      // deepseek-v4-pro），id 单键全局查找按注册序撞 azure 那份 → "Provider
+      // is not configured: azure"。UI 选择时的 provider 原样下发即可消歧；
+      // 未带 provider 的老宿主保持旧解析序（默认 provider 优先 → 全局 id）
+      const target = provider !== undefined
+        ? this.models.getModel(provider, model)
+        : this.models.getModel(DEFAULT_PROVIDER, model) ?? this.models.getModels().find((m) => m.id === model)
       if (!target) throw new Error(`未知模型: ${model}`)
       agent.state.model = target
     }

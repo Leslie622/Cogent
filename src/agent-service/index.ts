@@ -240,11 +240,11 @@ const handlers = new Map<string, (params: unknown) => unknown>([
     return { summary: projects.setPinned(p.projectId, p.pinned) }
   }],
   ['agent.submit', (params) => {
-    const p = params as { sessionId: string; text: string; model?: string; thinkingLevel?: string }
+    const p = params as { sessionId: string; text: string; model?: string; provider?: string; thinkingLevel?: string }
     // submit 内部同步校验（会话存在/空闲），失败 throw → dispatch 转错误帧；
     // 受理后 LLM 循环在 submit 内部异步执行，进度走事件流。这里不能拿掉同步调用
     // 改成 fire-and-forget 的 promise：异步拒绝会绕过 dispatch 的 try/catch 崩掉引擎
-    sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel)
+    sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel, p.provider)
     return { accepted: true as const }
   }],
   ['agent.abort', (params) => ({ aborted: sessions.abort((params as { sessionId: string }).sessionId) })],

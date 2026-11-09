@@ -106,3 +106,26 @@ form 保存时两条路各走各的。
   （常用 6 家 + baseUrl 覆盖输入 + CustomProvidersCard 表单）；
 - `src/renderer/src/features/chat/ChatInput.tsx`：下拉只渲染可用模型
   （usableModels 过滤）+ activeModelId 失效回落第一个可用。
+
+## 追加：override 链路连环三修（2026-11-09 用户 DeepSeek 实测引出）
+
+**① 定价继承缺失**：`buildModel` 把 cost 硬编码 0，而 override.models 同 id
+条目会顶掉目录条目 —— 用户编辑过目录模型（如 deepseek-flash）后成本统计
+静默归零。修复 = merge 语义：同 id 以目录条目为基底，用户 def 显式设置的
+字段才覆盖；cost 永远继承目录（协议 ModelDef 无此字段，用户不可配价），
+全新自定义模型保持 0（端点计费不可知）。
+
+**② baseUrl 覆盖对目录模型不生效**：`buildOverrideProvider` 只给
+override.models 新增条目设了新端点，目录透传模型原样带官方 baseUrl，且
+流式委托回原生 provider 实例 —— 设置页填的中转地址，目录模型从未走过
+（直到假 key 打官方端点吃 401 才暴露）。修复 = 目录模型浅拷贝重写
+baseUrl（目录模型是纯数据对象，浅拷贝安全）。
+
+**③ 同名模型跨 provider 歧义**（关联发现，落点在 submit 而非本模块）：
+azure 目录也收录 deepseek-v4-pro（Azure Foundry 托管版），引擎 submit 按
+id 全局查找按注册序命中 azure 那份 → "Provider is not configured: azure"。
+修复 = 协议 `agent.submit` 加 optional `provider`，UI 选择时的 provider
+原样下发、引擎 `getModel(provider, id)` 双键限定；renderer 侧查 provider
+同样要先过 usableModels（全集按 id find 还是会撞未配 key 的那家）。
+对照冒烟配方见 [../开发.md](../开发.md)（ambiguity-smoke：不带 provider
+复现 azure 报错 / 带上则成功）。

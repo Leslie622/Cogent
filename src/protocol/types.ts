@@ -233,6 +233,12 @@ export interface AgentSubmitParams {
   text: string
   /** 本次请求使用的模型（provider 内模型 id）；省略时沿用会话当前模型 */
   model?: string
+  /**
+   * 模型所属 provider id（如 'deepseek'）：同名模型被多家目录收录时（azure
+   * 也收录 deepseek-v4-pro）id 单键全局查找有歧义，UI 选择时的 provider
+   * 原样下发、引擎双键限定解析；省略 = 引擎按旧序解析（默认 provider 优先）
+   */
+  provider?: string
   /** 推理力度（pi ThinkingLevel）；省略时沿用会话当前值 */
   thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 }
