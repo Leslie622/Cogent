@@ -330,8 +330,9 @@ function ModelDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      {/* initialFocus=false：关掉 base-ui"自动聚焦第一个可聚焦元素"的默认行为 */}
-      <DialogContent className="max-w-lg" initialFocus={false}>
+      {/* initialFocus=false：关掉 base-ui"自动聚焦第一个可聚焦元素"的默认行为；
+          sm:max-w-lg 同变体反制 DialogContent 自带的 sm:max-w-md（裸 max-w-lg 压不住） */}
+      <DialogContent className="sm:max-w-lg" initialFocus={false}>
         <DialogHeader>
           <DialogTitle>{initial ? '编辑模型' : '添加模型'}</DialogTitle>
         </DialogHeader>
@@ -757,12 +758,16 @@ function BuiltinProviderDetail({
   const disabled = new Set(override?.disabledModels ?? [])
   const [dialog, setDialog] = useState<{ initial: ModelDef | null } | null>(null)
 
-  // 合并行：目录（被覆盖项的值取 override.models）+ 目录外新增
+  // 合并行：目录（被覆盖项的值取 override.models）+ 目录外新增。
+  // 覆盖行以目录名为显示名基底（用户 def 显式 name 优先）：显示名与聊天页
+  // 模型菜单统一 —— 此前覆盖行显示 id，同一模型两处名字不同（2026-11-09 统一）
   const merged = useMemo(() => {
-    const rows = shown.map((m) => {
+    const rows: Array<{ def: ModelDef; shadowed: boolean }> = shown.map((m) => {
       const shadow = customModels.find((x) => x.id === m.id)
       return {
-        def: shadow ?? { id: m.id, name: m.name, contextWindow: m.contextWindow, reasoning: m.reasoning },
+        def: shadow
+          ? { name: m.name, ...shadow }
+          : { id: m.id, name: m.name, contextWindow: m.contextWindow, reasoning: m.reasoning },
         shadowed: shadow !== undefined
       }
     })
@@ -859,12 +864,13 @@ function BuiltinProviderDetail({
         <div className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border">
           {merged.map(({ def: row, shadowed }) => (
             <div key={row.id} className="group flex h-12 min-w-0 items-center gap-2 px-4">
-              {/* 被覆盖行按用户定义（id 形态）显示；纯目录行显示显示名 */}
+              {/* 显示名统一口径（同聊天页模型菜单）：目录名/用户填写的 name 优先，
+                  目录外新增的自定义模型无目录名 → 回落 id；id 恒在悬浮提示 */}
               <span
                 className="min-w-0 shrink truncate text-[13px]"
                 title={row.id}
               >
-                {shadowed ? row.id : (row.name ?? row.id)}
+                {row.name ?? row.id}
               </span>
               <ModelBadges def={row} />
               <ModelRowActions
