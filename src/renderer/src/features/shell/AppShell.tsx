@@ -68,18 +68,27 @@ export function AppShell() {
               maxSize="360px"
               defaultSize="300px"
               className="bg-content-sidebar"
+              /* 折叠动画期间内容若随面板逐帧压缩（文字截断抖动）很难看；
+                 改为内容保持下限宽度（内层 min-w-60）被本层裁掉 —— 收放时
+                 内容整体滑出/滑入。overflowX 覆写 RRP 内层的 overflow:auto
+                 （style prop 落内层，侧栏自身无横向滚动，无副作用） */
+              style={{ overflowX: 'hidden' }}
             >
               {/* content-sidebar 内容随 AppView 换：首页（件 4）与设置（件 6）
-                  已落地，其余视图侧栏属后续件 */}
-              {view === 'home' ? (
-                <HomeSidebar />
-              ) : view === 'settings' ? (
-                <SettingsSidebar />
-              ) : (
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                  {VIEW_LABELS[view]}
-                </div>
-              )}
+                  已落地，其余视图侧栏属后续件。min-w-60 = minSize 240px：
+                  面板收窄到下限以下（折叠动画/折叠态）时内容保形被裁，
+                  而不是被压扁 */}
+              <div className="h-full min-w-60">
+                {view === 'home' ? (
+                  <HomeSidebar />
+                ) : view === 'settings' ? (
+                  <SettingsSidebar />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                    {VIEW_LABELS[view]}
+                  </div>
+                )}
+              </div>
             </ResizablePanel>
             {/* shadcn 默认形态：1px 线 + 中点把手；拖拽光带见 GlowResizeHandle */}
             <GlowResizeHandle withHandle />
