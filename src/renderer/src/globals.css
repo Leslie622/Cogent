@@ -257,6 +257,53 @@
   color: inherit;
 }
 
+/* ── 思考力度滑杆的渐变端点色（HomeChat 的 ThinkingSlider 使用）──
+   未注册的自定义属性不参与 transition：linear-gradient(90deg, var(--think-from),
+   var(--think-to)) 在档位切换时会整体跳色。注册为 <color> 后，在滑杆根元素上
+   transition 这两个变量，渐变便能逐帧插值地"变色"。inherits: true 让端点供
+   轨道底色（color-mix）等后代样式共用同一插值。 */
+@property --think-from {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #94a3b8;
+}
+@property --think-to {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #94a3b8;
+}
+
+/* ── 思考力度滑杆的动效（颜色"动态变幻"）──
+   光晕透明度注册为 <number> 才能被 @keyframes 逐帧插值（关键帧里引用
+   var(--think-glow-min/max)，由滑杆按档位注入，脉冲幅度随力度增减）。
+   think-pulse = 拇指光晕呼吸；血流粒子在 ThinkingSlider 里由 JS 挂载时
+   随机生成（WAAPI 驱动，不经过这里的 CSS）。 */
+@property --think-glow-alpha {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.3;
+}
+@keyframes think-pulse {
+  0%,
+  100% {
+    --think-glow-alpha: var(--think-glow-min);
+  }
+  50% {
+    --think-glow-alpha: var(--think-glow-max);
+  }
+}
+
+/* ── 思考力度滑杆的"血管"底色（ThinkingSlider 经 fillClassName 挂到填充条）──
+   血流粒子由 ThinkingSlider 挂载时 JS 随机生成（颗数/层序/相位/纵深/
+   粒径/亮度/tile 宽=速度全部独立随机 —— 亮细胞未必在上、暗细胞未必在
+   下），以内联 background-* 叠在本类之上并用 WAAPI 平移；off 档或卸载
+   时清空内联样式，回落到这条纯血管渐变。 */
+@layer components {
+  .think-cells {
+    background-image: linear-gradient(90deg, var(--think-from), var(--think-to));
+  }
+}
+
 /* ── 全局滚动条：细 + 浅 + 离边有缝（ChatGPT 同款手法）──
    轨道 13px、滑块两侧各 4px 透明 border（background-clip: padding-box 让
    背景不吃 border）→ 可视滑块 5px 且浮在轨道中间，不贴边框；命中区是整条

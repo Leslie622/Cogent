@@ -9,6 +9,7 @@ function Slider<Value extends number | readonly number[]>({
   max = 100,
   marks,
   filledThrough,
+  fillClassName,
   thumbAriaLabel,
   getThumbAriaValueText,
   ...props
@@ -17,6 +18,10 @@ function Slider<Value extends number | readonly number[]>({
   marks?: readonly number[]
   /** 小于等于该值的定位点落在已选区内；调用处可用 data-active 单独着色。 */
   filledThrough?: number
+  /** 填充条（Indicator）的样式覆写口：默认只有 bg-primary 实色，复杂填充
+   *  （如思考力度的"血流粒子"层叠背景）经此注入全局类，避免几百字符的
+   *  任意值工具类。 */
+  fillClassName?: string
   /** 滑块的语义落在内部 range input；业务层可按离散值提供可读文案。 */
   thumbAriaLabel?: string
   getThumbAriaValueText?: SliderPrimitive.Thumb.Props['getAriaValueText']
@@ -38,17 +43,25 @@ function Slider<Value extends number | readonly number[]>({
       thumbAlignment="edge-client-only"
       {...props}
     >
+      {/* Control 不裁切（无 overflow-hidden）：轨道（h-2）矮于拇指（h-4），
+          拇指与 focus ring 的 ring-offset 都要越出 Control 上下沿渲染，裁了
+          圆钮会被削平、聚焦环残缺。轨道自身的圆角裁切由 Track 的
+          overflow-hidden 负责。 */}
       <SliderPrimitive.Control
         data-slot="slider-control"
-        className="relative flex w-full touch-none items-center overflow-hidden select-none data-disabled:opacity-50 data-vertical:h-full data-vertical:min-h-40 data-vertical:w-auto data-vertical:flex-col"
+        className="relative flex w-full touch-none items-center select-none data-disabled:opacity-50 data-vertical:h-full data-vertical:min-h-40 data-vertical:w-auto data-vertical:flex-col"
       >
+        {/* 轨道宽度必须与 Control 一致（不用负 margin 出血）：edge-client-only
+            （inset）模式下 Base UI 的滑块中心行程、Indicator 百分比全按 Control
+            宽度计算，但渲染在轨道里 —— 轨道一旦更宽，填充条会偏出滑块中心、
+            端点定位点压到边缘被裁半。 */}
         <SliderPrimitive.Track
           data-slot="slider-track"
-          className="relative -mx-3 grow overflow-hidden rounded-full bg-input/90 select-none data-horizontal:h-2 data-horizontal:w-full data-vertical:h-full data-vertical:w-2"
+          className="relative grow overflow-hidden rounded-full bg-input/90 select-none data-horizontal:h-2 data-horizontal:w-full data-vertical:h-full data-vertical:w-2"
         >
           <SliderPrimitive.Indicator
             data-slot="slider-range"
-            className="bg-primary select-none data-horizontal:h-full data-vertical:w-full"
+            className={cn('bg-primary select-none data-horizontal:h-full data-vertical:w-full', fillClassName)}
           />
           {marks?.map((mark) => (
             <span
@@ -64,13 +77,17 @@ function Slider<Value extends number | readonly number[]>({
             />
           ))}
         </SliderPrimitive.Track>
+        {/* 拇指位置（inset-inline-start，inset 模式下由 --position 解析而来）与
+            阴影/缩放带 150ms 过渡：调档、点轨道、拖拽越过吸附档时都"滑过去"
+            而非瞬移 —— 离散吸附滑杆的跳档瞬间正是需要过渡的时刻，拖拽中不杀
+            过渡（那是连续滑杆保跟手的做法；这里 150ms 缓动追指针即磁吸手感）。 */}
         {Array.from({ length: _values.length }, (_, index) => (
           <SliderPrimitive.Thumb
             data-slot="slider-thumb"
             key={index}
             aria-label={thumbAriaLabel}
             getAriaValueText={getThumbAriaValueText}
-            className="block h-4 w-6 shrink-0 rounded-full bg-white shadow-md ring-1 ring-black/10 transition-[color,box-shadow,background-color] select-none not-dark:bg-clip-padding hover:ring-4 hover:ring-ring/30 focus-visible:ring-4 focus-visible:ring-ring/30 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 data-vertical:h-6 data-vertical:w-4"
+            className="block h-4 w-6 shrink-0 rounded-full bg-white shadow-md ring-1 ring-black/10 transition-[color,box-shadow,background-color,inset-inline-start,transform] select-none not-dark:bg-clip-padding hover:ring-4 hover:ring-ring/30 focus-visible:ring-4 focus-visible:ring-ring/30 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 data-vertical:h-6 data-vertical:w-4"
           />
         ))}
       </SliderPrimitive.Control>
