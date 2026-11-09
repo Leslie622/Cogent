@@ -5,7 +5,7 @@
  * 这里只是视图态，不持有引擎会话：真会话的创建/选中/消息都在 chat store，
  * 发起入口（HomeSidebar.startNew）两件事一起做。只管视图的原因：消息流与
  * 提交永远走 chat store 的 activeSessionId，视图态若不配真会话就会串话。
- * 真实会话列表进侧栏后由 chat store 吸收替换。
+ * （2026-11-09：演示数据域已退役，chatId 即引擎会话 id。）
  */
 import { create } from 'zustand'
 
@@ -22,8 +22,9 @@ interface HomeState {
 }
 
 export const useHomeStore = create<HomeState>((set) => ({
-  // 默认落在演示会话（与样例数据同一条，首屏即对话流）
-  session: { kind: 'chat', chatId: 'c-conventions' },
+  // 默认 = 无演示会话（data.ts 已退役）：真会话由 chat store load() 选中后接管，
+  // 首屏瞬间（load 未落定）短暂显示 kind:'new' 空态可接受
+  session: { kind: 'new' },
   openChat: (chatId) => set({ session: { kind: 'chat', chatId } }),
   startNewChat: (projectId) => set({ session: { kind: 'new', projectId } }),
 }))

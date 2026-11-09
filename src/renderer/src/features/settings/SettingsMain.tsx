@@ -6,6 +6,7 @@
 import type { ComponentType } from 'react'
 import { GeneralSection } from './GeneralSection'
 import { ModelsSection } from './ModelsSection'
+import { ArchivedChatsSection } from './ArchivedChatsSection'
 import { findSettingsItem } from './data'
 import { useSettingsStore, type SettingsSectionId } from '@/stores/settings'
 
@@ -13,6 +14,7 @@ import { useSettingsStore, type SettingsSectionId } from '@/stores/settings'
 const SECTIONS: Partial<Record<SettingsSectionId, ComponentType>> = {
   general: GeneralSection,
   models: ModelsSection,
+  'archived-chats': ArchivedChatsSection,
 }
 
 export function SettingsMain() {

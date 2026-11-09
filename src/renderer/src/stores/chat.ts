@@ -4,20 +4,17 @@
  * 初载（load）拉会话列表，选中会话时按需拉历史消息。
  */
 import { create } from 'zustand'
-import type { ChatMessage } from '@/env.d'
+import type { ChatMessage, SessionSummary } from '@/env.d'
+import { useHomeStore } from '@/stores/home'
 
 /** sessionId → 消息列表（含流式中的 assistant 消息）；Record 值按"可能缺"对待（Partial 语义） */
 type MessagesBySession = Partial<Record<string, ChatMessage[]>>
 
-interface SessionMeta {
-  id: string
-  title: string
-  createdAt: number
-  updatedAt: number
-}
+/** 引擎 SessionSummary 的 renderer 侧直接镜像（env.d.ts），不再本地重复声明 */
+export type { SessionSummary }
 
 interface ChatState {
-  sessions: SessionMeta[]
+  sessions: SessionSummary[]
   activeSessionId: string | null
   /** sessionId → 消息列表（含流式中的 assistant 消息） */
   messagesBySession: MessagesBySession
@@ -31,8 +28,10 @@ interface ChatState {
   /** 初载：拉会话列表；无会话时建一个（首屏即可直接发消息） */
   load: () => Promise<void>
   selectSession: (sessionId: string) => Promise<void>
-  createSession: () => Promise<void>
+  createSession: (params?: { cwd?: string; projectId?: string }) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
+  setPinned: (sessionId: string, pinned: boolean) => Promise<void>
+  archive: (sessionId: string, archived: boolean) => Promise<void>
   submit: (text: string, model?: string, thinkingLevel?: string) => Promise<void>
   abort: () => Promise<void>
 }
@@ -54,26 +53,54 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ sessions })
     if (get().activeSessionId === null && sessions.length > 0) {
       await get().selectSession(sessions[0].id)
+      // 视图态对齐（修"重启后已有内容的会话还挂着信息区"）：load 自动选中了
+      // 最近会话，home store 若还停在默认 kind:'new'，就会出现"对话内容 +
+      // 选择项目信息条"同屏的错排 —— 选中即 chat 态
+      useHomeStore.setState({ session: { kind: 'chat', chatId: sessions[0].id } })
     }
   },
 
   selectSession: async (sessionId) => {
     set({ activeSessionId: sessionId, lastError: null })
-    // 按需拉历史（内存会话，切换时重拉一次；storage 落地后改为本地缓存）
+    // 按需拉历史（盘上转录已持久化，切换时重拉一次拿最新；本地缓存优化属后续件）
     if (get().messagesBySession[sessionId] === undefined) {
       const { messages } = await window.cogent.engineRequest('session.messages', { sessionId })
       set((state) => ({ messagesBySession: { ...state.messagesBySession, [sessionId]: messages } }))
     }
   },
 
-  createSession: async () => {
-    const summary = await window.cogent.engineRequest('session.create', {})
+  createSession: async (params) => {
+    const summary = await window.cogent.engineRequest('session.create', params ?? {})
     set((state) => ({
       sessions: [{ ...summary }, ...state.sessions],
       activeSessionId: summary.id,
       messagesBySession: { ...state.messagesBySession, [summary.id]: [] },
       lastError: null
     }))
+  },
+
+  /** 置顶/取消（引擎侧落 pinnedAt 并持久化）；同步更新列表内该会话的摘要 */
+  setPinned: async (sessionId, pinned) => {
+    const { summary } = await window.cogent.engineRequest('session.setPinned', { sessionId, pinned })
+    set((state) => ({
+      sessions: state.sessions.map((s) => (s.id === sessionId ? summary : s))
+    }))
+  },
+
+  /** 归档/恢复（回收站语义）：引擎 session.list 已滤掉归档会话，本地把摘要移出
+      列表（恢复动作在设置页归档视图，archive(chatId,false) 后经 load 语义回到
+      主列表——这里恢复时不强拉列表，由调用方刷新）。归档活动会话时视图落
+      kind:'new'，避免 HomeChat 悬空引用已消失的会话 */
+  archive: async (sessionId, archived) => {
+    await window.cogent.engineRequest('session.archive', { sessionId, archived })
+    set((state) => ({
+      sessions: archived ? state.sessions.filter((s) => s.id !== sessionId) : state.sessions,
+      activeSessionId:
+        archived && state.activeSessionId === sessionId ? null : state.activeSessionId
+    }))
+    if (archived && useHomeStore.getState().session.kind === 'chat') {
+      useHomeStore.setState({ session: { kind: 'new' } })
+    }
   },
 
   deleteSession: async (sessionId) => {
@@ -182,7 +209,7 @@ export function bindEngineEvents(): () => void {
           running: false,
           truncated,
           messagesBySession: { ...s.messagesBySession, [sessionId]: finalMessages },
-          // 首条消息后标题已在引擎侧生成；刷新会话列表反映标题变化
+          // 首条消息后标题已在引擎侧生成；updatedAt 顺带推进（排序口径）
           sessions: s.sessions.map((session) =>
             session.id === sessionId ? { ...session, updatedAt: Date.now() } : session
           )
