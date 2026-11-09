@@ -187,7 +187,9 @@ export function CreateProjectDialog({
         else onOpenChange(next)
       }}
     >
-      <DialogContent className="max-w-xl gap-5 rounded-2xl">
+      {/* sm:max-w-xl 同变体反制 DialogContent 自带的 sm:max-w-md（裸 max-w-xl 压不住，
+          两层弹窗会一样宽，见 UI布局.md 技术坑 1） */}
+      <DialogContent className="sm:max-w-xl gap-5 rounded-2xl">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold">创建项目</DialogTitle>
         </DialogHeader>
@@ -327,7 +329,9 @@ function TrustConfirmDialog({
 }) {
   return (
     <Dialog open onOpenChange={(next) => (!next ? onCancel() : undefined)}>
-      <DialogContent className="max-w-md gap-4 rounded-2xl [&>button]:hidden">
+      {/* sm:max-w-md 显式声明（恰好等于 DialogContent 默认值，但写明意图：
+          信任层必须窄于外层 sm:max-w-xl 的创建弹窗） */}
+      <DialogContent className="sm:max-w-md gap-4 rounded-2xl [&>button]:hidden">
         <DialogHeader className="items-center">
           <DialogTitle className="text-xl font-bold">信任这些文件夹吗？</DialogTitle>
         </DialogHeader>
