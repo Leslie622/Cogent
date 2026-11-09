@@ -23,6 +23,12 @@ export const IPC = {
   customProvidersGet: 'custom-providers:get',
   /** renderer → main：全量写自定义 provider 定义（落盘 + 推引擎 sync） */
   customProvidersSet: 'custom-providers:set',
+  /** renderer → main：读会话级偏好（选中模型/思考力度） */
+  settingsGet: 'settings:get',
+  /** renderer → main：写会话级偏好（字段合并语义，落 ~/.cogent/settings.json） */
+  settingsSave: 'settings:save',
+  /** renderer → main：弹系统目录选择框（创建项目/工作区绑定用）；返回所选绝对路径或 null */
+  workspacePickDirectory: 'workspace:pick-directory',
   /** renderer → main：窗口控制（最小化 / 切换最大化 / 关闭）——自绘 header 专用 */
   windowMinimize: 'window:minimize',
   windowMaximizeToggle: 'window:maximize-toggle',

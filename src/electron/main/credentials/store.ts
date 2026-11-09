@@ -9,12 +9,13 @@
  * - safeStorage 不可用（Linux 无 keyring 等）直接抛错 —— 静默降级成明文存储
  *   是安全事故，不是兼容性优化。
  *
- * 文件格式：userData/credentials.json
+ * 文件格式：<storageRoot>/credentials.json（~/.cogent，2026-11-09 迁入，见 storage-root.ts）
  *   { version: 1, providers: { [providerId]: { apiKey: <base64 密文> } } }
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, safeStorage } from 'electron'
+import { storageRoot, ensureRoot, migrateFromUserData } from '../storage-root'
 
 const FILE_VERSION = 1
 
@@ -24,12 +25,14 @@ interface CredentialFile {
 }
 
 function filePath(): string {
-  return join(app.getPath('userData'), 'credentials.json')
+  return join(storageRoot(), 'credentials.json')
 }
 
 /** 读整个密文文件并解密为明文表（进程内使用，不外传）。
     内存态用 Map：get() 天然返回可缺失，string-keyed 查找不落类型谎 */
 function decryptAll(): Map<string, { apiKey: string }> {
+  // 旧版存 userData：首启搬一次到 ~/.cogent（迁移不是复制，搬完删旧，见 storage-root.ts）
+  migrateFromUserData('credentials.json', app.getPath('userData'))
   const path = filePath()
   if (!existsSync(path)) return new Map()
 
@@ -54,7 +57,7 @@ function decryptAll(): Map<string, { apiKey: string }> {
 }
 
 function encryptAll(providers: Map<string, { apiKey: string }>): void {
-  mkdirSync(app.getPath('userData'), { recursive: true })
+  ensureRoot()
   const encrypted: Record<string, { apiKey: string }> = {}
   for (const [providerId, { apiKey }] of providers) {
     encrypted[providerId] = { apiKey: safeStorage.encryptString(apiKey).toString('base64') }

@@ -35,3 +35,5 @@
 | [自定义 Provider 与模型目录管理](custom-providers.md) | 模型设置扩展（createProvider/setProvider 机制） | 已完成（2026-11-06） |
 | [思考（Reasoning）流式呈现](thinking-reasoning.md) | 路线空位 4（thinking 半边） | 已完成（2026-11-08） |
 | [会话隔离与受理语义](pi-agent-integration-isolation.md) | 串话事故复盘（新聊天接线 + submit 受理校验） | 已完成（2026-11-09） |
+| [会话存储与转录持久化](session-storage.md) | 路线空位 3（StorageDriver + 本地 JSON + 惰性恢复） | 已完成（2026-11-09） |
+| [项目/工作区模型与存储根](project-workspace.md) | 计划第 2–6 步（~/.cogent 根 + 项目域 + 工作区注入） | 已完成（2026-11-09） |

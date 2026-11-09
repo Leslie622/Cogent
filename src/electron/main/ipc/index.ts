@@ -12,6 +12,8 @@ import { registerWindowIpc } from './window'
 import { registerEngineIpc } from './engine'
 import { registerCredentialsIpc } from './credentials'
 import { registerCustomProvidersIpc } from './custom-providers'
+import { registerWorkspaceIpc } from './workspace'
+import { registerSettingsIpc } from './settings'
 
 export interface IpcDeps {
   service: AgentServiceManager
@@ -25,4 +27,6 @@ export function registerIpc(deps: IpcDeps, store: CredentialStore, customProvide
   registerEngineIpc(deps)
   registerCredentialsIpc(deps.service, store)
   registerCustomProvidersIpc(deps.service, customProviders)
+  registerWorkspaceIpc(deps)
+  registerSettingsIpc()
 }

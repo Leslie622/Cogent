@@ -5,13 +5,14 @@
  * baseUrl 覆盖），不含 key —— key 走 credentials.json（safeStorage 加密）。
  * 明文的理由：定义本身不敏感（端点地址不是秘密），用户可以直接手改文件排障。
  *
- * 文件：userData/custom-providers.json
+ * 文件：<storageRoot>/custom-providers.json（~/.cogent，2026-11-09 迁入，见 storage-root.ts）
  *   { version: 1, providers: CustomProviderDef[], overrides: ProviderOverrideDef[] }
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { CustomProviderDef, ProviderOverrideDef } from '../../../protocol'
+import { storageRoot, ensureRoot, migrateFromUserData } from '../storage-root'
 
 const FILE_VERSION = 1
 
@@ -22,7 +23,7 @@ interface CustomProvidersFile {
 }
 
 function filePath(): string {
-  return join(app.getPath('userData'), 'custom-providers.json')
+  return join(storageRoot(), 'custom-providers.json')
 }
 
 export class CustomProvidersStore {
@@ -30,6 +31,8 @@ export class CustomProvidersStore {
 
   private ensureLoaded(): CustomProvidersFile {
     if (this.cache) return this.cache
+    // 旧版存 userData：首启搬一次到 ~/.cogent（迁移不是复制，搬完删旧，见 storage-root.ts）
+    migrateFromUserData('custom-providers.json', app.getPath('userData'))
     const path = filePath()
     if (!existsSync(path)) {
       this.cache = { version: FILE_VERSION, providers: [], overrides: [] }
@@ -61,7 +64,7 @@ export class CustomProvidersStore {
   }
 
   writeAll(providers: CustomProviderDef[], overrides: ProviderOverrideDef[]): void {
-    mkdirSync(app.getPath('userData'), { recursive: true })
+    ensureRoot()
     this.cache = { version: FILE_VERSION, providers, overrides }
     writeFileSync(filePath(), JSON.stringify(this.cache, null, 2), 'utf-8')
   }

@@ -38,6 +38,12 @@ declare global {
         providers: CustomProvidersPayload['providers'],
         overrides: CustomProvidersPayload['overrides']
       ) => Promise<{ ok: true }>
+      /** 弹系统目录选择框（创建项目用）；用户取消返回 null */
+      pickDirectory: () => Promise<string | null>
+      /** 读会话级偏好（选中模型/思考力度）；无文件返回 {} */
+      getSettings: () => Promise<{ activeModelId?: string; thinkingLevel?: import('@/env.d').ThinkingLevel }>
+      /** 写会话级偏好（字段合并） */
+      saveSettings: (partial: { activeModelId?: string; thinkingLevel?: string }) => Promise<{ ok: true }>
       /** 窗口控制（自绘 header 专用） */
       minimizeWindow: () => Promise<void>
       toggleMaximizeWindow: () => Promise<void>
@@ -54,18 +60,58 @@ export type EngineMethod =
   | 'session.create'
   | 'session.delete'
   | 'session.messages'
+  | 'session.setPinned'
+  | 'session.archive'
+  | 'session.listArchived'
+  | 'project.list'
+  | 'project.create'
+  | 'project.rename'
+  | 'project.delete'
+  | 'project.setPinned'
   | 'agent.submit'
   | 'agent.abort'
   | 'credentials.list'
   | 'models.list'
   | 'providers.custom.sync'
 
+/** 会话摘要（与 protocol SessionSummary 镜像；optional 字段=未设置） */
+export interface SessionSummary {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  cwd?: string
+  projectId?: string
+  /** 置顶时间（毫秒）；缺省 = 未置顶 */
+  pinnedAt?: number
+  /** 归档时间（毫秒）；缺省 = 未归档（回收站语义） */
+  archivedAt?: number
+}
+
+/** 项目摘要（与 protocol ProjectSummary 镜像）：项目 = 目录绑定（多根，首个主根） */
+export interface ProjectSummary {
+  id: string
+  name: string
+  cwds: string[]
+  createdAt: number
+  /** 置顶时间（毫秒）；缺省 = 未置顶 */
+  pinnedAt?: number
+}
+
 /** 与 protocol/types.ts 对应 method 的参数形状（renderer 侧镜像声明） */
 export interface EngineMethodParams {
   'session.list': Record<string, never>
-  'session.create': { title?: string }
+  'session.create': { title?: string; cwd?: string; projectId?: string }
   'session.delete': { sessionId: string }
   'session.messages': { sessionId: string }
+  'session.setPinned': { sessionId: string; pinned: boolean }
+  'session.archive': { sessionId: string; archived: boolean }
+  'session.listArchived': Record<string, never>
+  'project.list': Record<string, never>
+  'project.create': { name: string; cwds: string[] }
+  'project.rename': { projectId: string; name: string }
+  'project.delete': { projectId: string }
+  'project.setPinned': { projectId: string; pinned: boolean }
   'agent.submit': { sessionId: string; text: string; model?: string; thinkingLevel?: string }
   'agent.abort': { sessionId: string }
   'credentials.list': Record<string, never>
@@ -78,10 +124,18 @@ export interface EngineMethodParams {
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
 export interface EngineMethodResult {
-  'session.list': Array<{ id: string; title: string; createdAt: number; updatedAt: number }>
-  'session.create': { id: string; title: string; createdAt: number; updatedAt: number }
+  'session.list': SessionSummary[]
+  'session.create': SessionSummary
   'session.delete': { deleted: boolean }
   'session.messages': { messages: ChatMessage[] }
+  'session.setPinned': { summary: SessionSummary }
+  'session.archive': { summary: SessionSummary }
+  'session.listArchived': SessionSummary[]
+  'project.list': ProjectSummary[]
+  'project.create': { summary: ProjectSummary }
+  'project.rename': { summary: ProjectSummary }
+  'project.delete': { deleted: boolean }
+  'project.setPinned': { summary: ProjectSummary }
   'agent.submit': { accepted: true }
   'agent.abort': { aborted: boolean }
   'credentials.list': { providers: ProviderSummary[] }
@@ -129,6 +183,8 @@ export interface ModelSummary {
   name: string
   provider: string
   reasoning: boolean
+  /** 该模型真实支持的思考力度档（含 'off'；引擎按 pi 目录判定） */
+  thinkingLevels: ThinkingLevelWithOff[]
   contextWindow: number
   maxTokens: number
 }
@@ -140,6 +196,9 @@ export interface ModelSummary {
  * thinkingLevelMap（选中透传 / 未选中 null）。
  */
 export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/** 完整档位（含 'off'）：model.thinkingLevels 的元素类型 */
+export type ThinkingLevelWithOff = 'off' | ThinkingLevel
 
 export interface ModelDef {
   id: string

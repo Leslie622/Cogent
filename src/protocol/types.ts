@@ -93,14 +93,27 @@ export function isRpcEvent(frame: unknown): frame is RpcEvent {
 // ———— 领域类型 ————
 
 /**
- * 会话摘要（列表/创建返回）。
- * 存储落地前会话只活在引擎内存（docs/路线.md 第 3 项另做），因此没有持久化相关字段。
+ * 会话摘要（列表/创建/置顶返回）。
+ * 持久化（2026-11-09，docs/计划-工作区与会话真实化.md 第 1 步）：引擎重启后经
+ * StorageDriver 复原，summary 整体落盘 —— 新字段全部 optional（只增不破），
+ * 旧宿主/旧盘数据缺字段即走缺省行为。
  */
 export interface SessionSummary {
   id: string
   title: string
   createdAt: number
   updatedAt: number
+  /** 工作区目录（第 6 步接线：无项目也可单绑）；缺省 = 无绑定 */
+  cwd?: string
+  /** 项目归属（继承项目 cwd，两者可并存）；缺省 = 不属于任何项目 */
+  projectId?: string
+  /** 置顶时间（毫秒）；缺省 = 未置顶。存时间不存布尔：置顶分区按此倒序 */
+  pinnedAt?: number
+  /**
+   * 归档时间（毫秒）；缺省 = 未归档。归档 = 回收站语义（软删）：session.list
+   * 默认滤掉已归档会话，设置页「已归档的聊天」可查看/恢复/彻底删除。
+   */
+  archivedAt?: number
 }
 
 /**
@@ -135,6 +148,12 @@ export interface ModelSummary {
   provider: string
   /** 是否支持推理（thinking） */
   reasoning: boolean
+  /**
+   * 该模型真实支持的思考力度档（含 'off'；pi getSupportedThinkingLevels 判定，
+   * 源头是 pi 目录按端点手工标定的 thinkingLevelMap）。UI 滑杆按此渲染/置灰，
+   * 切模型时据此 clamp —— 避免"选了 medium 实际下发 high"的静默降级。
+   */
+  thinkingLevels: ThinkingLevelWithOff[]
   contextWindow: number
   maxTokens: number
 }
@@ -227,11 +246,81 @@ export interface SessionMessagesResult {
   messages: ChatMessage[]
 }
 
+/** 置顶/取消置顶（同一入口，pinned 二值切换）；返回更新后的完整摘要 */
+export interface SessionSetPinnedParams {
+  sessionId: string
+  pinned: boolean
+}
+export interface SessionSetPinnedResult {
+  summary: SessionSummary
+}
+
+/** 归档/取消归档（回收站语义：archive=false = 恢复）；返回更新后的完整摘要 */
+export interface SessionArchiveParams {
+  sessionId: string
+  archived: boolean
+}
+export interface SessionArchiveResult {
+  summary: SessionSummary
+}
+
+/**
+ * 项目摘要（= 目录绑定，计划 D3）：会话经 projectId 归属项目并继承其全部目录。
+ * cwds 多根（2026-11-09 二次决策收编）：跨仓库任务（前端+后端两仓库一个项目）
+ * 是主流 Agent（VS Code workspace / Claude Code --add-dir）的既定能力；
+ * 首个目录 = 主根（标题/信息区展示取它）。
+ */
+export interface ProjectSummary {
+  id: string
+  name: string
+  /** 工作区根目录列表（≥1；绝对路径，创建时经宿主目录选择框取得） */
+  cwds: string[]
+  createdAt: number
+  /** 置顶时间（毫秒）；缺省 = 未置顶（置顶分区按此倒序，移动语义：置顶后不在项目分区重复） */
+  pinnedAt?: number
+}
+
+export interface ProjectCreateParams {
+  name: string
+  /** 工作区根目录（≥1 个；首个为主根） */
+  cwds: string[]
+}
+export interface ProjectCreateResult {
+  summary: ProjectSummary
+}
+
+export interface ProjectRenameParams {
+  projectId: string
+  name: string
+}
+export interface ProjectRenameResult {
+  summary: ProjectSummary
+}
+
+export interface ProjectDeleteParams {
+  projectId: string
+}
+export interface ProjectDeleteResult {
+  deleted: boolean
+}
+
+/** 项目置顶/取消（同会话置顶口径；移动语义由 UI 分区过滤实现） */
+export interface ProjectSetPinnedParams {
+  projectId: string
+  pinned: boolean
+}
+export interface ProjectSetPinnedResult {
+  summary: ProjectSummary
+}
+
 /**
  * 思考等级（pi ThinkingLevel 的子集；off 是"关闭思考"，不属于"支持的等级"）。
  * 引擎按选中集构建 thinkingLevelMap：选中的等级原值透传，未选中的置 null（显式不支持）。
  */
 export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/** 完整档位（含 'off' = 关闭思考）：thinkingLevels 等"支持档枚举"场景用 */
+export type ThinkingLevelWithOff = 'off' | ThinkingLevel
 
 /**
  * 用户自定义模型定义（内置供应商 override 与自定义供应商 modelDefs 共用）。
@@ -305,9 +394,17 @@ export interface ProvidersCustomSyncResult {
 export interface ProtocolMethods {
   initialize: { params: InitializeParams; result: InitializeResult }
   'session.list': { params: Record<string, never>; result: SessionSummary[] }
-  'session.create': { params: { title?: string; permissionMode?: PermissionMode }; result: SessionSummary }
+  'session.create': { params: { title?: string; permissionMode?: PermissionMode; cwd?: string; projectId?: string }; result: SessionSummary }
   'session.delete': { params: { sessionId: string }; result: { deleted: boolean } }
   'session.messages': { params: SessionMessagesParams; result: SessionMessagesResult }
+  'session.setPinned': { params: SessionSetPinnedParams; result: SessionSetPinnedResult }
+  'session.listArchived': { params: Record<string, never>; result: SessionSummary[] }
+  'session.archive': { params: SessionArchiveParams; result: SessionArchiveResult }
+  'project.list': { params: Record<string, never>; result: ProjectSummary[] }
+  'project.create': { params: ProjectCreateParams; result: ProjectCreateResult }
+  'project.rename': { params: ProjectRenameParams; result: ProjectRenameResult }
+  'project.delete': { params: ProjectDeleteParams; result: ProjectDeleteResult }
+  'project.setPinned': { params: ProjectSetPinnedParams; result: ProjectSetPinnedResult }
   'agent.submit': { params: AgentSubmitParams; result: AgentSubmitResult }
   'agent.abort': { params: { sessionId: string }; result: { aborted: boolean } }
   'approval.respond': { params: ApprovalRespondParams; result: ApprovalRespondResult }

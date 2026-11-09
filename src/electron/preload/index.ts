@@ -48,6 +48,13 @@ const api = {
   setCustomProviders: (providers: CustomProvidersPayload['providers'], overrides: CustomProvidersPayload['overrides']): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.customProvidersSet, { providers, overrides }),
 
+  /** 弹系统目录选择框（创建项目用）；用户取消返回 null */  /** 读会话级偏好（选中模型/思考力度）；无文件返回 {} */
+  getSettings: (): Promise<Record<string, unknown>> => ipcRenderer.invoke(IPC.settingsGet),
+  /** 写会话级偏好（字段合并） */
+  saveSettings: (partial: Record<string, unknown>): Promise<{ ok: true }> => ipcRenderer.invoke(IPC.settingsSave, partial),
+
+  pickDirectory: (): Promise<string | null> => ipcRenderer.invoke(IPC.workspacePickDirectory),
+
   /** 窗口控制（自绘 header 专用，白名单动作） */
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke(IPC.windowMinimize),
   toggleMaximizeWindow: (): Promise<void> => ipcRenderer.invoke(IPC.windowMaximizeToggle),

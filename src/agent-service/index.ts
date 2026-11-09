@@ -16,6 +16,8 @@
  * handler 内部信任协议类型，不做二次防御。
  */
 import { createInterface } from 'node:readline'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import {
   PROTOCOL_VERSION,
   ProtocolError,
@@ -24,6 +26,7 @@ import {
   isRpcRequest,
   toRpcError,
   type CredentialsListResult,
+  type SessionArchiveParams,
   type CredentialsSetParams,
   type CustomProviderDef,
   type InitializeParams,
@@ -34,10 +37,13 @@ import {
   type ProvidersCustomSyncResult,
   type RpcEvent,
   type RpcResponse,
-  type SessionMessagesParams
+  type SessionMessagesParams,
+  type SessionSetPinnedParams
 } from '../protocol'
 import { CredentialRegistry } from './runtime/credentials'
 import { SessionManager } from './runtime/session'
+import { ProjectRegistry } from './runtime/project'
+import { JsonStorageDriver } from './storage'
 
 /** 事件发送：service → 宿主（notification 帧） */
 function notify<E extends keyof ProtocolEvents>(method: E, params: ProtocolEvents[E]): void {
@@ -50,9 +56,20 @@ function reply(response: RpcResponse): void {
   process.stdout.write(JSON.stringify(response) + '\n')
 }
 
-/** 引擎单例：凭据表 + 会话运行时（构造即注册 pi 内置模型目录） */
+/**
+ * 存储根：第一方数据唯一根（决策 D1，docs/计划-工作区与会话真实化.md §1/§2）。
+ * COGENT_HOME 覆盖口供冒烟测试指临时目录（同 COGENT_NODE_BIN 手法）；
+ * 第 2 步把 main 侧凭据 store 也迁到同根（引擎是纯 Node，自算 home 零 Electron）。
+ */
+const STORAGE_ROOT = process.env.COGENT_HOME || join(homedir(), '.cogent')
+
+/** 引擎单例：凭据表 + 本地 JSON 存储 + 项目注册表 + 会话运行时（构造即恢复盘上数据） */
 const credentials = new CredentialRegistry()
-const sessions = new SessionManager(credentials, notify)
+const storage = new JsonStorageDriver(STORAGE_ROOT)
+// 装配顺序：projects 先建（无依赖），sessions 后建（构造即拿到项目引用；
+// SessionManager 对项目的使用只发生在 submit 期，无构造期回查）
+const projects = new ProjectRegistry(storage)
+const sessions = new SessionManager(credentials, storage, notify, projects)
 
 /** 握手：宿主确认链路可用，服务上报运行时信息（宿主据此做 Node 版本守卫）。 */
 function handleInitialize(params: unknown): InitializeResult {
@@ -94,6 +111,52 @@ function handleSessionMessages(params: unknown) {
     throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.messages 需要 { sessionId: string }')
   }
   return { messages: sessions.messages(p.sessionId) }
+}
+
+/** session.setPinned 入口校验：sessionId 非空 string + pinned 布尔 */
+function handleSessionSetPinned(params: unknown) {
+  const p = params as Partial<SessionSetPinnedParams>
+  if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 || typeof p.pinned !== 'boolean') {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.setPinned 需要 { sessionId: string, pinned: boolean }')
+  }
+  return { summary: sessions.setPinned(p.sessionId, p.pinned) }
+}
+
+/** session.archive 入口校验 */
+function handleSessionArchive(params: unknown) {
+  const p = params as Partial<SessionArchiveParams>
+  if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 || typeof p.archived !== 'boolean') {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.archive 需要 { sessionId: string, archived: boolean }')
+  }
+  return { summary: sessions.archive(p.sessionId, p.archived) }
+}
+
+/** project.create 入口校验：name 非空 + cwds ≥1 个非空 string（首个 = 主根；
+    目录存在性在提交前由宿主目录框/信任确认保证，引擎不复核磁盘 ——
+    语义上存的是绑定声明，submit 时才复查） */
+function handleProjectCreate(params: unknown) {
+  const p = params as Partial<{ name: unknown; cwds: unknown }>
+  if (typeof p.name !== 'string' || p.name.trim().length === 0) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'project.create 需要 { name: string, cwds: string[] }')
+  }
+  if (
+    !Array.isArray(p.cwds) ||
+    p.cwds.length === 0 ||
+    !p.cwds.every((c) => typeof c === 'string' && c.length > 0)
+  ) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'project.create 需要至少一个工作区目录（cwds: string[]）')
+  }
+  const cwds = p.cwds as string[]
+  return { summary: projects.create(p.name, cwds) }
+}
+
+/** project.rename 入口校验 */
+function handleProjectRename(params: unknown) {
+  const p = params as Partial<{ projectId: unknown; name: unknown }>
+  if (typeof p.projectId !== 'string' || p.projectId.length === 0 || typeof p.name !== 'string' || p.name.trim().length === 0) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'project.rename 需要 { projectId: string, name: string }')
+  }
+  return { summary: projects.rename(p.projectId, p.name) }
 }
 
 /** providers.custom.sync 入口校验：两数组存在、每项字段形状收窄（id 带 custom/ 前缀的交由 registry 处理）。
@@ -159,9 +222,23 @@ function handleProvidersCustomSync(params: unknown): ProvidersCustomSyncResult {
 const handlers = new Map<string, (params: unknown) => unknown>([
   ['initialize', handleInitialize],
   ['session.list', () => sessions.list()],
-  ['session.create', (params) => sessions.create((params as { title?: string }).title)],
+  ['session.create', (params) => {
+    const p = params as { title?: string; cwd?: string; projectId?: string }
+    return sessions.create({ title: p.title, cwd: p.cwd, projectId: p.projectId })
+  }],
   ['session.delete', (params) => ({ deleted: sessions.delete((params as { sessionId: string }).sessionId) })],
   ['session.messages', handleSessionMessages],
+  ['session.setPinned', handleSessionSetPinned],
+  ['session.archive', handleSessionArchive],
+  ['session.listArchived', () => sessions.listArchived()],
+  ['project.list', () => projects.list()],
+  ['project.create', handleProjectCreate],
+  ['project.rename', handleProjectRename],
+  ['project.delete', (params) => ({ deleted: projects.delete((params as { projectId: string }).projectId) })],
+  ['project.setPinned', (params) => {
+    const p = params as { projectId: string; pinned: boolean }
+    return { summary: projects.setPinned(p.projectId, p.pinned) }
+  }],
   ['agent.submit', (params) => {
     const p = params as { sessionId: string; text: string; model?: string; thinkingLevel?: string }
     // submit 内部同步校验（会话存在/空闲），失败 throw → dispatch 转错误帧；
