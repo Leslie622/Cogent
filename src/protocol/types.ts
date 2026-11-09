@@ -117,9 +117,30 @@ export interface SessionSummary {
 }
 
 /**
+ * 一次回答的 token 用量（仅 assistant；pi Usage 的投影形状）。
+ * 手写而非 import pi 类型 —— 协议零运行时依赖（约定.md §2）。
+ * reasoning 是 output 的子集，provider 报告了该细项才有；
+ * totalCost = pi cost.total（端点实报优先、目录估价兜底），目录无定价的模型缺省。
+ * 工具循环多轮时为各轮之和（计费口径：每轮请求都携带全量上下文，账单即各轮相加）。
+ */
+export interface MessageUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  /** 思考 token（output 子集）；provider 未报告该细项时缺省 */
+  reasoning?: number
+  totalTokens: number
+  /** 本次总成本 USD；无定价时缺省 */
+  totalCost?: number
+}
+
+/**
  * 对话消息（协议侧的最小形状）。
  * 刻意不搬 pi 的完整 content blocks / toolCall —— 协议只暴露 UI 渲染所需。
  * thinking：assistant 思考文本（ pi ThinkingContent 块拼接，additive 扩展）；
+ * usage/durationMs/model：token 用量/模型耗时/模型名（2026-11-09 additive，
+ * 属路线空位 1 的 usage 先行，同 thinking 的 flat 先行模式）；
  * 完整块结构化（phase/toolCall 等）仍是路线第 1 项，届时继续以 optional 字段扩展。
  */
 export interface ChatMessage {
@@ -128,6 +149,12 @@ export interface ChatMessage {
   content: string
   /** 思考文本（仅 assistant 且模型开了思考才有）；缺省 = 无思考内容 */
   thinking?: string
+  /** token 用量（仅 assistant）；缺省 = 引擎没拿到（如极老会话的投影） */
+  usage?: MessageUsage
+  /** 模型耗时毫秒（仅 assistant，各轮之和，不含工具执行时间）；pi 未计时则缺省 */
+  durationMs?: number
+  /** 产生本回答的模型 id（仅 assistant） */
+  model?: string
   timestamp: number
 }
 

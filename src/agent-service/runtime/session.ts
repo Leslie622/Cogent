@@ -27,13 +27,14 @@ import { Agent } from '@earendil-works/pi-agent-core'
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core'
 import { builtinModels } from '@earendil-works/pi-ai/providers/all'
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
-import type { MutableModels } from '@earendil-works/pi-ai'
+import type { MutableModels, Usage } from '@earendil-works/pi-ai'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ProtocolError, RpcErrorCode } from '../../protocol'
 import type {
   ChatMessage,
   CustomProviderDef,
+  MessageUsage,
   ModelSummary,
   ProviderOverrideDef,
   ProtocolEvents,
@@ -150,6 +151,48 @@ interface StreamingState {
   thinking: string
   /** pi 停止原因（turn_end 时记录；length = 输出被 token 上限截断） */
   stopReason?: string
+  /** token 用量（turn_end 各轮累加；见 accumulateUsage 的口径注释） */
+  usage?: MessageUsage
+  /** 模型耗时毫秒（各轮 durationMs 之和；pi 未计时的轮次按缺省跳过，不含工具执行时间） */
+  durationMs?: number
+  /** 模型 id（末轮记录） */
+  model?: string
+}
+
+/** pi Usage → 协议 MessageUsage：只投影 UI 所需（cost 明细不带，total 一项即总账） */
+function projectUsage(usage: Usage): MessageUsage {
+  return {
+    input: usage.input,
+    output: usage.output,
+    cacheRead: usage.cacheRead,
+    cacheWrite: usage.cacheWrite,
+    reasoning: usage.reasoning,
+    totalTokens: usage.totalTokens,
+    totalCost: usage.cost.total
+  }
+}
+
+/** optional 数值相加：双侧缺省保持缺省（"没报告" ≠ "报告了 0"） */
+function sumOptional(a: number | undefined, b: number | undefined): number | undefined {
+  return a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0)
+}
+
+/**
+ * 用量累加（工具循环多轮时 turn_end 逐轮到达，当前无工具 = 恒单轮直通）。
+ * 口径 = 各轮之和：每轮请求都携带全量上下文重发，端点账单就是逐轮相加，
+ * 这也是"本次回答共消耗多少"的计费真相，而非只看末轮。
+ */
+function accumulateUsage(current: MessageUsage | undefined, add: MessageUsage): MessageUsage {
+  if (!current) return add
+  return {
+    input: current.input + add.input,
+    output: current.output + add.output,
+    cacheRead: current.cacheRead + add.cacheRead,
+    cacheWrite: current.cacheWrite + add.cacheWrite,
+    reasoning: sumOptional(current.reasoning, add.reasoning),
+    totalTokens: current.totalTokens + add.totalTokens,
+    totalCost: sumOptional(current.totalCost, add.totalCost)
+  }
 }
 
 /** 盘上文档格式版本（将来字段演进据此迁移，同 credentials.json 的 version 手法） */
@@ -456,10 +499,17 @@ export class SessionManager {
         return
       }
       case 'turn_end': {
-        // 记录停止原因：length = 输出被 token 上限截断（agent_end 事件本身不带此信息）
+        // 记录停止原因与用量：length = 输出被 token 上限截断（agent_end 事件本身
+        // 不带这些信息）；usage/durationMs/model 同样只在 turn_end 的 message 上
+        // 到达 —— agent_end 只剩聚合态转录，此处不摘即永久丢失（协议事件不回头）
         if (event.message.role === 'assistant') {
           const streaming = this.streaming.get(sessionId)
-          if (streaming) streaming.stopReason = event.message.stopReason
+          if (streaming) {
+            streaming.stopReason = event.message.stopReason
+            streaming.usage = accumulateUsage(streaming.usage, projectUsage(event.message.usage))
+            streaming.durationMs = sumOptional(streaming.durationMs, event.message.durationMs)
+            streaming.model = event.message.model
+          }
         }
         return
       }
@@ -484,13 +534,17 @@ export class SessionManager {
 
         this.notify('run.completed', {
           sessionId,
-          // 思考/正文任一非空都落消息（只有思考没有正文的极端截断也可见）
+          // 思考/正文任一非空都落消息（只有思考没有正文的极端截断也可见）；
+          // usage 三件套来自 turn_end 的逐轮累积（见 translateEvent turn_end 分支）
           message: streaming && (streaming.text || streaming.thinking)
             ? {
                 id: streaming.messageId,
                 role: 'assistant',
                 content: streaming.text,
                 thinking: streaming.thinking || undefined,
+                usage: streaming.usage,
+                durationMs: streaming.durationMs,
+                model: streaming.model,
                 timestamp: Date.now()
               }
             : undefined,
@@ -512,7 +566,7 @@ export class SessionManager {
     return undefined
   }
 
-  /** pi Message[] → ChatMessage[]：只取 user/assistant 的纯文本内容 */
+  /** pi Message[] → ChatMessage[]：取 user/assistant 的纯文本内容 + assistant 用量三件套投影 */
   private toChatMessages(messages: AgentMessage[]): ChatMessage[] {
     const result: ChatMessage[] = []
     for (const message of messages) {
@@ -536,6 +590,11 @@ export class SessionManager {
             .map((block) => (block.type === 'text' ? block.text : ''))
             .join(''),
           thinking: thinking || undefined,
+          // 用量三件套同投影：盘上 transcript 存 pi 完整消息（usage 是必有字段），
+          // 历史会话与流式结束态同一套数据源，老会话 UI 上也可见统计
+          usage: projectUsage(message.usage),
+          durationMs: message.durationMs,
+          model: message.model,
           // 真实请求时间戳（pi AssistantMessage.timestamp = 请求开始时刻）；
           // 此前取 Date.now() 在恢复历史时会漂移成回查时刻
           timestamp: message.timestamp

@@ -86,7 +86,12 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   吸底点亮末条 —— 库的 visibility/scrollable 快照挂载后为空且受 content-visibility
   干扰，勿用；点击 scrollToMessage 平滑定位，按 messageId 查表不依赖锚点）；
   索引 hover 阶梯 = 悬停 24px、
-  两侧 17/14/10 递减、颜色同步减淡
+  两侧 17/14/10 递减、颜色同步减淡；
+  **assistant 元信息行**（UsageLine，2026-11-09）：token 用量/缓存/成本/耗时挂
+  正文下的 footer 位，`text-[11px] text-muted-foreground tabular-nums`（时间戳/
+  徽标同口径，实色 token），格式 `↑ 41 · ↓ 1.2K · 缓存读 8.2K · $0.0031 · 2.4s`；
+  **零值省略**（缓存 0/无定价不显示对应项，"没发生"≠"值为 0"）、数据无则整行
+  不渲染（流式态天然没有，随 run.completed 出现）
 - **滚动渐隐** `.scroll-fade-b/-y/-x`（mask 两端 24px 渐变，ChatGPT 同款不硬截；
   base-luma 组件引用了这组类，已补定义）
 

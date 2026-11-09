@@ -169,7 +169,26 @@ export interface ChatMessage {
   content: string
   /** 思考文本（仅 assistant 且模型开了思考才有；与 protocol ChatMessage.thinking 镜像） */
   thinking?: string
+  /** token 用量（仅 assistant；与 protocol ChatMessage.usage 镜像），缺省 = 无数据不渲染统计行 */
+  usage?: MessageUsage
+  /** 模型耗时毫秒（仅 assistant；与 protocol ChatMessage.durationMs 镜像） */
+  durationMs?: number
+  /** 产生本回答的模型 id（与 protocol ChatMessage.model 镜像；UI 暂不展示） */
+  model?: string
   timestamp: number
+}
+
+/** 一次回答的 token 用量（与 protocol MessageUsage 镜像；见其字段注释） */
+export interface MessageUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  /** 思考 token（output 子集）；provider 未报告该细项时缺省 */
+  reasoning?: number
+  totalTokens: number
+  /** 本次总成本 USD；无定价时缺省 */
+  totalCost?: number
 }
 
 export interface ProviderSummary {

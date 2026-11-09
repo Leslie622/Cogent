@@ -67,7 +67,7 @@ import { useChatStore } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
 import { ProjectPicker } from './ProjectPicker'
 import { providerDisplayName, usableModels, useEngineStore } from '@/stores/engine'
-import type { ModelSummary, ThinkingLevel } from '@/env.d'
+import type { MessageUsage, ModelSummary, ThinkingLevel } from '@/env.d'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 
@@ -79,12 +79,32 @@ function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+/** token 数紧凑格式：1234 → 1.2K、1.05M；千以下原样（tabular-nums 保证列对齐） */
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1e6) return `${parseFloat((n / 1000).toFixed(1))}K`
+  return `${parseFloat((n / 1e6).toFixed(2))}M`
+}
+
+/** 模型耗时：不足 1s 以 ms 计，s 取一位小数去尾零（2400 → 2.4s） */
+function formatDuration(ms: number): string {
+  return ms < 1000 ? `${ms}ms` : `${parseFloat((ms / 1000).toFixed(1))}s`
+}
+
+/** 成本 USD：四位小数去尾零（0.0031 → $0.0031）；不足 $0.0001 标下限而非抹成 $0 */
+function formatCost(usd: number): string {
+  if (usd < 0.0001) return '<$0.0001'
+  return `$${parseFloat(usd.toFixed(4))}`
+}
+
 /** 消息的最小渲染形状（chat store 的 ChatMessage，props 单向传入） */
 type MessageLike = {
   id: string
   role: 'user' | 'assistant'
   content: string
   thinking?: string
+  usage?: MessageUsage
+  durationMs?: number
   timestamp: number
 }
 
@@ -122,7 +142,27 @@ function ChatHeader({
   )
 }
 
-/** 单条消息：用户 = 灰气泡右挂 + 时间戳/复制/编辑；助手 = 平铺纯文本 */
+/**
+ * assistant 消息元信息行（shadcn message 的 footer 位）：输入/输出 token +
+ * 缓存读/写 + 成本 + 模型耗时。数据无则整行不渲染 —— 流式占位没有 usage，
+ * 统计行随 run.completed 在回答完成时出现。零值省略：无缓存命中的回答不显示
+ * 缓存项、无定价模型不显示成本（"没发生"与"值为 0"在此同义，常显一排 0 是噪音）。
+ */
+function UsageLine({ usage, durationMs }: { usage?: MessageUsage; durationMs?: number }) {
+  const parts: string[] = []
+  if (usage) {
+    parts.push(`↑ ${formatTokens(usage.input)}`, `↓ ${formatTokens(usage.output)}`)
+    if (usage.cacheRead > 0) parts.push(`缓存读 ${formatTokens(usage.cacheRead)}`)
+    if (usage.cacheWrite > 0) parts.push(`缓存写 ${formatTokens(usage.cacheWrite)}`)
+    const cost = usage.totalCost
+    if (cost !== undefined && cost > 0) parts.push(formatCost(cost))
+  }
+  if (durationMs !== undefined) parts.push(formatDuration(durationMs))
+  if (parts.length === 0) return null
+  return <div className="text-[11px] text-muted-foreground tabular-nums">{parts.join(' · ')}</div>
+}
+
+/** 单条消息：用户 = 灰气泡右挂 + 时间戳/复制/编辑；助手 = 平铺纯文本 + 用量统计行 */
 function MessageRow({ message }: { message: MessageLike }) {
   if (message.role === 'user') {
     return (
@@ -168,6 +208,7 @@ function MessageRow({ message }: { message: MessageLike }) {
           />
         )}
         <p className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">{message.content}</p>
+        <UsageLine usage={message.usage} durationMs={message.durationMs} />
       </MessageContent>
     </Message>
   )

@@ -37,3 +37,4 @@
 | [会话隔离与受理语义](pi-agent-integration-isolation.md) | 串话事故复盘（新聊天接线 + submit 受理校验） | 已完成（2026-11-09） |
 | [会话存储与转录持久化](session-storage.md) | 路线空位 3（StorageDriver + 本地 JSON + 惰性恢复） | 已完成（2026-11-09） |
 | [项目/工作区模型与存储根](project-workspace.md) | 计划第 2–6 步（~/.cogent 根 + 项目域 + 工作区注入） | 已完成（2026-11-09） |
+| [token 用量统计](token-usage.md) | 路线空位 1 的 usage 先行（pi Usage 投影 + 消息级统计行） | 已完成（2026-11-09） |

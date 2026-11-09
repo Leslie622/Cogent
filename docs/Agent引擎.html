@@ -286,8 +286,8 @@
   <table>
     <tr><th style="width:180px">event</th><th>语义</th><th style="width:96px">状态</th></tr>
     <tr><td><code>run.started</code></td><td>一次执行开始（submit 受理后立刻发）</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>message.delta</code></td><td>流式文本增量；<b>目前只转译 text_delta</b>，thinking / toolcall 增量被丢弃</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>run.completed</code></td><td>执行正常结束：最终完整 assistant 消息（UI 用它替换流式累积，免拼 delta）+ stopReason（length = 被 token 上限截断）</td><td><span class="st ok">已发射</span></td></tr>
+    <tr><td><code>message.delta</code></td><td>流式文本增量；转译 text_delta / thinking_delta 两路（<code>kind</code> 区分，2026-11-08），toolcall 增量仍丢弃（呈现属空位 4）</td><td><span class="st ok">已发射</span></td></tr>
+    <tr><td><code>run.completed</code></td><td>执行正常结束：最终完整 assistant 消息（UI 用它替换流式累积，免拼 delta；2026-11-09 起带 <code>usage</code> token 用量 / <code>durationMs</code> 模型耗时 / <code>model</code> 模型名三件套）+ stopReason（length = 被 token 上限截断）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>run.failed</code></td><td>执行失败：message 来自 pi 约定的 <code>Agent.state.errorMessage</code>（stream error / 中止后异常都汇于此）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>tool.started / tool.completed</code></td><td>工具调用起止（带 ToolKind 分级）—— 空位 2 接线时开始发射</td><td><span class="st plan">协议已定</span></td></tr>
     <tr><td><code>approval.request</code></td><td>审批拦截：引擎暂停等待宿主（最终是用户）以 <code>approval.respond</code> 裁决</td><td><span class="st plan">协议已定</span></td></tr>
@@ -403,15 +403,16 @@
   <h3 id="s3-lifecycle">一条消息在引擎内的生命周期</h3>
   <p>
     ⑧⑨⑩ 之间引擎里其实有个不显眼的<b>流式累积缓冲</b>（<code>StreamingState</code>）：
-    <code>messageId</code> 在 submit 时就预生成（UUID），此后每个 text_delta 都往同一个缓冲追加文本并推 delta 事件；
-    <code>turn_end</code> 到达时顺手记下 pi 的 stopReason；<code>agent_end</code> 时缓冲一次性转成完整
+    <code>messageId</code> 在 submit 时就预生成（UUID），此后每个 text_delta / thinking_delta 都往同一个缓冲追加文本并推 delta 事件；
+    <code>turn_end</code> 到达时顺手记下 pi 的 stopReason 与用量三件套（usage / durationMs / model，多轮累加）；
+    <code>agent_end</code> 时缓冲一次性转成完整
     <code>ChatMessage</code> 挂在 <code>run.completed</code> 上 —— 所以 UI 流式渲染的是「半成品」，
     最终以 completed 的完整消息为准替换，不怕 delta 乱序或丢失。
   </p>
   <table>
     <tr><th style="width:150px">pi 事件</th><th>转译处置</th></tr>
-    <tr><td><code>message_update</code></td><td>只转译 <code>text_delta</code> 增量 → <code>message.delta</code>；thinking / toolcall 增量直接丢弃（呈现属空位 4）</td></tr>
-    <tr><td><code>turn_end</code></td><td>assistant 消息时记 <code>stopReason</code> 到缓冲（agent_end 事件本身不带此信息）</td></tr>
+    <tr><td><code>message_update</code></td><td>转译 <code>text_delta</code> / <code>thinking_delta</code> 增量 → <code>message.delta</code>（kind 区分）；toolcall 增量直接丢弃（呈现属空位 4）</td></tr>
+    <tr><td><code>turn_end</code></td><td>assistant 消息时记 <code>stopReason</code> + 用量三件套到缓冲（agent_end 事件本身不带此信息，此处不摘即永久丢失；usage 多轮累加 = 计费口径）</td></tr>
     <tr><td><code>agent_end</code></td><td>定案：有 <code>errorMessage</code> → <code>run.failed</code>；否则缓冲文本 → <code>run.completed</code></td></tr>
     <tr><td><code>agent_start</code> / <code>message_start</code> / <code>message_end</code></td><td>协议暂无对应事件，静默丢弃</td></tr>
   </table>
