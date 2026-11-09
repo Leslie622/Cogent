@@ -4,7 +4,7 @@
  * key/定义保存后经 refresh 同步（模型下拉随之解锁）。
  */
 import { create } from 'zustand'
-import type { CustomProviderDef, CustomProvidersPayload, ModelSummary, ProviderOverrideDef } from '@/env.d'
+import type { CustomProviderDef, CustomProvidersPayload, ModelSummary, ProviderOverrideDef, ThinkingLevelWithOff } from '@/env.d'
 
 /** 默认选中模型（与引擎侧 SessionManager 的 DEFAULT_MODEL 一致） */
 const DEFAULT_MODEL = 'claude-sonnet-4-5'
@@ -70,6 +70,25 @@ function toOverrideMap(payload: CustomProvidersPayload): Record<string, Provider
   return map
 }
 
+/**
+ * 会话级偏好（选中模型/思考力度）的宿主侧持久化：落 ~/.cogent/settings.json
+ * （main 写，计划 D2 单写者分工——壳配置归 main）。引擎重启/应用重启都从这里
+ * 回填；字段只增，读失败/文件缺失走默认值（首次启动常态，不报错）。
+ */
+interface AppSettings {
+  activeModelId?: string
+  thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+}
+
+/** 载入落盘偏好（main 读 settings.json；无文件/损坏返回 {} 走默认） */
+async function loadSettings(): Promise<AppSettings> {
+  try {
+    return await window.cogent.getSettings()
+  } catch {
+    return {}
+  }
+}
+
 export const useEngineStore = create<EngineState>((set, get) => ({
   models: [],
   keyConfigured: {},
@@ -80,10 +99,11 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   loaded: false,
 
   load: async () => {
-    const [modelsResult, keyStatus, customPayload] = await Promise.all([
+    const [modelsResult, keyStatus, customPayload, settings] = await Promise.all([
       window.cogent.engineRequest('models.list', {}),
       window.cogent.listApiKeys(),
-      window.cogent.getCustomProviders()
+      window.cogent.getCustomProviders(),
+      loadSettings()
     ])
     const keys = toKeyMap(keyStatus)
     set({
@@ -91,6 +111,9 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       keyConfigured: keys,
       customProviders: customPayload.providers,
       overrides: toOverrideMap(customPayload),
+      // 偏好回填：落盘的模型可能已不在目录（改名/删除）→ 校验一次再落
+      activeModelId: settings.activeModelId ?? DEFAULT_MODEL,
+      thinkingLevel: settings.thinkingLevel ?? 'off',
       loaded: true
     })
     // 引擎（重）启动后定义清零：把宿主落盘的定义推回去（引擎 running 才有效；失败不阻塞首屏）
@@ -121,9 +144,43 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     await get().refreshModels()
   },
 
-  setActiveModel: (activeModelId) => set({ activeModelId }),
-  setThinkingLevel: (thinkingLevel) => set({ thinkingLevel })
+  // 选中模型/思考力度的 setter 都同步落盘（fire-and-forget：写失败不回滚内存态，
+  // 下次改动会重写；getSettings 读失败走默认——首启无文件是常态不是错误）。
+  // 切模型时校验当前力度是否被新模型支持：不支持则 clamp 到最近可用档
+  // （避免"滑杆显示 medium、实际下发 high"的静默降级，见 getSupportedThinkingLevels）
+  setActiveModel: (activeModelId) => {
+    const state = get()
+    const target = state.models.find((m) => m.id === activeModelId)
+    const supported = target?.thinkingLevels
+    const patch: Partial<EngineState> = { activeModelId }
+    if (supported && supported.length > 0 && !supported.includes(state.thinkingLevel)) {
+      patch.thinkingLevel = nearestThinkingLevel(state.thinkingLevel, supported)
+    }
+    set(patch)
+    void window.cogent.saveSettings({ activeModelId, ...(patch.thinkingLevel !== undefined && { thinkingLevel: patch.thinkingLevel }) })
+  },
+  setThinkingLevel: (thinkingLevel) => {
+    set({ thinkingLevel })
+    void window.cogent.saveSettings({ thinkingLevel })
+  }
 }))
+
+/**
+ * 力度就近取整：目标档不被支持时，先向更高档找、再向低档找（宁多想不少想，
+ * 与 pi clampThinkingLevel 的"就近可用"语义一致）。
+ */
+function nearestThinkingLevel(level: ThinkingLevelWithOff, supported: ThinkingLevelWithOff[]): ThinkingLevelWithOff {
+  if (supported.includes(level)) return level
+  const ORDER: ThinkingLevelWithOff[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+  const from = ORDER.indexOf(level)
+  for (let d = 1; d < ORDER.length; d++) {
+    const higher = ORDER.at(from + d)
+    if (higher !== undefined && supported.includes(higher)) return higher
+    const lower = ORDER.at(from - d)
+    if (lower !== undefined && supported.includes(lower)) return lower
+  }
+  return 'off'
+}
 
 /**
  * 可用模型过滤：只保留 provider 已配 key 的（用户拍板：下拉不展示无 key 的，

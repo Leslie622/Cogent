@@ -11,10 +11,9 @@
  *      （Shift+Enter 换行；中文输入法组词中不误发，判 isComposing）、
  *      流式中发送钮变停止钮（agent.abort）、模型下拉只列"配好 key 且未被禁用"
  *      的模型（useableModels 过滤，配置入口 = 设置页模型设置）
- * 对话索引（左侧刻度轨道）与消息流联动；信息区/项目域仍是演示数据
- * （侧栏项目 CRUD 属后续件）。
+ * 对话索引（左侧刻度轨道）与消息流联动；项目回显走 project store（真数据）。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   IconArrowUp,
   IconCheck,
@@ -22,8 +21,6 @@ import {
   IconCopy,
   IconDeviceDesktop,
   IconDots,
-  IconFolder,
-  IconGitBranch,
   IconLayoutSidebarRightCollapse,
   IconLayoutSidebarRightExpand,
   IconPencil,
@@ -46,6 +43,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Slider } from '@/components/ui/slider'
 import {
   InputGroup,
   InputGroupAddon,
@@ -66,11 +64,12 @@ import {
 } from '@/components/ui/message-scroller'
 import { useHomeStore, type HomeSession } from '@/stores/home'
 import { useChatStore } from '@/stores/chat'
+import { useProjectStore } from '@/stores/project'
+import { ProjectPicker } from './ProjectPicker'
 import { providerDisplayName, usableModels, useEngineStore } from '@/stores/engine'
 import type { ModelSummary, ThinkingLevel } from '@/env.d'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
-import { PROJECTS } from './data'
 
 /** 白底行/钮 hover：黑 5% 软叠（全局配方，同 content-sidebar 行） */
 const HOVER = 'hover:bg-accent-foreground/5 hover:text-foreground'
@@ -176,17 +175,22 @@ function MessageRow({ message }: { message: MessageLike }) {
 
 /**
  * 对话索引轨道（参考稿动画）：短横线刻度一列，宽度/颜色 transition ——
- * ① 静止态：当前消息的刻度伸长加深；② hover 阶梯（用户对标 ChatGPT）：悬停
- * 刻度最长、两侧按距离依次变短（24/17/14/10px），颜色同步减淡 —— 宽度差即
- * "指针位置感"。items-start 让加长向右伸，同参考稿。点击刻度经 message-scroller
- * 的 scrollToMessage 平滑居中定位（库的强项，直接用）。
- * 激活项自算而不用库的 visibility/scrollable 快照：快照要等真实滚动才提交
+ * 索引粒度 = 一轮问答（一问一答一个刻度，锚在该轮提问消息上）：刻度语义是
+ * "第几轮对话"而非"第几条消息"，回复不单独占刻度。① 静止态：当前轮的刻度
+ * 伸长加深；② hover 阶梯（用户对标 ChatGPT）：悬停刻度最长、两侧按距离依次
+ * 变短（24/17/14/10px），颜色同步减淡 —— 宽度差即"指针位置感"。items-start
+ * 让加长向右伸，同参考稿。点击刻度经 message-scroller 的 scrollToMessage
+ * 平滑居中定位（库的强项，直接用）。
+ * 激活轮自算而不用库的 visibility/scrollable 快照：快照要等真实滚动才提交
  * （挂载默认吸底后是空），且 content-visibility 裁剪的占位高度会让 scrollable
  * 的"还能滚"判断在真到底时仍为真 —— 自算只有两条稳定规则：视口顶边压着的
- * 消息为当前；按真实 scrollHeight 口径已吸底时点亮末条。
+ * 最后一条提问消息所在轮为当前；按真实 scrollHeight 口径已吸底时点亮末轮。
  */
 function ConversationIndex({ messages }: { messages: MessageLike[] }) {
   const { scrollToMessage } = useMessageScroller()
+  // 刻度 = 每轮的提问（user 消息）；turnIds 供激活判定时从全部消息条目里筛提问
+  const turns = useMemo(() => messages.filter((m) => m.role === 'user'), [messages])
+  const turnIds = useMemo(() => new Set(turns.map((m) => m.id)), [turns])
   const [activeId, setActiveId] = useState<string | null>(null)
   // hover 的刻度序号：进刻度置值、轨道整体移出清空（刻度间移动不闪断）
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
@@ -201,31 +205,31 @@ function ConversationIndex({ messages }: { messages: MessageLike[] }) {
       if (items.length === 0) return
       // 吸底特判：滚到底用户看的是结尾（scrollHeight 是真实口径，不受裁剪影响）
       if (vp.scrollTop + vp.clientHeight >= vp.scrollHeight - 8) {
-        setActiveId(items[items.length - 1].dataset.messageId ?? null)
+        setActiveId(turns[turns.length - 1]?.id ?? null)
         return
       }
-      // 常规：顶边压着的最后一条 = 当前（与库的锚点定义一致）
-      let current: string | null = items[0].dataset.messageId ?? null
+      // 常规：顶边压着的最后一条提问 = 当前轮（回复消息归属其前面的提问轮，
+      // 不参与判定，只按顺序扫、命中提问才更新 —— 不能见非提问条目就 break）
+      let current: string | null = turns[0]?.id ?? null
       const viewportTop = vp.getBoundingClientRect().top
       for (const item of items) {
         const id = item.dataset.messageId
-        if (!id) continue
+        if (!id || !turnIds.has(id)) continue
         if (item.getBoundingClientRect().top <= viewportTop + 0.5) current = id
-        else break
       }
       setActiveId(current)
     }
     measure() // 挂载即量一次（默认吸底态也有激活刻度）
     vp.addEventListener('scroll', measure, { passive: true })
     return () => vp.removeEventListener('scroll', measure)
-  }, [messages])
+  }, [messages, turns, turnIds])
 
   return (
     <div
       className="absolute top-1/2 left-3 flex -translate-y-1/2 flex-col items-start gap-[7px]"
       onMouseLeave={() => setHoverIndex(null)}
     >
-      {messages.map((message, index) => {
+      {turns.map((message, index) => {
         const active = message.id === activeId
         // 阶梯剖面：距悬停刻度 0/1/2/≥3 → 宽 24/17/14/10、色 70/50/40/25 透明度
         const dist = hoverIndex === null ? null : Math.abs(index - hoverIndex)
@@ -274,9 +278,10 @@ function ChatMessages() {
     <MessageScroller className="min-h-0 flex-1">
       <MessageScrollerViewport>
         {/* select-text：对话正文是正文类内容（AGENTS.md 方针 5 的首个放开点）。
-            内边距给索引轨道留固定 gutter：pl-11 = 轨道(左 12px + 激活刻度 20px)
-            + 12px 间隙 —— 面板窄时（列宽顶到 max-w-3xl）文字也不会贴轨道/边缘 */}
-        <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 py-6 pr-6 pl-11 select-text">
+            内边距给索引轨道留固定 gutter：pl-16 = 轨道(左 12px + 刻度最宽 24px)
+            + 28px 呼吸间隙（此前 pl-11 只剩 8px，刻度紧贴文字，用户反馈太近）
+            —— 面板窄时（列宽顶到 max-w-3xl）文字也不会贴轨道/边缘 */}
+        <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 py-6 pr-6 pl-16 select-text">
           {messages.map((message) => (
             // 不标 scrollAnchor：官方语义是"回合起始行"专用（追加时钉到视口顶、
             // 上条留探头）——全标会让发送的消息被钉到顶且流式不跟随；要的是
@@ -310,72 +315,55 @@ const THINKING_OPTIONS: ReadonlyArray<{ id: 'off' | ThinkingLevel; label: string
   { id: 'max', label: '最大' },
 ]
 
-/** 滑杆档位序（off 在最左，位次 = 数组序） */
-const THINKING_STOP_IDS = THINKING_OPTIONS.map((o) => o.id)
-
-/** 思考力度滑杆（对标参考稿：渐变轨道 + 白色圆滑块，7 档吸附，键盘 ←→ 可调）。
-    嵌在菜单里：非 MenuItem，点击不会关闭菜单 */
+/**
+ * 思考力度滑杆（对标参考稿：渐变轨道 + 白色圆滑块，7 档吸附，键盘 ←→ 可调）。
+ * 嵌在菜单里：非 MenuItem，点击不会关闭菜单。
+ * 只呈现当前模型实际支持的档位，避免把不可选的能力展示成噪音。
+ */
 function ThinkingSlider({
   value,
+  supportedLevels,
   onChange,
 }: {
   value: 'off' | ThinkingLevel
+  /** 当前模型支持的档（含 off）；缺省 = 全档可用（无模型/旧数据兼容） */
+  supportedLevels?: ReadonlyArray<'off' | ThinkingLevel>
   onChange: (level: 'off' | ThinkingLevel) => void
 }) {
-  const trackRef = useRef<HTMLDivElement>(null)
-  const [dragging, setDragging] = useState(false)
-  const index = Math.max(0, THINKING_STOP_IDS.indexOf(value))
-  const pos = index / (THINKING_STOP_IDS.length - 1)
-
-  const pickFromClientX = (clientX: number): void => {
-    const rect = trackRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
-    onChange(THINKING_STOP_IDS[Math.round(ratio * (THINKING_STOP_IDS.length - 1))])
-  }
+  const options =
+    supportedLevels === undefined
+      ? THINKING_OPTIONS
+      : THINKING_OPTIONS.filter((option) => supportedLevels.includes(option.id))
+  const selectedIndex = options.findIndex((option) => option.id === value)
 
   return (
-    <div className="px-3 pb-2.5">
-      <div
-        ref={trackRef}
-        role="slider"
-        tabIndex={0}
-        aria-label="思考力度"
-        aria-valuemin={0}
-        aria-valuemax={THINKING_STOP_IDS.length - 1}
-        aria-valuenow={index}
-        aria-valuetext={THINKING_OPTIONS[index]?.label}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
-            event.preventDefault()
-            onChange(THINKING_STOP_IDS[Math.min(index + 1, THINKING_STOP_IDS.length - 1)])
-          } else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
-            event.preventDefault()
-            onChange(THINKING_STOP_IDS[Math.max(index - 1, 0)])
-          }
+    <div className="px-3 pb-3 pt-1">
+      {/* 用项目的 shadcn Slider 封装；它内部完整保留 Base UI 的 Control，
+          因此点击、拖拽和键盘操作都落在同一个可访问控件上。 */}
+      <Slider
+        value={[selectedIndex]}
+        min={0}
+        max={options.length - 1}
+        step={1}
+        marks={options.map((_, index) => index)}
+        filledThrough={selectedIndex}
+        thumbAriaLabel="思考力度"
+        getThumbAriaValueText={() => options[selectedIndex].label}
+        onValueChange={(next) => {
+          onChange(options[next[0]].id)
         }}
-        onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture(event.pointerId)
-          setDragging(true)
-          pickFromClientX(event.clientX)
-        }}
-        onPointerMove={(event) => dragging && pickFromClientX(event.clientX)}
-        onPointerUp={(event) => {
-          setDragging(false)
-          event.currentTarget.releasePointerCapture(event.pointerId)
-        }}
-        className="relative h-5 cursor-pointer touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-2"
-      >
-        {/* 渐变轨道（参考稿绿→蓝）+ 白色圆滑块 */}
-        <div className="absolute top-1/2 h-2 w-full -translate-y-1/2 rounded-full bg-[linear-gradient(90deg,#6ee7b7,#0369a1)]" />
-        <div
-          className={cn(
-            'absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-background shadow-sm ring-1 ring-foreground/10',
-            !dragging && 'transition-[left] duration-150'
-          )}
-          style={{ left: `${pos * 100}%` }}
-        />
-      </div>
+        className={cn(
+          'py-2',
+          '[&_[data-slot=slider-track]]:h-5 [&_[data-slot=slider-track]]:bg-[#e5e7eb] [&_[data-slot=slider-track]]:shadow-[inset_0_1px_1px_rgb(15_23_42/0.06)]',
+          '[&_[data-slot=slider-range]]:bg-[linear-gradient(90deg,#359bf4,#56adf6)]',
+          '[&_[data-slot=slider-track]>span]:bg-[#aeb3ba] [&_[data-slot=slider-track]>span[data-active]]:bg-white/55',
+          /* 拇指必须是轨道之上的不透明层；此前未显式设层级，端点的轨道色会
+             从圆点下方透出来，视觉上像圆点没有盖住条。 */
+          '[&_[data-slot=slider-thumb]]:z-10 [&_[data-slot=slider-thumb]]:size-6 [&_[data-slot=slider-thumb]]:border [&_[data-slot=slider-thumb]]:border-border [&_[data-slot=slider-thumb]]:bg-white',
+          '[&_[data-slot=slider-thumb]]:shadow-[0_1px_4px_rgb(15_23_42/0.18)] [&_[data-slot=slider-thumb]]:hover:scale-105 [&_[data-slot=slider-thumb]]:active:scale-95',
+          '[&_[data-slot=slider-thumb]]:focus-visible:ring-2 [&_[data-slot=slider-thumb]]:focus-visible:ring-[#3498f4] [&_[data-slot=slider-thumb]]:focus-visible:ring-offset-2'
+        )}
+      />
     </div>
   )
 }
@@ -518,11 +506,14 @@ function ModelMenuPanel() {
         <DropdownMenuLabel className="flex items-center justify-between">
           思考力度
           <span className="text-xs font-normal text-muted-foreground">
-            {THINKING_OPTIONS[THINKING_STOP_IDS.indexOf(thinkingLevel)]?.label}
+            {THINKING_OPTIONS.find((option) => option.id === thinkingLevel)?.label}
           </span>
         </DropdownMenuLabel>
+        {/* supportedLevels 依当前活动模型（pi 目录判定的真实可用档）；
+            无模型信息时不传 → 滑杆走全档兼容口径 */}
         <ThinkingSlider
           value={thinkingLevel}
+          supportedLevels={active?.thinkingLevels}
           onChange={(level) => setThinkingLevel(level)}
         />
       </DropdownMenuGroup>
@@ -530,11 +521,8 @@ function ModelMenuPanel() {
   )
 }
 
-/** 信息区条目钮：ghost 无底感、hover 轻叠（同全局配方），文字实色近黑 */
-const STRIP_BUTTON = 'gap-1.5 px-1 font-normal text-[13px] text-foreground hover:bg-accent-foreground/5'
-
 /**
- * 底部输入区：输入卡上方灰条（项目会话信息区，新聊天限定，演示数据域）+
+ * 底部输入区：输入卡上方灰条（项目会话信息区，新聊天限定）+
  * 输入卡（24px 圆角白卡 + 极浅 1px 边，聚焦无反馈）：Enter 发送（isComposing
  * 挡输入法误发）、流式中发送钮变停止钮（agent.abort）、底部工具行 = 裸 +
  * 附件 / 完全访问 / 模型下拉（ModelMenu）/ 发送。
@@ -546,19 +534,37 @@ function ChatComposer({ session }: { session: HomeSession }) {
   const abort = useChatStore((s) => s.abort)
   const activeModelId = useEngineStore((s) => s.activeModelId)
   const thinkingLevel = useEngineStore((s) => s.thinkingLevel)
+  const projects = useProjectStore((s) => s.projects)
+  const sessions = useChatStore((s) => s.sessions)
   const { scrollToEnd } = useMessageScroller()
 
-  // 回显项目：项目行"新建聊天"发起时带 projectId（项目域仍是演示数据）
-  const project =
-    session.kind === 'new' && session.projectId
-      ? PROJECTS.find((p) => p.id === session.projectId)
-      : undefined
+  // 信息区回显：发起时带 projectId → 项目卡（project store）；已有会话按
+  // projectId 反查项目。目录胶囊 = 主根（cwds[0]）basename，悬停 title 看全路径；
+  // 多根项目其余目录收在工作区面板（后续件），信息区只露主根不挤占。git 分支
+  // 胶囊暂缺——分支属会话级动态信息（引擎协议无通道），工作区面板 后续件补
+  const projectId =
+    session.kind === 'new'
+      ? session.projectId
+      : sessions.find((s) => s.id === session.chatId)?.projectId
+  const project = projectId ? projects.find((p) => p.id === projectId) : undefined
+  const primaryCwd =
+    project?.cwds[0] ??
+    (session.kind === 'chat' ? sessions.find((s) => s.id === session.chatId)?.cwd : undefined)
+  const cwdBasename =
+    primaryCwd !== undefined ? (primaryCwd.split(/[\\/]/).filter(Boolean).at(-1) ?? primaryCwd) : undefined
 
   const send = () => {
     const text = value.trim()
     if (!text || running) return
     setValue('')
     void submit(text, activeModelId, thinkingLevel)
+    // 发首条消息即脱离"新聊天进行中"视图态（信息区消失，对齐 ChatGPT：
+    // 提交后进入正常对话态）；此时 chat store 的 activeSessionId 已是接收
+    // 消息的会话（startNew 建好的或复用的空会话），kind:'chat' 指向它
+    const activeId = useChatStore.getState().activeSessionId
+    if (activeId !== null) {
+      useHomeStore.setState({ session: { kind: 'chat', chatId: activeId } })
+    }
     // 发送即回到底部并恢复跟随（对齐主流产品）：翻历史/索引跳转过也吸底；
     // 消息追加后库的 handleContentChange 在 following-bottom 态继续吸底
     scrollToEnd()
@@ -567,30 +573,33 @@ function ChatComposer({ session }: { session: HomeSession }) {
   return (
     <div className="shrink-0 px-4 pb-4">
       <div className="mx-auto w-full max-w-3xl">
-        {/* 灰舌头（项目会话信息区）：见函数头注释 —— 新聊天限定 */}
+        {/* 灰舌头（项目会话信息区）：见函数头注释 —— 新聊天限定。
+            项目归属 = 只显项目卡（名称 + 悬停见全部根路径）——项目必含目录，
+            再出目录卡是重复信息（用户实测：项目叫 Cogent、目录 basename 也叫
+            Cogent 时出现两个"Cogent"）；目录卡只在"无项目但会话直接绑了
+            目录"时兜底显示 */}
         {session.kind === 'new' && (
           <div className="mx-5 flex h-9 items-center gap-6 rounded-t-xl bg-muted px-4">
-            {project ? (
-              <>
-                <Button variant="ghost" size="xs" className={STRIP_BUTTON}>
-                  <IconFolder className="size-4 text-muted-foreground" />
-                  {project.name}
-                </Button>
-                <Button variant="ghost" size="xs" className={STRIP_BUTTON}>
-                  <IconDeviceDesktop className="size-4 text-muted-foreground" />
-                  本地
-                </Button>
-                <Button variant="ghost" size="xs" className={STRIP_BUTTON}>
-                  <IconGitBranch className="size-4 text-muted-foreground" />
-                  main
-                </Button>
-              </>
-            ) : (
-              <Button variant="ghost" size="xs" className={STRIP_BUTTON}>
-                <IconFolder className="size-4 text-muted-foreground" />
-                选择项目
+            {project || projectId === undefined ? (
+              /* ProjectPicker 同时负责项目清单和会话物化。不能在这里仅改视图态，
+                  因为 projectId 只能在 session.create 时绑定，否则首条消息会串归属。 */
+              <ProjectPicker
+                projectId={projectId}
+                onProjectId={(nextProjectId) => {
+                  useHomeStore.setState({ session: { kind: 'new', projectId: nextProjectId } })
+                }}
+              />
+            ) : primaryCwd ? (
+              <Button
+                variant="ghost"
+                size="xs"
+                className="gap-1.5 px-1 font-normal text-[13px] text-foreground hover:bg-accent-foreground/5"
+                title={primaryCwd}
+              >
+                <IconDeviceDesktop className="size-4 text-muted-foreground" />
+                {cwdBasename}
               </Button>
-            )}
+            ) : null}
           </div>
         )}
 
