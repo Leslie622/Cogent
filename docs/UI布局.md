@@ -112,14 +112,32 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
 1. **tailwind-merge 变体坑**：覆写带变体的类必须同变体成对写（`px-2
    has-[>svg]:px-2`），裸工具类压不住 xs/icon-xs 自带的 `has-[>svg]:px-1.5`；
    input-group 默认 rounded-3xl/聚焦 ring 用 `has-data-[align=...]`/`has-[[...]:focus-visible]`
-   同变体反制
+   同变体反制；**DialogContent 宽度同坑**：其自带 `sm:max-w-md`，调用处裸写
+   `max-w-xl`/`max-w-lg` 桌面端压不住（全部被钉在 448px，嵌套弹窗出现"两层等宽"），
+   必须写 `sm:max-w-*` 同变体反制
 2. base-ui 触发器无 asChild → `render={<Button/>}` prop
 3. react-resizable-panels v4：`orientation` 非 direction；Panel 两层结构 className
-   落内层；无 defaultCollapsed 入参（挂载后 imperative collapse 一次）
+   落内层（style prop 亦落内层，可覆写 overflow）；无 defaultCollapsed 入参
+   （挂载后 imperative collapse 一次）；**尺寸由内联 flexGrow 承载**（布局注册后
+   flexBasis 恒 0、仅挂载兜底渲染一次 —— 过渡 flex-basis 不动，踩过），折叠/
+   展开过渡在 Group 原语对 `[data-panel]` 的 flex-grow 做 CSS 过渡，挂载后等
+   两轮宏任务再放行（flexBasis→flexGrow 交接否则会放出生长动画；**勿用 rAF
+   门控**：页面不可见时 rAF 停发、门控卡死过渡整体失效）；拖拽中以库权威状态
+   `:has([data-separator=active])` 杀过渡（同 use-divider-glow 的观察源）——
+   库逐帧写内联尺寸，不杀会把跟手拖成 200ms 延迟
 4. InputGroup 纵向布局 items-center：全宽子元素必须 `w-full`（否则缩成内容宽居中）
 5. JSX 属性值禁直引号嵌套（`value="仅在使用"关闭"快捷键"` 炸解析），中文弯引号无碍
 6. 对话索引激活项自算，不用库的 visibility/scrollable 快照（见上）
 7. 视觉模型自由估计像素会前后矛盾 —— 对标任务走拼图对比闭环（下节）
+8. **base-ui Slider inset 模式坐标系**：`thumbAlignment="edge-client-only"` 下
+   滑块中心行程与 Indicator 百分比全按 **Control 宽度**计算但渲染在 Track 里 ——
+   Track 用负 margin 出血（比 Control 宽）会让填充条偏出滑块中心（档位左端露
+   蓝色细条）、端点定位点被裁半；Control 的 overflow-hidden 还会削平高于轨道的
+   圆钮。轨道宽 = Control 宽、Control 不裁切（见 components/ui/slider.tsx 注释）
+9. **Tailwind v4 的 scale-*/rotate-* 走独立属性**：不是 transform —— 自写
+   `transition-[...]` 清单若只列 transform，缩放瞬跳不过渡（`transition-transform`
+   工具类 v4 已内置 transform,translate,scale,rotate，别用任意值清单"精简"它）；
+   思考力度滑杆定位点的涟漪过渡即 `transition-[background-color,scale]`
 
 ## 视觉对标方法论（"照某图实现"类任务）
 
