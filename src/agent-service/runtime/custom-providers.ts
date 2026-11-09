@@ -21,28 +21,41 @@ import type { CustomProviderDef, ModelDef, ProviderOverrideDef } from '../../pro
 const CUSTOM_MODEL_CONTEXT_WINDOW = 128_000
 const CUSTOM_MODEL_MAX_TOKENS = 32_768
 
-/** ModelDef → pi Model：缺省字段兜底（context/maxTokens/input/reasoning），cost 全 0
-    （自定义端点计费对外不可知，UI 不显示价格即可）。
+/** ModelDef → pi Model：merge 语义 —— catalogBase（目录同 id 条目）在时以它为基底，
+    用户 def 显式设置的字段才覆盖；全新 id 无基底则兜底（context/maxTokens/input/reasoning）。
+    cost 一律不取自 def（协议 ModelDef 无此字段，用户不可配价）：有目录基底 = 继承
+    目录定价（同 id 用户条目本质是"编辑目录行"，丢定价等于静默抹掉成本统计），
+    全新自定义模型 = 全 0（自定义端点计费对外不可知，UI 不显示价格即可）。
     thinkingLevels → thinkingLevelMap：选中的等级原值透传（openai 方言直落
-    reasoning_effort），未选中置 null（显式不支持）；不选 = 不下发映射跟端点默认 */
-function buildModel(def: ModelDef, api: Api, providerId: string, baseUrl: string): Model<Api> {
+    reasoning_effort），未选中置 null（显式不支持）；不选 = 继承基底映射或不下发跟端点默认 */
+function buildModel(
+  def: ModelDef,
+  api: Api,
+  providerId: string,
+  baseUrl: string,
+  catalogBase?: Model<Api>
+): Model<Api> {
   const ALL_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
   return {
     id: def.id,
-    name: def.name ?? def.id,
+    name: def.name ?? catalogBase?.name ?? def.id,
     api,
     provider: providerId,
     baseUrl,
-    reasoning: def.reasoning === true,
-    input: def.input ?? ['text'],
+    reasoning: def.reasoning ?? catalogBase?.reasoning ?? false,
+    input: def.input ?? catalogBase?.input ?? ['text'],
     ...(def.thinkingLevels !== undefined && def.reasoning === true && {
       thinkingLevelMap: Object.fromEntries(
         ALL_LEVELS.map((level) => [level, def.thinkingLevels?.includes(level) ? level : null])
       )
     }),
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: def.contextWindow ?? CUSTOM_MODEL_CONTEXT_WINDOW,
-    maxTokens: def.maxTokens ?? CUSTOM_MODEL_MAX_TOKENS
+    // def 未配思考档且基底有映射（pi 目录生成）→ 继承，"编辑目录行"不动未配置的维度
+    ...(def.thinkingLevels === undefined && catalogBase?.thinkingLevelMap !== undefined && {
+      thinkingLevelMap: catalogBase.thinkingLevelMap
+    }),
+    cost: catalogBase?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: def.contextWindow ?? catalogBase?.contextWindow ?? CUSTOM_MODEL_CONTEXT_WINDOW,
+    maxTokens: def.maxTokens ?? catalogBase?.maxTokens ?? CUSTOM_MODEL_MAX_TOKENS
   }
 }
 
@@ -160,7 +173,12 @@ export class CustomProviderRegistry {
     const api: Api = first?.api ?? 'openai-completions'
     const baseUrl = override.baseUrl.length > 0 ? override.baseUrl : (first?.baseUrl ?? original.baseUrl ?? '')
     const disabled = new Set(override.disabledModels ?? [])
-    const added = (override.models ?? []).map((m) => buildModel(m, api, original.id, baseUrl))
+    // 目录同 id 条目作 merge 基底：用户条目 = "编辑目录行"而非凭空新模型，
+    // 未配置的维度（定价/思考映射/命名）继承目录，见 buildModel 注释
+    const catalogById = new Map(original.getModels().map((m) => [m.id, m]))
+    const added = (override.models ?? []).map((m) =>
+      buildModel(m, api, original.id, baseUrl, catalogById.get(m.id))
+    )
     const addedIds = new Set(added.map((m) => m.id))
     const models: Model<Api>[] = [
       // 目录在前（保 pi 快照原序），用户新增排后；同 id 目录项被新增覆盖（不重复注册）
