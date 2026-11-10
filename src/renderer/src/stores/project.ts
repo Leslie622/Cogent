@@ -22,7 +22,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
 
   load: async () => {
     const projects = await window.cogent.engineRequest('project.list', {})
-    set({ projects: [...projects], loaded: true })
+    set({ projects, loaded: true })
   },
 
   create: async (name, cwds) => {
