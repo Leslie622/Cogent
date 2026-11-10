@@ -80,6 +80,16 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   OpenRouter 等，OpenRouter 官方色即荧光绿 #C8FF00 非黑）；自定义 provider =
   黑底首字方标。坑：查找表值类型必须显式 `| undefined`（Record 索引访问默认非
   可空，`if (表值)` 会撞 no-unnecessary-condition；`?? 兜底` 则合法）
+- **通用档位滑杆 StopSlider**（components/，2026-11-10 参考稿 slider-main
+  换装）：块状轨道值域选择器，档位模式（stops 吸附 + 键盘相邻档步进 + 选中
+  标签加粗）/ 自由模式（无 stops，step 连续滑）两用。视觉规格：25px 轨道
+  rounded-[5px] bg-muted + 填充条全圆角 foreground/20 软叠（黑低透明，比轨道
+  深一档、亮暗自动成立）+ 拇指 4×19 rounded-[2px] bg-primary、中心 P%−8px
+  （ms 负 margin，右缘距填充右缘 6px，顶格不出轨道）+ 31 格刻度直尺 bg-border
+  + 档位标签白底（bg-background）压在刻度带上遮刻度、选中 foreground 加粗 /
+  其余 muted-foreground；填充 width 与拇指位置 280ms ease-out（磁吸手感）。
+  center 对齐模式（坑 12）+ 键盘接管（坑 13）。上下文窗口滑杆
+  （ContextWindowSlider）= 它的域适配（200K/400K/1M + formatContext）
 - **对话流**：message-scroller（吸底/滚到底悬浮钮库自带；Provider 开 `autoScroll`
   才会跟随流式增长，Item **不标 `scrollAnchor`** —— 官方语义是"回合起始行"专用，
   标了会在追加时把该行钉到视口顶且流式不跟随，ChatGPT 式吸底两者都不要）；
@@ -168,7 +178,7 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
    顺序也不行：激活点 hover 用 `span[data-active]:hover`（0,4,1）显式压过
    `scale-125`
 11. **base-ui Slider 的方向变体必须写 `data-[orientation=…]:`**：Base UI 渲染的
-   属性是 `data-orientation="horizontal"`（state key 直出），Tailwind 的
+   属性是 data-orientation="horizontal"（state key 直出），Tailwind 的
    `data-horizontal:` 快捷变体编译成属性**存在性**选择器 `[data-horizontal]`，
    永远不命中 —— 轨道 `data-horizontal:h-2` 整条失效、高度塌 0 轨道隐身
    （2026-11-10 上下文窗口滑杆改走 ui/slider 原语时踩响；ThinkingSlider 当时
@@ -176,6 +186,23 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
    `[data-slot=slider-track]]:h-5` 与原语 `data-[orientation=horizontal]:h-2`
    同为 0,2,0，构建产物中 h-5 规则靠后取胜（当前成立，升级 Tailwind 后若轨道
    高度异常先查这里）
+12. **base-ui Slider inset（edge*）模式 Indicator ≠ value%**：`thumbAlignment`
+   为 edge / edge-client-only 时（inset=true），填充条宽度不是 valueToPercent
+   直出，而是**拇指中心位置的实测百分比**（SliderThumb.getInsetPosition：
+   `halfThumb + (W−thumbW)·P`，range 滑杆"填充 = 首末拇指中心之间"的语义）——
+   顶格恒差半个拇指宽（2026-11-10 用户发现上下文窗口滑杆"1M 没填满"差 2px
+   的根因；拇指的视觉 margin 不参与该计算，实测只量拇指宽度）。center 模式
+   （非 inset）Indicator=value% 直出、拇指中心恰在 P% 且不走实测管线 —— 填充
+   需要精确到轨道边缘的滑杆用 center。ui/slider 已加 thumbAlignment 透传
+   （默认 edge-client-only 保 ThinkingSlider 既有行为；marks 定位公式
+   `calc(12px + …)` 按 inset 几何推导，center 模式下会偏）
+13. **base-ui Slider 键盘接管口（不等距档位必须用）**：Thumb 接受 onKeyDown
+   （落在内部 input 上）；mergeProps 让用户 handler **先于**内置步进执行，
+   且内置 keydown 开头就检查 `event.defaultPrevented` —— 用户先
+   `preventDefault()`（同时拦掉原生 range 步进）即可整体接管方向键。不等距
+   档位（如 200K/200K/600K）下内置均匀 step 步进会在窄档卡死（步进后又被
+   吸附回原档），StopSlider 的相邻档步进即靠此口（ui/slider 的
+   thumbOnKeyDown 透传）
 
 ## 视觉对标方法论（"照某图实现"类任务）
 

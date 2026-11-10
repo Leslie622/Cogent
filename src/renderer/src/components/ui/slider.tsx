@@ -12,6 +12,8 @@ function Slider<Value extends number | readonly number[]>({
   fillClassName,
   thumbAriaLabel,
   getThumbAriaValueText,
+  thumbOnKeyDown,
+  thumbAlignment = "edge-client-only",
   ...props
 }: SliderPrimitive.Root.Props<Value> & {
   /** 离散滑块可在轨道上显示定位点；位置仍按 min/max 计算，外观（着色、
@@ -27,6 +29,20 @@ function Slider<Value extends number | readonly number[]>({
   /** 滑块的语义落在内部 range input；业务层可按离散值提供可读文案。 */
   thumbAriaLabel?: string
   getThumbAriaValueText?: SliderPrimitive.Thumb.Props['getAriaValueText']
+  /** 键盘拦截口（落在内部 input 上，事件目标 HTMLInputElement）：mergeProps
+   * 让用户 handler 先于 base-ui 内置步进执行，且内置 keydown 开头就检查
+   * event.defaultPrevented —— 用户先 preventDefault() 即可整体接管方向键
+   * （不等距档位的相邻档步进需要此举：均匀 step 在窄档处会来回卡死）。 */
+  thumbOnKeyDown?: SliderPrimitive.Thumb.Props['onKeyDown']
+  /** 拇指对齐模式透传（默认维持 edge-client-only = 既有 ThinkingSlider 行为
+   *  与 marks 定位公式的前提）。两种模式的本质差异（2026-11-10 上下文窗口
+   *  滑杆"1M 顶格填充差 2px"排查定论）：inset（edge*）模式下 Indicator 宽度
+   *  不是 value% 直出，而是"拇指中心实测百分比"（getInsetPosition：halfThumb +
+   *  (W-thumbW)*P，range 滑杆的填充=首末拇指中心之间的语义）—— 顶格恒差
+   *  半个拇指宽；center 模式 Indicator=valueToPercent 直出、拇指中心恰在 P%，
+   *  填充需要精确到轨道边缘的滑杆（上下文窗口）用 center。注意 marks 的
+   *  calc(12px + …) 公式按 inset 几何推导，center 模式下定位点会偏。 */
+  thumbAlignment?: SliderPrimitive.Root.Props['thumbAlignment']
 }) {
   const _values = Array.isArray(value)
     ? value
@@ -47,7 +63,7 @@ function Slider<Value extends number | readonly number[]>({
       value={value}
       min={min}
       max={max}
-      thumbAlignment="edge-client-only"
+      thumbAlignment={thumbAlignment}
       {...props}
     >
       {/* Control 不裁切（无 overflow-hidden）：轨道（h-2）矮于拇指（h-4），
@@ -98,6 +114,7 @@ function Slider<Value extends number | readonly number[]>({
             key={index}
             aria-label={thumbAriaLabel}
             getAriaValueText={getThumbAriaValueText}
+            onKeyDown={thumbOnKeyDown}
             className="block h-4 w-6 shrink-0 rounded-full bg-white shadow-md ring-1 ring-black/10 transition-[color,box-shadow,background-color,inset-inline-start,transform] select-none not-dark:bg-clip-padding hover:ring-4 hover:ring-ring/30 focus-visible:ring-4 focus-visible:ring-ring/30 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 data-[orientation=vertical]:h-6 data-[orientation=vertical]:w-4"
           />
         ))}
