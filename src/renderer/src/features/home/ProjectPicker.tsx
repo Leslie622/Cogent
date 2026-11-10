@@ -1,7 +1,10 @@
 /**
  * 「选择项目」弹层（信息区空位接线，参考稿：搜索行 + 项目清单 + 新建项目行）。
  * 触发钮 = 信息区灰条里的「选择项目」/「项目名」胶囊（两态同组件：未选项目时
- * 出"选择项目"，已选时回显项目名、点开可**换绑**）。
+ * 出"选择项目"，已选时回显项目名、点开可**换绑**）；已选态胶囊 hover 时左侧
+ * 文件夹图标原位渐变成灰底白 X 圆徽（嵌在钮内的 role=button span，stopPropagation
+ * 拦触发器，点它 = 解绑 unbindProject：删绑定空脚手架会话 + 视图态回"无项目"，
+ * **不是**删项目 —— 真删走侧栏「移除项目」）。
  *
  * 关键边界：协议里会话与项目的绑定只在 session.create 时可定（无改绑 method），
  * 所以"选项目"不是切视图态就完 —— 必须物化一个绑定会话，否则首条消息会发进
@@ -15,6 +18,7 @@ import {
   IconFolder,
   IconFolderPlus,
   IconSearch,
+  IconXFilled,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
 import {
@@ -53,6 +57,29 @@ async function rebindSessionToProject(projectId: string): Promise<void> {
   if (created !== null) {
     useHomeStore.setState({ session: { kind: 'new', projectId } })
   }
+}
+
+/**
+ * X 解绑（与 pick 相反的操作）：删掉选项目时物化的**绑定空脚手架会话**（绑定
+ * 只在 session.create 时可定，留着它下条消息就串进该项目），视图态回"无项目"
+ * —— 信息区回到「选择项目」。仅解绑不删项目：真删项目走侧栏「移除项目」
+ * （引擎语义：项目没了会话落回"最近"）。
+ * 会话已被发过消息/改过名时（非脚手架形态）X 不出现，本函数不会被走到；
+ * 脚手架判定同 rebind 的口径 —— 消息空 + 未命名，归属必为本项目（该会话就是
+ * 为绑定本项目而物化的）。
+ */
+async function unbindProject(): Promise<void> {
+  const chat = useChatStore.getState()
+  const active = chat.sessions.find((s) => s.id === chat.activeSessionId)
+  if (
+    active !== undefined &&
+    (chat.messagesBySession[active.id]?.length ?? 0) === 0 &&
+    active.title === '新会话' &&
+    active.projectId !== undefined
+  ) {
+    await chat.deleteSession(active.id)
+  }
+  useHomeStore.setState({ session: { kind: 'new' } })
 }
 
 /** 弹层内项目行：folder 图标 + 名称，当前所在项目打勾（触发钮已回显名称时） */
@@ -130,17 +157,57 @@ export function ProjectPicker({
           }
         }}
       >
+        {/* 单胶囊整钮（参考稿 1:1）：已选项目时 hover，左侧文件夹图标**原位**
+            交叉渐变成灰底白 X 圆徽（两图标 absolute 叠放换透明度，同侧栏文件夹
+            开/合手法，不换实例不闪动）；X 是嵌在触发钮里的 span 而非独立 button
+            —— button 嵌 button 非法，点 X 时 stopPropagation 拦住冒泡（拦
+            pointerdown + click 两路，base-ui 触发器两处都可能挂打开），只解绑
+            不弹菜单 */}
         <PopoverTrigger
           render={
             <Button
               variant="ghost"
               size="xs"
-              className={cn('gap-1.5 px-1 font-normal text-[13px] text-foreground', ROW_HOVER)}
+              className={cn(
+                'group gap-1.5 px-1.5 font-normal text-[13px] text-foreground',
+                ROW_HOVER
+              )}
               title={projectId !== undefined ? '更换项目' : '选择项目'}
             />
           }
         >
-          <IconFolder className="size-4 text-muted-foreground" />
+          {/* 图标位 16px 定宽：span 包 svg 后 xs 变体的 has-[>svg]:px-1.5 不再
+              命中（无直接 svg 子元素），padding 显式 px-1.5 保持原胶囊宽度 */}
+          <span className="relative flex size-4 shrink-0 items-center justify-center">
+            <IconFolder
+              className={cn(
+                'absolute inset-0 size-4 text-muted-foreground transition-opacity duration-150',
+                projectId !== undefined && 'group-hover:opacity-0'
+              )}
+            />
+            {projectId !== undefined && (
+              <span
+                role="button"
+                aria-label="移除该项目"
+                title="移除该项目"
+                className="absolute inset-0 flex items-center justify-center rounded-full bg-muted-foreground text-background opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void unbindProject()
+                }}
+              >
+                {/* 实心 X（IconXFilled）12px：① 描边 IconX 缩到 10px 笔画仅
+                    0.83px，两条对角线抗锯齿落点不对称（\ 向碎成断点），视觉上
+                    "不居中"（实心 fill 栅格化干净）；② 10px 下 IconXFilled 的
+                    path 只覆盖 viewBox 56%，墨迹仅 6px 占圆 30% 太小——12px
+                    墨迹占圆 38%（参考图 44%），且 12 设备像素（125% 缩放下
+                    15px）栅格对称性实测完美（canvas 逐像素验证，中心与圆心
+                    严格重合） */}
+                <IconXFilled className="size-3" />
+              </span>
+            )}
+          </span>
           {projectId !== undefined
             ? (projects.find((p) => p.id === projectId)?.name ?? '')
             : '选择项目'}
