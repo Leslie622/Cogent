@@ -53,7 +53,13 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
 - **输入区**（HomeChat.ChatComposer）：白卡 rounded-3xl border-foreground/10，
   无投影、聚焦无任何反馈（has-[focus-visible] 反制掉组件默认 ring）；上方项目
   会话信息区 mx-5 h-9 rounded-t-xl bg-muted —— **新聊天限定**（无项目 = "选择项目"
-  单钮；项目内发起 = 回显项目/本地/main；已有对话的会话不显示）
+  单钮；项目内发起 = 回显项目/本地/main；已有对话的会话不显示）。项目胶囊
+  （ProjectPicker）已选态 hover：左侧文件夹图标**原位**交叉渐变成灰底白 X 圆徽
+  （16px 定宽 span 内两图标 absolute 叠放换透明度，同侧栏文件夹开/合手法）——
+  X 是嵌在触发钮里的 role=button span（button 嵌 button 非法），pointerdown +
+  click 双路 stopPropagation 拦 base-ui 触发器，点 X = 解绑项目（删绑定空
+  脚手架会话防串归属）而非弹菜单；胶囊旁另起独立 X 钮的方案被否
+  （2026-11-10 用户定稿：融进胶囊，不是两个按钮）
 - **设置页**：SettingsParts 拼装 —— SettingsGroup（组标题 + rounded-xl 描边卡 +
   divide-y 行分隔）+ SettingsRow（左标题/描述右控件）；控件四款：Switch（选中
   黑底）/ SelectControl（描边圆角 + 值 + 箭头，静态空位）/ SecondaryAction
@@ -161,6 +167,15 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
    ThinkingSlider，原语 marks 不再带任何外观（含 hover）。同特异性对赌生成
    顺序也不行：激活点 hover 用 `span[data-active]:hover`（0,4,1）显式压过
    `scale-125`
+11. **base-ui Slider 的方向变体必须写 `data-[orientation=…]:`**：Base UI 渲染的
+   属性是 `data-orientation="horizontal"`（state key 直出），Tailwind 的
+   `data-horizontal:` 快捷变体编译成属性**存在性**选择器 `[data-horizontal]`，
+   永远不命中 —— 轨道 `data-horizontal:h-2` 整条失效、高度塌 0 轨道隐身
+   （2026-11-10 上下文窗口滑杆改走 ui/slider 原语时踩响；ThinkingSlider 当时
+   靠自覆写 `h-5` 掩埋了原语的坑）。验证特异性对赌时留意：调用处
+   `[data-slot=slider-track]]:h-5` 与原语 `data-[orientation=horizontal]:h-2`
+   同为 0,2,0，构建产物中 h-5 规则靠后取胜（当前成立，升级 Tailwind 后若轨道
+   高度异常先查这里）
 
 ## 视觉对标方法论（"照某图实现"类任务）
 

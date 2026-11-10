@@ -276,8 +276,8 @@
     <tr><td><code>session.messages</code></td><td>拉某会话的完整转录（pi Message[] → ChatMessage[] 纯文本化）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>agent.submit</code></td><td>提交输入：text + 可选 model / provider / thinkingLevel（provider = 同名模型消歧键：azure 目录也收录 deepseek-v4-pro，id 单键全局查找会撞未配置的那家）；受理（同步校验：会话存在/空闲，失败回错误帧）即返回，进度走事件流</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>agent.abort</code></td><td>中止某会话正在进行的流（直达 pi Agent.abort()）</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>credentials.set / list</code></td><td>运行中更新 key / 查各 provider 配置状态（只回布尔位）</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>models.list</code></td><td>pi 模型目录摘要（UI 下拉数据源）</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>credentials.set / remove / list</code></td><td>运行中更新 key / 删除单条 key（2026-11-10，真删而非写空串 —— 空串会造成壳"未配置"与引擎"已配置(空)"的语义分裂）/ 查各 provider 配置状态（只回布尔位）</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>models.list</code></td><td>pi 模型目录摘要（UI 下拉数据源）；2026-11-10 起回带 <code>defaultModel</code>（provider+id 双键）—— 宿主不再自持默认模型常量副本（漂移后回填偏好会指向不可用模型）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>providers.custom.sync</code></td><td>自定义 provider + 内置 provider 本地调整（baseUrl 覆盖 / 模型增删 / 目录禁用）的<b>全量替换</b>同步</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>inspect.entries / inspect.entry</code></td><td>运行时控制台（2026-11-10）：拉会话观测条目摘要（时间线数据源）/ 按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词，数据源 = pi hooks 截获，见 <a href="技术笔记/runtime-console.md">笔记</a>）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>approval.respond</code></td><td>用户对审批请求的裁决回执 —— 空位 2（工具+审批）接线时启用</td><td><span class="st plan">协议已定</span></td></tr>

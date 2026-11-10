@@ -25,7 +25,15 @@
   （开发者受众翻 `~/.cogent/sessions/` 直接就是学习材料）与单文件备份粒度；
 - **vs sqlite**：访问模式是整文档读写，sqlite 的索引/事务/查询能力用不上，
   反而引入二进制不可检查性。Codex 的会话也是 jsonl 平文件，同款判断；
-- **盘上格式带 `version`**：将来字段演进据版本迁移（同 credentials.json 手法）。
+- **盘上格式带 `version`**：将来字段演进据版本迁移（同 credentials.json 手法）；
+- **写法原子 + 恢复逐文件隔离**（2026-11-10，架构审查修复）：`put` 先写同目录
+  `.tmp` 再 rename 覆盖（Node 在 Windows 带 MOVEFILE_REPLACE_EXISTING，同卷原子）
+  —— 裸 `writeFileSync` 覆盖目标会在写入中途崩溃/断电时留下截断文件，而截断的
+  会话文件在恢复处只能被隔离，等于丢整个会话。恢复侧对应 `quarantine`：单个
+  损坏文件改名 `.corrupt` 旁置 + stderr 记录 + **继续恢复其余**（可见性保留：
+  日志可查、旁置文件可手工抢救）—— 此前任其炸构造器会让引擎进程拒启 = 全部
+  会话陪葬，超出「报错而非静默重建」的立法本意。main 侧三处落盘
+  （credentials/custom-providers/settings）同款原子写，见 storage-root.writeFileAtomic。
 
 ## 3. 存什么：pi 完整转录，不存投影
 
