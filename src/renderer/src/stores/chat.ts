@@ -3,18 +3,69 @@
  * 数据源头是引擎事件流（onEngineEvent），store 是事件与 UI 之间的缓冲；
  * 初载（load）拉会话列表，选中会话时按需拉历史消息。
  *
- * 运行态分域（2026-11-10，架构审查修复）：running/lastError/truncated 一律按
- * sessionId 分域（同 console store 的 runningBySession 手法）。此前是全局单例：
- * 会话 A 流式中切到 B 发消息，A 完成会把全局 running 置 false → B 的停止钮
+ * 运行态分域（2026-11-10，架构审查修复）：running/lastError/truncated/stopping
+ * 一律按 sessionId 分域（同 console store 的 runningBySession 手法）。此前是全局
+ * 单例：会话 A 流式中切到 B 发消息，A 完成会把全局 running 置 false → B 的停止钮
  * 错变发送；反向则 B 的输入框被 A 的 running 锁死；错误/截断文案也会串会话。
- * 组件侧用 selectRunning / selectLastError / selectTruncated 取活动会话的视图。
+ * 组件侧用 selectRunning / selectStopping / selectLastError / selectTruncated
+ * 取活动会话的视图。stopping = 用户点了停止的前置位（回合头条「已停止」与
+ * 「出错了」的判别依据，见 docs/计划-回合过程折叠.md D6）。
  */
 import { create } from 'zustand'
 import type { ChatMessage, SessionSummary } from '@/env.d'
 import { useHomeStore } from '@/stores/home'
 
-/** sessionId → 消息列表（含流式中的 assistant 消息）；Record 值按"可能缺"对待（Partial 语义） */
-type MessagesBySession = Partial<Record<string, ChatMessage[]>>
+/**
+ * 工具调用项（消息流里的独立行，工具卡数据源）：
+ * 流式期由 tool.started/completed 事件维护；终态/历史由段化消息的 toolCalls
+ * 展平生成（flattenSegments）—— 两条来源同一形状，渲染单一（components/ui/tool）。
+ */
+export interface ToolItem {
+  /** = 引擎 callId（事件流与终态配对键，跨 run 唯一） */
+  id: string
+  /** 判别字段：消息列表元素联合（ChatMessage 无此字段） */
+  type: 'tool'
+  name: string
+  /** ToolKind（read/write/exec/network；呈现用） */
+  toolKind: string
+  /** 参数一行摘要（引擎生成，如 read("src/index.ts")） */
+  summary: string
+  status: 'running' | 'ok' | 'error' | 'blocked'
+  /** 结果一行摘要；错误/拒绝时为原因 */
+  resultSummary?: string
+}
+
+/** 消息列表元素：内容消息（ChatMessage）或工具调用行（ToolItem） */
+export type MessageItem = ChatMessage | ToolItem
+
+/**
+ * 段化消息 → 消息流元素展平（终态替换与历史加载共用）：
+ * 每段先落它的工具卡（toolCalls 按序），再落消息本体；纯工具段（无正文无思考）
+ * 不落消息本体 —— 只留卡，避免空消息占行。
+ */
+function flattenSegments(segments: ChatMessage[]): MessageItem[] {
+  const items: MessageItem[] = []
+  for (const segment of segments) {
+    for (const call of segment.toolCalls ?? []) {
+      items.push({
+        id: call.callId,
+        type: 'tool',
+        name: call.name,
+        toolKind: call.kind,
+        summary: call.summary,
+        status: call.status,
+        resultSummary: call.resultSummary
+      })
+    }
+    if (segment.content !== '' || segment.thinking !== undefined) {
+      items.push({ ...segment, toolCalls: undefined })
+    }
+  }
+  return items
+}
+
+/** sessionId → 消息列表（含流式中的 assistant 消息与工具卡行） */
+type MessagesBySession = Partial<Record<string, MessageItem[]>>
 
 /** 引擎 SessionSummary 的 renderer 侧直接镜像（env.d.ts），不再本地重复声明 */
 export type { SessionSummary }
@@ -26,6 +77,9 @@ export interface ChatState {
   messagesBySession: MessagesBySession
   /** sessionId → 是否流式中（发送/停止钮切换；分域防跨会话互踩） */
   runningBySession: Partial<Record<string, boolean>>
+  /** sessionId → 用户点了停止（run 终态事件消费后清零 —— 回合头条
+      「已停止」（保半截正文）与「出错了」（真失败）的判别位） */
+  stoppingBySession: Partial<Record<string, boolean>>
   /** sessionId → 最近一次 run.failed 的错误文案（会话尾部错误条） */
   lastErrorBySession: Partial<Record<string, string>>
   /** sessionId → 最近一次回复是否被 token 上限截断（stopReason=length） */
@@ -51,6 +105,11 @@ export function selectRunning(state: ChatState): boolean {
   return state.activeSessionId !== null && state.runningBySession[state.activeSessionId] === true
 }
 
+/** 活动会话是否处于「已点停止、终态未到」的窗口（回合头条判别用） */
+export function selectStopping(state: ChatState): boolean {
+  return state.activeSessionId !== null && state.stoppingBySession[state.activeSessionId] === true
+}
+
 /** 活动会话的最近错误文案（无 = null） */
 export function selectLastError(state: ChatState): string | null {
   if (state.activeSessionId === null) return null
@@ -67,6 +126,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeSessionId: null,
   messagesBySession: {},
   runningBySession: {},
+  stoppingBySession: {},
   lastErrorBySession: {},
   truncatedBySession: {},
   loadError: null,
@@ -97,10 +157,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   selectSession: async (sessionId) => {
     set({ activeSessionId: sessionId })
-    // 按需拉历史（盘上转录已持久化，切换时重拉一次拿最新；本地缓存优化属后续件）
+    // 按需拉历史（盘上转录已持久化，切换时重拉一次拿最新；本地缓存优化属后续件）。
+    // 展平：段化消息里的 toolCalls → 独立工具卡行（与流式期事件路径同一形状）
     if (get().messagesBySession[sessionId] === undefined) {
       const { messages } = await window.cogent.engineRequest('session.messages', { sessionId })
-      set((state) => ({ messagesBySession: { ...state.messagesBySession, [sessionId]: messages } }))
+      set((state) => ({ messagesBySession: { ...state.messagesBySession, [sessionId]: flattenSegments(messages) } }))
     }
   },
 
@@ -149,6 +210,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       delete messagesBySession[sessionId]
       const runningBySession = { ...state.runningBySession }
       delete runningBySession[sessionId]
+      const stoppingBySession = { ...state.stoppingBySession }
+      delete stoppingBySession[sessionId]
       const lastErrorBySession = { ...state.lastErrorBySession }
       delete lastErrorBySession[sessionId]
       const truncatedBySession = { ...state.truncatedBySession }
@@ -157,6 +220,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         sessions,
         messagesBySession,
         runningBySession,
+        stoppingBySession,
         lastErrorBySession,
         truncatedBySession,
         // 删除活动会话与归档同款落点：视图落"新聊天"（不再自动跳 sessions[0] ——
@@ -190,6 +254,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     set((state) => ({
       runningBySession: { ...state.runningBySession, [sessionId]: true },
+      // 上一回合若停在「已停止」，新 run 开启即回落正常（停止位随 run 消费）
+      stoppingBySession: { ...state.stoppingBySession, [sessionId]: false },
       lastErrorBySession: { ...state.lastErrorBySession, [sessionId]: undefined },
       truncatedBySession: { ...state.truncatedBySession, [sessionId]: undefined },
       messagesBySession: {
@@ -224,6 +290,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   abort: async () => {
     const sessionId = get().activeSessionId
     if (!sessionId) return
+    // 先置停止位再发 abort：run.failed 事件回来看这位区分「已停止」（半截正文
+    // 封存保留、清错误条）与「出错了」（真失败，错误条照旧）—— D6
+    set((state) => ({ stoppingBySession: { ...state.stoppingBySession, [sessionId]: true } }))
     await window.cogent.engineRequest('agent.abort', { sessionId })
   }
 }))
@@ -248,8 +317,10 @@ export function bindEngineEvents(): () => void {
           // 流式累积进最后一条 assistant 消息；首条 delta 时占位消息尚不存在，先建。
           // kind 分流：thinking 进思考缓冲、text 进正文（同一条消息的两路，引擎保证同 messageId）
           const last = messages.at(-1)
+          // 判别先过 type（联合窄化），再校验占位身份 —— 工具卡行（type 'tool'）
+          // 后到的 delta 要另起占位（封段接力见 tool.started 分支）
           const next =
-            last !== undefined && last.role === 'assistant' && last.id === 'streaming'
+            last !== undefined && last.type === undefined && last.role === 'assistant' && last.id === 'streaming'
               ? [
                   ...messages.slice(0, -1),
                   isThinking
@@ -270,17 +341,77 @@ export function bindEngineEvents(): () => void {
         })
         return
       }
-      case 'run.completed': {
-        const { sessionId, message, stopReason } = event.params
+      case 'tool.started': {
+        const { sessionId, callId, name, kind, summary } = event.params
         useChatStore.setState((state) => {
           const messages = state.messagesBySession[sessionId] ?? []
-          // 用引擎回传的最终消息替换流式占位（id 从 'streaming' 变为真实 id）
+          // 封段接力：模型先出文字再调工具时，占位（id 'streaming'）改名为 live-*
+          // 定格在本位 —— 后续轮次的 delta 会另起占位，文字与工具卡交错不失真
+          const last = messages.at(-1)
+          const sealed =
+            last !== undefined && last.type === undefined && last.id === 'streaming' && last.role === 'assistant'
+              ? [...messages.slice(0, -1), { ...last, id: `live-${crypto.randomUUID()}` }]
+              : messages
+          const item: ToolItem = {
+            id: callId,
+            type: 'tool',
+            name,
+            toolKind: kind,
+            summary: summary ?? `${name}()`,
+            status: 'running'
+          }
+          return {
+            messagesBySession: { ...state.messagesBySession, [sessionId]: [...sealed, item] }
+          }
+        })
+        return
+      }
+      case 'tool.completed': {
+        const { sessionId, callId, isError, summary } = event.params
+        useChatStore.setState((state) => {
+          const messages = state.messagesBySession[sessionId]
+          if (messages === undefined) return state
+          // 带注解的中间变量锚定字面量联合：spread 字面量的属性会被 TS 展宽成
+          // string（带 spread 的对象字面量不参与上下文类型），断言写法又会被
+          // no-unnecessary-type-assertion 拦 —— 变量注解是两边都干净的形式
+          const nextStatus: ToolItem['status'] = isError ? 'error' : 'ok'
+          return {
+            messagesBySession: {
+              ...state.messagesBySession,
+              [sessionId]: messages.map((m): MessageItem =>
+                m.type === 'tool' && m.id === callId
+                  ? { ...m, status: nextStatus, resultSummary: summary }
+                  : m
+              )
+            }
+          }
+        })
+        return
+      }
+      case 'run.completed': {
+        const { sessionId, message, messages, stopReason } = event.params
+        useChatStore.setState((state) => {
+          const list = state.messagesBySession[sessionId]
+          if (list === undefined) return state
+          // 终态整段替换：定位本次 run 的边界（列表里最后一条用户消息），
+          // 其后的流式占位/封段/工具卡全部换成引擎分段终态（messages 优先，
+          // 老引擎无 messages 时退回聚合 message 单段 —— 同一展平路径）
+          const segments = messages ?? (message !== undefined ? [message] : [])
+          let lastUser = -1
+          for (let i = list.length - 1; i >= 0; i--) {
+            // 先落局部再判别：元素访问（list[i]）不参与窄化，点号链才行
+            const item = list[i]
+            if (item.type !== 'tool' && item.role === 'user') {
+              lastUser = i
+              break
+            }
+          }
           const finalMessages =
-            message !== undefined
-              ? [...messages.filter((m) => m.id !== 'streaming'), message]
-              : messages.filter((m) => m.id !== 'streaming')
+            lastUser >= 0 ? [...list.slice(0, lastUser + 1), ...flattenSegments(segments)] : list
           return {
             runningBySession: { ...state.runningBySession, [sessionId]: false },
+            // abort raced 完成（完成先到）：停止位一并消费
+            stoppingBySession: { ...state.stoppingBySession, [sessionId]: false },
             truncatedBySession: { ...state.truncatedBySession, [sessionId]: stopReason === 'length' },
             messagesBySession: { ...state.messagesBySession, [sessionId]: finalMessages },
             // 首条消息后标题已在引擎侧生成；updatedAt 顺带推进（排序口径）
@@ -294,18 +425,44 @@ export function bindEngineEvents(): () => void {
       }
       case 'run.failed': {
         const { sessionId, message } = event.params
-        useChatStore.setState((state) => ({
-          runningBySession: { ...state.runningBySession, [sessionId]: false },
-          truncatedBySession: { ...state.truncatedBySession, [sessionId]: false },
-          lastErrorBySession: { ...state.lastErrorBySession, [sessionId]: message },
-          messagesBySession: {
-            ...state.messagesBySession,
-            [sessionId]: (state.messagesBySession[sessionId] ?? []).filter((m) => m.id !== 'streaming')
+        useChatStore.setState((state) => {
+          // 停止位前置判别（D6）：用户点的停止 → 「已停止」不是错误（半截正文
+          // 封存保留、错误条清掉，回合头条表达状态）；真失败 → 错误条照旧
+          const wasStopped = state.stoppingBySession[sessionId] === true
+          const base = {
+            runningBySession: { ...state.runningBySession, [sessionId]: false },
+            stoppingBySession: { ...state.stoppingBySession, [sessionId]: false },
+            truncatedBySession: { ...state.truncatedBySession, [sessionId]: false },
+            lastErrorBySession: wasStopped
+              ? { ...state.lastErrorBySession, [sessionId]: undefined }
+              : { ...state.lastErrorBySession, [sessionId]: message }
           }
-        }))
+          const list = state.messagesBySession[sessionId]
+          if (list === undefined) return base
+          return {
+            ...base,
+            messagesBySession: {
+              ...state.messagesBySession,
+              // 失败收尾：中止 = 半截占位改名封存（同 tool.started 的封段接力，
+              // 已出文本留在消息流）；真失败 = 占位移除（既有口径）。
+              // 挂在 run 里的工具卡若还 running（打断在工具处）标 blocked ——
+              // 卡片不留永久转圈
+              [sessionId]: list
+                .map((m) =>
+                  m.type === undefined && m.id === 'streaming' && wasStopped
+                    ? { ...m, id: `live-${crypto.randomUUID()}` }
+                    : m
+                )
+                .filter((m) => m.id !== 'streaming')
+                .map((m) =>
+                  m.type === 'tool' && m.status === 'running' ? { ...m, status: 'blocked' as const } : m
+                )
+            }
+          }
+        })
         return
       }
-      // tool.* / approval.*：审批流落地后接入，先忽略
+      // approval.*：审批流（批次 2）落地后接入，先忽略
       default:
         return
     }

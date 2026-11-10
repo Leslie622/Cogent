@@ -12,10 +12,10 @@ import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useChatStore } from '@/stores/chat'
+import type { MessageItem } from '@/stores/chat'
 import { findActiveModel, useEngineStore } from '@/stores/engine'
 import type { HomeSession } from '@/stores/home'
 import type { MessageUsage } from '@/env.d'
-import type { MessageLike } from './HomeChat'
 
 /** token 数紧凑格式：1234 → 1.2K、1.05M；千以下原样（tabular-nums 保证列对齐） */
 export function formatTokens(n: number): string {
@@ -27,7 +27,8 @@ export function formatTokens(n: number): string {
 /** 非聊天视图（新聊天）时的稳定空回退：selector 返回 undefined，若在组件体内
     写 `?? []` 字面量，每次渲染新建数组 → 下方 usage 聚合的 useMemo 全程失效
     逐帧重算。模块级常量让引用恒定（同 HomeChat 里 ChatMessages 的先例） */
-const EMPTY_MESSAGES: MessageLike[] = []
+// 消息联合（含工具卡行）：usage 扫描经 type 判别跳过工具行（见下方 useMemo）
+const EMPTY_MESSAGES: MessageItem[] = []
 
 /** 横条本体：斜纹轨道（用户参照稿图1；透明度只落在背景，合 UI 方针 3）+ 实色填充 */
 function ContextBar({ pct, tone, className }: { pct: number; tone: string; className?: string }) {
@@ -68,9 +69,12 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
     let cacheRead = 0
     let cacheDen = 0
     // 从后往前扫：首条命中即"末条已完成回答"的 usage（流式中末条还没有 usage）；
-    // 命中率顺路全会话聚合，分母 = input（未命中部分）+ cacheRead（命中部分）
+    // 命中率顺路全会话聚合，分母 = input（未命中部分）+ cacheRead（命中部分）。
+    // 工具卡行没有 usage，先判别跳过（消息联合见 stores/chat MessageItem）
     for (let i = messages.length - 1; i >= 0; i--) {
-      const u = messages[i].usage
+      const item = messages[i]
+      if (item.type !== undefined) continue
+      const u = item.usage
       if (!u) continue
       if (!usage) usage = u
       cacheRead += u.cacheRead

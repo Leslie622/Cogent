@@ -3,9 +3,11 @@
  * 数据 = 一段流式思考文本（协议 ChatMessage.thinking），无 SDK 依赖。
  * 开合语义（官方 open ?? running）：思考中自动展开 + 标题 shimmer，思考结束自动收起；
  * 用户手动开合后以用户为准，不再被状态抢走。
+ * 图标（2026-11-10 用户定调换脑）：完成态 = 脑（对齐 ZCode 的 🧠 思考意象；
+ * 此前对勾与"完成"语义无关），进行中仍是 spinner。
  */
 import { useState } from 'react'
-import { CircleCheckIcon, LoaderCircleIcon } from 'lucide-react'
+import { BrainIcon, LoaderCircleIcon } from 'lucide-react'
 import {
   TraceCollapsible,
   TraceCollapsibleContent,
@@ -32,9 +34,9 @@ export function Reasoning({
   const line = (
     <TraceLine status={running ? 'running' : undefined}>
       <TraceIcon>
-        {running ? <LoaderCircleIcon className="animate-spin" /> : <CircleCheckIcon />}
+        {running ? <LoaderCircleIcon className="animate-spin" /> : <BrainIcon />}
       </TraceIcon>
-      <TraceTitle>{running ? '思考中' : '已深度思考'}</TraceTitle>
+      <TraceTitle>{running ? '思考中' : '深度思考'}</TraceTitle>
     </TraceLine>
   )
 

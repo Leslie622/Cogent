@@ -114,6 +114,12 @@ export interface SessionSummary {
    * 默认滤掉已归档会话，设置页「已归档的聊天」可查看/恢复/彻底删除。
    */
   archivedAt?: number
+  /**
+   * 会话级权限模式（工具审批判定矩阵的会话侧输入，计划-工具系统与审批.md D4）：
+   * ask（缺省）= 写类工具先审批；auto = 全放行（「完全访问」）；plan = 只读。
+   * 缺省按 ask 处理（旧盘数据无此字段即落默认行为，只增不破）。
+   */
+  permissionMode?: PermissionMode
 }
 
 /**
@@ -140,12 +146,32 @@ export interface MessageUsage {
 }
 
 /**
+ * 工具调用投影（工具卡数据形状，计划-工具系统与审批.md §3）：
+ * 流式（tool.started/completed 事件）与历史回查（ChatMessage.toolCalls）共用。
+ * status 三态：ok = 执行成功；error = 执行失败（结果 isError）；blocked =
+ * 未执行（审批拒绝 / plan 模式 / 中止 —— 模型收到的是 error 结果 + 原因）。
+ */
+export interface ToolCallRecord {
+  /** pi toolCall 块 id（事件流与历史回查的配对键） */
+  callId: string
+  name: string
+  kind: ToolKind
+  /** 参数一行摘要（引擎生成，如 read("src/index.ts")）；UI 卡标题 */
+  summary: string
+  status: 'ok' | 'error' | 'blocked'
+  /** 结果一行摘要（截断）；错误/拒绝时为原因 */
+  resultSummary?: string
+}
+
+/**
  * 对话消息（协议侧的最小形状）。
  * 刻意不搬 pi 的完整 content blocks / toolCall —— 协议只暴露 UI 渲染所需。
  * thinking：assistant 思考文本（ pi ThinkingContent 块拼接，additive 扩展）；
  * usage/durationMs/model：token 用量/模型耗时/模型名（2026-11-09 additive，
  * 属路线空位 1 的 usage 先行，同 thinking 的 flat 先行模式）；
- * 完整块结构化（phase/toolCall 等）仍是路线第 1 项，届时继续以 optional 字段扩展。
+ * toolCalls：本条 assistant 消息发起的工具调用（2026-11-10 additive，
+ * 工具循环落地 —— 段化投影，见 run.completed.messages 注释）；
+ * 完整块结构化（phase/签名透传等）仍是路线第 1 项，届时继续以 optional 字段扩展。
  */
 export interface ChatMessage {
   id: string
@@ -159,6 +185,8 @@ export interface ChatMessage {
   durationMs?: number
   /** 产生本回答的模型 id（仅 assistant） */
   model?: string
+  /** 本条消息发起的工具调用（仅 assistant，按发生序）；缺省 = 无工具轮 */
+  toolCalls?: ToolCallRecord[]
   timestamp: number
 }
 
@@ -311,6 +339,18 @@ export interface SessionArchiveParams {
   archived: boolean
 }
 export interface SessionArchiveResult {
+  summary: SessionSummary
+}
+
+/**
+ * 会话级权限切换（「完全访问」按钮，计划-工具系统与审批.md D4）：引擎在
+ * beforeToolCall 判定矩阵里消费 permissionMode。返回更新后的完整摘要。
+ */
+export interface SessionSetPermissionParams {
+  sessionId: string
+  mode: PermissionMode
+}
+export interface SessionSetPermissionResult {
   summary: SessionSummary
 }
 
@@ -523,6 +563,7 @@ export interface ProtocolMethods {
   'session.setPinned': { params: SessionSetPinnedParams; result: SessionSetPinnedResult }
   'session.listArchived': { params: Record<string, never>; result: SessionSummary[] }
   'session.archive': { params: SessionArchiveParams; result: SessionArchiveResult }
+  'session.setPermission': { params: SessionSetPermissionParams; result: SessionSetPermissionResult }
   'project.list': { params: Record<string, never>; result: ProjectSummary[] }
   'project.create': { params: ProjectCreateParams; result: ProjectCreateResult }
   'project.rename': { params: ProjectRenameParams; result: ProjectRenameResult }
@@ -551,6 +592,14 @@ export interface ProtocolEvents {
     /** 最终完整 assistant 回复；renderer 用它替换流式累积，免拼 delta */
     message?: ChatMessage
     /**
+     * 分段终态（2026-11-10 additive，工具循环落地）：一个 run 在 pi 里是多轮
+     * 循环（assistant(toolCall) → toolResult → assistant(text)…），按发生序
+     * 逐段投影 —— 宿主用它替换流式占位可保真 text 与工具卡的交错顺序。
+     * message 保持聚合形态（全轮 text 拼接 + toolCalls 合并）：老宿主只读
+     * message 不破，新宿主优先 messages。
+     */
+    messages?: ChatMessage[]
+    /**
      * pi 停止原因（stop/length/toolUse…）。length = 输出被 token 上限截断
      * （模型上限或端点侧强制上限），UI 据此提示"回复被截断"——截断不是错误，
      * pi 也按正常结束处理，不透出就无从呈现。
@@ -565,7 +614,16 @@ export interface ProtocolEvents {
    * 同 messageId = 同一条消息的两路累积缓冲，宿主各自拼接。
    */
   'message.delta': { sessionId: string; messageId: string; delta: string; kind?: 'text' | 'thinking' }
-  'tool.started': { sessionId: string; callId: string; name: string; kind: ToolKind }
+  /**
+   * 工具开始执行（审批放行后才发 —— 挂起期间宿主只见 approval.request）。
+   * summary = 参数一行摘要（引擎生成），工具卡标题与审批卡共用。
+   */
+  'tool.started': { sessionId: string; callId: string; name: string; kind: ToolKind; summary?: string }
+  /**
+   * 工具执行结束：summary = 结果一行摘要（截断；错误/拒绝时为原因）。
+   * isError 含审批拒绝/中止（blocked 语义在 status 维度，事件里不细分 ——
+   * 宿主若关心可在 ChatMessage.toolCalls.status 看到）。
+   */
   'tool.completed': { sessionId: string; callId: string; isError: boolean; summary: string }
   /** 审批请求：宿主（最终是用户）裁决后以 approval.respond 回复 */
   'approval.request': {

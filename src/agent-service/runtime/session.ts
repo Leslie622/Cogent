@@ -29,6 +29,7 @@ import { builtinModels } from '@earendil-works/pi-ai/providers/all'
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { MutableModels, Usage } from '@earendil-works/pi-ai'
 import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { ProtocolError, RpcErrorCode } from '../../protocol'
 import type {
@@ -40,13 +41,15 @@ import type {
   ModelSummary,
   ProviderOverrideDef,
   ProtocolEvents,
-  SessionSummary
+  SessionSummary,
+  ToolCallRecord
 } from '../../protocol'
 import type { CredentialRegistry } from './credentials'
 import { CustomProviderRegistry } from './custom-providers'
 import { SessionInspector } from './inspector'
 import type { ProjectRegistry } from './project'
 import type { InspectStore, StorageDriver } from '../storage'
+import { buildTools, toolMeta } from '../tools'
 
 /** 引擎事件出口的类型别名：runtime 通过它上报事件，不关心传输层 */
 export type Notify = <E extends keyof ProtocolEvents>(
@@ -94,47 +97,62 @@ interface Session {
 const AGENTS_MD_MAX_CHARS = 16_000
 
 /**
- * 系统提示词装配（工作区上下文注入 + 多根化 2026-11-09）：基础人设 +
- * 工作区声明（多目录，首个为主根）+ 环境块（每根一行含 git 分支）+
- * 各根 AGENTS.md。这是"工作区对模型生效"的第①通道（文字声明）——
- * 模型没有 cwd 概念，相对路径指哪全靠这里讲清（四通道模型见计划 §0）。
+ * 系统提示词装配（工作区上下文注入 + 多根化 2026-11-09；工具段 2026-11-10，
+ * D2 修订后恒有工具）：基础人设 + 工作区声明（多目录，首个为主根；无绑定时无
+ * 此段）+ 环境块（每根一行含 git 分支）+ 各根 AGENTS.md + 工具使用段。
+ * 这是"工作区对模型生效"的第①通道（文字声明）—— 模型没有 cwd 概念，相对路径
+ * 指哪全靠这里讲清（四通道模型见计划 §0）。
  */
-function buildSystemPrompt(roots: string[]): string {
+function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
   let prompt = 'You are Cogent, a helpful desktop agent.'
-  if (roots.length === 0) return prompt
 
-  const declared =
-    roots.length === 1
-      ? roots[0]
-      : `${roots.map((r, i) => `${i + 1}. ${r}`).join('\n')}（首个为主根）`
-  prompt += `\n\n# 工作区\n你在用户的本地工作区中工作：${declared}` +
-    '\n用户消息里的相对路径（文件/目录）都相对这些根目录解析；未指明时优先主根。'
+  if (boundRoots.length > 0) {
+    const declared =
+      boundRoots.length === 1
+        ? boundRoots[0]
+        : `${boundRoots.map((r, i) => `${i + 1}. ${r}`).join('\n')}（首个为主根）`
+    prompt += `\n\n# 工作区\n你在用户的本地工作区中工作：${declared}` +
+      '\n用户消息里的相对路径（文件/目录）都相对这些根目录解析；未指明时优先主根。'
 
-  // 环境块（Claude Code 手法）：平台 + 每根目录与 git 分支（直读 .git/HEAD，
-  // 不 spawn 子进程 —— Windows 上免 git 依赖；非仓库/解析失败省略分支尾）
-  prompt += `\n\n# 环境\n- 平台: ${process.platform}`
-  for (const root of roots) {
-    const branch = readGitBranch(root)
-    prompt += `\n- 工作区: ${root}${branch !== null ? `（Git 分支: ${branch}）` : ''}`
-  }
+    // 环境块（Claude Code 手法）：平台 + 每根目录与 git 分支（直读 .git/HEAD，
+    // 不 spawn 子进程 —— Windows 上免 git 依赖；非仓库/解析失败省略分支尾）
+    prompt += `\n\n# 环境\n- 平台: ${process.platform}`
+    for (const root of boundRoots) {
+      const branch = readGitBranch(root)
+      prompt += `\n- 工作区: ${root}${branch !== null ? `（Git 分支: ${branch}）` : ''}`
+    }
 
-  // 各根 AGENTS.md（项目给模型的指令，只读消费；存在才拼、每根限长）
-  for (const root of roots) {
-    const agentsFile = join(root, 'AGENTS.md')
-    if (!existsSync(agentsFile)) continue
-    try {
-      const content = readFileSync(agentsFile, 'utf-8')
-      const trimmed = content.length > AGENTS_MD_MAX_CHARS
-        ? `${content.slice(0, AGENTS_MD_MAX_CHARS)}\n\n[AGENTS.md 已截断]`
-        : content
-      const label =
-        roots.length > 1 ? `工作区指令（${root} 的 AGENTS.md）` : '工作区指令（AGENTS.md）'
-      prompt += `\n\n# ${label}\n${trimmed}`
-    } catch (error) {
-      // 读失败不挡会话创建：指令文件是增益不是必需品（外部世界失败是常态）
-      process.stderr.write(`[agent-service] AGENTS.md 读取失败（跳过 ${root}）: ${(error as Error).message}\n`)
+    // 各根 AGENTS.md（项目给模型的指令，只读消费；存在才拼、每根限长）
+    for (const root of boundRoots) {
+      const agentsFile = join(root, 'AGENTS.md')
+      if (!existsSync(agentsFile)) continue
+      try {
+        const content = readFileSync(agentsFile, 'utf-8')
+        const trimmed = content.length > AGENTS_MD_MAX_CHARS
+          ? `${content.slice(0, AGENTS_MD_MAX_CHARS)}\n\n[AGENTS.md 已截断]`
+          : content
+        const label =
+          boundRoots.length > 1 ? `工作区指令（${root} 的 AGENTS.md）` : '工作区指令（AGENTS.md）'
+        prompt += `\n\n# ${label}\n${trimmed}`
+      } catch (error) {
+        // 读失败不挡会话创建：指令文件是增益不是必需品（外部世界失败是常态）
+        process.stderr.write(`[agent-service] AGENTS.md 读取失败（跳过 ${root}）: ${(error as Error).message}\n`)
+      }
     }
   }
+
+  // 工具段（D2 修订：任何会话都有只读工具，无绑定会话以主目录为基）。
+  // 讲清有什么、路径规则（相对基根 / 绝对路径不限 —— 对齐 Claude Code 只读
+  // 默认全盘允许）。不解释参数（工具 schema 自描述，模型读 description
+  // 比提示词转述更准）
+  const bound = boundRoots.length > 0
+  prompt +=
+    '\n\n# 工具\n' +
+    '你可以调用工具：read（读单个文件，带行号）、glob（按通配模式找文件）、' +
+    'grep（按正则全文搜索）。先用 glob/grep 定位、再用 read 读内容。\n' +
+    (bound
+      ? '相对路径相对工作区主根解析，绝对路径可以读任意位置。'
+      : `相对路径相对用户主目录（${toolRoots[0]}）解析，绝对路径可以读任意位置。`)
   return prompt
 }
 
@@ -152,12 +170,24 @@ function readGitBranch(cwd: string): string | null {
   }
 }
 
-/** 会话内 streaming 消息的累积缓冲（delta 拼出最终文本，agent_end 时落一条 ChatMessage） */
+/**
+ * 会话内 run 的流式累积状态（工具循环段化，计划 D6）。
+ * 一个 run 在 pi 里是多轮循环：assistant(text/toolCall) → toolResult →
+ * assistant(text)…。段化模型：**轮内缓冲**（delta 累积 + 本轮工具记录）在
+ * turn_end 封存成一段 ChatMessage；`segments` 按发生序收集全部段 ——
+ * run.completed 的 messages 即它（text 段与工具卡交错保真），message 是
+ * 全段聚合（老宿主兼容）。
+ */
 interface StreamingState {
   messageId: string
+  /** 已封存的段（turn_end 时 push） */
+  segments: ChatMessage[]
+  /** 当前轮正文缓冲（text_delta 累积；turn_end 清空） */
   text: string
-  /** 思考缓冲（thinking_delta 累积；正文与思考是同一条 assistant 消息的两路） */
+  /** 当前轮思考缓冲（thinking_delta 累积；正文与思考是同一轮的两路） */
   thinking: string
+  /** 当前轮的工具调用记录（tool_execution_start 建条，end 时补结果；turn_end 随段带走） */
+  tools: ToolCallRecord[]
   /** pi 停止原因（turn_end 时记录；length = 输出被 token 上限截断） */
   stopReason?: string
   /** token 用量（turn_end 各轮累加；见 accumulateUsage 的口径注释） */
@@ -166,6 +196,23 @@ interface StreamingState {
   durationMs?: number
   /** 模型 id（末轮记录） */
   model?: string
+}
+
+/**
+ * 工具结果 → 一行摘要（tool.completed 事件与 ToolCallRecord.resultSummary 共用）。
+ * 取 result.content 的文本块拼接（模型 facing 的结果即用户可读的结果），截 200
+ * 字符 —— 摘要服务"一眼看懂发生了什么"，全文模型已在循环里消费过。
+ */
+function summarizeToolResult(result: unknown): string {
+  if (typeof result !== 'object' || result === null) return ''
+  const content = (result as { content?: Array<{ type: string; text?: string }> }).content
+  if (!Array.isArray(content)) return ''
+  const text = content
+    .map((block) => (block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return text.length > 200 ? `${text.slice(0, 200)}…` : text
 }
 
 /** pi Usage → 协议 MessageUsage：只投影 UI 所需（cost 明细不带，total 一项即总账） */
@@ -290,6 +337,18 @@ export class SessionManager {
       }
     }
     return roots
+  }
+
+  /**
+   * 工具的基根（D2 修订）：绑定根，无绑定时兜底用户主目录 —— 桌面应用语境下
+   * "launch cwd" 的等价物。保证**任何会话都有只读工具**（主流共识：读几乎
+   * 不设限，Claude Code 的 Read/Glob/Grep 默认全盘允许；无绑定会话零工具
+   * 比所有主流产品都严，2026-11-10 用户驳回）。写类工具的**限界根**沿用
+   * 同一列表（批次 2 消费：无根写主目录也要过审批）。
+   */
+  private toolRoots(session: Session): string[] {
+    const roots = this.workspaceRoots(session)
+    return roots.length > 0 ? roots : [homedir()]
   }
 
   /** 自定义 provider / 内置 baseUrl 覆盖的全量同步（providers.custom.sync 委托） */
@@ -469,7 +528,13 @@ export class SessionManager {
 
     this.notify('run.started', { sessionId })
     this.ensureInspector(session).runStarted(text, agent.state.systemPrompt, agent.state.thinkingLevel)
-    this.streaming.set(sessionId, { messageId: `m-${crypto.randomUUID()}`, text: '', thinking: '' })
+    this.streaming.set(sessionId, {
+      messageId: `m-${crypto.randomUUID()}`,
+      segments: [],
+      text: '',
+      thinking: '',
+      tools: []
+    })
     // prompt() 的运行期失败（流错误/中止）由 pi 事件流转译为 run.failed
     // （handleRunFailure → agent_end，见 pi-agent-integration.md §2.3），不会走到这层；
     // catch 只兜"受理检查通过后、pi 尚未发出任何事件前"的启动窗口拒绝 ——
@@ -511,29 +576,41 @@ export class SessionManager {
    * 恢复的会话若启动即全量实例化，会话多了启动就慢、且不使用的会话白占内存。
    * initialState.messages 带完整历史 → 下一轮请求模型可见全部上下文（保真恢复）。
    * （messages() 不走这里：只读路径直接投影 transcript，不建 Agent —— 见其注释。）
+   * 工具集与 Agent 同批构建（roots 相同；kind/摘要等元数据走 tools/ 的静态表，
+   * 与实例解耦 —— 历史回查投影不依赖活实例）。
    */
   private ensureAgent(session: Session): Agent {
     if (session.agent) return session.agent
     // 记录器经 thunk 惰性解析：hooks 只在 prompt() 期间触发，那时 submit 已建好
     // 记录器，载入观测文件的时机正确
-    const agent = this.createAgent(session.transcript, this.workspaceRoots(session), () =>
-      this.ensureInspector(session)
+    const agent = this.createAgent(
+      session.transcript,
+      this.workspaceRoots(session),
+      this.toolRoots(session),
+      () => this.ensureInspector(session)
     )
     session.agent = agent
     this.agentIndex.set(agent, session.summary.id)
     return agent
   }
 
-  private createAgent(history: AgentMessage[], roots: string[], getInspector: () => SessionInspector): Agent {
+  private createAgent(
+    history: AgentMessage[],
+    boundRoots: string[],
+    toolRoots: string[],
+    getInspector: () => SessionInspector
+  ): Agent {
     const model = this.models.getModel(DEFAULT_PROVIDER, DEFAULT_MODEL)
     if (!model) throw new Error(`默认模型不可用: ${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`)
+    const tools = buildTools(toolRoots)
 
     const agent = new Agent({
       initialState: {
-        systemPrompt: buildSystemPrompt(roots),
+        systemPrompt: buildSystemPrompt(boundRoots, toolRoots),
         model,
         thinkingLevel: 'off',
-        messages: history
+        messages: history,
+        tools: tools.map((t) => t.tool)
       },
       // streamFn 走 Models 集合：auth 解析、provider 分发、重试都由 pi-ai 承担
       streamFn: this.models.streamSimple.bind(this.models),
@@ -609,12 +686,41 @@ export class SessionManager {
         // 不带这些信息）；usage/durationMs/model 同样只在 turn_end 的 message 上
         // 到达 —— agent_end 只剩聚合态转录，此处不摘即永久丢失（协议事件不回头）
         if (event.message.role === 'assistant') {
+          // 覆写轮结束时刻：pi 的 assistant timestamp = 流打开那一刻（pi-ai
+          // 各方言在 stream open 构造 partial 时打的 Date.now()），而 UI 的
+          // 「已工作」墙钟口径是轮结束 —— 不覆写则漏掉整个末轮流式输出段
+          // （实测 live 计时 2.7s、终态只报 1.4s 的分歧根源）。连消息体一起
+          // 改：event.message 即转录真源里的对象，不改历史回查退回轮开始口径；
+          // 轮已收尾 pi 不再读该字段（prompt 序列化不携带）
+          event.message.timestamp = Date.now()
           const streaming = this.streaming.get(sessionId)
           if (streaming) {
             streaming.stopReason = event.message.stopReason
             streaming.usage = accumulateUsage(streaming.usage, projectUsage(event.message.usage))
             streaming.durationMs = sumOptional(streaming.durationMs, event.message.durationMs)
             streaming.model = event.message.model
+            // 段封存（计划 D6）：本轮 text/thinking + 本轮工具调用 → 一段
+            // ChatMessage（段内 usage 是本轮自己的，非全 run 累计 —— 分段后
+            // 每段的统计行各自成立）。三缓冲全空的轮不落段（pi 每轮至少有
+            // text 或 toolCall 之一，此分支实际只挡极端 provider 怪癖）
+            if (streaming.text !== '' || streaming.thinking !== '' || streaming.tools.length > 0) {
+              streaming.segments.push({
+                // id 带 run 级前缀：段序号只在 run 内唯一，同会话多 run 会撞
+                // （宿主把段直接铺进消息列表作 React key）
+                id: `${streaming.messageId}-${streaming.segments.length}`,
+                role: 'assistant',
+                content: streaming.text,
+                thinking: streaming.thinking || undefined,
+                toolCalls: streaming.tools.length > 0 ? streaming.tools.map((t) => ({ ...t })) : undefined,
+                usage: projectUsage(event.message.usage),
+                durationMs: event.message.durationMs,
+                model: event.message.model,
+                timestamp: event.message.timestamp
+              })
+            }
+            streaming.text = ''
+            streaming.thinking = ''
+            streaming.tools = []
           }
           // 观测快照取 turn_end 终态消息（usage/stopReason/diagnostics 齐全）
           this.sessions.get(sessionId)?.inspector?.turnCompleted(event.message)
@@ -623,6 +729,31 @@ export class SessionManager {
       }
       case 'tool_execution_start': {
         this.sessions.get(sessionId)?.inspector?.toolStarted(event.toolName, event.args)
+        const streaming = this.streaming.get(sessionId)
+        if (!streaming) return
+        // kind/摘要取静态元数据表（与 buildTools 同源；不依赖会话工具实例 ——
+        // 事件路径上两者必然一致，表查询天然覆盖历史工具名）
+        const meta = toolMeta(event.toolName)
+        if (meta === undefined) {
+          // pi 只执行注册过的工具，未知名字 = 引擎注册表与循环不一致的 bug：
+          // 事件流不炸、stderr 留诊断、呈现按只读兜底（fail-visible，不静默）
+          process.stderr.write(`[agent-service] 未注册的工具名出现在执行事件: ${event.toolName}\n`)
+        }
+        const record: ToolCallRecord = {
+          callId: event.toolCallId,
+          name: event.toolName,
+          kind: meta?.kind ?? 'read',
+          summary: meta !== undefined ? meta.summarize(event.args) : `${event.toolName}(?)`,
+          status: 'ok'
+        }
+        streaming.tools.push(record)
+        this.notify('tool.started', {
+          sessionId,
+          callId: event.toolCallId,
+          name: event.toolName,
+          kind: record.kind,
+          summary: record.summary
+        })
         return
       }
       case 'tool_execution_end': {
@@ -632,6 +763,20 @@ export class SessionManager {
           event.isError,
           event.durationMs
         )
+        const streaming = this.streaming.get(sessionId)
+        if (!streaming) return
+        const summary = summarizeToolResult(event.result)
+        const record = streaming.tools.find((t) => t.callId === event.toolCallId)
+        if (record !== undefined) {
+          record.status = event.isError ? 'error' : 'ok'
+          record.resultSummary = summary
+        }
+        this.notify('tool.completed', {
+          sessionId,
+          callId: event.toolCallId,
+          isError: event.isError,
+          summary
+        })
         return
       }
       case 'agent_end': {
@@ -654,23 +799,45 @@ export class SessionManager {
         session.transcript = [...agent.state.messages]
         this.persist(sessionId)
 
-        if (streaming) session.inspector?.runCompleted(streaming)
+        // 观测快照吃结构类型（顶层 text/thinking）—— 段化后顶层缓冲已清空，
+        // 传各段聚合值（口径 = 拼接后总字符，与旧实现一致）
+        if (streaming) {
+          session.inspector?.runCompleted({
+            text: streaming.segments.map((s) => s.content).join(''),
+            thinking: streaming.segments.map((s) => s.thinking ?? '').join(''),
+            usage: streaming.usage,
+            durationMs: streaming.durationMs,
+            model: streaming.model,
+            stopReason: streaming.stopReason
+          })
+        }
         this.notify('run.completed', {
           sessionId,
-          // 思考/正文任一非空都落消息（只有思考没有正文的极端截断也可见）；
-          // usage 三件套来自 turn_end 的逐轮累积（见 translateEvent turn_end 分支）
-          message: streaming && (streaming.text || streaming.thinking)
-            ? {
-                id: streaming.messageId,
-                role: 'assistant',
-                content: streaming.text,
-                thinking: streaming.thinking || undefined,
-                usage: streaming.usage,
-                durationMs: streaming.durationMs,
-                model: streaming.model,
-                timestamp: Date.now()
-              }
-            : undefined,
+          // 分段终态（优先消费）：text 段与工具段按发生序 —— 交错保真的代价是
+          // 一 run 多条消息，宿主用它整体替换流式占位（含流式期插入的工具卡）
+          messages: streaming && streaming.segments.length > 0 ? streaming.segments : undefined,
+          // 聚合兼容形态（老宿主只读 message）：全段拼接。思考/正文任一非空
+          // 都落消息（只有思考没有正文的极端截断也可见）；usage 三件套是
+          // turn_end 的逐轮累计（计费口径，见 accumulateUsage）
+          message:
+            streaming && streaming.segments.some((s) => s.content || s.thinking)
+              ? {
+                  id: streaming.messageId,
+                  role: 'assistant',
+                  content: streaming.segments.map((s) => s.content).filter((c) => c !== '').join('\n\n'),
+                  thinking:
+                    streaming.segments.some((s) => s.thinking)
+                      ? streaming.segments.map((s) => s.thinking ?? '').join('\n\n')
+                      : undefined,
+                  toolCalls: streaming.segments.some((s) => (s.toolCalls ?? []).length > 0)
+                    ? streaming.segments.flatMap((s) => s.toolCalls ?? [])
+                    : undefined,
+                  usage: streaming.usage,
+                  durationMs: streaming.durationMs,
+                  model: streaming.model,
+                  timestamp: Date.now()
+                }
+              : undefined,
           stopReason: streaming?.stopReason
         })
         return
@@ -686,11 +853,28 @@ export class SessionManager {
     return this.agentIndex.get(agent)
   }
 
-  /** pi Message[] → ChatMessage[]：取 user/assistant 的纯文本内容 + assistant 用量三件套投影 */
+  /**
+   * pi Message[] → ChatMessage[]：取 user/assistant 的纯文本内容 + assistant
+   * 用量三件套 + 工具调用投影。system 消息（prompt 载体）与 toolResult 消息
+   * （配对进 toolCalls）不单独产出 —— 工具结果对 UI 是工具卡的尾部信息，
+   * 不是独立消息（对模型才回灌成消息）。
+   */
   private toChatMessages(messages: AgentMessage[]): ChatMessage[] {
+    // toolCallId → 执行结果（状态 + 摘要）：转录里 toolResult 消息跟在发起它的
+    // assistant 消息之后；先扫一遍建索引，投影时 O(1) 配对
+    const results = new Map<string, { isError: boolean; text: string }>()
+    for (const message of messages) {
+      if (message.role === 'toolResult') {
+        results.set(message.toolCallId, {
+          isError: message.isError,
+          text: summarizeToolResult({ content: message.content })
+        })
+      }
+    }
+
     const result: ChatMessage[] = []
     for (const message of messages) {
-      // pi Message 联合类型按 role 收窄；system 消息是 prompt 载体，不对 UI 暴露
+      // pi Message 联合类型按 role 收窄
       if (message.role === 'user') {
         result.push({
           // 位置式 id（同 assistant 的 a-N 手法）：timestamp 在同一毫秒内可撞
@@ -705,6 +889,22 @@ export class SessionManager {
         const thinking = message.content
           .map((block) => (block.type === 'thinking' ? block.thinking : ''))
           .join('')
+        // 工具调用块 → ToolCallRecord（kind/摘要取静态元数据表；状态/结果摘要
+        // 由 toolResult 配对 —— 历史工具卡与流式期事件路径同一形状）
+        const toolCalls: ToolCallRecord[] = []
+        for (const block of message.content) {
+          if (block.type !== 'toolCall') continue
+          const meta = toolMeta(block.name)
+          const paired = results.get(block.id)
+          toolCalls.push({
+            callId: block.id,
+            name: block.name,
+            kind: meta?.kind ?? 'read',
+            summary: meta !== undefined ? meta.summarize(block.arguments) : `${block.name}(?)`,
+            status: paired?.isError ? 'error' : 'ok',
+            resultSummary: paired?.text
+          })
+        }
         result.push({
           id: `a-${result.length}`,
           role: 'assistant',
@@ -717,6 +917,7 @@ export class SessionManager {
           usage: projectUsage(message.usage),
           durationMs: message.durationMs,
           model: message.model,
+          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
           // 真实请求时间戳（pi AssistantMessage.timestamp = 请求开始时刻）；
           // 此前取 Date.now() 在恢复历史时会漂移成回查时刻
           timestamp: message.timestamp

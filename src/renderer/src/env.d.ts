@@ -70,6 +70,7 @@ export type EngineMethod =
   | 'session.setPinned'
   | 'session.archive'
   | 'session.listArchived'
+  | 'session.setPermission'
   | 'project.list'
   | 'project.create'
   | 'project.rename'
@@ -105,7 +106,12 @@ export interface SessionSummary {
   pinnedAt?: number
   /** 归档时间（毫秒）；缺省 = 未归档（回收站语义） */
   archivedAt?: number
+  /** 权限模式（缺省 = ask：写类工具先审批；auto = 完全访问；plan = 只读） */
+  permissionMode?: PermissionMode
 }
+
+/** 会话级权限模式（与 protocol PermissionMode 镜像） */
+export type PermissionMode = 'auto' | 'ask' | 'plan'
 
 /** 项目摘要（与 protocol ProjectSummary 镜像）：项目 = 目录绑定（多根，首个主根） */
 export interface ProjectSummary {
@@ -126,6 +132,7 @@ export interface EngineMethodParams {
   'session.setPinned': { sessionId: string; pinned: boolean }
   'session.archive': { sessionId: string; archived: boolean }
   'session.listArchived': Record<string, never>
+  'session.setPermission': { sessionId: string; mode: PermissionMode }
   'project.list': Record<string, never>
   'project.create': { name: string; cwds: string[] }
   'project.rename': { projectId: string; name: string }
@@ -148,6 +155,7 @@ export interface EngineMethodResult {
   'session.setPinned': { summary: SessionSummary }
   'session.archive': { summary: SessionSummary }
   'session.listArchived': SessionSummary[]
+  'session.setPermission': { summary: SessionSummary }
   'project.list': ProjectSummary[]
   'project.create': { summary: ProjectSummary }
   'project.rename': { summary: ProjectSummary }
@@ -170,14 +178,21 @@ export type EngineEvent =
   | { method: 'run.started'; params: { sessionId: string } }
   | {
       method: 'run.completed'
-      params: { sessionId: string; message?: ChatMessage; /** length = 输出被 token 上限截断 */ stopReason?: string }
+      params: {
+        sessionId: string
+        message?: ChatMessage
+        /** 分段终态（工具循环 text/工具卡交错保真）；优先于 message 消费 */
+        messages?: ChatMessage[]
+        /** length = 输出被 token 上限截断 */
+        stopReason?: string
+      }
     }
   | { method: 'run.failed'; params: { sessionId: string; message: string } }
   | {
       method: 'message.delta'
       params: { sessionId: string; messageId: string; delta: string; kind?: 'text' | 'thinking' }
     }
-  | { method: 'tool.started'; params: { sessionId: string; callId: string; name: string; kind: string } }
+  | { method: 'tool.started'; params: { sessionId: string; callId: string; name: string; kind: string; summary?: string } }
   | { method: 'tool.completed'; params: { sessionId: string; callId: string; isError: boolean; summary: string } }
   | { method: 'approval.request'; params: { sessionId: string; requestId: string; toolName: string; kind: string; summary: string } }
   | { method: 'inspect.event'; params: { sessionId: string; entry: InspectEntrySummary } }
@@ -219,6 +234,12 @@ export interface InspectEntryDetail {
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
+  /**
+   * UI 消息联合（stores/chat 的 MessageItem）判别辅助：内容消息恒 undefined，
+   * 工具卡行（ToolItem）为 'tool' —— optional undefined 使 `item.type === 'tool'`
+   * 能正确窄化联合（协议侧无此字段，纯 renderer 镜像层的判别技巧）
+   */
+  type?: undefined
   content: string
   /** 思考文本（仅 assistant 且模型开了思考才有；与 protocol ChatMessage.thinking 镜像） */
   thinking?: string
@@ -228,7 +249,22 @@ export interface ChatMessage {
   durationMs?: number
   /** 产生本回答的模型 id（与 protocol ChatMessage.model 镜像；UI 暂不展示） */
   model?: string
+  /** 本条消息发起的工具调用（按发生序；与 protocol ChatMessage.toolCalls 镜像） */
+  toolCalls?: ToolCallRecord[]
   timestamp: number
+}
+
+/** 工具调用投影（工具卡数据形状；与 protocol ToolCallRecord 镜像） */
+export interface ToolCallRecord {
+  callId: string
+  name: string
+  /** 'read' | 'write' | 'exec' | 'network'（与 protocol ToolKind 镜像） */
+  kind: string
+  /** 参数一行摘要（工具卡标题） */
+  summary: string
+  status: 'ok' | 'error' | 'blocked'
+  /** 结果一行摘要；错误/拒绝时为原因 */
+  resultSummary?: string
 }
 
 /** 一次回答的 token 用量（与 protocol MessageUsage 镜像；见其字段注释） */
