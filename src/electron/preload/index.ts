@@ -50,6 +50,8 @@ const api = {
 
   /** 弹系统目录选择框（创建项目用）；用户取消返回 null */  /** 读会话级偏好（选中模型/思考力度）；无文件返回 {} */
   getSettings: (): Promise<Record<string, unknown>> => ipcRenderer.invoke(IPC.settingsGet),
+  /** 打开（或聚焦已开的）运行时控制台窗口 */
+  openConsole: (): Promise<void> => ipcRenderer.invoke(IPC.consoleOpen),
   /** 写会话级偏好（字段合并） */
   saveSettings: (partial: Record<string, unknown>): Promise<{ ok: true }> => ipcRenderer.invoke(IPC.settingsSave, partial),
 

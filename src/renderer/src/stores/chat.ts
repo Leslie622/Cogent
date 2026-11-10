@@ -25,10 +25,12 @@ interface ChatState {
   /** 最近一次回复是否被 token 上限截断（stopReason=length，会话尾部提示条） */
   truncated: boolean
 
-  /** 初载：拉会话列表；无会话时建一个（首屏即可直接发消息） */
+  /** 初载：拉会话列表并选中最近会话。空列表（首装/全部已归档）不自动建会话，
+      落"新聊天"着陆页、发送时由 submit 按需物化 —— 会话只随用户动作产生 */
   load: () => Promise<void>
   selectSession: (sessionId: string) => Promise<void>
-  createSession: (params?: { cwd?: string; projectId?: string }) => Promise<void>
+  /** 建会话并设为活动，返回新会话 id（submit 按需物化后直取，不回读状态判空） */
+  createSession: (params?: { cwd?: string; projectId?: string }) => Promise<string>
   deleteSession: (sessionId: string) => Promise<void>
   setPinned: (sessionId: string, pinned: boolean) => Promise<void>
   archive: (sessionId: string, archived: boolean) => Promise<void>
@@ -44,12 +46,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   lastError: null,
   truncated: false,
 
+  // 初载不自动建会话：归档是回收站语义，"活跃列表空"有两种含义 —— 首装，或
+  // 用户归档了全部会话（合法终态）。原"列表空就建一个"在后者每次重启都复活
+  // 一个幽灵"新会话"（用户归档两个会话后重启"还在"的元凶；且 StrictMode 双
+  // 挂载下 load 并发跑两遍会各建一个，盘上留下 13ms 双胞胎）。空列表统一落
+  // "新聊天"着陆页，会话改由用户动作物化（点新聊天 = startNew，发首条消息
+  // = submit 按需建）
   load: async () => {
-    let sessions = (await window.cogent.engineRequest('session.list', {})).map((s) => ({ ...s }))
-    if (sessions.length === 0) {
-      await get().createSession()
-      sessions = (await window.cogent.engineRequest('session.list', {})).map((s) => ({ ...s }))
-    }
+    const sessions = (await window.cogent.engineRequest('session.list', {})).map((s) => ({ ...s }))
     set({ sessions })
     if (get().activeSessionId === null && sessions.length > 0) {
       await get().selectSession(sessions[0].id)
@@ -77,6 +81,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messagesBySession: { ...state.messagesBySession, [summary.id]: [] },
       lastError: null
     }))
+    return summary.id
   },
 
   /** 置顶/取消（引擎侧落 pinnedAt 并持久化）；同步更新列表内该会话的摘要 */
@@ -116,8 +121,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   submit: async (text, model, thinkingLevel, provider) => {
-    const sessionId = get().activeSessionId
-    if (!sessionId) return
+    // 无活动会话时按需物化：空列表着陆页（首装/全部归档后重启）直接发送。
+    // 此前 activeSessionId 为 null 静默 return = 丢消息。projectId 取新聊天
+    // 视图态 —— 会话与项目的绑定只在 session.create 时可定（同 ProjectPicker
+    // 的串归属边界），chat 视图态不会有"活动会话为空"（archive/delete 已换落）
+    const home = useHomeStore.getState().session
+    const sessionId =
+      get().activeSessionId ??
+      (await get().createSession(
+        home.kind === 'new' && home.projectId !== undefined ? { projectId: home.projectId } : undefined
+      ))
     // 乐观上屏用户消息；assistant 回复由引擎事件流驱动
     const userMessage: ChatMessage = {
       id: `u-${crypto.randomUUID()}`,

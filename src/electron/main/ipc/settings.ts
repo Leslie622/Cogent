@@ -16,6 +16,9 @@ import { storageRoot, ensureRoot, migrateFromUserData } from '../storage-root'
 interface SettingsFile {
   version: 1
   activeModelId?: string
+  /** 选中模型的 provider（同名模型跨 provider 消歧，与 activeModelId 成对；
+      旧文件缺省 = 单键语义，用户下一次点选后补全） */
+  activeProviderId?: string
   thinkingLevel?: string
 }
 
@@ -28,7 +31,12 @@ function readAll(): SettingsFile {
   if (!existsSync(filePath())) return { version: 1 }
   try {
     const raw = JSON.parse(readFileSync(filePath(), 'utf-8')) as Partial<SettingsFile>
-    return { version: 1, activeModelId: raw.activeModelId, thinkingLevel: raw.thinkingLevel }
+    return {
+      version: 1,
+      activeModelId: raw.activeModelId,
+      activeProviderId: raw.activeProviderId,
+      thinkingLevel: raw.thinkingLevel
+    }
   } catch {
     // 损坏不炸应用：偏好文件丢了只是回默认值（与凭据文件的"报错"口径不同——
     // 偏好可再生，凭据不可再生）
@@ -45,10 +53,15 @@ export function registerSettingsIpc(): void {
   ipcMain.handle(IPC.settingsGet, () => readAll())
 
   ipcMain.handle(IPC.settingsSave, (_event, raw: unknown) => {
-    // 信任边界：字段级收窄（unknown → 只留认识的两个可选字段）
-    const payload = raw as Partial<{ activeModelId: unknown; thinkingLevel: unknown }>
+    // 信任边界：字段级收窄（unknown → 只留认识的三个可选字段）
+    const payload = raw as Partial<{
+      activeModelId: unknown
+      activeProviderId: unknown
+      thinkingLevel: unknown
+    }>
     const settings = readAll()
     if (typeof payload.activeModelId === 'string') settings.activeModelId = payload.activeModelId
+    if (typeof payload.activeProviderId === 'string') settings.activeProviderId = payload.activeProviderId
     if (typeof payload.thinkingLevel === 'string') settings.thinkingLevel = payload.thinkingLevel
     writeAll(settings)
     return { ok: true as const }

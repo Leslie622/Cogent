@@ -6,7 +6,7 @@
  * 白名单是唯一要守的边界：renderer 能触达哪些引擎方法在此显式收窄，
  * 未经点名的 method（如未来的 approval.respond）不经过 renderer 手。
  */
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import { IPC } from '../../../shared/ipc'
 import type { ProtocolMethods } from '../../../protocol'
 import type { IpcDeps } from './index'
@@ -29,10 +29,12 @@ const ALLOWED_METHODS = new Set<string>([
   'agent.abort',
   'credentials.list',
   'models.list',
-  'providers.custom.sync'
+  'providers.custom.sync',
+  'inspect.entries',
+  'inspect.entry'
 ])
 
-export function registerEngineIpc({ service, getWindow }: IpcDeps): void {
+export function registerEngineIpc({ service }: IpcDeps): void {
   // 信任边界：renderer 不可信 —— method 白名单 + params 形状在此收窄，业务校验在引擎 dispatch
   ipcMain.handle(IPC.engineRequest, async (_event, raw: unknown) => {
     const payload = raw as { method: unknown; params: unknown }
@@ -47,14 +49,15 @@ export function registerEngineIpc({ service, getWindow }: IpcDeps): void {
     return service.request(method, params)
   })
 
-  // 引擎事件 → renderer：单向转发，main 不理解事件语义（壳的角色）
+  // 引擎事件 → renderer：单向转发，main 不理解事件语义（壳的角色）。
+  // 广播到全部窗口（主窗口消费聊天事件，控制台窗口消费 inspect 域）——
+  // 各窗口按 method 自行取舍，main 不做按窗口分发
   service.setEventSink((rpcEvent) => {
     // 诊断日志：帧截到 200 字符——run.completed 的 message.content 是整段回复，
     // 全量打印会淹没终端；流式 delta 已足够观察回复内容
     console.log('[main] engine event:', JSON.stringify(rpcEvent).slice(0, 200))
-    const window = getWindow()
-    if (window && !window.isDestroyed()) {
-      window.webContents.send(IPC.engineEvent, rpcEvent)
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send(IPC.engineEvent, rpcEvent)
     }
   })
 }

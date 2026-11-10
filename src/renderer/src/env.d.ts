@@ -40,6 +40,8 @@ declare global {
       ) => Promise<{ ok: true }>
       /** 弹系统目录选择框（创建项目用）；用户取消返回 null */
       pickDirectory: () => Promise<string | null>
+      /** 打开（或聚焦已开的）运行时控制台窗口 */
+      openConsole: () => Promise<void>
       /** 读会话级偏好（选中模型/思考力度）；无文件返回 {} */
       getSettings: () => Promise<{ activeModelId?: string; thinkingLevel?: import('@/env.d').ThinkingLevel }>
       /** 写会话级偏好（字段合并） */
@@ -73,6 +75,8 @@ export type EngineMethod =
   | 'credentials.list'
   | 'models.list'
   | 'providers.custom.sync'
+  | 'inspect.entries'
+  | 'inspect.entry'
 
 /** 会话摘要（与 protocol SessionSummary 镜像；optional 字段=未设置） */
 export interface SessionSummary {
@@ -120,6 +124,8 @@ export interface EngineMethodParams {
     providers: CustomProviderDef[]
     overrides: Array<{ providerId: string; baseUrl: string }>
   }
+  'inspect.entries': { sessionId: string }
+  'inspect.entry': { sessionId: string; seq: number }
 }
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
@@ -141,6 +147,8 @@ export interface EngineMethodResult {
   'credentials.list': { providers: ProviderSummary[] }
   'models.list': { models: ModelSummary[] }
   'providers.custom.sync': { synced: number }
+  'inspect.entries': { entries: InspectEntrySummary[] }
+  'inspect.entry': InspectEntryDetail
 }
 
 /**
@@ -162,6 +170,41 @@ export type EngineEvent =
   | { method: 'tool.started'; params: { sessionId: string; callId: string; name: string; kind: string } }
   | { method: 'tool.completed'; params: { sessionId: string; callId: string; isError: boolean; summary: string } }
   | { method: 'approval.request'; params: { sessionId: string; requestId: string; toolName: string; kind: string; summary: string } }
+  | { method: 'inspect.event'; params: { sessionId: string; entry: InspectEntrySummary } }
+
+/**
+ * 观测条目摘要（与 protocol InspectEntrySummary 镜像）：时间线一行。
+ * 四层 kind 分组 = 学习解剖层次（接口/引擎/工具/会话 + 提示词）。
+ */
+export type InspectEntryKind =
+  | 'run.started'
+  | 'run.completed'
+  | 'run.failed'
+  | 'system.prompt'
+  | 'turn.started'
+  | 'turn.completed'
+  | 'api.request'
+  | 'api.response'
+  | 'api.stream'
+  | 'tool.started'
+  | 'tool.completed'
+
+export interface InspectEntrySummary {
+  seq: number
+  ts: number
+  kind: InspectEntryKind
+  /** 所属 run 序号（时间线分组） */
+  run: number
+  title: string
+  overview?: Array<{ label: string; value: string }>
+  hasDetail: boolean
+}
+
+/** 观测条目详情（与 protocol InspectEntryDetail 镜像）：按块分 Tab/分节渲染 */
+export interface InspectEntryDetail {
+  seq: number
+  blocks: Array<{ name: string; format: 'json' | 'text'; content: string }>
+}
 
 export interface ChatMessage {
   id: string
@@ -189,6 +232,8 @@ export interface MessageUsage {
   totalTokens: number
   /** 本次总成本 USD；无定价时缺省 */
   totalCost?: number
+  /** 成本是否端点实报；false/缺省 = 目录估价（UI 加 ≈ 前缀） */
+  totalCostFromProvider?: boolean
 }
 
 export interface ProviderSummary {
@@ -206,6 +251,8 @@ export interface ModelSummary {
   thinkingLevels: ThinkingLevelWithOff[]
   contextWindow: number
   maxTokens: number
+  /** 是否用户添加（缺省 false = pi 目录原生）；默认模型编辑时 UI 锁 id */
+  userDefined?: boolean
 }
 
 /**
@@ -239,8 +286,8 @@ export interface CustomProviderDef {
   models: string[]
   /** 模型完整定义（带上下文/输出/模态/推理） */
   modelDefs?: ModelDef[]
-  /** 端点 API 方言（缺省 openai-completions；anthropic 时 baseUrl 填根地址） */
-  apiFormat?: 'openai-completions' | 'anthropic-messages'
+  /** 端点 API 方言（缺省 openai-completions；anthropic 填根地址、openai 系带 /v1） */
+  apiFormat?: 'openai-completions' | 'openai-responses' | 'anthropic-messages'
   /** 禁用模型：不注册进 provider，下拉不出现 */
   disabledModels?: string[]
   /** 整 provider 禁用：保留定义不注册 */

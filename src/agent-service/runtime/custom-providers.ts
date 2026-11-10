@@ -13,6 +13,7 @@
  */
 import { createProvider } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
+import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
 import type { Api, Model, MutableModels, Provider } from '@earendil-works/pi-ai'
 import type { CustomProviderDef, ModelDef, ProviderOverrideDef } from '../../protocol'
@@ -20,6 +21,17 @@ import type { CustomProviderDef, ModelDef, ProviderOverrideDef } from '../../pro
 /** 自定义模型的兜底参数：无成本的通用 OpenAI-compatible 档位（用户端点上实际可用为准） */
 const CUSTOM_MODEL_CONTEXT_WINDOW = 128_000
 const CUSTOM_MODEL_MAX_TOKENS = 32_768
+
+/** 方言 → pi 请求实现（懒加载工厂，调 factory 才加载对应 SDK）。
+    openai 系两方言走官方 OpenAI SDK：只在 baseUrl 后拼 /chat/completions 或
+    /responses（baseUrl 需带 /v1 段）；anthropic 走官方 Anthropic SDK：自拼
+    /v1/messages（baseUrl 填根地址）。有网关按路由放行模型权限，三方言即
+    三套端点路径 —— 2026-11-10 实测某 New API 令牌仅 /v1/responses 可用而补齐 */
+const API_BY_FORMAT = {
+  'openai-completions': openAICompletionsApi,
+  'openai-responses': openAIResponsesApi,
+  'anthropic-messages': anthropicMessagesApi
+} as const
 
 /** ModelDef → pi Model：merge 语义 —— catalogBase（目录同 id 条目）在时以它为基底，
     用户 def 显式设置的字段才覆盖；全新 id 无基底则兜底（context/maxTokens/input/reasoning）。
@@ -76,6 +88,20 @@ export class CustomProviderRegistry {
   }
 
   /**
+   * 模型是否用户添加（自定义供应商注册，或内置 provider 的目录外新增）。
+   * 判定基准 = originals 快照里的纯 pi 目录（覆盖重建后的 models 集合混入了
+   * 用户条目，不可作基准）。UI 据此区分"默认模型 vs 自定义模型"：默认模型
+   * 编辑时锁 id（目录身份不可改），显示一律用 id（2026-11-10 定调）。
+   */
+  isUserDefined(providerId: string, modelId: string): boolean {
+    if (this.customIds.has(providerId)) return true
+    const original = this.originals.get(providerId)
+    // 未知 provider（快照前的非常规注册）按目录原生对待：宁可少锁不误锁
+    if (!original) return false
+    return !original.getModels().some((m) => m.id === modelId)
+  }
+
+  /**
    * 全量同步：defs 建自定义 provider、overrides 覆盖内置 baseUrl，
    * 本轮未出现的 id 移除。返回同步数量（诊断用）。
    * disabled 的 def 保留在列表里但不注册（可逆开关）：它只是"本轮不出现在
@@ -117,9 +143,9 @@ export class CustomProviderRegistry {
   }
 
   /**
-   * defs → pi Provider。方言由 def.apiFormat 决定：anthropic-messages 走官方
-   * Anthropic SDK（它在 baseUrl 后自行拼 /v1/messages，baseUrl 填根地址），
-   * openai-completions 是中转站/网关/Ollama 的通用方言（compat 按 baseUrl 探测）。
+   * defs → pi Provider。方言由 def.apiFormat 决定（三档，工厂见 API_BY_FORMAT）：
+   * openai-completions 是中转站/网关/Ollama 的通用方言；openai-responses 对接
+   * Responses 端点；anthropic-messages 对接 Claude 原生端点。
    * auth 从存储凭据取 key；未配 key 返回 undefined = provider 未配置。
    * pi 的 ApiKeyAuth.resolve 契约是返回 Promise（auth/types.d.ts:189），故用 async 形式
    */
@@ -157,8 +183,7 @@ export class CustomProviderRegistry {
         }
       },
       models,
-      api:
-        apiFormat === 'anthropic-messages' ? anthropicMessagesApi() : openAICompletionsApi()
+      api: API_BY_FORMAT[apiFormat]()
     })
   }
 
@@ -176,10 +201,13 @@ export class CustomProviderRegistry {
     // 目录同 id 条目作 merge 基底：用户条目 = "编辑目录行"而非凭空新模型，
     // 未配置的维度（定价/思考映射/命名）继承目录，见 buildModel 注释
     const catalogById = new Map(original.getModels().map((m) => [m.id, m]))
-    const added = (override.models ?? []).map((m) =>
-      buildModel(m, api, original.id, baseUrl, catalogById.get(m.id))
-    )
-    const addedIds = new Set(added.map((m) => m.id))
+    // added 也要滤 disabledModels（与目录行同语义）：此前只滤目录行，用户在内置
+    // provider 上新增的模型开关关了照样注册（2026-11-10 补）。被禁的覆盖行
+    // （同 id 编辑目录）两层都滤掉 = 不注册，def 留在 override.models 可再打开
+    const added = (override.models ?? [])
+      .filter((m) => !disabled.has(m.id))
+      .map((m) => buildModel(m, api, original.id, baseUrl, catalogById.get(m.id)))
+    const addedIds = new Set((override.models ?? []).map((m) => m.id))
     const models: Model<Api>[] = [
       // 目录在前（保 pi 快照原序），用户新增排后；同 id 目录项被新增覆盖（不重复注册）。
       // 目录模型浅拷贝重写 baseUrl（目录模型是纯数据对象）：baseUrl 覆盖要对整个

@@ -13,7 +13,7 @@
  *      的模型（useableModels 过滤，配置入口 = 设置页模型设置）
  * 对话索引（左侧刻度轨道）与消息流联动；项目回显走 project store（真数据）。
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   IconArrowUp,
   IconCheck,
@@ -43,6 +43,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Slider } from '@/components/ui/slider'
 import {
   InputGroup,
@@ -52,6 +53,7 @@ import {
 } from '@/components/ui/input-group'
 import { Message, MessageContent, MessageFooter } from '@/components/ui/message'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
+import { Markdown } from '@/components/ui/markdown'
 import { Reasoning } from '@/components/ui/reasoning'
 import {
   MessageScroller,
@@ -66,7 +68,7 @@ import { useHomeStore, type HomeSession } from '@/stores/home'
 import { useChatStore } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
 import { ProjectPicker } from './ProjectPicker'
-import { providerDisplayName, usableModels, useEngineStore } from '@/stores/engine'
+import { findActiveModel, providerDisplayName, usableModels, useEngineStore } from '@/stores/engine'
 import type { MessageUsage, ModelSummary, ThinkingLevel } from '@/env.d'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
@@ -91,10 +93,14 @@ function formatDuration(ms: number): string {
   return ms < 1000 ? `${ms}ms` : `${parseFloat((ms / 1000).toFixed(1))}s`
 }
 
-/** 成本 USD：四位小数去尾零（0.0031 → $0.0031）；不足 $0.0001 标下限而非抹成 $0 */
-function formatCost(usd: number): string {
+/**
+ * 成本 USD：四位小数去尾零（0.0031 → $0.0031）；不足 $0.0001 标下限而非抹成 $0。
+ * 目录估价加 ≈ 前缀（端点不报账单，单价是汇率/分时快照，如 DeepSeek 分时半价未建模）；
+ * 下限分支不加 —— "<" 本身已传达"不精确"，再叠 ≈ 是双重标记。
+ */
+function formatCost(usd: number, estimated?: boolean): string {
   if (usd < 0.0001) return '<$0.0001'
-  return `$${parseFloat(usd.toFixed(4))}`
+  return `${estimated ? '≈' : ''}$${parseFloat(usd.toFixed(4))}`
 }
 
 /** 消息的最小渲染形状（chat store 的 ChatMessage，props 单向传入） */
@@ -155,15 +161,18 @@ function UsageLine({ usage, durationMs }: { usage?: MessageUsage; durationMs?: n
     if (usage.cacheRead > 0) parts.push(`缓存读 ${formatTokens(usage.cacheRead)}`)
     if (usage.cacheWrite > 0) parts.push(`缓存写 ${formatTokens(usage.cacheWrite)}`)
     const cost = usage.totalCost
-    if (cost !== undefined && cost > 0) parts.push(formatCost(cost))
+    if (cost !== undefined && cost > 0) parts.push(formatCost(cost, !usage.totalCostFromProvider))
   }
   if (durationMs !== undefined) parts.push(formatDuration(durationMs))
   if (parts.length === 0) return null
   return <div className="text-[11px] text-muted-foreground tabular-nums">{parts.join(' · ')}</div>
 }
 
-/** 单条消息：用户 = 灰气泡右挂 + 时间戳/复制/编辑；助手 = 平铺纯文本 + 用量统计行 */
-function MessageRow({ message }: { message: MessageLike }) {
+/** 单条消息：用户 = 灰气泡右挂 + 时间戳/复制/编辑（纯文本，主流一致）；助手 =
+ *  平铺 Markdown 正文（Streamdown）+ 用量统计行。memo：chat store 每 delta 全量
+ *  setState 换数组，但历史消息对象引用稳定 —— memo 后逐 token 的重解析只落在
+ *  流式占位这一条上（那条由 Streamdown 块级 memo 兜底），历史消息零重渲染 */
+const MessageRow = memo(function MessageRow({ message }: { message: MessageLike }) {
   if (message.role === 'user') {
     return (
       <Message align="end">
@@ -207,12 +216,14 @@ function MessageRow({ message }: { message: MessageLike }) {
             running={message.id === 'streaming' && message.content.length === 0}
           />
         )}
-        <p className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">{message.content}</p>
+        {/* 正文 Markdown 渲染（路线空位 4 前半）：流式占位消息传 streaming，
+            未闭合的代码围栏在流式中即按代码块渲染（remend 修复） */}
+        <Markdown content={message.content} streaming={message.id === 'streaming'} />
         <UsageLine usage={message.usage} durationMs={message.durationMs} />
       </MessageContent>
     </Message>
   )
-}
+})
 
 /**
  * 对话索引轨道（参考稿动画）：短横线刻度一列，宽度/颜色 transition ——
@@ -560,10 +571,14 @@ function ThinkingSlider({
              粒子层与流动动画在上方 effect 里以内联样式 + WAAPI 挂载 */
           '[&_[data-slot=slider-range]]:transition-[width] [&_[data-slot=slider-range]]:duration-150',
           /* 定位点：激活/熄灭带 300ms 颜色+缩放过渡 —— 拖动时点亮沿档位
-             逐个泛起（涟漪般尾随拇指），替代硬切换。注意 Tailwind v4 的
-             scale-* 走独立 scale 属性（不是 transform），过渡清单必须点名
-             scale；基态显式 scale-100（两端都有具体值，1 → 1.25 插值最稳） */
-          '[&_[data-slot=slider-track]>span]:scale-100 [&_[data-slot=slider-track]>span]:bg-[#aeb3ba] [&_[data-slot=slider-track]>span]:transition-[background-color,scale] [&_[data-slot=slider-track]>span]:duration-300 [&_[data-slot=slider-track]>span]:ease-out [&_[data-slot=slider-track]>span[data-active]]:scale-125 [&_[data-slot=slider-track]>span[data-active]]:bg-white/55',
+             逐个泛起（涟漪般尾随拇指），替代硬切换；hover（放大 1.5 + 颜色
+             提亮一档）也定义在此（原语 marks 不带外观，见 slider.tsx）。
+             注意 Tailwind v4 的 scale-* 走独立 scale 属性（不是 transform），
+             过渡清单必须点名 scale；基态显式 scale-100（两端都有具体值，
+             1 → 1.25 插值最稳）；激活点的 hover 须 span[data-active]:hover
+             单独压过 scale-125 / bg-white/55 —— 两者同为 0,3,1 特异性时
+             胜负看生成顺序，别赌 */
+          '[&_[data-slot=slider-track]>span]:scale-100 [&_[data-slot=slider-track]>span]:bg-[#aeb3ba] [&_[data-slot=slider-track]>span]:transition-[background-color,scale] [&_[data-slot=slider-track]>span]:duration-300 [&_[data-slot=slider-track]>span]:ease-out [&_[data-slot=slider-track]>span]:hover:scale-150 [&_[data-slot=slider-track]>span]:hover:bg-white/70 [&_[data-slot=slider-track]>span[data-active]]:scale-125 [&_[data-slot=slider-track]>span[data-active]]:bg-white/55 [&_[data-slot=slider-track]>span[data-active]]:hover:scale-150 [&_[data-slot=slider-track]>span[data-active]]:hover:bg-white/80',
           /* 拇指必须是轨道之上的不透明层；此前未显式设层级，端点的轨道色会
              从圆点下方透出来，视觉上像圆点没有盖住条。光晕色由通道变量 +
              呼吸中的 --think-glow-alpha 现场组出（think-pulse 驱动）。 */
@@ -586,17 +601,22 @@ function ModelMenu() {
   const keyConfigured = useEngineStore((s) => s.keyConfigured)
   const customProviders = useEngineStore((s) => s.customProviders)
   const activeModelId = useEngineStore((s) => s.activeModelId)
+  const activeProviderId = useEngineStore((s) => s.activeProviderId)
   const setActiveModel = useEngineStore((s) => s.setActiveModel)
 
   const usable = useMemo(() => usableModels(models, keyConfigured), [models, keyConfigured])
-  const active = usable.find((m) => m.id === activeModelId)
+  const active = findActiveModel(models, keyConfigured, activeModelId, activeProviderId)
 
-  // 回落：submit 下发的模型必须在可用集里，否则引擎侧按未知/无 key 报错
+  // 回落：submit 下发的模型必须在可用集里，否则引擎侧按未知/无 key 报错。
+  // 双键校验，回落顺序 = 同 provider 的首个模型（保住用户的厂商选择）→ 全局首个
   useEffect(() => {
-    if (usable.length > 0 && !usable.some((m) => m.id === activeModelId)) {
-      setActiveModel(usable[0].id)
-    }
-  }, [usable, activeModelId, setActiveModel])
+    if (usable.length === 0) return
+    if (usable.some((m) => m.id === activeModelId && m.provider === activeProviderId)) return
+    const sameProvider =
+      activeProviderId !== null ? usable.find((m) => m.provider === activeProviderId) : undefined
+    const next = sameProvider ?? usable[0]
+    setActiveModel(next.id, next.provider)
+  }, [usable, activeModelId, activeProviderId, setActiveModel])
 
   return (
     <DropdownMenu>
@@ -610,11 +630,12 @@ function ModelMenu() {
           />
         }
       >
-        {/* 对标参考稿：触发钮 = 品牌标 + 当前模型名 + 箭头 */}
+        {/* 对标参考稿：触发钮 = 品牌标 + 当前模型 id + 箭头。显示一律 id
+            （2026-11-10 定调）：目录营销名与 API id 不对应，所见即所传 */}
         {active ? (
           <>
             <ProviderLogo providerId={active.provider} name={providerDisplayName(active.provider, customProviders)} size={16} />
-            {active.name}
+            {active.id}
           </>
         ) : usable.length > 0 ? (
           '选择模型'
@@ -638,6 +659,7 @@ function ModelMenuPanel() {
   const keyConfigured = useEngineStore((s) => s.keyConfigured)
   const customProviders = useEngineStore((s) => s.customProviders)
   const activeModelId = useEngineStore((s) => s.activeModelId)
+  const activeProviderId = useEngineStore((s) => s.activeProviderId)
   const setActiveModel = useEngineStore((s) => s.setActiveModel)
   const thinkingLevel = useEngineStore((s) => s.thinkingLevel)
   const setThinkingLevel = useEngineStore((s) => s.setThinkingLevel)
@@ -654,9 +676,13 @@ function ModelMenuPanel() {
     return [...map.entries()]
   }, [models, keyConfigured])
 
-  const active = groups.flatMap(([, list]) => list).find((m) => m.id === activeModelId)
-  const activeProviderId = active?.provider ?? groups.at(0)?.[0] ?? null
-  const activeProviderEntry = groups.find(([p]) => p === activeProviderId)
+  // 双键查活动模型（findActiveModel 语义；此处 groups 已是可用集，就地查）。
+  // shownProviderId = 面板展示的厂商段：活动模型的 provider，无活动模型回落首个
+  const active = groups
+    .flatMap(([, list]) => list)
+    .find((m) => m.id === activeModelId && m.provider === activeProviderId)
+  const shownProviderId = active?.provider ?? groups.at(0)?.[0] ?? null
+  const activeProviderEntry = groups.find(([p]) => p === shownProviderId)
   const activeProviderName = activeProviderEntry
     ? providerDisplayName(activeProviderEntry[0], customProviders)
     : '配置模型'
@@ -674,10 +700,17 @@ function ModelMenuPanel() {
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent>
           {groups.map(([providerId, list]) => (
-            <DropdownMenuItem key={providerId} onClick={() => setActiveModel(list[0].id)}>
+            // closeOnClick=false：选厂商只是中途步，用户紧接着要挑该厂商下的具体
+            // 模型，不关菜单（模型行/管理模型才关）。子列表保持打开，悬停到下方
+            // 模型行时 base-ui 浮层树自动让位换出模型列表
+            <DropdownMenuItem
+              key={providerId}
+              closeOnClick={false}
+              onClick={() => setActiveModel(list[0].id, providerId)}
+            >
               <ProviderLogo providerId={providerId} name={providerDisplayName(providerId, customProviders)} size={16} />
               <span className="min-w-0 flex-1 truncate">{providerDisplayName(providerId, customProviders)}</span>
-              {activeProviderId === providerId && <IconCheck className="ml-auto size-3.5" />}
+              {shownProviderId === providerId && <IconCheck className="ml-auto size-3.5" />}
             </DropdownMenuItem>
           ))}
           {groups.length > 0 && <DropdownMenuSeparator />}
@@ -696,13 +729,13 @@ function ModelMenuPanel() {
       <DropdownMenuSub>
         <DropdownMenuSubTrigger className="gap-2">
           <span className="min-w-0 flex-1 truncate">
-            {active?.name ?? (groups.length > 0 ? '选择模型' : '配置模型')}
+            {active?.id ?? (groups.length > 0 ? '选择模型' : '配置模型')}
           </span>
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent>
           {(activeProviderEntry?.[1] ?? []).map((model) => (
-            <DropdownMenuItem key={model.id} onClick={() => setActiveModel(model.id)}>
-              <span className="min-w-0 flex-1 truncate">{model.name}</span>
+            <DropdownMenuItem key={model.id} onClick={() => setActiveModel(model.id, model.provider)}>
+              <span className="min-w-0 flex-1 truncate">{model.id}</span>
               {model.id === activeModelId && <IconCheck className="ml-auto size-3.5" />}
             </DropdownMenuItem>
           ))}
@@ -733,11 +766,116 @@ function ModelMenuPanel() {
   )
 }
 
+/** 横条本体：斜纹轨道（用户参照稿图1；透明度只落在背景，合 UI 方针 3）+ 实色填充 */
+function ContextBar({ pct, tone, className }: { pct: number; tone: string; className?: string }) {
+  return (
+    <span className={cn('relative block overflow-hidden rounded-full bg-muted', className)}>
+      <span className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent_0_3px,var(--color-border)_3px_4px)]" />
+      <span
+        className={cn('absolute inset-y-0 left-0 rounded-full transition-[width] duration-300', tone)}
+        style={{ width: `${pct * 100}%` }}
+      />
+    </span>
+  )
+}
+
+/**
+ * 上下文窗口指示器（输入卡工具行，模型下拉左侧）+ 点击悬浮卡（用户参照稿图2
+ * 骨架：标题/进度条/缓存命中率）。口径：占用 = 末条带 usage 的 assistant 消息
+ * input+cacheRead+cacheWrite+output —— pi 每轮全量重发上下文，三项和即该轮
+ * 实发量，加 output 为"下一轮将重发"；与 Claude Code status 同源（末轮端点
+ * 实报而非实时计数，流式中保持上一轮值）。分母 = 活动模型 contextWindow
+ * （不上网络的客户端元数据；自定义模型缺省 128K 偏保守 → 百分比偏高不偏低）。
+ * 分类明细/压缩预警线待工具/MCP、上下文压缩模块落地再上（主流对照见
+ * 技术笔记/token-usage.md §6）。
+ */
+function ContextIndicator({ session }: { session: HomeSession }) {
+  const messages =
+    useChatStore((s) => (session.kind === 'chat' ? s.messagesBySession[session.chatId] : undefined)) ?? []
+  // 分母模型与 ModelMenu 同源（findActiveModel 双键）：同名模型跨 provider 收录时
+  // id 单键命中错家 —— 未配 key 的收录家、或都配了 key 时目录在前的那家（后者
+  // 上下文窗口大小还可能与自定义网关那份不同，分母就错了）
+  const contextWindow = useEngineStore(
+    (s) =>
+      findActiveModel(s.models, s.keyConfigured, s.activeModelId, s.activeProviderId)?.contextWindow ?? 0
+  )
+
+  const { used, cacheHit } = useMemo(() => {
+    let usage: MessageUsage | undefined
+    let cacheRead = 0
+    let cacheDen = 0
+    // 从后往前扫：首条命中即"末条已完成回答"的 usage（流式中末条还没有 usage）；
+    // 命中率顺路全会话聚合，分母 = input（未命中部分）+ cacheRead（命中部分）
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const u = messages[i].usage
+      if (!u) continue
+      if (!usage) usage = u
+      cacheRead += u.cacheRead
+      cacheDen += u.input + u.cacheRead
+    }
+    return {
+      used: usage ? usage.input + usage.cacheRead + usage.cacheWrite + usage.output : 0,
+      // 端点不报缓存的模型 cacheRead 恒 0，"0%" 是误导 → 不显示（零值省略同 UsageLine）
+      cacheHit: cacheRead > 0 && cacheDen > 0 ? cacheRead / cacheDen : undefined
+    }
+  }, [messages])
+
+  // 分母未知（防御：目录与 128K 缺省理论都给值）→ 整组不渲染，宁缺毋错
+  if (contextWindow === 0) return null
+  const pct = Math.min(used / contextWindow, 1)
+  // 两位小数：低占用时整数百分比信息量不足（6% 与 6.25% 是两回事），toFixed 固定位
+  const pctLabel = (pct * 100).toFixed(2)
+  // 三档变色只落在 bar（文字恒实色 muted）；阈值 75/90 与主流预警习惯对齐
+  const tone = pct >= 0.9 ? 'bg-destructive' : pct >= 0.75 ? 'bg-warning' : 'bg-foreground'
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="xs"
+            className="gap-1.5 rounded-xl px-2 text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
+            aria-label="上下文窗口用量"
+          />
+        }
+      >
+        <ContextBar pct={pct} tone={tone} className="h-1.5 w-20" />
+        <span className="text-xs tabular-nums">{pctLabel}%</span>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={8} className="w-64 gap-0 rounded-2xl p-4">
+        {used === 0 ? (
+          /* 空态：首答前无实报数据，0% 有误导（首轮其实有系统提示词占用） */
+          <p className="text-[13px] text-muted-foreground">发送首条消息后显示上下文用量</p>
+        ) : (
+          <>
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm font-semibold">上下文容量</span>
+              <span className="text-[11px] text-muted-foreground tabular-nums">
+                {formatTokens(used)}/{formatTokens(contextWindow)}（{pctLabel}%）
+              </span>
+            </div>
+            <ContextBar pct={pct} tone={tone} className="mt-3 h-1.5" />
+            {cacheHit !== undefined && (
+              <div className="mt-3 flex items-center justify-between border-t pt-3">
+                <span className="text-[13px]">平均缓存命中率</span>
+                <span className="text-[13px] font-semibold tabular-nums">
+                  {parseFloat((cacheHit * 100).toFixed(1))}%
+                </span>
+              </div>
+            )}
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 /**
  * 底部输入区：输入卡上方灰条（项目会话信息区，新聊天限定）+
  * 输入卡（24px 圆角白卡 + 极浅 1px 边，聚焦无反馈）：Enter 发送（isComposing
  * 挡输入法误发）、流式中发送钮变停止钮（agent.abort）、底部工具行 = 裸 +
- * 附件 / 完全访问 / 模型下拉（ModelMenu）/ 发送。
+ * 附件 / 完全访问 / 上下文指示器 / 模型下拉（ModelMenu）/ 发送。
  */
 function ChatComposer({ session }: { session: HomeSession }) {
   const [value, setValue] = useState('')
@@ -746,10 +884,12 @@ function ChatComposer({ session }: { session: HomeSession }) {
   const abort = useChatStore((s) => s.abort)
   const activeModelId = useEngineStore((s) => s.activeModelId)
   const thinkingLevel = useEngineStore((s) => s.thinkingLevel)
-  // 活动模型的 provider（经 usableModels 过滤后再查：同名模型跨 provider 收录时
-  // 直接在全集里按 id find 会命中未配 key 的那家，如 azure 也收录 deepseek-v4-pro）
+  // 活动模型的 provider：双键查找（findActiveModel）。id 单键两处撞车 —— 全集里
+  // 撞未配 key 的收录家（azure 也收录 deepseek-v4-pro），可用集里撞同名可用家
+  // （zai 目录与自定义网关都有 glm-5.3，都配了 key 时永远命中目录在前那份，
+  // 自定义厂商"选不上"即此，2026-11-10）
   const activeProvider = useEngineStore((s) =>
-    usableModels(s.models, s.keyConfigured).find((m) => m.id === s.activeModelId)?.provider
+    findActiveModel(s.models, s.keyConfigured, s.activeModelId, s.activeProviderId)?.provider
   )
   const projects = useProjectStore((s) => s.projects)
   const sessions = useChatStore((s) => s.sessions)
@@ -774,17 +914,21 @@ function ChatComposer({ session }: { session: HomeSession }) {
     const text = value.trim()
     if (!text || running) return
     setValue('')
-    void submit(text, activeModelId, thinkingLevel, activeProvider)
-    // 发首条消息即脱离"新聊天进行中"视图态（信息区消失，对齐 ChatGPT：
-    // 提交后进入正常对话态）；此时 chat store 的 activeSessionId 已是接收
-    // 消息的会话（startNew 建好的或复用的空会话），kind:'chat' 指向它
-    const activeId = useChatStore.getState().activeSessionId
-    if (activeId !== null) {
-      useHomeStore.setState({ session: { kind: 'chat', chatId: activeId } })
-    }
-    // 发送即回到底部并恢复跟随（对齐主流产品）：翻历史/索引跳转过也吸底；
-    // 消息追加后库的 handleContentChange 在 following-bottom 态继续吸底
-    scrollToEnd()
+    // submit 可能要先按需建会话（空列表着陆页直发，chat store 内物化）——必须
+    // await 之后再读 activeSessionId 翻视图态，否则建会话未落定时读到 null，
+    // 消息进了新会话而视图还停在新聊天（串视图）
+    void (async () => {
+      await submit(text, activeModelId, thinkingLevel, activeProvider)
+      // 发首条消息即脱离"新聊天进行中"视图态（信息区消失，对齐 ChatGPT：
+      // 提交后进入正常对话态）；activeId 此刻必为 submit 物化/选中的会话
+      const activeId = useChatStore.getState().activeSessionId
+      if (activeId !== null) {
+        useHomeStore.setState({ session: { kind: 'chat', chatId: activeId } })
+      }
+      // 发送即回到底部并恢复跟随（对齐主流产品）：翻历史/索引跳转过也吸底；
+      // 消息追加后库的 handleContentChange 在 following-bottom 态继续吸底
+      scrollToEnd()
+    })()
   }
 
   return (
@@ -860,6 +1004,8 @@ function ChatComposer({ session }: { session: HomeSession }) {
               完全访问
             </Button>
             <div className="ml-auto flex items-center gap-3">
+              {/* 上下文指示器紧邻模型下拉：分母（contextWindow）跟着模型走 */}
+              <ContextIndicator session={session} />
               <ModelMenu />
               {/* 发送/停止双态：流式中变方块停止钮（abort 后 store 由 run.* 事件复位）。
                   发送 28px 石墨灰圆 + 白箭头（视觉 diff 定稿：低饱和石墨灰、比

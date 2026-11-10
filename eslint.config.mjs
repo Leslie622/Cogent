@@ -22,7 +22,11 @@ export default tseslint.config(
     },
     rules: {
       '@typescript-eslint/no-unnecessary-condition': 'error',
-      '@typescript-eslint/no-floating-promises': 'error'
+      '@typescript-eslint/no-floating-promises': 'error',
+      // Streamdown/react-markdown 的 components 覆盖经 ExtraProps 收到 hast node，
+      // 解构丢弃是从 rest spread 里剥掉它的标准手法（不剥会变 DOM 未知属性）——
+      // 与基础 eslint 的默认一致，放开 rest 兄弟忽略
+      '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }]
     }
   }
 )

@@ -90,6 +90,26 @@ cost 一律不取自 def（协议 ModelDef 无此字段，用户不可配价）�
 命名同理继承。对照冒烟：同 id 条目 $0.0004 级 / 全新 id 恒 0
 （配方入 [../开发.md](../开发.md) 冒烟节）。
 
+## 4.2 估价 ≠ 账单：≈ 前缀（2026-11-10 用户对照 DeepSeek 官网定价引出）
+
+pi 的成本有两级口径，`cost.totalFromProvider` 区分：**端点实报**
+（OpenRouter 响应自带账单金额，`openrouter-cost.js` 覆盖 total）与
+**目录估价**（其余一切直连厂商，`calculateCost` 按 USD/Mtok 单价 × token/1e6）。
+估价的结构性偏差以 DeepSeek 为例（官网人民币定价 vs 目录 USD）：基准单价
+= 官方**高峰价 ÷ 6.8** 的快照（1.32×6.8≈¥9 严丝合缝），但**分时计费未建模**
+——官方空闲时段全线半价，晚上/周末跑目录估价**虚高一倍**；汇率漂移另算 ~5%。
+
+落地：`MessageUsage.totalCostFromProvider?` 随链路透传（session.ts
+`projectUsage` 归一为显式布尔——pi 里缺省与 false 同义，落盘形状稳定；
+多轮累加取 AND——任何一轮是估价，总和只能是估价），UI `formatCost`
+对估价加 `≈` 前缀。两个诚实细节：下限分支 `<$0.0001` 不加（`<` 本身
+已传达不精确，再叠 ≈ 是双重标记）；旧会话数据无此字段，按估价处理
+（本来也几乎全是估价）。
+
+对照主流：Claude Code / Codex CLI 的成本显示同样不区分估价与账单
+（Anthropic/OpenAI 计费本就 USD 报价，无此问题）；跨厂商统一 USD 估价
++ 显式 ≈ 标记，是直连混合厂商场景下的必要诚实。
+
 ## 5. 在 Cogent 的落点
 
 - **引擎** `runtime/session.ts`：`StreamingState` 补 usage/durationMs/model
@@ -107,5 +127,40 @@ cost 一律不取自 def（协议 ModelDef 无此字段，用户不可配价）�
   [../开发.md](../开发.md) 冒烟节）。
 
 **将来**（空位 1 content blocks 时一并考虑）：会话级聚合账本（对齐 Claude
-Code `/cost`）、`reasoning` 细分展示、上下文余量（input+cacheRead 对
-contextWindow 的占比水位）。
+Code `/cost`）、`reasoning` 细分展示。
+
+## 6. 上下文窗口指示器（2026-11-10）
+
+输入卡工具行的细横条 + 百分比（两位小数：低占用时整数百分比信息量不足；
+≥75% 转 warning、≥90% 转 destructive，变色只落 bar），点击弹悬浮卡：总量
+（`70.0K/1.00M（6.25%）`）+ 进度条 + 平均缓存命中率
+（ΣcacheRead / Σ(input+cacheRead) 全会话聚合）。
+
+**口径（方案核心）**：占用 = 末条带 usage 的 assistant 消息
+`input + cacheRead + cacheWrite + output`。pi 每轮全量重发上下文，三项和
+即该轮**端点实报的实发量**，加 output = "下一轮将重发"。所以**总量不需要
+估算**——usage 是实报真相，与 Claude Code status 百分比同源（同样拿末轮
+usage 算，非实时计数；流式中保持上一轮值是诚实不是缺陷）。分母 =
+`contextWindow`（目录/自定义 merge 值；**不上网络的客户端元数据**——OpenAI
+兼容接口只发 `max_tokens`，窗口长度是客户端预算认知，自定义模型缺省 128K
+偏保守 → 真实窗口更大时百分比显示偏高，方向安全）。
+
+**明细（分类占比）为什么先不做**：需要把总量拆成 系统提示词/系统工具/
+MCP/消息 各段分别计数，pi 无 estimator API。主流三条路：
+① **官方 count API**——Anthropic 有 `count_tokens` 端点，Claude Code
+`/context` 的分类明细就是逐段调它（精确、与计费同源词表）；OpenAI chat
+模型无公开 count 端点；② **本地 tokenizer**——tiktoken 对 OpenAI 精确
+（词表公开），对 GLM/DeepSeek 只能近似（各家 BPE 词表不同）；
+③ **chars 粗估**（~4 chars/token，中文更密）——Cherry Studio 等通用客户端
+做法，跨模型一视同仁地不准。Cogent 当前无工具/MCP，明细只有"消息"一项，
+是空架子；待工具铺开后若主力 Anthropic 系可接 ①，通用场景退 ③ 并标 ≈。
+压缩预警线（Claude Code "Context left until auto compact"）同理等压缩模块。
+
+**实现落点**：纯 renderer 零协议改动——chat store `messagesBySession`
+（usage 已持久化，老会话直接可用）+ engine store `ModelSummary.contextWindow`
+（分母模型与 ModelMenu 同走 `usableModels` 过滤，防同名跨 provider 命中
+未配 key 条目）。`ContextBar` 斜纹轨道 = `repeating-linear-gradient` +
+`--color-border`（原始 CSS 里 tailwind `/opacity` 修饰符不编译，token 须
+实色引用）；空态（首答前）显示引导文案而非 0%（首轮其实有系统提示词
+占用）；端点不报缓存的模型命中率行整行隐藏（cacheRead 恒 0 时 "0%" 是
+误导，零值省略同 UsageLine）。

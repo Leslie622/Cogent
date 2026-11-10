@@ -42,6 +42,10 @@ interface EngineState {
   overrides: Record<string, ProviderOverrideDef>
   /** 当前选中模型 id（session 提交时随 agent.submit 下发） */
   activeModelId: string
+  /** 选中模型的 provider（同名模型跨 provider 收录时 id 单键有歧义，双键才能
+      区分"zai 的 glm-5.3"与"自定义网关的 glm-5.3"；null = 旧偏好回填无此字段，
+      按 id 退化查找，用户点一次选择后即补全） */
+  activeProviderId: string | null
   /** 推理力度（pi ThinkingLevel；随 agent.submit 下发） */
   thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   loaded: boolean
@@ -50,7 +54,7 @@ interface EngineState {
   refreshModels: () => Promise<void>
   /** 全量保存自定义 provider 定义：落盘 → 引擎 sync → 重拉目录 */
   saveProviders: (providers: CustomProviderDef[], overrides: ProviderOverrideDef[]) => Promise<void>
-  setActiveModel: (modelId: string) => void
+  setActiveModel: (modelId: string, providerId?: string | null) => void
   setThinkingLevel: (level: EngineState['thinkingLevel']) => void
 }
 
@@ -77,6 +81,7 @@ function toOverrideMap(payload: CustomProvidersPayload): Record<string, Provider
  */
 interface AppSettings {
   activeModelId?: string
+  activeProviderId?: string
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 }
 
@@ -95,6 +100,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   customProviders: [],
   overrides: {},
   activeModelId: DEFAULT_MODEL,
+  activeProviderId: null,
   thinkingLevel: 'off',
   loaded: false,
 
@@ -113,6 +119,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       overrides: toOverrideMap(customPayload),
       // 偏好回填：落盘的模型可能已不在目录（改名/删除）→ 校验一次再落
       activeModelId: settings.activeModelId ?? DEFAULT_MODEL,
+      activeProviderId: settings.activeProviderId ?? null,
       thinkingLevel: settings.thinkingLevel ?? 'off',
       loaded: true
     })
@@ -147,17 +154,25 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   // 选中模型/思考力度的 setter 都同步落盘（fire-and-forget：写失败不回滚内存态，
   // 下次改动会重写；getSettings 读失败走默认——首启无文件是常态不是错误）。
   // 切模型时校验当前力度是否被新模型支持：不支持则 clamp 到最近可用档
-  // （避免"滑杆显示 medium、实际下发 high"的静默降级，见 getSupportedThinkingLevels）
-  setActiveModel: (activeModelId) => {
+  // （避免"滑杆显示 medium、实际下发 high"的静默降级，见 getSupportedThinkingLevels）。
+  // providerId 成对落：思考档 clamp 的查靶同样按双键限定，否则同名模型会拿
+  // 别家的 thinkingLevels 来 clamp
+  setActiveModel: (activeModelId, activeProviderId) => {
     const state = get()
-    const target = state.models.find((m) => m.id === activeModelId)
+    const target = state.models.find(
+      (m) => m.id === activeModelId && (activeProviderId == null || m.provider === activeProviderId)
+    )
     const supported = target?.thinkingLevels
-    const patch: Partial<EngineState> = { activeModelId }
+    const patch: Partial<EngineState> = { activeModelId, activeProviderId: activeProviderId ?? null }
     if (supported && supported.length > 0 && !supported.includes(state.thinkingLevel)) {
       patch.thinkingLevel = nearestThinkingLevel(state.thinkingLevel, supported)
     }
     set(patch)
-    void window.cogent.saveSettings({ activeModelId, ...(patch.thinkingLevel !== undefined && { thinkingLevel: patch.thinkingLevel }) })
+    void window.cogent.saveSettings({
+      activeModelId,
+      ...(activeProviderId != null && { activeProviderId }),
+      ...(patch.thinkingLevel !== undefined && { thinkingLevel: patch.thinkingLevel })
+    })
   },
   setThinkingLevel: (thinkingLevel) => {
     set({ thinkingLevel })
@@ -188,4 +203,23 @@ function nearestThinkingLevel(level: ThinkingLevelWithOff, supported: ThinkingLe
  */
 export function usableModels(models: ModelSummary[], keyConfigured: Record<string, boolean>): ModelSummary[] {
   return models.filter((m) => keyConfigured[m.provider] === true)
+}
+
+/**
+ * 活动模型查找（双键）：provider 在场时限定同 provider —— 同名模型跨 provider
+ * 收录且两家都配了 key 时（zai 目录与自定义网关都有 glm-5.3），id 单键永远命中
+ * 目录在前那份，自定义厂商"选不上"即此（2026-11-10）。provider 为 null（旧
+ * 偏好回填）退化为 id 单键，用户下一次点选即补全双键。
+ */
+export function findActiveModel(
+  models: ModelSummary[],
+  keyConfigured: Record<string, boolean>,
+  activeModelId: string,
+  activeProviderId: string | null
+): ModelSummary | undefined {
+  const usable = usableModels(models, keyConfigured)
+  if (activeProviderId !== null) {
+    return usable.find((m) => m.id === activeModelId && m.provider === activeProviderId)
+  }
+  return usable.find((m) => m.id === activeModelId)
 }

@@ -3,3 +3,5 @@
  */
 export type { StorageDriver, StoredDocument } from './driver'
 export { JsonStorageDriver } from './json-driver'
+export type { InspectRecord } from './inspect-store'
+export { InspectStore } from './inspect-store'

@@ -34,6 +34,8 @@ import { ProtocolError, RpcErrorCode } from '../../protocol'
 import type {
   ChatMessage,
   CustomProviderDef,
+  InspectEntryDetail,
+  InspectEntrySummary,
   MessageUsage,
   ModelSummary,
   ProviderOverrideDef,
@@ -42,8 +44,9 @@ import type {
 } from '../../protocol'
 import type { CredentialRegistry } from './credentials'
 import { CustomProviderRegistry } from './custom-providers'
+import { SessionInspector } from './inspector'
 import type { ProjectRegistry } from './project'
-import type { StorageDriver } from '../storage'
+import type { InspectStore, StorageDriver } from '../storage'
 
 /** 引擎事件出口的类型别名：runtime 通过它上报事件，不关心传输层 */
 export type Notify = <E extends keyof ProtocolEvents>(
@@ -79,6 +82,12 @@ interface Session {
   transcript: AgentMessage[]
   /** pi Agent 实例；undefined = 尚未（重）建 —— 惰性重建的落点 */
   agent?: Agent
+  /**
+   * 运行时控制台记录器；undefined = 尚未使用 —— 惰性（同 Agent）：构造要读
+   * inspect/<id>.jsonl 尾部（含详情，可达 MB 级），启动期全量恢复会话会白吃内存；
+   * 首次 submit / inspect 读取时才建，seq/run 从落盘尾部接续
+   */
+  inspector?: SessionInspector
 }
 
 /** AGENTS.md 只读加载的长度上限（字符）——巨型指令文件不吃满上下文 */
@@ -168,7 +177,9 @@ function projectUsage(usage: Usage): MessageUsage {
     cacheWrite: usage.cacheWrite,
     reasoning: usage.reasoning,
     totalTokens: usage.totalTokens,
-    totalCost: usage.cost.total
+    totalCost: usage.cost.total,
+    // 显式存布尔而非透传 optional：pi 里缺省与 false 同为"估价"，归一后落盘形状稳定
+    totalCostFromProvider: usage.cost.totalFromProvider ?? false
   }
 }
 
@@ -191,7 +202,10 @@ function accumulateUsage(current: MessageUsage | undefined, add: MessageUsage): 
     cacheWrite: current.cacheWrite + add.cacheWrite,
     reasoning: sumOptional(current.reasoning, add.reasoning),
     totalTokens: current.totalTokens + add.totalTokens,
-    totalCost: sumOptional(current.totalCost, add.totalCost)
+    totalCost: sumOptional(current.totalCost, add.totalCost),
+    // 成本口径跟随求和：任何一轮是估价，总和就只能是估价（缺省按估价参与 AND）
+    totalCostFromProvider:
+      (current.totalCostFromProvider ?? false) && (add.totalCostFromProvider ?? false)
   }
 }
 
@@ -215,20 +229,37 @@ export class SessionManager {
     private credentials: CredentialRegistry,
     private storage: StorageDriver,
     private notify: Notify,
-    projects: ProjectRegistry
+    projects: ProjectRegistry,
+    private inspectStore: InspectStore
   ) {
     this.projects = projects
     // pi 内置全部 provider 的模型目录；凭据解析经 Agent.getApiKey 查我们的内存表
     this.models = builtinModels()
     this.customProviders = new CustomProviderRegistry(this.models)
     this.customProviders.snapshotBuiltin()
-    // 启动恢复：只拉摘要（惰性重建，见 Session.agent 注释）。
+    // 启动恢复：只拉摘要（惰性重建，见 Session.agent / Session.inspector 注释）。
     // 磁盘损坏在驱动 get 处已 throw；形状不合法（老版本盘数据/手改）在此报错，
     // 静默跳过会丢用户会话（约定.md §1.1 持久化读取行）
     for (const id of this.storage.ids(SESSION_COLLECTION)) {
       const doc = asStoredSession(this.storage.get(SESSION_COLLECTION, id), id)
       this.sessions.set(doc.summary.id, { summary: doc.summary, transcript: doc.transcript })
     }
+  }
+
+  /**
+   * 记录器惰性建（首用 = submit 或 inspect 读取）：落盘尾部做 seed（重启回看 +
+   * seq/run 接续），append 钩子接 InspectStore —— 记录常开，与控制台开不开无关
+   */
+  private ensureInspector(session: Session): SessionInspector {
+    if (session.inspector === undefined) {
+      const sessionId = session.summary.id
+      session.inspector = new SessionInspector(
+        (entry) => this.notify('inspect.event', { sessionId, entry }),
+        this.inspectStore.load(sessionId),
+        (record) => this.inspectStore.append(sessionId, record)
+      )
+    }
+    return session.inspector
   }
 
   /**
@@ -311,6 +342,8 @@ export class SessionManager {
     this.sessions.delete(sessionId)
     this.streaming.delete(sessionId)
     this.storage.delete(SESSION_COLLECTION, sessionId)
+    // 观测记录随会话清理（聊天转录同生共死，不留孤儿文件）
+    this.inspectStore.delete(sessionId)
     return true
   }
 
@@ -318,6 +351,24 @@ export class SessionManager {
   messages(sessionId: string): ChatMessage[] {
     const session = this.requireSession(sessionId)
     return this.toChatMessages(this.ensureAgent(session).state.messages)
+  }
+
+  // ———— 运行时控制台（inspect 域后端）————
+
+  /** 观测条目摘要全量（inspect.entries 响应；时间线数据源） */
+  inspectEntries(sessionId: string): InspectEntrySummary[] {
+    const session = this.requireSession(sessionId)
+    return this.ensureInspector(session).entries()
+  }
+
+  /** 单条观测详情（inspect.entry 响应）；不存在/被环形丢弃 = 客户端参数错 */
+  inspectDetail(sessionId: string, seq: number): InspectEntryDetail {
+    const session = this.requireSession(sessionId)
+    const detail = this.ensureInspector(session).detail(seq)
+    if (detail === undefined) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, `观测记录不存在或已被滚动丢弃: seq ${seq}`)
+    }
+    return detail
   }
 
   // ———— 模型目录 ————
@@ -333,7 +384,9 @@ export class SessionManager {
       // UI 滑杆据此渲染/置灰，切模型据此 clamp，杜绝静默降级
       thinkingLevels: getSupportedThinkingLevels(m),
       contextWindow: m.contextWindow,
-      maxTokens: m.maxTokens
+      maxTokens: m.maxTokens,
+      // 目录原生 vs 用户添加（默认模型 UI 锁 id 的判定源，见 isUserDefined 注释）
+      userDefined: this.customProviders.isUserDefined(m.provider, m.id)
     }))
   }
 
@@ -392,6 +445,7 @@ export class SessionManager {
     this.persist(sessionId)
 
     this.notify('run.started', { sessionId })
+    this.ensureInspector(session).runStarted(text, agent.state.systemPrompt, agent.state.thinkingLevel)
     this.streaming.set(sessionId, { messageId: `m-${crypto.randomUUID()}`, text: '', thinking: '' })
     // prompt() 的运行期失败（流错误/中止）由 pi 事件流转译为 run.failed
     // （handleRunFailure → agent_end，见 pi-agent-integration.md §2.3），不会走到这层；
@@ -435,12 +489,16 @@ export class SessionManager {
    */
   private ensureAgent(session: Session): Agent {
     if (session.agent) return session.agent
-    const agent = this.createAgent(session.transcript, this.workspaceRoots(session))
+    // 记录器经 thunk 惰性解析：messages() 也会建 Agent（仅为读转录），此时不该
+    // 顺带载入观测文件；hooks 只在 prompt() 期间触发，那时 submit 已建好记录器
+    const agent = this.createAgent(session.transcript, this.workspaceRoots(session), () =>
+      this.ensureInspector(session)
+    )
     session.agent = agent
     return agent
   }
 
-  private createAgent(history: AgentMessage[], roots: string[]): Agent {
+  private createAgent(history: AgentMessage[], roots: string[], getInspector: () => SessionInspector): Agent {
     const model = this.models.getModel(DEFAULT_PROVIDER, DEFAULT_MODEL)
     if (!model) throw new Error(`默认模型不可用: ${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`)
 
@@ -454,7 +512,19 @@ export class SessionManager {
       // streamFn 走 Models 集合：auth 解析、provider 分发、重试都由 pi-ai 承担
       streamFn: this.models.streamSimple.bind(this.models),
       // 每轮请求前从内存表解析 key（agent-loop.js:275；支持运行中换 key）
-      getApiKey: (provider: string) => this.credentials.get(provider)
+      getApiKey: (provider: string) => this.credentials.get(provider),
+      // 运行时控制台的接口层观测（pi 原生 hooks，零魔改）：
+      // - onPayload：发送前一刻的厂商原生请求体（onPayload 契约 = 返回 undefined
+      //   表示保留原载荷，这里纯观测故恒返回 undefined）；
+      // - onResponse：响应头到达（体消费前）；
+      // - onProviderStreamEvent：归一化前的原生 SSE 分片（高频，inspector 只攒引用）。
+      // 记录器自身尽力而为（inspector.ts 头注释），不干扰请求主路径
+      onPayload: (payload, model) => {
+        getInspector().apiRequest(payload, model)
+        return undefined
+      },
+      onResponse: (response) => getInspector().apiResponse(response),
+      onProviderStreamEvent: (data) => getInspector().apiStreamChunk(data)
     })
 
     agent.subscribe((event) => this.translateEvent(agent, event))
@@ -504,6 +574,10 @@ export class SessionManager {
         })
         return
       }
+      case 'turn_start': {
+        this.sessions.get(sessionId)?.inspector?.turnStarted()
+        return
+      }
       case 'turn_end': {
         // 记录停止原因与用量：length = 输出被 token 上限截断（agent_end 事件本身
         // 不带这些信息）；usage/durationMs/model 同样只在 turn_end 的 message 上
@@ -516,7 +590,22 @@ export class SessionManager {
             streaming.durationMs = sumOptional(streaming.durationMs, event.message.durationMs)
             streaming.model = event.message.model
           }
+          // 观测快照取 turn_end 终态消息（usage/stopReason/diagnostics 齐全）
+          this.sessions.get(sessionId)?.inspector?.turnCompleted(event.message)
         }
+        return
+      }
+      case 'tool_execution_start': {
+        this.sessions.get(sessionId)?.inspector?.toolStarted(event.toolName, event.args)
+        return
+      }
+      case 'tool_execution_end': {
+        this.sessions.get(sessionId)?.inspector?.toolCompleted(
+          event.toolName,
+          event.result,
+          event.isError,
+          event.durationMs
+        )
         return
       }
       case 'agent_end': {
@@ -528,6 +617,7 @@ export class SessionManager {
 
         // pi 约定：失败/中止在 Agent.state.errorMessage 留痕（stream error 也汇于此）
         if (agent.state.errorMessage) {
+          session.inspector?.runFailed(agent.state.errorMessage)
           this.notify('run.failed', { sessionId, message: agent.state.errorMessage })
           return
         }
@@ -538,6 +628,7 @@ export class SessionManager {
         session.transcript = [...agent.state.messages]
         this.persist(sessionId)
 
+        if (streaming) session.inspector?.runCompleted(streaming)
         this.notify('run.completed', {
           sessionId,
           // 思考/正文任一非空都落消息（只有思考没有正文的极端截断也可见）；

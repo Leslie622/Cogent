@@ -65,9 +65,12 @@ const BUILTIN_PROVIDERS: ReadonlyArray<{ id: string; name: string }> = [
   { id: 'zai', name: 'Z.AI' },
 ]
 
-/** API 方言两档（协议 CustomProviderDef.apiFormat 的 UI 侧文案） */
+/** API 方言三档（协议 CustomProviderDef.apiFormat 的 UI 侧文案）。
+    有网关按路由放行模型权限（chat/completions 与 messages 拒、responses 放行），
+    三方言即三套可选端点路径，2026-11-10 因此补 responses 档 */
 const API_FORMATS = [
   { value: 'openai-completions', label: 'OpenAI Chat Completions (/v1/chat/completions)' },
+  { value: 'openai-responses', label: 'OpenAI Responses (/v1/responses)' },
   { value: 'anthropic-messages', label: 'Anthropic Messages (/v1/messages)' },
 ] as const
 
@@ -283,6 +286,14 @@ function ModelDialog({
   const [reasoning, setReasoning] = useState(false)
   const [thinkingLevels, setThinkingLevels] = useState<ThinkingLevel[]>([])
 
+  // 当前 id 的目录命中（编辑/新增通用，改 id 实时跟随）：默认模型锁定的判定源
+  const catalogHit = catalog.get(id.trim())
+  // 编辑默认（目录原生）模型时 id 只读：id 是目录身份与覆盖匹配键，改 id 等于
+  // 把"删目录模型 + 新增自定义模型"伪装成一次编辑（语义混乱），要新 id 走
+  // 「添加模型」。目录命中且 userDefined !== true = 目录原生；用户添加的模型
+  // （含全部自定义供应商条目）不锁 —— id 输什么是什么，调不调得通用户自负责
+  const lockId = initial !== null && catalogHit !== undefined && catalogHit.userDefined !== true
+
   // 每次打开重置表单（initial 区分新增/编辑；目录精确值原样带入，拖动滑杆才吸附）
   useEffect(() => {
     if (!open) return
@@ -338,7 +349,9 @@ function ModelDialog({
         </DialogHeader>
         <div className="flex flex-col gap-4">
           <div>
-            <label className={FIELD_LABEL}>模型名称</label>
+            {/* 字段如实标"模型 ID"：id 是发给端点的请求体 model 值，也是覆盖
+                匹配键；显示层一律用 id（2026-11-10 定调，name 不参与呈现） */}
+            <label className={FIELD_LABEL}>模型 ID</label>
             <Input
               value={id}
               onChange={(event) => setId(event.target.value)}
@@ -346,7 +359,13 @@ function ModelDialog({
               placeholder="如 deepseek-chat"
               className="mt-1.5 rounded-lg text-[13px]"
               autoComplete="off"
+              disabled={lockId}
             />
+            {lockId && (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                默认模型不可修改 ID，仅调整配置；需要其他 ID 请用「添加模型」
+              </p>
+            )}
           </div>
           <div>
             <div className="flex items-center justify-between">
@@ -480,7 +499,8 @@ function ApiKeyField({ providerId }: { providerId: string }) {
   )
 }
 
-/** API 格式下拉：方言决定引擎用哪套请求实现，anthropic 时 baseUrl 填根地址
+/** API 格式下拉：方言决定引擎用哪套请求实现与 baseUrl 拼法 —— openai 系两档
+    baseUrl 带 /v1（SDK 只拼 /chat/completions 或 /responses），anthropic 填根地址
     （SDK 自拼 /v1/messages） */
 function FormatSelect({
   value,
@@ -591,7 +611,7 @@ function CustomProviderDetail({
   const modelRows = useMemo(() => {
     const defs = def.modelDefs ?? []
     const defIds = new Set(defs.map((d) => d.id))
-    return [...defs, ...def.models.filter((id) => !defIds.has(id)).map((id) => ({ id }))]
+    return [...defs, ...def.models.filter((id) => !defIds.has(id)).map((id): ModelDef => ({ id }))]
   }, [def])
   const [dialog, setDialog] = useState<{ initial: ModelDef | null } | null>(null)
 
@@ -702,6 +722,7 @@ function CustomProviderDetail({
           <div className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border">
             {modelRows.map((row) => (
               <div key={row.id} className="group flex h-12 min-w-0 items-center gap-2 px-4">
+                {/* 显示一律 id（口径同内置供应商行）：id 输什么是什么 */}
                 <span className="min-w-0 shrink truncate text-[13px]">{row.id}</span>
                 <ModelBadges def={row} />
                 <ModelRowActions
@@ -755,19 +776,23 @@ function BuiltinProviderDetail({
   const shown = catalog.slice(0, 8)
   const catalogMap = useMemo(() => new Map(catalog.map((m) => [m.id, m])), [catalog])
   const customModels = override?.models ?? []
-  const disabled = new Set(override?.disabledModels ?? [])
+  const disabledIds = override?.disabledModels ?? []
+  const disabled = new Set(disabledIds)
   const [dialog, setDialog] = useState<{ initial: ModelDef | null } | null>(null)
 
-  // 合并行：目录（被覆盖项的值取 override.models）+ 目录外新增。
-  // 覆盖行以目录名为显示名基底（用户 def 显式 name 优先）：显示名与聊天页
-  // 模型菜单统一 —— 此前覆盖行显示 id，同一模型两处名字不同（2026-11-09 统一）
+  // 合并行：目录（被覆盖项的值取 override.models）+ 目录外新增 + 已禁用的目录 id，
+  // 最后统一按 id 排序 —— 行序必须与开关状态解耦（2026-11-10 用户反馈：禁用/启用
+  // 会让行从目录位跳到末尾裸 id 行再跳回，来回搬家容易点错）。
+  // 禁用行必须复活展示：引擎不注册被禁模型 → 它从 models.list/catalog 消失，
+  // 但开关语义是可逆的 —— 行也跟着消失的话就永远打不开了（裸 id 行，无标签；
+  // 重新打开后模型回到 models.list，完整信息随 catalog 回来，位置不动）。
+  // 显示一律用 id（2026-11-10 定调）：目录营销名（DeepSeek V4 Pro 之类）与
+  // API id 不对应，所见即所传；name 不参与呈现（2026-11-09 的目录名统一已废弃）
   const merged = useMemo(() => {
     const rows: Array<{ def: ModelDef; shadowed: boolean }> = shown.map((m) => {
       const shadow = customModels.find((x) => x.id === m.id)
       return {
-        def: shadow
-          ? { name: m.name, ...shadow }
-          : { id: m.id, name: m.name, contextWindow: m.contextWindow, reasoning: m.reasoning },
+        def: shadow ?? { id: m.id, contextWindow: m.contextWindow, reasoning: m.reasoning },
         shadowed: shadow !== undefined
       }
     })
@@ -776,8 +801,15 @@ function BuiltinProviderDetail({
         .filter((x) => !catalog.some((m) => m.id === x.id))
         .map((m) => ({ def: m, shadowed: true }))
     )
-    return rows
-  }, [shown, customModels, catalog])
+    // 已禁用且不在 catalog（被引擎滤掉）也不被 override.models 接管的 id；
+    // 引擎未应用的窗口期（旧进程）id 仍在 catalog → 上面已渲染，这里跳过防重复
+    rows.push(
+      ...disabledIds
+        .filter((id) => !catalogMap.has(id) && !customModels.some((x) => x.id === id))
+        .map((id) => ({ def: { id }, shadowed: false }))
+    )
+    return rows.sort((a, b) => a.def.id.localeCompare(b.def.id))
+  }, [shown, customModels, catalog, catalogMap, disabledIds])
 
   // 空调整（无 baseUrl / 无自定义模型 / 无禁用）= 撤掉整条 override 通道
   const commitOverride = (next: ProviderOverrideDef): void => {
@@ -864,14 +896,8 @@ function BuiltinProviderDetail({
         <div className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border">
           {merged.map(({ def: row, shadowed }) => (
             <div key={row.id} className="group flex h-12 min-w-0 items-center gap-2 px-4">
-              {/* 显示名统一口径（同聊天页模型菜单）：目录名/用户填写的 name 优先，
-                  目录外新增的自定义模型无目录名 → 回落 id；id 恒在悬浮提示 */}
-              <span
-                className="min-w-0 shrink truncate text-[13px]"
-                title={row.id}
-              >
-                {row.name ?? row.id}
-              </span>
+              {/* 显示一律 id（同聊天页模型菜单口径，见 merged 注释） */}
+              <span className="min-w-0 shrink truncate text-[13px]">{row.id}</span>
               <ModelBadges def={row} />
               <ModelRowActions
                 modelId={row.id}

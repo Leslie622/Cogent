@@ -279,6 +279,7 @@
     <tr><td><code>credentials.set / list</code></td><td>运行中更新 key / 查各 provider 配置状态（只回布尔位）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>models.list</code></td><td>pi 模型目录摘要（UI 下拉数据源）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>providers.custom.sync</code></td><td>自定义 provider + 内置 provider 本地调整（baseUrl 覆盖 / 模型增删 / 目录禁用）的<b>全量替换</b>同步</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>inspect.entries / inspect.entry</code></td><td>运行时控制台（2026-11-10）：拉会话观测条目摘要（时间线数据源）/ 按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词，数据源 = pi hooks 截获，见 <a href="技术笔记/runtime-console.md">笔记</a>）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>approval.respond</code></td><td>用户对审批请求的裁决回执 —— 空位 2（工具+审批）接线时启用</td><td><span class="st plan">协议已定</span></td></tr>
   </table>
 
@@ -291,6 +292,7 @@
     <tr><td><code>run.failed</code></td><td>执行失败：message 来自 pi 约定的 <code>Agent.state.errorMessage</code>（stream error / 中止后异常都汇于此）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>tool.started / tool.completed</code></td><td>工具调用起止（带 ToolKind 分级）—— 空位 2 接线时开始发射</td><td><span class="st plan">协议已定</span></td></tr>
     <tr><td><code>approval.request</code></td><td>审批拦截：引擎暂停等待宿主（最终是用户）以 <code>approval.respond</code> 裁决</td><td><span class="st plan">协议已定</span></td></tr>
+    <tr><td><code>inspect.event</code></td><td>观测条目实时推送（2026-11-10）：引擎每个底层动作（厂商请求/响应/SSE 分片/turn/工具/run + 系统提示词）沉淀一条摘要实时外推，详情不随流走（<code>inspect.entry</code> 按需）——控制台窗口的时间线增量</td><td><span class="st ok">已发射</span></td></tr>
   </table>
 
   <!-- ================= 3. 时序 ================= -->

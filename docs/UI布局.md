@@ -91,7 +91,16 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   正文下的 footer 位，`text-[11px] text-muted-foreground tabular-nums`（时间戳/
   徽标同口径，实色 token），格式 `↑ 41 · ↓ 1.2K · 缓存读 8.2K · $0.0031 · 2.4s`；
   **零值省略**（缓存 0/无定价不显示对应项，"没发生"≠"值为 0"）、数据无则整行
-  不渲染（流式态天然没有，随 run.completed 出现）
+  不渲染（流式态天然没有，随 run.completed 出现）；
+  **assistant 正文 Markdown 渲染**（2026-11-10）：Streamdown 封装
+  `components/ui/markdown.tsx`（包内样式按 shadcn token 写，自动吃主题；正文
+  容器层 text-sm 定基调）。链接 = chrome-accent 实色（此前裸变量已补
+  `--color-chrome-accent` 映射）+ **点击 preventDefault 后 window.open** ——
+  主进程只有 setWindowOpenHandler 守卫，裸 `<a>` 窗口内导航无人拦会把应用窗口
+  带到外链（Electron 特有坑）。lineNumbers/animated/linkSafety 弹窗均关（主流
+  聊天产品口径）。**坑**：Tailwind v4 自动扫描不进 node_modules，包内类必须
+  `@source '../../../node_modules/streamdown/dist'` 显式声明才生成 CSS。代码等宽
+  = JetBrains Mono 随包（可变字重）+ `--font-mono` token（CJK 注释回落鸿蒙）
 - **滚动渐隐** `.scroll-fade-b/-y/-x`（mask 两端 24px 渐变，ChatGPT 同款不硬截；
   base-luma 组件引用了这组类，已补定义）
 
@@ -143,6 +152,15 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
    `transition-[...]` 清单若只列 transform，缩放瞬跳不过渡（`transition-transform`
    工具类 v4 已内置 transform,translate,scale,rotate，别用任意值清单"精简"它）；
    思考力度滑杆定位点的涟漪过渡即 `transition-[background-color,scale]`
+10. **调用处任意变体覆写会压死原语内的 variant 类**：`[&_[data-slot=…]]:scale-100`
+   生成 `.类 [data-slot=…]>span`（类+属性+元素，0,2,1），特异性高于元素自身的
+   `hover:scale-150`（类+伪类，0,2,0）—— 调用处一旦给该属性定基态，原语里的
+   hover 反馈就永远不触发（思考力度定位点 hover 不放大即此，bff92d8 的涟漪
+   覆写引入）。教训：同一属性的各级状态（基态/激活/hover）要么全在原语、要么
+   全在调用处，别劈开 —— 定位点 scale 体系（100/125/150）已全数收归
+   ThinkingSlider，原语 marks 不再带任何外观（含 hover）。同特异性对赌生成
+   顺序也不行：激活点 hover 用 `span[data-active]:hover`（0,4,1）显式压过
+   `scale-125`
 
 ## 视觉对标方法论（"照某图实现"类任务）
 

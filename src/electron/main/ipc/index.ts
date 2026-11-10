@@ -9,6 +9,7 @@ import type { CredentialStore } from '../credentials/store'
 import type { CustomProvidersStore } from '../custom-providers/store'
 import { registerAppIpc } from './app'
 import { registerWindowIpc } from './window'
+import { registerConsoleIpc } from './console'
 import { registerEngineIpc } from './engine'
 import { registerCredentialsIpc } from './credentials'
 import { registerCustomProvidersIpc } from './custom-providers'
@@ -17,13 +18,14 @@ import { registerSettingsIpc } from './settings'
 
 export interface IpcDeps {
   service: AgentServiceManager
-  /** 事件转发用：引擎事件经 webContents.send 推给 renderer */
+  /** 主窗口引用（窗口域外的零星转发用；事件转发已广播化，见 ipc/engine.ts） */
   getWindow: () => BrowserWindow | null
 }
 
 export function registerIpc(deps: IpcDeps, store: CredentialStore, customProviders: CustomProvidersStore): void {
   registerAppIpc(deps.service)
-  registerWindowIpc(deps.getWindow)
+  registerWindowIpc()
+  registerConsoleIpc()
   registerEngineIpc(deps)
   registerCredentialsIpc(deps.service, store)
   registerCustomProvidersIpc(deps.service, customProviders)

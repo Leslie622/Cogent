@@ -121,6 +121,8 @@ export interface SessionSummary {
  * 手写而非 import pi 类型 —— 协议零运行时依赖（约定.md §2）。
  * reasoning 是 output 的子集，provider 报告了该细项才有；
  * totalCost = pi cost.total（端点实报优先、目录估价兜底），目录无定价的模型缺省。
+ * totalCostFromProvider 区分两者：估价 ≠ 账单（目录单价是汇率/分时快照，
+ * 如 DeepSeek 官方分时半价未建模），UI 据此给成本加 ≈ 前缀；多轮全实报才算实报。
  * 工具循环多轮时为各轮之和（计费口径：每轮请求都携带全量上下文，账单即各轮相加）。
  */
 export interface MessageUsage {
@@ -133,6 +135,8 @@ export interface MessageUsage {
   totalTokens: number
   /** 本次总成本 USD；无定价时缺省 */
   totalCost?: number
+  /** 成本是否端点实报（OpenRouter 等）；false/缺省 = 目录估价（旧会话数据同按估价处理） */
+  totalCostFromProvider?: boolean
 }
 
 /**
@@ -183,6 +187,12 @@ export interface ModelSummary {
   thinkingLevels: ThinkingLevelWithOff[]
   contextWindow: number
   maxTokens: number
+  /**
+   * 是否用户添加（目录外新增/自定义供应商注册）；缺省 false = pi 目录原生。
+   * UI 据此区分"默认模型 vs 自定义模型"：默认模型编辑时锁 id（目录身份不可
+   * 改，只能调配置）；显示层一律用 id（2026-11-10 定调），name 不参与呈现。
+   */
+  userDefined?: boolean
 }
 
 /** 工具的风险类别：审批策略按此分级 */
@@ -391,10 +401,13 @@ export interface CustomProviderDef {
   modelDefs?: ModelDef[]
   /**
    * 端点的 API 方言（决定引擎用哪套请求实现）。缺省 'openai-completions'
-   * （最通用的兼容方言）；anthropic-messages 时请求走官方 Anthropic SDK，
-   * 它会自行在 baseUrl 后拼 /v1/messages —— baseUrl 填根地址即可。
+   * （最通用的兼容方言）。baseUrl 拼法随方言：openai 系两方言走官方 OpenAI
+   * SDK，只在 baseUrl 后拼 /chat/completions 或 /responses —— baseUrl 要带
+   * /v1；anthropic-messages 走官方 Anthropic SDK，自拼 /v1/messages ——
+   * baseUrl 填根地址。部分网关按路由放行模型权限（2026-11-10 实测：同一
+   * key+模型仅 /v1/responses 可用），三方言即三套可选端点路径。
    */
-  apiFormat?: 'openai-completions' | 'anthropic-messages'
+  apiFormat?: 'openai-completions' | 'openai-responses' | 'anthropic-messages'
   /** 禁用模型（models/modelDefs 的子集）：sync 时不注册进 provider，目录/下拉自然不出现 —— 可逆开关的数据面 */
   disabledModels?: string[]
   /** 整 provider 禁用：保留定义不注册（再启用即恢复），区别于 deleteProvider 的彻底移除 */
@@ -421,6 +434,76 @@ export interface ProvidersCustomSyncResult {
   synced: number
 }
 
+export interface InspectEntriesParams {
+  sessionId: string
+}
+export interface InspectEntriesResult {
+  /** 按 seq 升序；首条 seq > 0 即更早条目已被 ring 滚动丢弃 */
+  entries: InspectEntrySummary[]
+}
+
+export interface InspectEntryParams {
+  sessionId: string
+  seq: number
+}
+
+// ———— 运行时控制台（inspect 域，2026-11-10）————
+//
+// 学习导向的观测通道：把引擎每一步底层动作（厂商请求体 / SSE 分片 / 引擎循环 /
+// 工具执行）以"摘要事件 + 按需详情"两段式暴露给宿主的控制台 UI。
+// 设计动机（与聊天事件的分野）：聊天事件（run.*/message.*）服务对话 UI，只暴露
+// 用户可读的投影；inspect 域服务"想看引擎内部怎么跑"的学习场景，暴露的是
+// 尽可能原始的底层形状 —— 两者数据同源但形态不同，不共用事件。
+
+/**
+ * 观测条目类型。四层结构（UI 据此分色/过滤，也是学习路径的解剖层次）：
+ * - 会话层 run.*：一次 agent.submit 的完整生命周期；
+ * - 提示词 system.prompt：本轮请求实际生效的系统提示词全文；
+ * - 引擎层 turn.*：pi Agent 循环的轮次边界（一 run 内可多轮 = 工具循环）；
+ * - 接口层 api.*：pi→厂商的原始 HTTP 往返（请求体 / 响应头 / SSE 分片聚合）；
+ * - 工具层 tool.*：工具执行的参数与结果（Cogent 暂未注册工具，先占位）。
+ */
+export type InspectEntryKind =
+  | 'run.started'
+  | 'run.completed'
+  | 'run.failed'
+  | 'system.prompt'
+  | 'turn.started'
+  | 'turn.completed'
+  | 'api.request'
+  | 'api.response'
+  | 'api.stream'
+  | 'tool.started'
+  | 'tool.completed'
+
+/**
+ * 观测条目摘要（时间线一行）。刻意小体积：控制台未打开时引擎也在实时推送，
+ * 摘要是常流，完整 payload 走 inspect.entry 按需拉取 —— 否则长对话的请求体
+ * （几百 KB 上下文）会把 stdio 事件流打爆。
+ */
+export interface InspectEntrySummary {
+  /** 会话内单调递增序号（inspect.entry 的取详情键） */
+  seq: number
+  /** 事件时刻（Unix 毫秒） */
+  ts: number
+  kind: InspectEntryKind
+  /** 所属 run 序号（第几次 agent.submit，从 1 起）；时间线按它分组折叠 */
+  run: number
+  /** 一行摘要（时间线主文案） */
+  title: string
+  /** 键值对概览（时间线次级信息 + 详情面板顶部表格共用源） */
+  overview?: Array<{ label: string; value: string }>
+  /** 是否有可按需拉取的详情（api.request 的请求体、system.prompt 的全文…） */
+  hasDetail: boolean
+}
+
+/** 观测条目详情：命名数据块（详情面板按块分 Tab/分节渲染） */
+export interface InspectEntryDetail {
+  seq: number
+  /** 块名即渲染标签；json 块引擎侧已 pretty-print，text 块原样文本 */
+  blocks: Array<{ name: string; format: 'json' | 'text'; content: string }>
+}
+
 /**
  * method 注册表：键名即线上协议。新增 method = 在此加一行 + 服务端加 handler。
  */
@@ -445,6 +528,10 @@ export interface ProtocolMethods {
   'credentials.list': { params: Record<string, never>; result: CredentialsListResult }
   'models.list': { params: Record<string, never>; result: ModelsListResult }
   'providers.custom.sync': { params: ProvidersCustomSyncParams; result: ProvidersCustomSyncResult }
+  /** 控制台：拉会话的观测条目摘要（时间线数据源；ring 上限内全量，超出只留最近） */
+  'inspect.entries': { params: InspectEntriesParams; result: InspectEntriesResult }
+  /** 控制台：按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词…） */
+  'inspect.entry': { params: InspectEntryParams; result: InspectEntryDetail }
 }
 
 // ———— 事件映射（service → 宿主；骨架期先定形状，随实现细化） ————
@@ -480,4 +567,10 @@ export interface ProtocolEvents {
     kind: ToolKind
     summary: string
   }
+  /**
+   * 观测条目实时推送（控制台时间线增量）：每产生一条观测记录即推一条摘要，
+   * 详情不随流走（按需 inspect.entry）。宿主的控制台没打开也应照常接收/丢弃 ——
+   * 引擎侧记录常开，打开时经 inspect.entries 补拉历史。
+   */
+  'inspect.event': { sessionId: string; entry: InspectEntrySummary }
 }

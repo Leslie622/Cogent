@@ -19,6 +19,7 @@ import {
   IconLayoutSidebarLeftExpand,
   IconMinus,
   IconSquare,
+  IconTerminal2,
   IconX,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
@@ -77,6 +78,18 @@ export function AppHeader({
             </Button>
           ))}
         </nav>
+        {/* 运行时控制台（帮助右侧，用户定入口）：开独立 DevTools 窗口，
+            单例 —— 已开则聚焦 */}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={cn(CHROME_HOVER, 'ml-1')}
+          aria-label="打开运行时控制台"
+          title="运行时控制台"
+          onClick={() => void window.cogent.openConsole()}
+        >
+          <IconTerminal2 className="size-[18px]" />
+        </Button>
       </div>
 
       <div className="ml-auto flex items-center gap-0.5" style={NO_DRAG}>

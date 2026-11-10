@@ -43,7 +43,7 @@ import {
 import { CredentialRegistry } from './runtime/credentials'
 import { SessionManager } from './runtime/session'
 import { ProjectRegistry } from './runtime/project'
-import { JsonStorageDriver } from './storage'
+import { InspectStore, JsonStorageDriver } from './storage'
 
 /** 事件发送：service → 宿主（notification 帧） */
 function notify<E extends keyof ProtocolEvents>(method: E, params: ProtocolEvents[E]): void {
@@ -66,10 +66,12 @@ const STORAGE_ROOT = process.env.COGENT_HOME || join(homedir(), '.cogent')
 /** 引擎单例：凭据表 + 本地 JSON 存储 + 项目注册表 + 会话运行时（构造即恢复盘上数据） */
 const credentials = new CredentialRegistry()
 const storage = new JsonStorageDriver(STORAGE_ROOT)
+// 观测记录落盘（~/.cogent/inspect/*.jsonl，重启回看；构造无 I/O，惰性到会话首用）
+const inspectStore = new InspectStore(STORAGE_ROOT)
 // 装配顺序：projects 先建（无依赖），sessions 后建（构造即拿到项目引用；
 // SessionManager 对项目的使用只发生在 submit 期，无构造期回查）
 const projects = new ProjectRegistry(storage)
-const sessions = new SessionManager(credentials, storage, notify, projects)
+const sessions = new SessionManager(credentials, storage, notify, projects, inspectStore)
 
 /** 握手：宿主确认链路可用，服务上报运行时信息（宿主据此做 Node 版本守卫）。 */
 function handleInitialize(params: unknown): InitializeResult {
@@ -131,6 +133,24 @@ function handleSessionArchive(params: unknown) {
   return { summary: sessions.archive(p.sessionId, p.archived) }
 }
 
+/** inspect.entries 入口校验：sessionId 非空 string */
+function handleInspectEntries(params: unknown) {
+  const p = params as Partial<{ sessionId: unknown }>
+  if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'inspect.entries 需要 { sessionId: string }')
+  }
+  return { entries: sessions.inspectEntries(p.sessionId) }
+}
+
+/** inspect.entry 入口校验：sessionId 非空 string + seq 整数 */
+function handleInspectEntry(params: unknown) {
+  const p = params as Partial<{ sessionId: unknown; seq: unknown }>
+  if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 || typeof p.seq !== 'number' || !Number.isInteger(p.seq)) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'inspect.entry 需要 { sessionId: string, seq: number }')
+  }
+  return sessions.inspectDetail(p.sessionId, p.seq)
+}
+
 /** project.create 入口校验：name 非空 + cwds ≥1 个非空 string（首个 = 主根；
     目录存在性在提交前由宿主目录框/信任确认保证，引擎不复核磁盘 ——
     语义上存的是绑定声明，submit 时才复查） */
@@ -165,7 +185,7 @@ function handleProvidersCustomSync(params: unknown): ProvidersCustomSyncResult {
   const p = params as Partial<ProvidersCustomSyncParams>
   const defs = p.providers
   const overrides = p.overrides
-  const API_FORMATS = ['openai-completions', 'anthropic-messages'] as const
+  const API_FORMATS = ['openai-completions', 'openai-responses', 'anthropic-messages'] as const
   // ModelDef 按 unknown 逐字段收窄（id 必填非空；其余 optional 限值域）
   const isModelDef = (value: unknown): boolean => {
     if (typeof value !== 'object' || value === null) return false
@@ -251,7 +271,9 @@ const handlers = new Map<string, (params: unknown) => unknown>([
   ['credentials.set', handleCredentialsSet],
   ['credentials.list', handleCredentialsList],
   ['models.list', () => ({ models: sessions.listModels() })],
-  ['providers.custom.sync', handleProvidersCustomSync]
+  ['providers.custom.sync', handleProvidersCustomSync],
+  ['inspect.entries', handleInspectEntries],
+  ['inspect.entry', handleInspectEntry]
 ])
 
 /** 单帧处理：请求 → 响应；事件/畸形帧按协议丢弃并记诊断日志。 */

@@ -4,7 +4,8 @@
 @custom-variant dark (&:is(.dark *));
 
 /* 打包字体（assets/fonts，随应用分发，不依赖系统安装；设计方针见 AGENTS.md）：
-   英文 Inter（可变字重单文件）+ 中文 HarmonyOS Sans SC（静态 400/500/700）。
+   英文 Inter（可变字重单文件）+ 中文 HarmonyOS Sans SC（静态 400/500/700）
+   + 代码等宽 JetBrains Mono（可变字重，markdown 代码块/行内代码用，见 --font-mono）。
    字体栈 Inter 在前 —— 拉丁字符命中 Inter，CJK 回落 HarmonyOS Sans SC */
 @font-face {
   font-family: Inter;
@@ -28,6 +29,12 @@
   font-family: 'HarmonyOS Sans SC';
   src: url('./assets/fonts/HarmonyOS_Sans_SC_Bold.ttf') format('truetype');
   font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./assets/fonts/JetBrainsMonoVariable.woff2') format('woff2');
+  font-weight: 100 800;
   font-display: swap;
 }
 
@@ -113,11 +120,20 @@
   --chrome-accent: oklch(0.72 0.21 264);
 }
 
+/* Streamdown（markdown 渲染）的 Tailwind 类在包的 dist 里 —— v4 自动扫描不进
+   node_modules，显式 @source 才能让这些类（代码块 chrome、表格、链接等）生成 CSS */
+@source '../../../node_modules/streamdown/dist';
+
 @theme inline {
   /* font-sans 工具类与页面默认字体同源（见 @layer base body） */
   --font-sans:
     Inter, 'HarmonyOS Sans SC', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
     'Microsoft YaHei', sans-serif;
+  /* 代码等宽栈（markdown 代码块/行内代码）：JetBrains Mono 无 CJK 字形，
+     代码里的中文注释按字符回落到鸿蒙（等宽拉丁 + 鸿蒙 CJK 混排） */
+  --font-mono:
+    'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, 'HarmonyOS Sans SC',
+    monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -143,6 +159,9 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  /* chrome-accent 此前只有裸变量（分屏光带用）：markdown 文内链接要 text-chrome-
+     accent 工具类（UI 方针"文内链接专用色"），映射成颜色 token 才生成类 */
+  --color-chrome-accent: var(--chrome-accent);
   /* sidebar* 此前未映射：sidebar.tsx 里的 bg-sidebar 等类生成不了 CSS（侧栏透明），
      必须与上面 :root 的变量成对存在 */
   --color-sidebar: var(--sidebar);

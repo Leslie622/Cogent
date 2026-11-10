@@ -29,7 +29,9 @@ export const IPC = {
   settingsSave: 'settings:save',
   /** renderer → main：弹系统目录选择框（创建项目/工作区绑定用）；返回所选绝对路径或 null */
   workspacePickDirectory: 'workspace:pick-directory',
-  /** renderer → main：窗口控制（最小化 / 切换最大化 / 关闭）——自绘 header 专用 */
+  /** renderer → main：打开（或聚焦已开的）运行时控制台窗口 */
+  consoleOpen: 'console:open',
+  /** renderer → main：窗口控制（最小化 / 切换最大化 / 关闭）——自绘 header 专用；作用于发起窗口 */
   windowMinimize: 'window:minimize',
   windowMaximizeToggle: 'window:maximize-toggle',
   windowClose: 'window:close',

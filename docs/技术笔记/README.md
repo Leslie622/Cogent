@@ -38,3 +38,5 @@
 | [会话存储与转录持久化](session-storage.md) | 路线空位 3（StorageDriver + 本地 JSON + 惰性恢复） | 已完成（2026-11-09） |
 | [项目/工作区模型与存储根](project-workspace.md) | 计划第 2–6 步（~/.cogent 根 + 项目域 + 工作区注入） | 已完成（2026-11-09） |
 | [token 用量统计](token-usage.md) | 路线空位 1 的 usage 先行（pi Usage 投影 + 消息级统计行） | 已完成（2026-11-09） |
+| [运行时控制台](runtime-console.md) | inspect 域（pi hooks 观测 + 独立 DevTools 窗口 + 实时时间线） | 已完成（2026-11-10） |
+| [Markdown 渲染](markdown-rendering.md) | 路线空位 4 前半（Streamdown + Shiki + CJK 插件） | 已完成（2026-11-10） |

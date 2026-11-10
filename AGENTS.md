@@ -25,8 +25,9 @@
    转正：实心 Filled 变体成对选型，用前 node require 验证存在；lucide 仅存于
    shadcn 原语内部小图标）；
 3. **字体随包分发**（不依赖系统安装）：中文 **HarmonyOS Sans SC**（400/500/700）、
-   英文 **Inter**（可变字重）；文件在 `src/renderer/src/assets/fonts/`
-   （含两份 LICENSE），@font-face 见 globals.css；
+   英文 **Inter**（可变字重）、代码等宽 **JetBrains Mono**（可变字重，2026-11-10
+   随 Markdown 渲染加入，走 `--font-mono`）；文件在 `src/renderer/src/assets/fonts/`
+   （各含 LICENSE），@font-face 见 globals.css；
    **文字色一律实色 token，禁透明度文字色**（`text-x/75` 之类）—— Chromium 对
    半透明文字降级光栅化，笔画发糊发灰、叠不到深黑（2026-11-08 用户对比 ChatGPT
    发现"鸿蒙字体发虚"的根因，字形/字体文件无关）；层级靠实色深浅（次级文字用

@@ -14,7 +14,9 @@ function Slider<Value extends number | readonly number[]>({
   getThumbAriaValueText,
   ...props
 }: SliderPrimitive.Root.Props<Value> & {
-  /** 离散滑块可在轨道上显示定位点；位置仍按 min/max 计算，外观由调用处决定。 */
+  /** 离散滑块可在轨道上显示定位点；位置仍按 min/max 计算，外观（着色、
+   * 缩放、hover 反馈）全由调用处决定 —— 调用处的 [&_*] 覆写特异性更高，
+   * 原语侧若自带 hover: 变体会被压死（定位点 hover 放大失效即踩过此坑）。 */
   marks?: readonly number[]
   /** 小于等于该值的定位点落在已选区内；调用处可用 data-active 单独着色。 */
   filledThrough?: number
@@ -66,11 +68,15 @@ function Slider<Value extends number | readonly number[]>({
           {marks?.map((mark) => (
             <span
               aria-hidden="true"
-              className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-150 ease-out hover:scale-150"
+              className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full before:absolute before:-inset-2 before:content-['']"
               key={mark}
               data-active={filledThrough !== undefined && mark <= filledThrough ? "" : undefined}
               /* 标记跟随可停靠范围而非轨道边缘，避免端点圆点被 overflow 裁半。
-                 12px 对应思考力度滑块的拇指半径。 */
+                 12px 对应思考力度滑块的拇指半径。
+                 命中区：6px 圆点太小，用不可见 ::before 各向外扩 8px（22×22，
+                 相邻档位间距 ~40px 不至于互相覆盖）参与命中测试 —— 伪元素盒
+                 属于宿主元素，hover/click 落上面即落在点上；上下越出轨道的
+                 部分被 Track overflow-hidden 裁掉各 1px，无碍。 */
               style={{
                 left: `calc(12px + (100% - 24px) * ${((mark - min) / (max - min)).toFixed(4)})`,
               }}

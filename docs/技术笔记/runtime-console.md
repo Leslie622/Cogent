@@ -1,0 +1,126 @@
+# 运行时控制台（Runtime Console / inspect 域）
+
+> 对应路线项：运行时可观测（2026-11-10 落地）。独立 DevTools 窗口实时观看
+> 引擎每一步底层动作：厂商原生请求体 / SSE 分片 / 系统提示词 / 引擎轮次 / 工具执行。
+
+## 1. 问题
+
+Agent 引擎是个黑盒塔：用户一句话进去，中间隔着 **系统提示词组装 → 上下文裁剪 →
+厂商方言转换 → HTTP 往返 → 流式归一化 → 工具循环**，回复出来。学 Agent 引擎
+原理（本项目的一半目的）必须能拆开这个黑盒 —— 而且不能是"事后翻日志"，要
+**实时**：发一条消息，亲眼看第二轮请求的上下文比第一轮胖了多少、模型是在
+第几个分片决定调工具的。
+
+观测需求分层（也是控制台的 UI 分组）：
+
+| 层 | 想看什么 | 为什么 |
+| --- | --- | --- |
+| 接口层 | 发给厂商的**原生**请求体、响应头、SSE 原始分片 | "模型真正看到了什么"的最终答案在请求体里；分片流是流式生成的物理真相 |
+| 引擎层 | turn 边界、归一化后的 assistant 终态、系统提示词全文 | Agent 循环的呼吸节奏；归一化前后对照是理解 provider 适配层的关键 |
+| 工具层 | 调用参数、结果、耗时 | 工具循环闭环（Cogent 暂未注册工具，先占位） |
+| 会话层 | run 起止、总账（tokens/成本/耗时） | 一次提问的完整生命周期分组锚点 |
+
+## 2. pi 的做法（源码，v1.5.0）
+
+pi 把 LLM 调用抽象成三层，每层都留了观测口子 —— **零魔改即可截获一切**：
+
+### 2.1 provider 层 hooks（`pi-ai/dist/types.d.ts`）
+
+- `ProviderRequestOptions.onPayload`（:69）：**发送前一刻**的厂商原生请求体
+  （payload 即 SDK 要上 wire 的对象）。返回 undefined = 保留原载荷 → 纯观测
+  零副作用。实证：anthropic 适配器在 `client.beta.messages.create(params)` 前
+  一行调用（`api/anthropic-messages.js:441→447`）；
+- `onResponse`（:73）：HTTP 响应头到达、**响应体消费之前**（`ProviderResponse
+  { status, headers }`，:43）；
+- `StreamOptions.onProviderStreamEvent`（:118）：每个解析后的 provider 流事件，
+  **pi 归一化之前**（注释明言 adapter 显式支持；全部 10 个适配器都接了）。
+
+这三个 hook 正好是"接口层"三段：请求体 → 响应头 → 分片流。
+
+### 2.2 Agent 层（`pi-agent-core`）
+
+- `AgentOptions.onPayload/onResponse/onProviderStreamEvent`（`agent.d.ts:13-15`）
+  逐字段透传给每次 LLM 调用（`agent.js:312-314` 注入 loop config）—— 宿主在
+  Agent 构造时挂一次，全 session 生效；
+- `AgentEvent` 10 个 variant（`types.d.ts:461-501`）：turn/agent 边界、message
+  生命周期、tool_execution_*；`turn_end.message` 是终态 AssistantMessage，
+  带 `usage`（含 `cost.total`/`totalFromProvider`）、`stopReason` + 原生
+  `rawStopReason`、`diagnostics`、`durationMs`（monotonic 计时）；
+- `AgentState.systemPrompt`（:336）：从转录 system 消息重放的当前提示词全文。
+
+### 2.3 telemetry（有而未用）
+
+pi 还有完整的 telemetry 体系：`AI_TELEMETRY_SCHEMA`（span `pi.ai.request`，事件
+`pi.ai.first_chunk`/`pi.ai.block`，metrics duration/tokens/cost）+ `pi-telemetry`
+的 InMemoryTelemetryContext/TelemetryStore.findTraces。**内容永不记录**（schema
+设计如此）—— 它服务性能度量，不服务"看 payload"。Cogent 的控制台要的是内容，
+所以走 hooks 而非 telemetry（取舍见 §4）。
+
+## 3. 对比
+
+### DeepAgent（作者此前项目）
+
+DeepAgent 的可观测是 **print 日志 + 回调钩子**两路：loop 各阶段 `print`（带
+verbose 开关），外部经 `on_step`/`on_llm_start` 类回调拿事件。缺口与 pi 相比：
+- 回调给的是**归一化后**的事件，原生请求体/分片拿不到 —— 想看"真发了什么"
+  只能挂 proxy 抓包或读 SDK debug 日志；
+- 无时间线语义：事件是平铺流，没有 run/turn 分组锚点，UI 侧要自己拼上下文；
+- 日志与 UI 两条数据路径，控制台要的内容得另开通道。
+
+### Claude Code
+
+`--verbose` + `claude --debug` 输出结构化日志（含 API 请求摘要、tool 调用），
+配合 OTEL 导出（`CLAUDE_CODE_ENABLE_TELEMETRY=1`）。同 pi telemetry 一样偏
+度量/审计，payload 级细节只在 debug 日志里且面向终端阅读，不是结构化 UI。
+
+### OpenAI Agents SDK / LangSmith 系
+
+LangSmith 是"观测即服务"的标杆：trace 树（run 嵌套 LLM/tool 子 run）、全量
+payload 回放、成本聚合 —— 但它把观测做成**云端产品**（自托管要栈一整套），
+且 trace 上报在请求路径上（采样/延迟敏感）。Agents SDK 走 `RunItem`/`RunStats`
+流式事件，同样不透出 provider 原生层。
+
+**Cogent 的定位**：本地、零依赖、payload 级、实时 —— 相当于把 LangSmith 的
+trace 树理念做成端上 DevTools，用 pi 的 hooks 免掉了 LangSmith 需要的
+wrapper/tracing 中间层。
+
+## 4. 取舍
+
+| 决策 | 选择 | 代价与理由 |
+| --- | --- | --- |
+| 数据源 | pi hooks 直采 | 放弃 telemetry（无 payload）；hook 挂在请求路径上，观测异常不得影响对话 → inspector 尽力语义（同 persist()） |
+| 摘要/详情分离 | 时间线只收几十字节摘要（`inspect.event` 常推），大 payload 走 `inspect.entry` 按需拉 | stdio 一行一帧，几百 KB 请求体直接推会挤死正常事件；代价是详情有拉取延迟（本地进程，无感） |
+| 留存 | 内存 ring + **落盘**（2026-11-10 当日追加：用户重启后回看撞上"会话明明有记录、控制台 0 条"—— 内存先行的默认决策被实际体验推翻） | 追加式 JSONL `~/.cogent/inspect/<id>.jsonl`（每条一行 `{e,d?}`），尾部 500 条可回看、超 1200 行裁剪重写；ring 上限不变（内存 500/150、单块截断 300K 字符）；代价 = 逐条 append I/O（低频，可忽略）与每会话一个日志文件（随会话删除清理） |
+| SSE 分片 | 高频回调只攒引用，turn 边界冲刷成一条 NDJSON | 分片对象 pi 契约只读，引用安全；逐拍记条目只会淹没时间线 |
+| 记录常开 | 不开控制台也在记 | 内存常驻（可控上限）；换来"打开即回看刚才那次运行" |
+| 形态 | 独立 BrowserWindow（同 bundle + hash 路由分流） | 边聊边看（用户点名要实时）；代价是 main 事件转发从单播改广播、窗口控制按发起窗口寻址 |
+
+## 5. 在 Cogent 的落点
+
+- 协议（`src/protocol/types.ts`）：`inspect.entries` / `inspect.entry` 两 method +
+  `inspect.event` 一 event（只增不破）；`InspectEntrySummary/Detail/Kind` 三形状；
+- 引擎（`src/agent-service/runtime/inspector.ts`，新文件）：`SessionInspector`
+  ring 记录器（构造吃落盘尾部 seed：seq/run 接续历史编号，重启后 Run #4 不归零）；
+  `session.ts` 注入 —— `createAgent` 挂三 hooks（onPayload/onResponse/
+  onProviderStreamEvent），`translateEvent` 旁路记 turn/tool/run 条目，
+  `submit` 记 run.started + 系统提示词；记录器惰性建（构造要读落盘文件，
+  启动期全量恢复会白吃内存）；
+- 落盘（`src/agent-service/storage/inspect-store.ts`，新文件）：追加式 JSONL，
+  为什么不走 StorageDriver：文档集合是"整文档读写"（转录同模式），观测是逐条
+  高频产生，append 才无写放大；尽力语义（失败只记 stderr 不挡对话）；
+- 壳（`src/electron/main/ipc/console.ts`，新文件）：控制台窗口单例管理 +
+  `console:open`；`ipc/engine.ts` 白名单 +2 method、事件转发改 `BrowserWindow.
+  getAllWindows()` 广播；`ipc/window.ts` 改按 `event.sender` 寻址（两窗口共用
+  窗口控制）；preload 增 `openConsole`；
+- renderer（`src/renderer/src/features/console/`，新目录）：`main.tsx` 按
+  `location.hash === '#console'` 分流到 `ConsoleApp`（自绘 header + [会话侧栏 |
+  时间线 | 详情] 两级可拖分栏）；`stores/console.ts` 事件驱动 store；
+  `kinds.ts` 呈现映射（图标/分层/学习注释 —— 每类条目一句"这是什么"）；
+- 入口：主窗口 header 帮助右侧控制台按钮（`AppHeader.tsx`）。
+
+冒烟：`/tmp/cogent-smoke/inspect-smoke.mjs`（mock SSE 端点，13 项断言两阶段：
+①单引擎全链路——条目序列/seq 单调/详情拉取/在册无详情回空块/key 不泄漏/环形
+丢弃报错；②双引擎重启回环——观测记录落盘回看、seq/run 编号接续、详情随盘回读）。
+另外两起用户报告的修复同日落地：无详情条目（run.started/completed）点开曾吃到
+"不存在"错误帧（store 未按 hasDetail 拦拉取 + 晚到错误全局覆盖当前选中——竞态
+把红字盖在别的条目上）；控制台整窗 select-text（学习内容要能随手复制）。
