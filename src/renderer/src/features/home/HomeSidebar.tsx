@@ -16,7 +16,7 @@
  * 布局手法：行 = 相对定位容器（hover 底色 + group），主点击区是占满的 button，
  * 动作钮 absolute 贴其右 —— 避免 button 嵌 button（非法结构）。
  */
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   IconArchive,
@@ -104,7 +104,9 @@ function EmptyHint({ text }: { text: string }) {
  * 聊天行：indent 区分层级（项目子项=true 缩进对齐父级文字）；actions 可换右侧
  * hover 钮簇（默认 [置顶 + 归档]，置顶按 pinnedAt 二态切换图标）
  */
-/** memo：展开/收起一个项目时 HomeSidebar 全量重渲染，其余行 props 未变即跳过 */
+/** memo：展开/收起一个项目时 HomeSidebar 全量重渲染，其余行 props 未变即跳过。
+    回调全部是 id 签名（父组件 useCallback 稳定引用）—— 若父组件传内联箭头
+    包住行 id，浅比较每次必败，memo 形同虚设（本注释承诺的优化从未生效过的教训） */
 const ChatRow = memo(function ChatRow({
   chat,
   active,
@@ -117,10 +119,11 @@ const ChatRow = memo(function ChatRow({
   chat: SessionSummary
   active: boolean
   indent: boolean
-  onSelect: () => void
-  onTogglePin: () => void
+  onSelect: (chatId: string) => void
+  /** 置顶二值切换；目标态由行内计算（chat.pinnedAt 在场 = 当前已置顶） */
+  onTogglePin: (chatId: string, pinned: boolean) => void
   /** 归档（回收站语义）：会话从主列表消失，设置页「已归档的聊天」可恢复/删除 */
-  onArchive: () => void
+  onArchive: (chatId: string) => void
   actions?: ReactNode
 }) {
   return (
@@ -138,7 +141,7 @@ const ChatRow = memo(function ChatRow({
         type="button"
         className="flex min-w-0 flex-1 items-center gap-1.5 pr-12 text-[13px] text-foreground"
         aria-current={active ? 'true' : undefined}
-        onClick={onSelect}
+        onClick={() => onSelect(chat.id)}
       >
         <span className="truncate">{chat.title}</span>
       </button>
@@ -150,7 +153,7 @@ const ChatRow = memo(function ChatRow({
               size="icon-xs"
               className={ACTION_BUTTON}
               aria-label={chat.pinnedAt ? '取消置顶' : '置顶聊天'}
-              onClick={onTogglePin}
+              onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}
             >
               {chat.pinnedAt ? <IconPinFilled className="size-4" /> : <IconPin className="size-4" />}
             </Button>
@@ -161,7 +164,7 @@ const ChatRow = memo(function ChatRow({
               size="icon-xs"
               className={ACTION_BUTTON}
               aria-label="归档聊天"
-              onClick={onArchive}
+              onClick={() => onArchive(chat.id)}
             >
               <IconArchive className="size-4" />
             </Button>
@@ -172,8 +175,10 @@ const ChatRow = memo(function ChatRow({
   )
 })
 
-/** 项目行 + 展开态的子会话行；文件夹图标旋转过渡（同 svg，不替换实例） */
+/** 项目行 + 展开态的子会话行；文件夹图标旋转过渡（同 svg，不替换实例）。
+    回调同为 id 签名 + 父组件稳定引用（memo 生效前提，同 ChatRow 注释） */
 const ProjectRow = memo(function ProjectRow({
+  projectId,
   projectName,
   chats,
   expanded,
@@ -186,21 +191,28 @@ const ProjectRow = memo(function ProjectRow({
   onTogglePin,
   pinned
 }: {
+  projectId: string
   projectName: string
   /** 该项目下的会话（chat store 按 projectId 过滤） */
   chats: SessionSummary[]
   expanded: boolean
   activeSessionId: string | null
-  onToggle: () => void
-  onSelectSession: (id: string) => void
-  onStartChat: () => void
-  onDeleteProject: () => void
-  /** 子会话归栁（回收站语义，下传给 ChatRow） */
+  onToggle: (projectId: string) => void
+  onSelectSession: (chatId: string) => void
+  onStartChat: (projectId: string) => void
+  onDeleteProject: (projectId: string) => void
+  /** 子会话归档（回收站语义，下传给 ChatRow） */
   onArchiveChat: (chatId: string) => void
   /** 项目置顶/取消（菜单项接线） */
-  onTogglePin: () => void
+  onTogglePin: (projectId: string) => void
   pinned: boolean
 }) {
+  // 子会话置顶回调：行内 useCallback —— ProjectRow 自身少渲染，但真渲染时
+  // 也不能让全部子 ChatRow 因新闭包而陪跑
+  const handleToggleChatPin = useCallback((chatId: string, next: boolean) => {
+    void useChatStore.getState().setPinned(chatId, next)
+  }, [])
+
   return (
     <>
       <div className={cn('group relative flex h-8 items-center rounded-md px-2', ROW_HOVER)}>
@@ -208,7 +220,7 @@ const ProjectRow = memo(function ProjectRow({
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 pr-12 text-[13px] text-foreground"
           aria-expanded={expanded}
-          onClick={onToggle}
+          onClick={() => onToggle(projectId)}
         >
           {/* 文件夹开/合两形态（IconFolder/IconFolderOpen，恢复此前语义）+
               CrossFade：两个 svg 叠放，透明度交叉渐变 150ms —— 不回到三元
@@ -239,7 +251,7 @@ const ProjectRow = memo(function ProjectRow({
               <IconDots className="size-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" sideOffset={2}>
-              <DropdownMenuItem onClick={onTogglePin}>
+              <DropdownMenuItem onClick={() => onTogglePin(projectId)}>
                 {pinned ? <IconPinFilled className="size-[17px]" /> : <IconPin className="size-[17px]" />}
                 {pinned ? '取消置顶' : '置顶'}
               </DropdownMenuItem>
@@ -255,7 +267,7 @@ const ProjectRow = memo(function ProjectRow({
                 <IconArchive className="size-[17px]" />
                 归档聊天
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={onDeleteProject}>
+              <DropdownMenuItem onClick={() => onDeleteProject(projectId)}>
                 <IconTrash className="size-[17px]" />
                 移除项目
               </DropdownMenuItem>
@@ -266,7 +278,7 @@ const ProjectRow = memo(function ProjectRow({
             size="icon-xs"
             className={ACTION_BUTTON}
             aria-label="新建聊天"
-            onClick={onStartChat}
+            onClick={() => onStartChat(projectId)}
           >
             <IconMessagePlus className="size-4" />
           </Button>
@@ -287,9 +299,9 @@ const ProjectRow = memo(function ProjectRow({
                 chat={chat}
                 active={activeSessionId === chat.id}
                 indent
-                onSelect={() => onSelectSession(chat.id)}
-                onArchive={() => onArchiveChat(chat.id)}
-                onTogglePin={() => void useChatStore.getState().setPinned(chat.id, !chat.pinnedAt)}
+                onSelect={onSelectSession}
+                onArchive={onArchiveChat}
+                onTogglePin={handleToggleChatPin}
               />
             ))
           ) : (
@@ -325,11 +337,16 @@ export function HomeSidebar() {
   const session = useHomeStore((s) => s.session)
   const startNewChat = useHomeStore((s) => s.startNewChat)
 
-  /** 行点击 = 真选中（chat.selectSession）+ 视图态对齐（kind:'chat'） */
-  const openSession = (chatId: string) => {
-    void selectSession(chatId)
-    useHomeStore.setState({ session: { kind: 'chat', chatId } })
-  }
+  /** 行点击 = 真选中（chat.selectSession）+ 视图态对齐（kind:'chat'）。
+      动作回调一律 useCallback（依赖只有 store action 稳定引用）：这是
+      ChatRow/ProjectRow memo 生效的前提 —— 内联闭包会让浅比较每次必败 */
+  const openSession = useCallback(
+    (chatId: string) => {
+      void selectSession(chatId)
+      useHomeStore.setState({ session: { kind: 'chat', chatId } })
+    },
+    [selectSession]
+  )
 
   // project store 初载（chat store 由 App 挂载时 load；项目此前无入口，这里补）
   useEffect(() => {
@@ -384,38 +401,59 @@ export function HomeSidebar() {
   // 复用 —— 否则连点 N 次新聊天就攒 N 个「新会话」垃圾；空会话复用到它发出
   // 首条消息为止。带 projectId = 项目内发起（继承项目 cwd）；项目场景不复用
   // 非本项目会话（挂错归属），但可复用同项目下的空会话
-  const startNew = (projectId?: string) => {
-    const state = useChatStore.getState()
-    const active = state.sessions.find((s) => s.id === state.activeSessionId)
-    const activeIsEmpty =
-      active !== undefined &&
-      (state.messagesBySession[active.id]?.length ?? 0) === 0 &&
-      active.title === '新会话' && // 双保险：转录空 + 标题未命名（防投影延迟误判）
-      (projectId === undefined ? active.projectId === undefined : active.projectId === projectId)
-    if (!activeIsEmpty) {
-      void createSession(projectId !== undefined ? { projectId } : undefined)
-    }
-    startNewChat(projectId)
-  }
+  const startNew = useCallback(
+    (projectId?: string) => {
+      const state = useChatStore.getState()
+      const active = state.sessions.find((s) => s.id === state.activeSessionId)
+      const activeIsEmpty =
+        active !== undefined &&
+        (state.messagesBySession[active.id]?.length ?? 0) === 0 &&
+        active.title === '新会话' && // 双保险：转录空 + 标题未命名（防投影延迟误判）
+        (projectId === undefined ? active.projectId === undefined : active.projectId === projectId)
+      if (!activeIsEmpty) {
+        void createSession(projectId !== undefined ? { projectId } : undefined)
+      }
+      startNewChat(projectId)
+    },
+    [createSession, startNewChat]
+  )
 
   /** 归档（回收站语义）：归档的活动会话 → 视图落 kind:'new'（chat store 内已处理） */
-  const archiveChat = (chatId: string) => {
+  const archiveChat = useCallback((chatId: string) => {
     void useChatStore.getState().archive(chatId, true)
-  }
+  }, [])
 
-  /** 项目置顶/取消（project store 接引擎；移动语义由分区渲染实现） */
-  const toggleProjectPin = (projectId: string) => {
-    const target = projects.find((p) => p.id === projectId)
-    void setPinnedProject(projectId, target?.pinnedAt === undefined)
-  }
+  /** 会话置顶二值切换（id 签名直传 ChatRow） */
+  const toggleChatPin = useCallback((chatId: string, pinned: boolean) => {
+    void useChatStore.getState().setPinned(chatId, pinned)
+  }, [])
 
-  const toggleProject = (id: string) =>
+  /** 删除项目（不级联删会话，引擎 delete 语义）；id 签名直传 ProjectRow */
+  const deleteProject = useCallback(
+    (projectId: string) => {
+      void removeProject(projectId)
+    },
+    [removeProject]
+  )
+
+  /** 项目置顶/取消（project store 接引擎；移动语义由分区渲染实现）。
+      查找走 getState 快照而非闭包捕获 projects —— 依赖数组少一项，引用更稳定 */
+  const toggleProjectPin = useCallback(
+    (projectId: string) => {
+      const target = useProjectStore.getState().projects.find((p) => p.id === projectId)
+      void setPinnedProject(projectId, target?.pinnedAt === undefined)
+    },
+    [setPinnedProject]
+  )
+
+  const toggleProject = useCallback((id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return next
     })
+  }, [])
 
   return (
     <div className="flex h-full flex-col">
@@ -471,16 +509,17 @@ export function HomeSidebar() {
                 {pinnedProjects.map((project) => (
                   <ProjectRow
                     key={project.id}
+                    projectId={project.id}
                     projectName={project.name}
                     chats={byProject(project.id)}
                     expanded={expanded.has(project.id)}
                     activeSessionId={session.kind === 'chat' ? session.chatId : null}
-                    onToggle={() => toggleProject(project.id)}
+                    onToggle={toggleProject}
                     onSelectSession={openSession}
-                    onStartChat={() => startNew(project.id)}
-                    onDeleteProject={() => void removeProject(project.id)}
+                    onStartChat={startNew}
+                    onDeleteProject={deleteProject}
                     onArchiveChat={archiveChat}
-                    onTogglePin={() => toggleProjectPin(project.id)}
+                    onTogglePin={toggleProjectPin}
                     pinned
                   />
                 ))}
@@ -490,9 +529,9 @@ export function HomeSidebar() {
                     chat={chat}
                     active={session.kind === 'chat' && session.chatId === chat.id}
                     indent={false}
-                    onSelect={() => openSession(chat.id)}
-                    onArchive={() => archiveChat(chat.id)}
-                    onTogglePin={() => void useChatStore.getState().setPinned(chat.id, !chat.pinnedAt)}
+                    onSelect={openSession}
+                    onArchive={archiveChat}
+                    onTogglePin={toggleChatPin}
                   />
                 ))}
               </>
@@ -529,16 +568,17 @@ export function HomeSidebar() {
               listedProjects.map((project) => (
                 <ProjectRow
                   key={project.id}
+                  projectId={project.id}
                   projectName={project.name}
                   chats={byProject(project.id)}
                   expanded={expanded.has(project.id)}
                   activeSessionId={session.kind === 'chat' ? session.chatId : null}
-                  onToggle={() => toggleProject(project.id)}
+                  onToggle={toggleProject}
                   onSelectSession={openSession}
-                  onStartChat={() => startNew(project.id)}
-                  onDeleteProject={() => void removeProject(project.id)}
+                  onStartChat={startNew}
+                  onDeleteProject={deleteProject}
                   onArchiveChat={archiveChat}
-                  onTogglePin={() => toggleProjectPin(project.id)}
+                  onTogglePin={toggleProjectPin}
                   pinned={project.pinnedAt !== undefined}
                 />
               ))
@@ -579,9 +619,9 @@ export function HomeSidebar() {
                   chat={chat}
                   active={session.kind === 'chat' && session.chatId === chat.id}
                   indent={false}
-                  onSelect={() => openSession(chat.id)}
-                  onArchive={() => archiveChat(chat.id)}
-                  onTogglePin={() => void useChatStore.getState().setPinned(chat.id, !chat.pinnedAt)}
+                  onSelect={openSession}
+                  onArchive={archiveChat}
+                  onTogglePin={toggleChatPin}
                 />
               ))
             ) : (

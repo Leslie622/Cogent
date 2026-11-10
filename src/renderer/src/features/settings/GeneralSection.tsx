@@ -95,9 +95,9 @@ export function GeneralSection() {
           desc="在项目外发起的聊天，其数据的默认存储位置。"
         >
           <div className="flex items-center gap-3">
-            <span className="max-w-52 truncate text-xs text-muted-foreground">
-              C:\Users\41631\...\Documents\Cogent
-            </span>
+            {/* 中性占位（真值 = ~/.cogent，存储根 D1；后续件接目录选择时替换）。
+                不得硬编码开发机路径 —— 那是作者机器的用户名，泄漏进用户 UI */}
+            <span className="max-w-52 truncate text-xs text-muted-foreground">~/.cogent</span>
             <SecondaryAction label="更改" />
           </div>
         </SettingsRow>
