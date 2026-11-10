@@ -174,7 +174,7 @@ function EntryRow({
         </span>
         <span className={`size-1.5 shrink-0 rounded-full ${dot}`} />
         <Icon className="size-[15px] shrink-0 text-muted-foreground" />
-        <span className="shrink-0 text-[13px]">{entry.title}</span>
+        <span className="min-w-0 truncate text-[13px]">{entry.title}</span>
         {summary !== '' && (
           <span className="min-w-0 truncate text-[12px] text-muted-foreground">{summary}</span>
         )}

@@ -119,7 +119,19 @@ export class AgentServiceManager {
       HANDSHAKE_TIMEOUT_MS,
       '引擎握手'
     )
-    const info = await handshake // 进程先退/出错时 pending 已被拒绝，这里自然抛出
+    // 握手失败（超时/进程秒退/发回错误帧）必须收尾：杀子进程 + 拒绝在途请求 +
+    // 落 failed 态。不清理的话超时路径会留下孤儿进程且 status 永卡 'starting'
+    // （另一条对照路径：版本守卫失败在下方 catch 里已做同样收尾）
+    let info
+    try {
+      info = await handshake
+    } catch (error) {
+      // stop() 默认落 'stopped'（正常关停语义），这里是失败路径：显式改写 failed
+      // + 错误信息（与下方版本守卫失败路径的收尾姿势一致）
+      this.stop()
+      this.status = { state: 'failed', nodeVersion: null, error: (error as Error).message }
+      throw error
+    }
 
     try {
       ensureNodeVersion(info.node, MIN_NODE)

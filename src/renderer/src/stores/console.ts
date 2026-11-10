@@ -24,6 +24,10 @@ interface ConsoleState {
   follow: boolean
   /** sessionId → 是否正在 run（run.started 置位、completed/failed 复位；侧栏呼吸点） */
   runningBySession: Partial<Record<string, boolean>>
+  /** load 是否在途（去重用：主窗口新会话首跑的事件风暴会并发触发几十次 load） */
+  loading: boolean
+  /** 初载失败的原因（引擎不可用等；ConsoleApp 呈现）。null = 正常 */
+  loadError: string | null
 
   load: () => Promise<void>
   selectSession: (sessionId: string) => Promise<void>
@@ -44,14 +48,26 @@ export const useConsoleStore = create<ConsoleState>((set, get) => ({
   layers: { api: true, engine: true, tool: true, session: true },
   follow: true,
   runningBySession: {},
+  loading: false,
+  loadError: null,
 
   load: async () => {
-    const sessions = await window.cogent.engineRequest('session.list', {})
-    set({ sessions })
-    // 默认选中最近活跃会话（updatedAt 倒序第一个）；空列表 = 主窗口还没有对话
-    const latest = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).at(0)
-    if (latest !== undefined && get().sessionId === null) {
-      await get().selectSession(latest.id)
+    // in-flight 去重：事件风暴下"未知会话"分支每条事件触发一次 load，幂等但
+    // 每次都是一个 session.list 往返 —— 在途时直接跳过
+    if (get().loading) return
+    set({ loading: true })
+    try {
+      const sessions = await window.cogent.engineRequest('session.list', {})
+      set({ sessions, loadError: null })
+      // 默认选中最近活跃会话（updatedAt 倒序第一个）；空列表 = 主窗口还没有对话
+      const latest = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).at(0)
+      if (latest !== undefined && get().sessionId === null) {
+        await get().selectSession(latest.id)
+      }
+    } catch (error) {
+      set({ loadError: error instanceof Error ? error.message : String(error) })
+    } finally {
+      set({ loading: false })
     }
   },
 
@@ -60,7 +76,13 @@ export const useConsoleStore = create<ConsoleState>((set, get) => ({
     const { entries } = await window.cogent.engineRequest('inspect.entries', { sessionId })
     // 异步竞态守卫：切换期间用户又选了别的会话，晚到的响应丢弃（真条件，非摆设）
     if (get().sessionId !== sessionId) return
-    set({ entries })
+    // 初载快照与实时事件赛跑：事件（webContents.send）可能先于响应（invoke 往返）
+    // 到达并已 append —— 不能用较旧的快照整体覆盖，按 seq 单调性归并取并集
+    set((state) => {
+      if (state.entries.length === 0) return { entries }
+      const lastSeq = state.entries[state.entries.length - 1].seq
+      return { entries: [...state.entries, ...entries.filter((e) => e.seq > lastSeq)] }
+    })
   },
 
   applyEntry: (sessionId, entry) => {
@@ -97,11 +119,13 @@ export const useConsoleStore = create<ConsoleState>((set, get) => ({
     if (sessionId === null) return
     try {
       const detail = await window.cogent.engineRequest('inspect.entry', { sessionId, seq })
-      // 竞态守卫：拉取期间切换了条目/会话，晚到详情只入缓存不覆盖新选中态
+      // 会话维度竞态守卫：拉取期间切换了会话，晚到详情丢弃 —— seq 是会话内
+      // 单调编号，跨会话同 seq 是常态，入缓存会把旧会话的数据写给新会话
+      if (get().sessionId !== sessionId) return
       set((state) => ({ details: { ...state.details, [seq]: detail } }))
     } catch (error) {
-      // 同上：本条的失败只归本条 —— 用户已点开别的条目时不覆盖新选中态的展示
-      if (get().selectedSeq !== seq) return
+      // 本条的失败只归本条 —— 用户已点开别的条目/切换会话时不覆盖新选中态的展示
+      if (get().selectedSeq !== seq || get().sessionId !== sessionId) return
       set({ detailError: error instanceof Error ? error.message : String(error) })
     }
   },

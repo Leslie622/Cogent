@@ -6,8 +6,8 @@
 import { create } from 'zustand'
 import type { CustomProviderDef, CustomProvidersPayload, ModelSummary, ProviderOverrideDef, ThinkingLevelWithOff } from '@/env.d'
 
-/** 默认选中模型（与引擎侧 SessionManager 的 DEFAULT_MODEL 一致） */
-const DEFAULT_MODEL = 'claude-sonnet-4-5'
+/** 思考档位全序（off + 六档）：偏好回填的值域校验与"就近取整"共用 */
+const THINKING_ORDER: readonly ThinkingLevelWithOff[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
 /**
  * 常用内置 provider 的显示名册（模型下拉分组/设置页卡片共用）。
@@ -49,6 +49,8 @@ interface EngineState {
   /** 推理力度（pi ThinkingLevel；随 agent.submit 下发） */
   thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   loaded: boolean
+  /** 引擎链路失败的原因（load 失败时；App 横幅呈现 + 重试入口）。null = 正常 */
+  engineError: string | null
   load: () => Promise<void>
   refreshKeys: () => Promise<void>
   refreshModels: () => Promise<void>
@@ -77,21 +79,30 @@ function toOverrideMap(payload: CustomProvidersPayload): Record<string, Provider
 /**
  * 会话级偏好（选中模型/思考力度）的宿主侧持久化：落 ~/.cogent/settings.json
  * （main 写，计划 D2 单写者分工——壳配置归 main）。引擎重启/应用重启都从这里
- * 回填；字段只增，读失败/文件缺失走默认值（首次启动常态，不报错）。
+ * 回填；无文件/损坏由 main 归一为默认值返回，这里不再包 catch —— 真实故障
+ * （IPC 未注册等）应炸给 load → engineError 横幅（约定.md 1.2-1 吞错反模式）。
  */
 interface AppSettings {
   activeModelId?: string
   activeProviderId?: string
-  thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  thinkingLevel?: string
 }
 
-/** 载入落盘偏好（main 读 settings.json；无文件/损坏返回 {} 走默认） */
+/** 载入落盘偏好；thinkingLevel 做值域归一（未来版本的档位/手改文件按缺省处理，偏好可再生） */
 async function loadSettings(): Promise<AppSettings> {
-  try {
-    return await window.cogent.getSettings()
-  } catch {
-    return {}
+  const file = await window.cogent.getSettings()
+  return {
+    activeModelId: file.activeModelId,
+    activeProviderId: file.activeProviderId,
+    thinkingLevel: file.thinkingLevel
   }
+}
+
+function normalizeThinkingLevel(value: string | undefined): EngineState['thinkingLevel'] {
+  if (value === undefined) return 'off'
+  return (THINKING_ORDER as readonly string[]).includes(value)
+    ? (value as EngineState['thinkingLevel'])
+    : 'off'
 }
 
 export const useEngineStore = create<EngineState>((set, get) => ({
@@ -99,39 +110,50 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   keyConfigured: {},
   customProviders: [],
   overrides: {},
-  activeModelId: DEFAULT_MODEL,
+  activeModelId: '',
   activeProviderId: null,
   thinkingLevel: 'off',
   loaded: false,
+  engineError: null,
 
+  // 失败落 engineError（App 横幅 + 重试），不再裸抛成 unhandled rejection
   load: async () => {
-    const [modelsResult, keyStatus, customPayload, settings] = await Promise.all([
-      window.cogent.engineRequest('models.list', {}),
-      window.cogent.listApiKeys(),
-      window.cogent.getCustomProviders(),
-      loadSettings()
-    ])
-    const keys = toKeyMap(keyStatus)
-    set({
-      models: modelsResult.models,
-      keyConfigured: keys,
-      customProviders: customPayload.providers,
-      overrides: toOverrideMap(customPayload),
-      // 偏好回填：落盘的模型可能已不在目录（改名/删除）→ 校验一次再落
-      activeModelId: settings.activeModelId ?? DEFAULT_MODEL,
-      activeProviderId: settings.activeProviderId ?? null,
-      thinkingLevel: settings.thinkingLevel ?? 'off',
-      loaded: true
-    })
-    // 引擎（重）启动后定义清零：把宿主落盘的定义推回去（引擎 running 才有效；失败不阻塞首屏）
     try {
-      await window.cogent.engineRequest('providers.custom.sync', {
-        providers: customPayload.providers,
-        overrides: customPayload.overrides
+      const [modelsResult, keyStatus, customPayload, settings] = await Promise.all([
+        window.cogent.engineRequest('models.list', {}),
+        window.cogent.listApiKeys(),
+        window.cogent.getCustomProviders(),
+        loadSettings()
+      ])
+      const keys = toKeyMap(keyStatus)
+      // 默认模型随 models.list 回带（协议 additive）：不再 renderer 侧复制
+      // DEFAULT_MODEL 常量 —— 无机制保证一致，漂移后回填偏好指向不可用模型
+      const defaultModel = modelsResult.defaultModel ?? {
+        provider: null as string | null,
+        id: modelsResult.models[0]?.id ?? ''
+      }
+      set({
+        models: modelsResult.models,
+        keyConfigured: keys,
+        customProviders: customPayload.providers,
+        overrides: toOverrideMap(customPayload),
+        // 偏好回填：落盘的模型可能已不在目录（改名/删除）→ 校验一次再落
+        activeModelId: settings.activeModelId ?? defaultModel.id,
+        activeProviderId: settings.activeProviderId ?? defaultModel.provider,
+        thinkingLevel: normalizeThinkingLevel(settings.thinkingLevel),
+        loaded: true,
+        engineError: null
       })
-      await get().refreshModels()
-    } catch {
-      // 引擎未就绪（启动中/失败）：定义已落盘，下次 load 再推
+      // 引擎（重）启动后定义清零：把宿主落盘的定义经唯一写路径重推
+      // （setCustomProviders = 落盘 + 推引擎合一；providers.custom.sync 已退出
+      // renderer 白名单，防"盘上不变、引擎内存态被直改"的分叉）。starting 期
+      // 请求会在引擎 stdin 排队、握手后作答，不因"还没 running"失败
+      if (customPayload.providers.length > 0 || customPayload.overrides.length > 0) {
+        await window.cogent.setCustomProviders(customPayload.providers, customPayload.overrides)
+        await get().refreshModels()
+      }
+    } catch (error) {
+      set({ engineError: error instanceof Error ? error.message : String(error), loaded: false })
     }
   },
 
@@ -182,19 +204,19 @@ export const useEngineStore = create<EngineState>((set, get) => ({
 
 /**
  * 力度就近取整：目标档不被支持时，先向更高档找、再向低档找（宁多想不少想，
- * 与 pi clampThinkingLevel 的"就近可用"语义一致）。
+ * 与 pi clampThinkingLevel 的"就近可用"语义一致）。调用点保证 supported 非空，
+ * 全序遍历必命中 —— 不可达出口直接 throw（兜底返回 'off' 会掩盖非法状态，约定 1.2-6）。
  */
 function nearestThinkingLevel(level: ThinkingLevelWithOff, supported: ThinkingLevelWithOff[]): ThinkingLevelWithOff {
   if (supported.includes(level)) return level
-  const ORDER: ThinkingLevelWithOff[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
-  const from = ORDER.indexOf(level)
-  for (let d = 1; d < ORDER.length; d++) {
-    const higher = ORDER.at(from + d)
+  const from = THINKING_ORDER.indexOf(level)
+  for (let d = 1; d < THINKING_ORDER.length; d++) {
+    const higher = THINKING_ORDER.at(from + d)
     if (higher !== undefined && supported.includes(higher)) return higher
-    const lower = ORDER.at(from - d)
+    const lower = THINKING_ORDER.at(from - d)
     if (lower !== undefined && supported.includes(lower)) return lower
   }
-  return 'off'
+  throw new Error('unreachable: supported 档位为空或不含任何已知档位')
 }
 
 /**

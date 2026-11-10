@@ -11,12 +11,25 @@
  * 分叉（用户改了旧文件却"不生效"是排障噩梦）。搬失败（磁盘/权限）抛给调用方，
  * 不静默：静默降级意味着 key 凭空消失。
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 export function storageRoot(): string {
   return process.env.COGENT_HOME || join(homedir(), '.cogent')
+}
+
+/**
+ * 原子覆盖写：先写同目录临时文件再 rename（Node 在 Windows 上带
+ * MOVEFILE_REPLACE_EXISTING，同卷原子）。凭据/偏好/自定义 provider 全走此写法 ——
+ * 直接 writeFileSync 覆盖目标，进程在写入中途崩溃/断电会留下截断文件，而截断的
+ * credentials.json 在下次启动只能按损坏处理（key 全丢）。引擎侧 JsonStorageDriver
+ * 有同款实现：main 与引擎按架构不共享代码（依赖方向 main → protocol），两份各自维护。
+ */
+export function writeFileAtomic(path: string, content: string): void {
+  const tmp = `${path}.tmp`
+  writeFileSync(tmp, content, 'utf-8')
+  renameSync(tmp, path)
 }
 
 /** 确保根目录存在（各 store 落盘前调用） */

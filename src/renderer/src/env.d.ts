@@ -27,10 +27,14 @@ declare global {
       onEngineEvent: (callback: (event: EngineEvent) => void) => () => void
       /** 写入 API key（safeStorage 落盘 + 推引擎；明文只此一路出 renderer） */
       setApiKey: (providerId: string, apiKey: string) => Promise<{ ok: true }>
+      /** 删除单条 API key（壳侧落盘移除 + 引擎内存表移除；清 key 的正路） */
+      removeApiKey: (providerId: string) => Promise<{ ok: true }>
       /** 读单个 provider 的 key 明文（设置页全量回显；无记录返回空串） */
       getApiKey: (providerId: string) => Promise<string>
       /** 查询 key 配置状态（providerId + keyConfigured 布尔位） */
       listApiKeys: () => Promise<Array<{ providerId: string; keyConfigured: boolean }>>
+      /** 凭据链路健康状态（启动期降级的 UI 呈现源；error 为 null = 健康） */
+      getCredentialsStatus: () => Promise<{ error: string | null }>
       /** 读自定义 provider 定义（含内置 provider 的 baseUrl 覆盖；定义不含 key） */
       getCustomProviders: () => Promise<CustomProvidersPayload>
       /** 全量写自定义 provider 定义（落盘 + 引擎 running 时推 sync） */
@@ -42,10 +46,10 @@ declare global {
       pickDirectory: () => Promise<string | null>
       /** 打开（或聚焦已开的）运行时控制台窗口 */
       openConsole: () => Promise<void>
-      /** 读会话级偏好（选中模型/思考力度）；无文件返回 {} */
-      getSettings: () => Promise<{ activeModelId?: string; thinkingLevel?: import('@/env.d').ThinkingLevel }>
+      /** 读会话级偏好（选中模型/思考力度）；形状与 shared/ipc.ts 的 SettingsFile 镜像 */
+      getSettings: () => Promise<AppSettingsFile>
       /** 写会话级偏好（字段合并） */
-      saveSettings: (partial: { activeModelId?: string; thinkingLevel?: string }) => Promise<{ ok: true }>
+      saveSettings: (partial: Partial<Omit<AppSettingsFile, 'version'>>) => Promise<{ ok: true }>
       /** 窗口控制（自绘 header 专用） */
       minimizeWindow: () => Promise<void>
       toggleMaximizeWindow: () => Promise<void>
@@ -56,7 +60,8 @@ declare global {
   }
 }
 
-/** 引擎方法名（renderer 可触达的子集；全量见 src/protocol/types.ts ProtocolMethods） */
+/** 引擎方法名（renderer 可触达的子集；白名单在 main 侧 ipc/engine.ts 收窄 ——
+    providers.custom.sync 已退出：自定义 provider 的写路径只有 custom-providers:set） */
 export type EngineMethod =
   | 'session.list'
   | 'session.create'
@@ -74,9 +79,19 @@ export type EngineMethod =
   | 'agent.abort'
   | 'credentials.list'
   | 'models.list'
-  | 'providers.custom.sync'
   | 'inspect.entries'
   | 'inspect.entry'
+
+/**
+ * 会话级偏好文件形状（与 shared/ipc.ts SettingsFile 镜像；preload 侧同源导出）。
+ * 版本字段由 main 维护，renderer 只读写业务字段。
+ */
+export interface AppSettingsFile {
+  version: 1
+  activeModelId?: string
+  activeProviderId?: string
+  thinkingLevel?: string
+}
 
 /** 会话摘要（与 protocol SessionSummary 镜像；optional 字段=未设置） */
 export interface SessionSummary {
@@ -120,10 +135,6 @@ export interface EngineMethodParams {
   'agent.abort': { sessionId: string }
   'credentials.list': Record<string, never>
   'models.list': Record<string, never>
-  'providers.custom.sync': {
-    providers: CustomProviderDef[]
-    overrides: Array<{ providerId: string; baseUrl: string }>
-  }
   'inspect.entries': { sessionId: string }
   'inspect.entry': { sessionId: string; seq: number }
 }
@@ -145,8 +156,7 @@ export interface EngineMethodResult {
   'agent.submit': { accepted: true }
   'agent.abort': { aborted: boolean }
   'credentials.list': { providers: ProviderSummary[] }
-  'models.list': { models: ModelSummary[] }
-  'providers.custom.sync': { synced: number }
+  'models.list': { models: ModelSummary[]; defaultModel?: { provider: string; id: string } }
   'inspect.entries': { entries: InspectEntrySummary[] }
   'inspect.entry': InspectEntryDetail
 }

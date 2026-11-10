@@ -219,6 +219,11 @@ const DEFAULT_PROVIDER = 'anthropic'
 
 export class SessionManager {
   private sessions = new Map<string, Session>()
+  /**
+   * Agent → sessionId 反查表：pi 事件回调只带 agent 引用，逐事件线性扫 sessions
+   * 是流式热路径（每个 delta 一次 O(N)）——建 Agent 时登记、删除时撤销，O(1) 直取
+   */
+  private agentIndex = new Map<Agent, string>()
   private streaming = new Map<string, StreamingState>()
   private models: MutableModels
   private customProviders: CustomProviderRegistry
@@ -238,11 +243,20 @@ export class SessionManager {
     this.customProviders = new CustomProviderRegistry(this.models)
     this.customProviders.snapshotBuiltin()
     // 启动恢复：只拉摘要（惰性重建，见 Session.agent / Session.inspector 注释）。
-    // 磁盘损坏在驱动 get 处已 throw；形状不合法（老版本盘数据/手改）在此报错，
-    // 静默跳过会丢用户会话（约定.md §1.1 持久化读取行）
+    // 损坏（截断/手改/旧版本形状）逐文件隔离：报错 + 改名 .corrupt 旁置 + 继续
+    // 恢复其余会话 —— 单文件损坏若任其炸构造器，引擎进程拒启 = 全部会话陪葬，
+    // 这超出了约定.md §1.1「报错而非静默重建」的立法本意（可见性保留：stderr
+    // 诊断 + 旁置文件可查，且该会话确实不加载 = 不静默重建）
     for (const id of this.storage.ids(SESSION_COLLECTION)) {
-      const doc = asStoredSession(this.storage.get(SESSION_COLLECTION, id), id)
-      this.sessions.set(doc.summary.id, { summary: doc.summary, transcript: doc.transcript })
+      try {
+        const doc = asStoredSession(this.storage.get(SESSION_COLLECTION, id), id)
+        this.sessions.set(doc.summary.id, { summary: doc.summary, transcript: doc.transcript })
+      } catch (error) {
+        this.storage.quarantine(SESSION_COLLECTION, id)
+        process.stderr.write(
+          `[agent-service] 会话文档损坏已隔离（sessions/${id}.json → .corrupt）: ${(error as Error).message}\n`
+        )
+      }
     }
   }
 
@@ -339,6 +353,7 @@ export class SessionManager {
     const session = this.sessions.get(sessionId)
     if (!session) return false
     session.agent?.abort()
+    if (session.agent) this.agentIndex.delete(session.agent)
     this.sessions.delete(sessionId)
     this.streaming.delete(sessionId)
     this.storage.delete(SESSION_COLLECTION, sessionId)
@@ -347,10 +362,15 @@ export class SessionManager {
     return true
   }
 
-  /** 会话消息转录（session.messages 响应）：pi Message[] → ChatMessage[] */
+  /**
+   * 会话消息转录（session.messages 响应）：pi Message[] → ChatMessage[]。
+   * 只读路径不实例化 Agent：Agent 存在时取它的实时 state.messages（运行中含
+   * 进行时消息），否则直接投影持久转录（transcript 是回合边界同步过的真源）——
+   * 为读消息建一个带 hooks/订阅的完整 Agent 是纯浪费
+   */
   messages(sessionId: string): ChatMessage[] {
     const session = this.requireSession(sessionId)
-    return this.toChatMessages(this.ensureAgent(session).state.messages)
+    return this.toChatMessages(session.agent ? session.agent.state.messages : session.transcript)
   }
 
   // ———— 运行时控制台（inspect 域后端）————
@@ -374,20 +394,23 @@ export class SessionManager {
   // ———— 模型目录 ————
 
   /** pi catalog → 协议模型摘要（UI 下拉数据源；key 配置状态在 credentials.list 单独查） */
-  listModels(): ModelSummary[] {
-    return this.models.getModels().map((m) => ({
-      id: m.id,
-      name: m.name,
-      provider: m.provider,
-      reasoning: m.reasoning,
-      // pi 按端点标定的 thinkingLevelMap 判定真实可用档（含 'off'）——
-      // UI 滑杆据此渲染/置灰，切模型据此 clamp，杜绝静默降级
-      thinkingLevels: getSupportedThinkingLevels(m),
-      contextWindow: m.contextWindow,
-      maxTokens: m.maxTokens,
-      // 目录原生 vs 用户添加（默认模型 UI 锁 id 的判定源，见 isUserDefined 注释）
-      userDefined: this.customProviders.isUserDefined(m.provider, m.id)
-    }))
+  listModels(): { models: ModelSummary[]; defaultModel: { provider: string; id: string } } {
+    return {
+      defaultModel: { provider: DEFAULT_PROVIDER, id: DEFAULT_MODEL },
+      models: this.models.getModels().map((m) => ({
+        id: m.id,
+        name: m.name,
+        provider: m.provider,
+        reasoning: m.reasoning,
+        // pi 按端点标定的 thinkingLevelMap 判定真实可用档（含 'off'）——
+        // UI 滑杆据此渲染/置灰，切模型据此 clamp，杜绝静默降级
+        thinkingLevels: getSupportedThinkingLevels(m),
+        contextWindow: m.contextWindow,
+        maxTokens: m.maxTokens,
+        // 目录原生 vs 用户添加（默认模型 UI 锁 id 的判定源，见 isUserDefined 注释）
+        userDefined: this.customProviders.isUserDefined(m.provider, m.id)
+      }))
+    }
   }
 
   /** 某模型的 provider 是否已配 key（renderer 据此置灰下拉项） */
@@ -471,6 +494,7 @@ export class SessionManager {
   disposeAll(): void {
     for (const session of this.sessions.values()) session.agent?.abort()
     this.sessions.clear()
+    this.agentIndex.clear()
     this.streaming.clear()
   }
 
@@ -483,18 +507,20 @@ export class SessionManager {
   }
 
   /**
-   * 惰性重建 pi Agent：首次使用（submit/messages/abort）才实例化并灌持久转录。
+   * 惰性重建 pi Agent：首次使用（submit/abort）才实例化并灌持久转录。
    * 恢复的会话若启动即全量实例化，会话多了启动就慢、且不使用的会话白占内存。
    * initialState.messages 带完整历史 → 下一轮请求模型可见全部上下文（保真恢复）。
+   * （messages() 不走这里：只读路径直接投影 transcript，不建 Agent —— 见其注释。）
    */
   private ensureAgent(session: Session): Agent {
     if (session.agent) return session.agent
-    // 记录器经 thunk 惰性解析：messages() 也会建 Agent（仅为读转录），此时不该
-    // 顺带载入观测文件；hooks 只在 prompt() 期间触发，那时 submit 已建好记录器
+    // 记录器经 thunk 惰性解析：hooks 只在 prompt() 期间触发，那时 submit 已建好
+    // 记录器，载入观测文件的时机正确
     const agent = this.createAgent(session.transcript, this.workspaceRoots(session), () =>
       this.ensureInspector(session)
     )
     session.agent = agent
+    this.agentIndex.set(agent, session.summary.id)
     return agent
   }
 
@@ -655,12 +681,9 @@ export class SessionManager {
     }
   }
 
-  /** Agent 实例反查会话 id（事件回调只带 agent 引用） */
+  /** Agent 实例反查会话 id（事件回调只带 agent 引用；O(1) 查反查表，见 agentIndex） */
   private findSessionId(agent: Agent): string | undefined {
-    for (const [id, session] of this.sessions) {
-      if (session.agent === agent) return id
-    }
-    return undefined
+    return this.agentIndex.get(agent)
   }
 
   /** pi Message[] → ChatMessage[]：取 user/assistant 的纯文本内容 + assistant 用量三件套投影 */
@@ -670,7 +693,9 @@ export class SessionManager {
       // pi Message 联合类型按 role 收窄；system 消息是 prompt 载体，不对 UI 暴露
       if (message.role === 'user') {
         result.push({
-          id: `u-${message.timestamp}`,
+          // 位置式 id（同 assistant 的 a-N 手法）：timestamp 在同一毫秒内可撞
+          // （React key 重复），投影位置在单写者下稳定且跨加载不变
+          id: `u-${result.length}`,
           role: 'user',
           content: typeof message.content === 'string' ? message.content : message.content.map((block) => (block.type === 'text' ? block.text : '')).join(''),
           timestamp: message.timestamp

@@ -9,13 +9,20 @@
  * - safeStorage 不可用（Linux 无 keyring 等）直接抛错 —— 静默降级成明文存储
  *   是安全事故，不是兼容性优化。
  *
+ * 损坏降级（2026-11-10，架构审查 P0 修复）：文件损坏/跨机器恢复（Windows DPAPI
+ * 密文与机器绑定，~/.cogent 整目录搬到新机器必然解密失败）不再炸应用启动 ——
+ * 那样窗口和 IPC 都起不来，用户连"重输 key"的入口都没有。改为：降级为空表 +
+ * 把错误暴露给 credentials:status（UI 呈现引导重置），下一次成功 write 即用
+ * 全新合法文件覆盖旧损坏文件。错误可见（status + 日志），恢复是用户显式动作，
+ * 不属于约定.md §1.1 禁止的"静默重建"。
+ *
  * 文件格式：<storageRoot>/credentials.json（~/.cogent，2026-11-09 迁入，见 storage-root.ts）
  *   { version: 1, providers: { [providerId]: { apiKey: <base64 密文> } } }
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, safeStorage } from 'electron'
-import { storageRoot, ensureRoot, migrateFromUserData } from '../storage-root'
+import { storageRoot, ensureRoot, migrateFromUserData, writeFileAtomic } from '../storage-root'
 
 const FILE_VERSION = 1
 
@@ -56,23 +63,34 @@ function decryptAll(): Map<string, { apiKey: string }> {
   return result
 }
 
-function encryptAll(providers: Map<string, { apiKey: string }>): void {
-  ensureRoot()
-  const encrypted: Record<string, { apiKey: string }> = {}
-  for (const [providerId, { apiKey }] of providers) {
-    encrypted[providerId] = { apiKey: safeStorage.encryptString(apiKey).toString('base64') }
-  }
-  const file: CredentialFile = { version: FILE_VERSION, providers: encrypted }
-  writeFileSync(filePath(), JSON.stringify(file, null, 2), 'utf-8')
-}
-
 export class CredentialStore {
   /** 进程内明文副本：启动时读一次，之后读写都走内存 + 落盘，避免反复解密整个文件 */
   private cache: Map<string, { apiKey: string }> | null = null
+  /** 凭据链路的启动期故障（文件损坏/safeStorage 不可用）；null = 健康。见文件头"损坏降级" */
+  private startupError: string | null = null
 
   private ensureLoaded(): Map<string, { apiKey: string }> {
-    if (!this.cache) this.cache = decryptAll()
+    if (this.cache) return this.cache
+    try {
+      this.cache = decryptAll()
+    } catch (error) {
+      // 降级不炸启动：空表 + 错误进 status（UI 引导重置），成功 write 覆盖后自愈
+      this.startupError = (error as Error).message
+      console.error('[main] credential store degraded:', this.startupError)
+      this.cache = new Map()
+    }
     return this.cache
+  }
+
+  /** 凭据链路健康状态（credentials:status 响应）；error 为 null = 正常 */
+  status(): { error: string | null } {
+    this.ensureLoaded()
+    return { error: this.startupError }
+  }
+
+  /** 记录启动期探测到的故障（assertAvailable 失败等，main/index.ts 调用） */
+  noteStartupError(message: string): void {
+    this.startupError = message
   }
 
   /** safeStorage 可用性守卫：引擎握手前调用，失败要挡在"写文件"之前 */
@@ -102,14 +120,28 @@ export class CredentialStore {
   }
 
   write(providerId: string, apiKey: string): void {
+    this.assertAvailable()
     const providers = this.ensureLoaded()
     providers.set(providerId, { apiKey })
-    encryptAll(providers)
+    this.encryptAll(providers)
+    // 落盘成功 = 之前的损坏文件已被全新合法文件覆盖，降级态解除
+    this.startupError = null
   }
 
   remove(providerId: string): void {
     const providers = this.ensureLoaded()
     providers.delete(providerId)
-    encryptAll(providers)
+    this.encryptAll(providers)
+  }
+
+  private encryptAll(providers: Map<string, { apiKey: string }>): void {
+    ensureRoot()
+    const encrypted: Record<string, { apiKey: string }> = {}
+    for (const [providerId, { apiKey }] of providers) {
+      encrypted[providerId] = { apiKey: safeStorage.encryptString(apiKey).toString('base64') }
+    }
+    const file: CredentialFile = { version: FILE_VERSION, providers: encrypted }
+    // 原子写：写入中途崩溃留下的是完整旧文件而非截断新文件（见 storage-root.writeFileAtomic）
+    writeFileAtomic(filePath(), JSON.stringify(file, null, 2))
   }
 }

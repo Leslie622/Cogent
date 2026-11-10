@@ -11,7 +11,7 @@
  * get 校验 JSON 可解析、损坏报错而非静默重建（与 credentials/store.ts 同口径）；
  * 集合名/id 由引擎代码产生（非外部输入），不在驱动层重复校验（边界内裸奔）。
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { StorageDriver, StoredDocument } from './driver'
 
@@ -21,7 +21,7 @@ export class JsonStorageDriver implements StorageDriver {
   ids(collection: string): string[] {
     const dir = this.collectionDir(collection)
     if (!existsSync(dir)) return []
-    // 文件名即 id（<id>.json）；只收 .json，忽略手工放进来的杂物
+    // 文件名即 id（<id>.json）；只收 .json，忽略手工放进来的杂物与旁置的 .corrupt
     return readdirSync(dir)
       .filter((file) => file.endsWith('.json'))
       .map((file) => file.slice(0, -'.json'.length))
@@ -43,13 +43,29 @@ export class JsonStorageDriver implements StorageDriver {
     const dir = this.collectionDir(collection)
     // 惰性建目录：空库不预创建任何结构，首写才落盘
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, `${id}.json`), JSON.stringify(document))
+    // 原子替换：先写同目录临时文件再 rename 覆盖（Node 在 Windows 上带
+    // MOVEFILE_REPLACE_EXISTING，同卷原子）。直接 writeFileSync 覆盖目标，
+    // 进程在写入中途崩溃/断电会留下截断文件 —— 而截断的会话文件在启动恢复
+    // 处只能被隔离，等于丢掉整个会话，这是必须堵住的写放大代价之外的真风险
+    const file = this.documentPath(collection, id)
+    const tmp = `${file}.tmp`
+    writeFileSync(tmp, JSON.stringify(document))
+    renameSync(tmp, file)
   }
 
   delete(collection: string, id: string): boolean {
     const file = this.documentPath(collection, id)
     if (!existsSync(file)) return false
     rmSync(file)
+    return true
+  }
+
+  quarantine(collection: string, id: string): boolean {
+    const file = this.documentPath(collection, id)
+    if (!existsSync(file)) return false
+    // 改名而非删除：现场保留给用户手工检查/抢救（报错信息里有路径），
+    // .corrupt 后缀同时保证下次 ids() 不再把它当文档加载
+    renameSync(file, `${file}.corrupt`)
     return true
   }
 

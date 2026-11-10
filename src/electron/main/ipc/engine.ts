@@ -11,7 +11,12 @@ import { IPC } from '../../../shared/ipc'
 import type { ProtocolMethods } from '../../../protocol'
 import type { IpcDeps } from './index'
 
-/** renderer 可触达的引擎方法白名单（approval.respond 等宿主侧裁决不在此列） */
+/**
+ * renderer 可触达的引擎方法白名单（approval.respond 等宿主侧裁决不在此列）。
+ * 注意 providers.custom.sync 不在白名单：自定义 provider 的写路径只有
+ * custom-providers:set 一条（壳落盘 + 推引擎），若 renderer 还能经本通道直推
+ * 引擎内存态，会出现"盘上不变、引擎重启回滚"的状态分叉。
+ */
 const ALLOWED_METHODS = new Set<string>([
   'session.list',
   'session.create',
@@ -29,7 +34,6 @@ const ALLOWED_METHODS = new Set<string>([
   'agent.abort',
   'credentials.list',
   'models.list',
-  'providers.custom.sync',
   'inspect.entries',
   'inspect.entry'
 ])
@@ -53,9 +57,12 @@ export function registerEngineIpc({ service }: IpcDeps): void {
   // 广播到全部窗口（主窗口消费聊天事件，控制台窗口消费 inspect 域）——
   // 各窗口按 method 自行取舍，main 不做按窗口分发
   service.setEventSink((rpcEvent) => {
-    // 诊断日志：帧截到 200 字符——run.completed 的 message.content 是整段回复，
-    // 全量打印会淹没终端；流式 delta 已足够观察回复内容
-    console.log('[main] engine event:', JSON.stringify(rpcEvent).slice(0, 200))
+    // 诊断日志：帧截到 200 字符（run.completed 的 message.content 是整段回复，
+    // 全量打印会淹没终端）。message.delta 与 inspect.event 是逐 token/逐条目
+    // 高频帧，流式期间每秒数十条，不滤会把终端刷爆且 JSON.stringify 白烧主进程
+    if (rpcEvent.method !== 'message.delta' && rpcEvent.method !== 'inspect.event') {
+      console.log('[main] engine event:', JSON.stringify(rpcEvent).slice(0, 200))
+    }
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send(IPC.engineEvent, rpcEvent)
     }

@@ -162,7 +162,11 @@ export interface ChatMessage {
   timestamp: number
 }
 
-/** provider 摘要：凭据状态用布尔位表达，key 明文永远不出引擎（安全边界） */
+/**
+ * provider 摘要：凭据状态用布尔位表达，key 明文不出**引擎**（引擎协议侧边界）。
+ * 注意全链路口径（2026-11-08 产品决策）：壳侧另有 credentials:get 按 provider
+ * 单取明文供设置页回显 —— 引擎不回流 ≠ 宿主不回流，两侧边界勿混。
+ */
 export interface ProviderSummary {
   id: string
   name: string
@@ -202,21 +206,6 @@ export type ToolKind = 'read' | 'write' | 'exec' | 'network'
 export type PermissionMode = 'auto' | 'ask' | 'plan'
 
 // ———— 方法映射：method 名 → 参数/结果 ————
-
-export interface InitializeParams {
-  /** 宿主标识，如 'cogent-main' / 'legacy-electron22' / 'smoke-test' */
-  client: string
-  /** 宿主实现的协议版本 */
-  protocolVersion: number
-}
-
-export interface InitializeResult {
-  service: string
-  /** 服务实现的协议版本 */
-  protocolVersion: number
-  /** 服务运行时的 Node 版本，宿主据此做版本守卫 */
-  node: string
-}
 
 export interface InitializeParams {
   /** 宿主标识，如 'cogent-main' / 'legacy-electron22' / 'smoke-test' */
@@ -273,6 +262,18 @@ export interface CredentialsSetResult {
   ok: true
 }
 
+/**
+ * 删除单条凭据（credentials.remove，2026-11-10 additive）：此前引擎内存表只有
+ * set 没有 remove —— 宿主删 key 只能写空串冒充（壳判"未配置"、引擎判"已配置(空)"
+ * 的语义分裂）。删除 = 引擎内存表移除 + 宿主各自处理自己的持久化。
+ */
+export interface CredentialsRemoveParams {
+  providerId: string
+}
+export interface CredentialsRemoveResult {
+  ok: true
+}
+
 /** provider id → 是否已配 key（不含 key 明文，见 ProviderSummary 注释） */
 export interface CredentialsListResult {
   providers: ProviderSummary[]
@@ -280,6 +281,12 @@ export interface CredentialsListResult {
 
 export interface ModelsListResult {
   models: ModelSummary[]
+  /**
+   * 引擎侧的默认模型（provider + id 双键，2026-11-10 additive）：宿主用它替代
+   * 自己复制一份默认模型常量 —— 复制无机制保证一致，漂移后回填偏好会指向
+   * 不可用模型。老引擎缺省 = 宿主自行取 models[0]。
+   */
+  defaultModel?: { provider: string; id: string }
 }
 
 export interface SessionMessagesParams {
@@ -525,6 +532,7 @@ export interface ProtocolMethods {
   'agent.abort': { params: { sessionId: string }; result: { aborted: boolean } }
   'approval.respond': { params: ApprovalRespondParams; result: ApprovalRespondResult }
   'credentials.set': { params: CredentialsSetParams; result: CredentialsSetResult }
+  'credentials.remove': { params: CredentialsRemoveParams; result: CredentialsRemoveResult }
   'credentials.list': { params: Record<string, never>; result: CredentialsListResult }
   'models.list': { params: Record<string, never>; result: ModelsListResult }
   'providers.custom.sync': { params: ProvidersCustomSyncParams; result: ProvidersCustomSyncResult }

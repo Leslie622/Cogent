@@ -27,8 +27,11 @@ export interface StoredDocument {
  * 存储驱动接口：文档集合的 CRUD。
  * 语义约定：
  * - get/list 对"不存在"返回 null/[]（首次启动空库是常态，不是错误）；
- * - put 是整文档覆盖写（无 patch 语义）——会话转录本就是全量替换；
+ * - put 是整文档覆盖写（无 patch 语义）——会话转录本就是全量替换；写法为
+ *   原子替换（临时文件 + rename），进程崩溃/断电不会留下截断的半文件；
  * - delete 对不存在的 id 返回 false（幂等），存在且删除返回 true；
+ * - quarantine：把损坏文档改名旁置（<id>.json → <id>.json.corrupt），供启动
+ *   恢复"逐文件隔离"用 —— 单文件损坏只损失该文件，不炸整个引擎启动；
  * - 同步 API：本地 JSON 的读写是毫秒级，异步化只会把调用方拖进无谓的 Promise 链。
  */
 export interface StorageDriver {
@@ -40,4 +43,6 @@ export interface StorageDriver {
   put(collection: string, id: string, document: StoredDocument): void
   /** 删除文档；返回是否真的删了（不存在 = false） */
   delete(collection: string, id: string): boolean
+  /** 损坏文档旁置（启动恢复隔离用）；返回是否真的改名了（不存在 = false） */
+  quarantine(collection: string, id: string): boolean
 }

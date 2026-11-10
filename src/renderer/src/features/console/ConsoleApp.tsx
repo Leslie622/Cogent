@@ -35,6 +35,7 @@ export function ConsoleApp() {
 
   const sessions = useConsoleStore((s) => s.sessions)
   const sessionId = useConsoleStore((s) => s.sessionId)
+  const loadError = useConsoleStore((s) => s.loadError)
   const active = sessions.find((s) => s.id === sessionId)
 
   return (
@@ -82,6 +83,16 @@ export function ConsoleApp() {
           </Button>
         </div>
       </header>
+
+      {/* 初载失败横幅（引擎不可用）：控制台是学习/排障窗口，静默空白最不可接受 */}
+      {loadError !== null && (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/5 px-4 py-2">
+          <p className="text-[13px] text-destructive">会话列表加载失败：{loadError}</p>
+          <Button variant="outline" size="xs" onClick={() => void useConsoleStore.getState().load()}>
+            重试
+          </Button>
+        </div>
+      )}
 
       {/* 主体：会话侧栏 + [时间线 | 详情]（两组可拖分栏，同首页标签页区手法） */}
       <div className="min-h-0 flex-1">

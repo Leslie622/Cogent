@@ -8,11 +8,11 @@
  * 文件：<storageRoot>/custom-providers.json（~/.cogent，2026-11-09 迁入，见 storage-root.ts）
  *   { version: 1, providers: CustomProviderDef[], overrides: ProviderOverrideDef[] }
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { CustomProviderDef, ProviderOverrideDef } from '../../../protocol'
-import { storageRoot, ensureRoot, migrateFromUserData } from '../storage-root'
+import { storageRoot, ensureRoot, migrateFromUserData, writeFileAtomic } from '../storage-root'
 
 const FILE_VERSION = 1
 
@@ -66,6 +66,7 @@ export class CustomProvidersStore {
   writeAll(providers: CustomProviderDef[], overrides: ProviderOverrideDef[]): void {
     ensureRoot()
     this.cache = { version: FILE_VERSION, providers, overrides }
-    writeFileSync(filePath(), JSON.stringify(this.cache, null, 2), 'utf-8')
+    // 原子写（同 credentials/settings）：截断的定义文件在下次启动只能按损坏报错
+    writeFileAtomic(filePath(), JSON.stringify(this.cache, null, 2))
   }
 }

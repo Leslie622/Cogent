@@ -35,8 +35,13 @@ function Slider<Value extends number | readonly number[]>({
       : [min, max]
 
   return (
+    // 方向变体必须写 data-[orientation=horizontal]: 而不是 data-horizontal:：
+    // Base UI 渲染的属性是 data-orientation="horizontal"（state key 直出），
+    // Tailwind 的 data-horizontal: 只匹配属性"存在性"（[data-horizontal]），
+    // 永远不命中 —— 轨道 h-2 / w-full 会整条失效（高度塌 0 → 轨道隐身，
+    // 2026-11-10 上下文窗口滑杆踩响；ThinkingSlider 当时靠自覆写 h-5 掩埋）。
     <SliderPrimitive.Root
-      className={cn("data-horizontal:w-full data-vertical:h-full", className)}
+      className={cn("data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full", className)}
       data-slot="slider"
       defaultValue={defaultValue}
       value={value}
@@ -51,7 +56,7 @@ function Slider<Value extends number | readonly number[]>({
           overflow-hidden 负责。 */}
       <SliderPrimitive.Control
         data-slot="slider-control"
-        className="relative flex w-full touch-none items-center select-none data-disabled:opacity-50 data-vertical:h-full data-vertical:min-h-40 data-vertical:w-auto data-vertical:flex-col"
+        className="relative flex w-full touch-none items-center select-none data-disabled:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-40 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col"
       >
         {/* 轨道宽度必须与 Control 一致（不用负 margin 出血）：edge-client-only
             （inset）模式下 Base UI 的滑块中心行程、Indicator 百分比全按 Control
@@ -59,11 +64,11 @@ function Slider<Value extends number | readonly number[]>({
             端点定位点压到边缘被裁半。 */}
         <SliderPrimitive.Track
           data-slot="slider-track"
-          className="relative grow overflow-hidden rounded-full bg-input/90 select-none data-horizontal:h-2 data-horizontal:w-full data-vertical:h-full data-vertical:w-2"
+          className="relative grow overflow-hidden rounded-full bg-input/90 select-none data-[orientation=horizontal]:h-2 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-2"
         >
           <SliderPrimitive.Indicator
             data-slot="slider-range"
-            className={cn('bg-primary select-none data-horizontal:h-full data-vertical:w-full', fillClassName)}
+            className={cn('bg-primary select-none data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full', fillClassName)}
           />
           {marks?.map((mark) => (
             <span
@@ -93,7 +98,7 @@ function Slider<Value extends number | readonly number[]>({
             key={index}
             aria-label={thumbAriaLabel}
             getAriaValueText={getThumbAriaValueText}
-            className="block h-4 w-6 shrink-0 rounded-full bg-white shadow-md ring-1 ring-black/10 transition-[color,box-shadow,background-color,inset-inline-start,transform] select-none not-dark:bg-clip-padding hover:ring-4 hover:ring-ring/30 focus-visible:ring-4 focus-visible:ring-ring/30 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 data-vertical:h-6 data-vertical:w-4"
+            className="block h-4 w-6 shrink-0 rounded-full bg-white shadow-md ring-1 ring-black/10 transition-[color,box-shadow,background-color,inset-inline-start,transform] select-none not-dark:bg-clip-padding hover:ring-4 hover:ring-ring/30 focus-visible:ring-4 focus-visible:ring-ring/30 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 data-[orientation=vertical]:h-6 data-[orientation=vertical]:w-4"
           />
         ))}
       </SliderPrimitive.Control>

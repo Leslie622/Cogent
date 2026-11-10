@@ -101,6 +101,16 @@ function handleCredentialsSet(params: unknown): { ok: true } {
   return { ok: true }
 }
 
+/** credentials.remove 入口校验：providerId 非空 string */
+function handleCredentialsRemove(params: unknown): { ok: true } {
+  const p = params as Partial<{ providerId: unknown }>
+  if (typeof p.providerId !== 'string' || p.providerId.length === 0) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'credentials.remove 需要 { providerId: string }')
+  }
+  credentials.delete(p.providerId)
+  return { ok: true }
+}
+
 /** credentials.list：provider 摘要（keyConfigured 布尔位，key 明文不出引擎） */
 function handleCredentialsList(): CredentialsListResult {
   return { providers: credentials.summaries() }
@@ -131,6 +141,79 @@ function handleSessionArchive(params: unknown) {
     throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.archive 需要 { sessionId: string, archived: boolean }')
   }
   return { summary: sessions.archive(p.sessionId, p.archived) }
+}
+
+/** session.create 入口校验：三个 optional 字段带了就必须是非空 string。
+    逐字段独立守卫（不用 || 复合）—— TS 的控制流分析只在独立 if 里窄化类型 */
+function handleSessionCreate(params: unknown) {
+  const p = params as Partial<{ title: unknown; cwd: unknown; projectId: unknown }>
+  if (p.title !== undefined && typeof p.title !== 'string') {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.create 的 title 必须是 string')
+  }
+  if (p.cwd !== undefined && (typeof p.cwd !== 'string' || p.cwd.length === 0)) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.create 的 cwd 必须是非空 string')
+  }
+  if (p.projectId !== undefined && (typeof p.projectId !== 'string' || p.projectId.length === 0)) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.create 的 projectId 必须是非空 string')
+  }
+  return sessions.create({ title: p.title, cwd: p.cwd, projectId: p.projectId })
+}
+
+/** session.delete 入口校验：sessionId 非空 string */
+function handleSessionDelete(params: unknown) {
+  const p = params as Partial<{ sessionId: unknown }>
+  if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.delete 需要 { sessionId: string }')
+  }
+  return { deleted: sessions.delete(p.sessionId) }
+}
+
+/** project.delete 入口校验：projectId 非空 string */
+function handleProjectDelete(params: unknown) {
+  const p = params as Partial<{ projectId: unknown }>
+  if (typeof p.projectId !== 'string' || p.projectId.length === 0) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'project.delete 需要 { projectId: string }')
+  }
+  return { deleted: projects.delete(p.projectId) }
+}
+
+/** project.setPinned 入口校验：projectId 非空 string + pinned 布尔。
+    pinned 不校验会被 if(pinned) 当 false 静默取消置顶 —— 兜底掩盖非法状态（约定.md 1.2-6） */
+function handleProjectSetPinned(params: unknown) {
+  const p = params as Partial<{ projectId: unknown; pinned: unknown }>
+  if (typeof p.projectId !== 'string' || p.projectId.length === 0 || typeof p.pinned !== 'boolean') {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'project.setPinned 需要 { projectId: string, pinned: boolean }')
+  }
+  return { summary: projects.setPinned(p.projectId, p.pinned) }
+}
+
+/** agent.submit 入口校验：sessionId/text 必填非空；model/provider/thinkingLevel 带了就约束值域。
+    optional 字段逐个独立守卫（TS 控制流只在独立 if 里窄化，复合 || 不窄化） */
+function handleAgentSubmit(params: unknown) {
+  const p = params as Partial<{ sessionId: unknown; text: unknown; model: unknown; provider: unknown; thinkingLevel: unknown }>
+  const THINKING_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+  if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 || typeof p.text !== 'string' || p.text.length === 0) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'agent.submit 需要 { sessionId: string, text: string }')
+  }
+  if (p.model !== undefined && typeof p.model !== 'string') {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'agent.submit 的 model 必须是 string')
+  }
+  if (p.provider !== undefined && typeof p.provider !== 'string') {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'agent.submit 的 provider 必须是 string')
+  }
+  if (p.thinkingLevel !== undefined && typeof p.thinkingLevel !== 'string') {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'agent.submit 的 thinkingLevel 必须是 string')
+  }
+  if (p.thinkingLevel !== undefined && !(THINKING_LEVELS as readonly string[]).includes(p.thinkingLevel)) {
+    throw new ProtocolError(
+      RpcErrorCode.InvalidParams,
+      `agent.submit 的 thinkingLevel 必须是 ${THINKING_LEVELS.join('|')} 之一`
+    )
+  }
+  // 受理后 LLM 循环在 submit 内部异步执行，进度走事件流。这里不能拿掉同步调用
+  // 改成 fire-and-forget 的 promise：异步拒绝会绕过 dispatch 的 try/catch 崩掉引擎
+  sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel, p.provider)
+  return { accepted: true as const }
 }
 
 /** inspect.entries 入口校验：sessionId 非空 string */
@@ -242,11 +325,8 @@ function handleProvidersCustomSync(params: unknown): ProvidersCustomSyncResult {
 const handlers = new Map<string, (params: unknown) => unknown>([
   ['initialize', handleInitialize],
   ['session.list', () => sessions.list()],
-  ['session.create', (params) => {
-    const p = params as { title?: string; cwd?: string; projectId?: string }
-    return sessions.create({ title: p.title, cwd: p.cwd, projectId: p.projectId })
-  }],
-  ['session.delete', (params) => ({ deleted: sessions.delete((params as { sessionId: string }).sessionId) })],
+  ['session.create', handleSessionCreate],
+  ['session.delete', handleSessionDelete],
   ['session.messages', handleSessionMessages],
   ['session.setPinned', handleSessionSetPinned],
   ['session.archive', handleSessionArchive],
@@ -254,23 +334,14 @@ const handlers = new Map<string, (params: unknown) => unknown>([
   ['project.list', () => projects.list()],
   ['project.create', handleProjectCreate],
   ['project.rename', handleProjectRename],
-  ['project.delete', (params) => ({ deleted: projects.delete((params as { projectId: string }).projectId) })],
-  ['project.setPinned', (params) => {
-    const p = params as { projectId: string; pinned: boolean }
-    return { summary: projects.setPinned(p.projectId, p.pinned) }
-  }],
-  ['agent.submit', (params) => {
-    const p = params as { sessionId: string; text: string; model?: string; provider?: string; thinkingLevel?: string }
-    // submit 内部同步校验（会话存在/空闲），失败 throw → dispatch 转错误帧；
-    // 受理后 LLM 循环在 submit 内部异步执行，进度走事件流。这里不能拿掉同步调用
-    // 改成 fire-and-forget 的 promise：异步拒绝会绕过 dispatch 的 try/catch 崩掉引擎
-    sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel, p.provider)
-    return { accepted: true as const }
-  }],
+  ['project.delete', handleProjectDelete],
+  ['project.setPinned', handleProjectSetPinned],
+  ['agent.submit', handleAgentSubmit],
   ['agent.abort', (params) => ({ aborted: sessions.abort((params as { sessionId: string }).sessionId) })],
   ['credentials.set', handleCredentialsSet],
+  ['credentials.remove', handleCredentialsRemove],
   ['credentials.list', handleCredentialsList],
-  ['models.list', () => ({ models: sessions.listModels() })],
+  ['models.list', () => sessions.listModels()],
   ['providers.custom.sync', handleProvidersCustomSync],
   ['inspect.entries', handleInspectEntries],
   ['inspect.entry', handleInspectEntry]

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, type AppStatus, type ApiKeyStatus } from '../../shared/ipc'
+import { IPC, type AppStatus, type ApiKeyStatus, type CredentialsStatus, type SettingsFile } from '../../shared/ipc'
 import type { CustomProviderDef, ProviderOverrideDef, ProtocolMethods, RpcEvent } from '../../protocol'
 
 /** 引擎事件帧：RpcEvent（method + params），renderer 侧按 method 分发 */
@@ -34,12 +34,19 @@ const api = {
   setApiKey: (providerId: string, apiKey: string): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.credentialsSet, { providerId, apiKey }),
 
+  /** 删除单条 API key（壳侧落盘移除 + 引擎内存表移除；清 key 的正路） */
+  removeApiKey: (providerId: string): Promise<{ ok: true }> =>
+    ipcRenderer.invoke(IPC.credentialsRemove, { providerId }),
+
   /** 读单个 provider 的 key 明文（设置页全量回显用；无记录返回空串） */
   getApiKey: (providerId: string): Promise<string> =>
     ipcRenderer.invoke(IPC.credentialsGet, { providerId }),
 
   /** 查询 key 配置状态（只回 providerId + keyConfigured 布尔位） */
   listApiKeys: (): Promise<ApiKeyStatus[]> => ipcRenderer.invoke(IPC.credentialsList),
+
+  /** 凭据链路健康状态（启动期降级的 UI 呈现源；error 为 null = 健康） */
+  getCredentialsStatus: (): Promise<CredentialsStatus> => ipcRenderer.invoke(IPC.credentialsStatus),
 
   /** 读自定义 provider 定义（含内置 provider 的 baseUrl 覆盖） */
   getCustomProviders: (): Promise<CustomProvidersPayload> => ipcRenderer.invoke(IPC.customProvidersGet),
@@ -48,13 +55,15 @@ const api = {
   setCustomProviders: (providers: CustomProvidersPayload['providers'], overrides: CustomProvidersPayload['overrides']): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.customProvidersSet, { providers, overrides }),
 
-  /** 弹系统目录选择框（创建项目用）；用户取消返回 null */  /** 读会话级偏好（选中模型/思考力度）；无文件返回 {} */
-  getSettings: (): Promise<Record<string, unknown>> => ipcRenderer.invoke(IPC.settingsGet),
+  /** 读会话级偏好（选中模型/思考力度）；形状见 shared/ipc.ts 的 SettingsFile */
+  getSettings: (): Promise<SettingsFile> => ipcRenderer.invoke(IPC.settingsGet),
+  /** 写会话级偏好（字段合并） */
+  saveSettings: (partial: Partial<Omit<SettingsFile, 'version'>>): Promise<{ ok: true }> =>
+    ipcRenderer.invoke(IPC.settingsSave, partial),
   /** 打开（或聚焦已开的）运行时控制台窗口 */
   openConsole: (): Promise<void> => ipcRenderer.invoke(IPC.consoleOpen),
-  /** 写会话级偏好（字段合并） */
-  saveSettings: (partial: Record<string, unknown>): Promise<{ ok: true }> => ipcRenderer.invoke(IPC.settingsSave, partial),
 
+  /** 弹系统目录选择框（创建项目用）；用户取消返回 null */
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke(IPC.workspacePickDirectory),
 
   /** 窗口控制（自绘 header 专用，白名单动作） */

@@ -82,17 +82,20 @@ function createWindow(): void {
 
 // 入口 fire-and-forget（void 标记）：whenReady 之后的失败都在各自边界内处理
 void app.whenReady().then(() => {
-  // 凭据存取（safeStorage）：先守可用性再建引擎代理 —— key 落不了盘时让问题
-  // 在启动期暴露，而不是用户第一次保存 key 时才炸。
+  // 凭据存取（safeStorage）：可用性探测失败不再只落 console —— 记入 store 的
+  // startupError，经 credentials:status 暴露给设置页呈现（同损坏降级一条通道）。
+  // 降级链路细节见 credentials/store.ts 文件头：损坏/DPAPI 不匹配都不炸启动。
   const credentialStore = new CredentialStore()
   try {
     credentialStore.assertAvailable()
   } catch (error) {
+    credentialStore.noteStartupError((error as Error).message)
     console.error('[main] credential store unavailable:', error)
   }
   const customProvidersStore = new CustomProvidersStore()
 
-  // 引擎代理：握手时把宿主持久化的 key 灌进引擎内存表
+  // 引擎代理：握手时把宿主持久化的 key 灌进引擎内存表（凭据降级时这里是空表，
+  // 引擎按"无 key"启动 —— 用户重输 key 后经 credentials:set 即时推送）
   agentService = new AgentServiceManager({
     entryPath: join(import.meta.dirname, 'service.js'),
     handshakeCredentials: credentialStore.readAll()
@@ -101,8 +104,9 @@ void app.whenReady().then(() => {
 
   // 壳与引擎解耦：引擎起不来（缺 Node / 版本不符）不阻塞窗口，状态经 app:status
   // 暴露给 UI 呈现（preload.getStatus）。fire-and-forget 是刻意为之（void 标记）。
-  void agentService.start().then(
-    () => console.log(`[main] agent service ready (node ${agentService?.getStatus().nodeVersion ?? '?'})`),
+  const service = agentService
+  void service.start().then(
+    () => console.log(`[main] agent service ready (node ${service.getStatus().nodeVersion})`),
     (error: unknown) => console.error('[main] agent service start failed:', error)
   )
 

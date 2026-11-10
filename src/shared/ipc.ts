@@ -15,10 +15,14 @@ export const IPC = {
   engineEvent: 'engine:event',
   /** renderer → main：写入 API key（safeStorage 落盘 + 推给引擎） */
   credentialsSet: 'credentials:set',
+  /** renderer → main：删除单条 API key（壳侧落盘移除 + 引擎内存表移除） */
+  credentialsRemove: 'credentials:remove',
   /** renderer → main：读单个 provider 的 key 明文（设置页全量回显用） */
   credentialsGet: 'credentials:get',
   /** renderer → main：查询 key 配置状态（只回布尔位） */
   credentialsList: 'credentials:list',
+  /** renderer → main：凭据链路健康状态（损坏降级/safeStorage 不可用的 UI 呈现源） */
+  credentialsStatus: 'credentials:status',
   /** renderer → main：读自定义 provider 定义（name/baseUrl/模型列表 + 内置覆盖） */
   customProvidersGet: 'custom-providers:get',
   /** renderer → main：全量写自定义 provider 定义（落盘 + 推引擎 sync） */
@@ -52,4 +56,26 @@ export interface AppStatus {
 export interface ApiKeyStatus {
   providerId: string
   keyConfigured: boolean
+}
+
+/**
+ * 凭据链路健康状态（credentials:status 响应）。error 非 null = 启动期降级
+ * （文件损坏/跨机器 DPAPI 不匹配/safeStorage 不可用）：凭据不注入引擎，
+ * 设置页呈现引导用户重输 key（成功写入即自愈）。
+ */
+export interface CredentialsStatus {
+  error: string | null
+}
+
+/**
+ * 会话级偏好文件形状（settings:get / settings:save 的载荷；盘上 settings.json）。
+ * 此前 preload 用 Record<string, unknown> 宽类型，renderer 只能自造镜像且已漂移
+ * （漏 activeProviderId）—— 形状在此单点定义，三端同源。
+ */
+export interface SettingsFile {
+  version: 1
+  activeModelId?: string
+  /** 选中模型的 provider（同名模型跨 provider 消歧，与 activeModelId 成对；旧文件缺省 = 单键语义） */
+  activeProviderId?: string
+  thinkingLevel?: string
 }

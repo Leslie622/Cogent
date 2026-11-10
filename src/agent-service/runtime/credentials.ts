@@ -26,6 +26,12 @@ export class CredentialRegistry {
     this.keys.set(providerId, apiKey)
   }
 
+  /** 删除单条（credentials.remove）：真删而非写空串 —— 空串会让"已配置(空)"
+      与宿主的"未配置"判定分裂（见协议 CredentialsRemoveParams 注释） */
+  delete(providerId: string): void {
+    this.keys.delete(providerId)
+  }
+
   /** 供 pi getApiKey 每轮解析（agent-loop.js 每次请求调用，支持过期 token 场景） */
   get(providerId: string): string | undefined {
     return this.keys.get(providerId)

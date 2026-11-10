@@ -57,12 +57,20 @@ export class ProjectRegistry {
   private projects = new Map<string, ProjectSummary>()
 
   constructor(private storage: StorageDriver) {
-    // 启动全量恢复（项目是小实体，全进内存；损坏报错不静默，同 session 口径）
+    // 启动全量恢复（项目是小实体，全进内存）。损坏逐文件隔离（同 session 口径）：
+    // 报错 + 旁置 .corrupt + 恢复其余 —— 单文件损坏不炸引擎启动
     for (const id of this.storage.ids(PROJECT_COLLECTION)) {
-      const { summary, migrated } = asStoredProject(this.storage.get(PROJECT_COLLECTION, id), id)
-      this.projects.set(summary.id, summary)
-      // v1 盘上文件立即转写 v2（迁移不是兼容读，盘上只留最新格式）
-      if (migrated) this.persist(summary.id)
+      try {
+        const { summary, migrated } = asStoredProject(this.storage.get(PROJECT_COLLECTION, id), id)
+        this.projects.set(summary.id, summary)
+        // v1 盘上文件立即转写 v2（迁移不是兼容读，盘上只留最新格式）
+        if (migrated) this.persist(summary.id)
+      } catch (error) {
+        this.storage.quarantine(PROJECT_COLLECTION, id)
+        process.stderr.write(
+          `[agent-service] 项目文档损坏已隔离（projects/${id}.json → .corrupt）: ${(error as Error).message}\n`
+        )
+      }
     }
   }
 
