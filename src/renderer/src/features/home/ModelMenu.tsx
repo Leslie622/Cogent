@@ -70,7 +70,7 @@ export function ModelMenu() {
             （2026-11-10 定调）：目录营销名与 API id 不对应，所见即所传 */}
         {active ? (
           <>
-            <ProviderLogo providerId={active.provider} name={providerDisplayName(active.provider, customProviders)} size={16} />
+            <ProviderLogo providerId={active.provider} name={providerDisplayName(active.provider, customProviders)} size={18} />
             {active.id}
           </>
         ) : usable.length > 0 ? (
@@ -78,7 +78,7 @@ export function ModelMenu() {
         ) : (
           '配置模型'
         )}
-        <IconChevronDown className="size-3" />
+        <IconChevronDown className="size-3.5" />
       </DropdownMenuTrigger>
       {/* w-auto 覆写原语的 w-(--anchor-width)（锚点是小圆钮，菜单会被压窄裁行） */}
       <DropdownMenuContent align="end" className="w-auto min-w-52 max-w-80">

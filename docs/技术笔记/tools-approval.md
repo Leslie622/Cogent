@@ -139,8 +139,35 @@ Qoder「始终允许本项目」= 项目级持久（Cogent 同流派）；三家
 | 权限通告 | `runtime/session.ts` applyPermissionNotice | transcript 内单条 `[cogent:permission]` system 通告（替换式更新，ask = 移除）；setPermission/ensureAgent 两处驱动 |
 | 协议 | `protocol/types.ts` | approval.request 事件 / approval.respond（message 附言 + always='workspace' 扩参，additive）、session.setPermission method / SessionSummary.permissionMode |
 | 壳 | `electron/main/ipc/approval.ts` + `ipc/settings.ts` | `approval:respond` 专属 IPC 透传 optional 新参；settings.json 增 defaultPermissionMode（新会话默认，开关两态） |
-| renderer | `stores/chat.ts`（pendingApprovalsBySession + ApprovalItem 痕迹行）+ `features/home/ApprovalPanel.tsx` / `PermissionMenu.tsx` / `ApprovalCard.tsx`（终态痕迹） | 底部确认面板五件套（允许/始终允许此工作区/完全访问两步串/拒绝/附言输入）；权限模式菜单三档 + 自主置灰占位；侧栏等待确认 tag（HomeSidebar 派生） |
+| renderer | `stores/chat.ts`（pendingApprovalsBySession + ApprovalItem 痕迹行）+ `features/home/ApprovalPanel.tsx` / `PermissionMenu.tsx` / `ApprovalCard.tsx`（终态痕迹） | 底部确认面板五件套（允许/始终允许此工作区/完全访问两步串/拒绝/附言输入）；权限模式菜单四档（自主模式随 bash 落地解灰）；侧栏等待确认 tag（HomeSidebar 派生） |
 
 冒烟：`/tmp/cogent-smoke/approval-smoke.mjs`（14 项断言：允许往返落盘 / 拒绝
 error 结果 / 重复裁决 InvalidParams / auto 零审批直写 / 越界拦截 / abort 挂起
 收尾），配方入 开发.md。
+
+## 6. 验收修复实录（2026-11-11 批次 3 验收）
+
+1. **权限菜单点击无响应**：PermissionMenu 菜单项误用 Radix 风格 `onSelect`，
+   而 base-luma 是 Base UI 原语 —— `onSelect` 静默落到 DOM 原生 select 事件
+   （只在输入框选中文本时触发），菜单项点击永远不进 handler，整个模式切换
+   是死的（用户"开了自主模式"实际没切上，write 照弹审批）。修 = `onClick`
+   （项目内 ModelMenu/HomeSidebar 本就同款）。教训：**shadcn 组件名相容
+   Radix/new-york 语法，但 base-luma 变体的事件语义跟 Base UI 走**，从
+   Radix 文档抄配方时要对每招核对原语实现；
+2. **「已允许」痕迹行位置与方向（两轮验收）**：run.completed 终态替换原把
+   keptApprovals 一律续在段化终态之后（回合尾部），痕迹行被压到思考行之下
+   —— 第一轮修成"锚回工具卡**之后**"；用户复验仍觉颠倒（读成"先完成再
+   允许"），终判 = 痕迹行在工具卡**之前**（时序：先裁决、后执行，与批次 2
+   时代审批卡在消息流的原位置同向）。按 名+摘要（与工具卡同源于
+   TOOL_METAS.summarize）配对插放，流式期 respondApproval 与终态重锚同方向
+   （收尾翻转零位移），配不上退尾部兜底。
+3. **完全访问升级为危险确认闸门 + 触发钮配色按 D5 收敛**（同日用户定调，
+   照参考图）：菜单选「完全访问」不再直接切换 —— FullAccessConfirm 弹窗
+   （警告图标/权限项卡片/风险提示/「我已了解风险」勾选门控/取消 + destructive
+   红确认，未勾选禁用；每次打开重置勾选）。确认钮红与菜单触发钮琥珀并存：
+   前者是危险动作闸门语义，后者是常态警示（D5 不变）。触发钮曾全态
+   text-warning（模式间无区分），修为三色：完全访问 = warning 琥珀、
+   自主模式 = chrome-accent 蓝（用户点名，链接同款实色 token）、
+   计划/变更前确认 = muted-foreground 灰。权限项卡片只列已落地能力
+   （文件/终端），network 工具（D10 批次 7）落地后补「网络和应用」行。
+   配方沉淀 UI布局.md。

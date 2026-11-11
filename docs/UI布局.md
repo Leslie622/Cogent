@@ -170,6 +170,17 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   = JetBrains Mono 随包（可变字重）+ `--font-mono` token（CJK 注释回落鸿蒙）
 - **滚动渐隐** `.scroll-fade-b/-y/-x`（mask 两端 24px 渐变，ChatGPT 同款不硬截；
   base-luma 组件引用了这组类，已补定义）
+- **危险确认弹窗**（FullAccessConfirm，2026-11-11 照用户参考图）：alert-dialog +
+  checkbox 经 base-luma registry 安装；结构 = 警告三角图标 + 标题「要启用完全访问
+  吗？」/ 说明 / 权限项卡片（`rounded-xl bg-muted` 内每行 图标 size-5 muted + 名称
+  font-medium + 描述 text-xs，`Separator bg-border/60` 分隔）/ 风险提示 text-xs
+  muted / 勾选门控行（label 包 Checkbox，Base UI 的 checkbox 根是 button——HTML
+  labelable，label 点击自然联动）/ footer 取消 outline + 确认 **destructive 红**
+  （危险动作闸门语境，与权限触发钮 warning 琥珀 = 两个语境并存）；勾选态
+  `useEffect(open) → false` 每次打开重置（风险确认不跨次残留）。权限项只列已落地
+  能力（文件 / 终端），network 工具落地后补第三行。菜单选「完全访问」先过此闸门
+  （已是 auto 再点不弹）；**Base UI 的 AlertDialogAction 是裸 Button 不自动关窗**，
+  确认回调里手动 `onOpenChange(false)`
 
 ## 滚动条
 

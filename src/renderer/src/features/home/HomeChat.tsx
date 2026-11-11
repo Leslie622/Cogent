@@ -262,7 +262,7 @@ function ChatComposer({
                 className="gap-1.5 px-1 font-normal text-[13px] text-foreground hover:bg-accent-foreground/5"
                 title={primaryCwd}
               >
-                <IconDeviceDesktop className="size-4 text-muted-foreground" />
+                <IconDeviceDesktop className="size-4.5 text-muted-foreground" />
                 {cwdBasename}
               </Button>
             ) : null}
@@ -294,10 +294,10 @@ function ChatComposer({
               className="h-6 w-auto rounded-xl px-2 text-muted-foreground has-[>svg]:px-2 hover:bg-accent-foreground/5 hover:text-foreground"
               aria-label="添加附件"
             >
-              <IconPlus className="size-4" />
+              <IconPlus className="size-4.5" />
             </InputGroupButton>
             {/* 权限模式菜单（审批交互升级第 3 步，原「完全访问」toggle 升级）：
-                三档真选项 + 自主置灰占位 + 危险分组分隔线，触发钮显当前模式名 */}
+                四档真选项（自主模式随 bash 落地解灰）+ 危险分组分隔线，触发钮显当前模式名 */}
             <PermissionMenu session={session} />
             <div className="ml-auto flex items-center gap-3">
               {/* 上下文指示器紧邻模型下拉：分母（contextWindow）跟着模型走 */}
