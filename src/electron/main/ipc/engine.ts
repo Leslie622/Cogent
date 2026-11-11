@@ -26,6 +26,7 @@ const ALLOWED_METHODS = new Set<string>([
   'session.archive',
   'session.listArchived',
   'session.setPermission',
+  'session.compact',
   'project.list',
   'project.create',
   'project.rename',

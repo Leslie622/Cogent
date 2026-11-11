@@ -205,7 +205,12 @@ export interface ToolCallRecord {
  */
 export interface ChatMessage {
   id: string
-  role: 'user' | 'assistant'
+  /**
+   * role 'compaction'（2026-11-11 批次 4 additive）= 上下文压缩折叠条：
+   * content 为 checkpoint 摘要全文（点击展开可读），不参与回合的问答切分。
+   * 老宿主按 role switch 渲染时落 default 分支自然忽略，不破。
+   */
+  role: 'user' | 'assistant' | 'compaction'
   content: string
   /** 思考文本（仅 assistant 且模型开了思考才有）；缺省 = 无思考内容 */
   thinking?: string
@@ -217,6 +222,9 @@ export interface ChatMessage {
   model?: string
   /** 本条消息发起的工具调用（仅 assistant，按发生序）；缺省 = 无工具轮 */
   toolCalls?: ToolCallRecord[]
+  /** 压缩元数据（仅 role 'compaction'）：前后 token 估算，折叠条文案与
+   *  指示器回落的数据源；缺省 = 非 compaction 消息或旧引擎投影 */
+  compaction?: { tokensBefore: number; tokensAfter?: number }
   timestamp: number
 }
 
@@ -402,6 +410,22 @@ export interface SessionSetPermissionResult {
 }
 
 /**
+ * 手动压缩（批次 4 D7 双路的手动路；未来 /compact 命令的引擎通道）：
+ * 无论阈值直接压缩。会话回复中拒绝（上游手动路会先 abort 再压，我们选择
+ * 拒绝 —— 显式让用户等，比静默打断正在生成的回复更可预期）。无可压缩
+ * （刚压过/过短）返回错误而非空成功 —— 手动动作要明确反馈。
+ */
+export interface SessionCompactParams {
+  sessionId: string
+}
+export interface SessionCompactResult {
+  /** 压缩前上下文估算（与触发判定同源） */
+  tokensBefore: number
+  /** 压缩后上下文估算（指示器回落依据） */
+  tokensAfter: number
+}
+
+/**
  * 项目摘要（= 目录绑定，计划 D3）：会话经 projectId 归属项目并继承其全部目录。
  * cwds 多根（2026-11-09 二次决策收编）：跨仓库任务（前端+后端两仓库一个项目）
  * 是主流 Agent（VS Code workspace / Claude Code --add-dir）的既定能力；
@@ -434,6 +458,8 @@ export interface ProjectRenameResult {
   summary: ProjectSummary
 }
 
+/** 项目编辑（改名 + 目录增删一次提交；编辑弹窗走此方法，rename 保留给纯改名场景）。
+    cwds 语义同 create：全量替换（≥1，首个 = 主根）—— UI 编辑表单本就是整表提交 */
 export interface ProjectDeleteParams {
   projectId: string
 }
@@ -612,6 +638,7 @@ export interface ProtocolMethods {
   'session.listArchived': { params: Record<string, never>; result: SessionSummary[] }
   'session.archive': { params: SessionArchiveParams; result: SessionArchiveResult }
   'session.setPermission': { params: SessionSetPermissionParams; result: SessionSetPermissionResult }
+  'session.compact': { params: SessionCompactParams; result: SessionCompactResult }
   'project.list': { params: Record<string, never>; result: ProjectSummary[] }
   'project.create': { params: ProjectCreateParams; result: ProjectCreateResult }
   'project.rename': { params: ProjectRenameParams; result: ProjectRenameResult }
@@ -698,4 +725,29 @@ export interface ProtocolEvents {
    * 引擎侧记录常开，打开时经 inspect.entries 补拉历史。
    */
   'inspect.event': { sessionId: string; entry: InspectEntrySummary }
+  /**
+   * 上下文压缩开始（批次 4 additive，D7 双路）：reason = threshold（submit
+   * 前阈值触发）/ manual（session.compact）。摘要生成是一次 LLM 调用（秒级），
+   * 宿主可借此呈现压缩中状态；自动路发生在 run.started 之后、首条 delta
+   * 之前 —— 事件顺序即引擎执行顺序。
+   */
+  'compaction.started': { sessionId: string; reason: 'threshold' | 'manual' }
+  /**
+   * 上下文压缩结束（成功/失败共用，看 error 字段）。
+   * - summary = checkpoint 摘要全文（宿主折叠条展开可读）；
+   * - summarizedUntil = 被摘要区末条消息 timestamp —— 宿主据此把本地消息
+   *   列表里该时刻及之前的条目原位换成折叠条（历史回查路径天然同形态）；
+   * - tokensBefore/After = 前后上下文估算（指示器回落依据）。
+   * 失败时 tokens/summary 缺省、error 带原因；自动路失败不拦后续 prompt
+   * （尽力语义），手动路失败走 session.compact 的错误响应帧。
+   */
+  'compaction.completed': {
+    sessionId: string
+    reason: 'threshold' | 'manual'
+    tokensBefore?: number
+    tokensAfter?: number
+    summary?: string
+    summarizedUntil?: number
+    error?: string
+  }
 }

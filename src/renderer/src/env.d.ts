@@ -80,9 +80,11 @@ export type EngineMethod =
   | 'session.archive'
   | 'session.listArchived'
   | 'session.setPermission'
+  | 'session.compact'
   | 'project.list'
   | 'project.create'
   | 'project.rename'
+  | 'project.update'
   | 'project.delete'
   | 'project.setPinned'
   | 'agent.submit'
@@ -144,9 +146,11 @@ export interface EngineMethodParams {
   'session.archive': { sessionId: string; archived: boolean }
   'session.listArchived': Record<string, never>
   'session.setPermission': { sessionId: string; mode: PermissionMode }
+  'session.compact': { sessionId: string }
   'project.list': Record<string, never>
   'project.create': { name: string; cwds: string[] }
   'project.rename': { projectId: string; name: string }
+  'project.update': { projectId: string; name: string; cwds: string[] }
   'project.delete': { projectId: string }
   'project.setPinned': { projectId: string; pinned: boolean }
   'agent.submit': { sessionId: string; text: string; model?: string; provider?: string; thinkingLevel?: string }
@@ -167,9 +171,11 @@ export interface EngineMethodResult {
   'session.archive': { summary: SessionSummary }
   'session.listArchived': SessionSummary[]
   'session.setPermission': { summary: SessionSummary }
+  'session.compact': { tokensBefore: number; tokensAfter: number }
   'project.list': ProjectSummary[]
   'project.create': { summary: ProjectSummary }
   'project.rename': { summary: ProjectSummary }
+  'project.update': { summary: ProjectSummary }
   'project.delete': { deleted: boolean }
   'project.setPinned': { summary: ProjectSummary }
   'agent.submit': { accepted: true }
@@ -208,6 +214,20 @@ export type EngineEvent =
   | { method: 'tool.progress'; params: { sessionId: string; callId: string; text: string } }
   | { method: 'approval.request'; params: { sessionId: string; requestId: string; toolName: string; kind: string; summary: string } }
   | { method: 'inspect.event'; params: { sessionId: string; entry: InspectEntrySummary } }
+  | { method: 'compaction.started'; params: { sessionId: string; reason: 'threshold' | 'manual' } }
+  | {
+      method: 'compaction.completed'
+      params: {
+        sessionId: string
+        reason: 'threshold' | 'manual'
+        tokensBefore?: number
+        tokensAfter?: number
+        summary?: string
+        /** 被摘要区末条消息 timestamp（折叠条原位锚点）；失败时缺省 */
+        summarizedUntil?: number
+        error?: string
+      }
+    }
 
 /**
  * 观测条目摘要（与 protocol InspectEntrySummary 镜像）：时间线一行。
@@ -245,7 +265,7 @@ export interface InspectEntryDetail {
 
 export interface ChatMessage {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'compaction'
   /**
    * UI 消息联合（stores/chat 的 MessageItem）判别辅助：内容消息恒 undefined，
    * 工具卡行（ToolItem）为 'tool' —— optional undefined 使 `item.type === 'tool'`
@@ -263,6 +283,9 @@ export interface ChatMessage {
   model?: string
   /** 本条消息发起的工具调用（按发生序；与 protocol ChatMessage.toolCalls 镜像） */
   toolCalls?: ToolCallRecord[]
+  /** 压缩元数据（仅 role 'compaction'；与 protocol ChatMessage.compaction 镜像）：
+   *  content = checkpoint 摘要全文，折叠条展开可读 */
+  compaction?: { tokensBefore: number; tokensAfter?: number }
   timestamp: number
 }
 

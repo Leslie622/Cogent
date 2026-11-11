@@ -39,6 +39,7 @@ import {
   type ProvidersCustomSyncResult,
   type RpcEvent,
   type RpcResponse,
+  type SessionCompactParams,
   type SessionMessagesParams,
   type SessionSetPermissionParams,
   type SessionSetPinnedParams
@@ -285,6 +286,16 @@ function handleSessionSetPermission(params: unknown) {
   return { summary: sessions.setPermission(p.sessionId, p.mode) }
 }
 
+/** session.compact 入口校验：sessionId 非空 string（手动压缩，批次 4 D7）。
+    异步 handler —— dispatch 对 handler 结果 await，Promise 拒绝转错误帧 */
+function handleSessionCompact(params: unknown) {
+  const p = params as Partial<SessionCompactParams>
+  if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.compact 需要 { sessionId: string }')
+  }
+  return sessions.compactSession(p.sessionId)
+}
+
 /** inspect.entries 入口校验：sessionId 非空 string */
 function handleInspectEntries(params: unknown) {  const p = params as Partial<{ sessionId: unknown }>
   if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
@@ -400,6 +411,7 @@ const handlers = new Map<string, (params: unknown) => unknown>([
   ['session.archive', handleSessionArchive],
   ['session.listArchived', () => sessions.listArchived()],
   ['session.setPermission', handleSessionSetPermission],
+  ['session.compact', handleSessionCompact],
   ['project.list', () => projects.list()],
   ['project.create', handleProjectCreate],
   ['project.rename', handleProjectRename],

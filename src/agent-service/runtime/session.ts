@@ -26,8 +26,8 @@
 import { Agent } from '@earendil-works/pi-agent-core'
 import type { AgentEvent, AgentMessage, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import { builtinModels } from '@earendil-works/pi-ai/providers/all'
-import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
-import type { MutableModels, Usage } from '@earendil-works/pi-ai'
+import { contentText, getSupportedThinkingLevels } from '@earendil-works/pi-ai'
+import type { Api, Model, MutableModels, Usage } from '@earendil-works/pi-ai'
 // 上下文粗估（2026-11-11 明细区）：与 pi clampMaxTokensToContext 同一实现 ——
 // 引擎每轮算 max_tokens 预算用的就是 estimateContextTokens，明细口径与之同源
 import { estimateContextTokens, estimateMessageTokens, estimateTextTokens } from '@earendil-works/pi-ai/utils/estimate'
@@ -56,6 +56,19 @@ import { CustomProviderRegistry } from './custom-providers'
 import { SessionInspector } from './inspector'
 import type { ProjectRegistry } from './project'
 import type { ApprovalRegistry } from './approvals'
+import {
+  buildSummarizationContext,
+  buildSummarizationPrompt,
+  convertToLlmMessages,
+  KEEP_RECENT_TOKENS,
+  prepareCompaction,
+  rebuildTranscript,
+  shouldCompact,
+  summarizationFailure,
+  summarizationThinkingLevel,
+  formatFileOperations,
+  type CompactionPreparation
+} from './compaction'
 import type { InspectStore, StorageDriver } from '../storage'
 import { buildTools, toolMeta } from '../tools'
 
@@ -322,10 +335,14 @@ function accumulateUsage(current: MessageUsage | undefined, add: MessageUsage): 
  * 调用方只在回合结束（有 usage）时才挂到消息上，空转录不会走到这。
  */
 function estimateContext(messages: AgentMessage[]): ContextEstimate {
+  // 先过 convertToLlmMessages：批次 4 起转录可能含 compactionSummary 自定义
+  // 角色（无 content 数组），pi-ai estimateMessageTokens 对它不认识会炸；
+  // 转换后与引擎 max_tokens 预算看到的载荷同源同形（预算口径只可能更准）
+  const llmMessages = convertToLlmMessages(messages)
   let systemPrompt = 0
   let toolDefs = 0
-  const rest: AgentMessage[] = []
-  for (const message of messages) {
+  const rest: ReturnType<typeof convertToLlmMessages> = []
+  for (const message of llmMessages) {
     if (message.role === 'system') {
       // content 可能是 string 或 TextContent[]；getSystemMessageText 统一成
       // 模型可见的完整文本（含 sections 渲染），与 estimate 内部口径一致
@@ -339,7 +356,7 @@ function estimateContext(messages: AgentMessage[]): ContextEstimate {
     systemPrompt,
     toolDefs,
     messages: rest.reduce((sum, m) => sum + estimateMessageTokens(m), 0),
-    total: estimateContextTokens(messages).tokens
+    total: estimateContextTokens(llmMessages).tokens
   }
 }
 
@@ -362,6 +379,13 @@ export class SessionManager {
    */
   private agentIndex = new Map<Agent, string>()
   private streaming = new Map<string, StreamingState>()
+  /**
+   * 压缩进行中的会话（并发护栏，批次 4）：摘要发生在 prompt 之前 —— pi 尚未
+   * 置 isStreaming，submit 的忙碌检查在压缩窗口内裸奔；窗口期第二个 submit 会
+   * 与首个 run 的压缩/prompt 交错（双压缩 + 双 prompt）。入集/出集在
+   * runCompaction 的同步段/finally，submit 与 compactSession 都先查它
+   */
+  private compacting = new Set<string>()
   /**
    * 挂起中的审批（D4/D5）：approval.request 发出 → beforeToolCall 的 Promise 悬着
    * 等 approval.respond。value 存 sessionId（会话删除/退出时按会话批量收尾 ——
@@ -527,6 +551,7 @@ export class SessionManager {
     if (session.agent) this.agentIndex.delete(session.agent)
     this.sessions.delete(sessionId)
     this.streaming.delete(sessionId)
+    this.compacting.delete(sessionId)
     this.storage.delete(SESSION_COLLECTION, sessionId)
     // 观测记录随会话清理（聊天转录同生共死，不留孤儿文件）
     this.inspectStore.delete(sessionId)
@@ -629,8 +654,9 @@ export class SessionManager {
     }
     const agent = this.ensureAgent(session)
     // pi 约定同一 Agent 同时只跑一个 prompt（agent.js prompt 入口对 activeRun 抛错）。
-    // 在受理入口显式拒绝成协议错误，而不是放它落进异步段崩进程
-    if (agent.state.isStreaming) {
+    // 在受理入口显式拒绝成协议错误，而不是放它落进异步段崩进程；压缩窗口同理
+    //（见 compacting 字段注释 —— prompt 前的摘要期 isStreaming 还是 false）
+    if (agent.state.isStreaming || this.compacting.has(sessionId)) {
       throw new ProtocolError(RpcErrorCode.InvalidRequest, `会话正在回复中，请先停止或等待完成: ${sessionId}`)
     }
     if (model) {
@@ -667,14 +693,129 @@ export class SessionManager {
     // prompt() 的运行期失败（流错误/中止）由 pi 事件流转译为 run.failed
     // （handleRunFailure → agent_end，见 pi-agent-integration.md §2.3），不会走到这层；
     // catch 只兜"受理检查通过后、pi 尚未发出任何事件前"的启动窗口拒绝 ——
-    // 外部世界失败是常态（约定.md 1.1），必须转成 run.failed 给 UI 一个终态
-    void agent.prompt(text).catch((error: unknown) => {
+    // 外部世界失败是常态（约定.md 1.1），必须转成 run.failed 给 UI 一个终态。
+    // 压缩（D7 自动路）插在 prompt 之前：超阈值先摘要再发 —— 摘要是一次秒级
+    // LLM 调用，事件流此刻是 run.started 已发、首条 delta 未到的窗口，
+    // compaction.started/completed 事件就落在这里（宿主可呈压缩中状态）
+    void this.maybeCompactBeforePrompt(session, agent).then(
+      () => agent.prompt(text),
+      () => undefined
+    ).catch((error: unknown) => {
       this.streaming.delete(sessionId)
       this.notify('run.failed', {
         sessionId,
         message: error instanceof Error ? error.message : String(error)
       })
     })
+  }
+
+  // ———— 上下文压缩（批次 4，D7 双路；纯函数见 runtime/compaction.ts） ————
+
+  /**
+   * submit 前的阈值检查（自动路）：超 90% 先压缩再放行 prompt。压缩失败不
+   * 拦提交（尽力语义：摘要服务抖一下不该吞掉用户消息；真溢出会由 provider
+   * 报错走 run.failed 显式暴露）—— 失败只记 stderr + completed(error) 事件。
+   */
+  private async maybeCompactBeforePrompt(session: Session, agent: Agent): Promise<void> {
+    const model = agent.state.model
+    const contextTokens = estimateContextTokens(convertToLlmMessages(agent.state.messages)).tokens
+    if (!shouldCompact(contextTokens, model.contextWindow)) return
+    try {
+      await this.runCompaction(session, agent, 'threshold', contextTokens)
+    } catch (error) {
+      // runCompaction 内已发 completed(error) 事件；此处只补诊断（自动路静默降级）
+      process.stderr.write(`[agent-service] 自动压缩失败（继续按原上下文提交）: ${(error as Error).message}\n`)
+    }
+  }
+
+  /**
+   * 手动压缩入口（session.compact）。与自动路的差异：无可压缩/失败都以协议
+   * 错误显式反馈（手动动作要明确结果），且会话回复中直接拒绝（上游手动路先
+   * abort 再压，我们不打断生成中的回复 —— 让用户等完更可预期）。
+   */
+  async compactSession(sessionId: string): Promise<{ tokensBefore: number; tokensAfter: number }> {
+    const session = this.requireSession(sessionId)
+    const agent = this.ensureAgent(session)
+    if (agent.state.isStreaming || this.compacting.has(sessionId)) {
+      throw new ProtocolError(RpcErrorCode.InvalidRequest, `会话正在回复中，请等待完成后再压缩: ${sessionId}`)
+    }
+    const contextTokens = estimateContextTokens(convertToLlmMessages(agent.state.messages)).tokens
+    const outcome = await this.runCompaction(session, agent, 'manual', contextTokens)
+    if (outcome === undefined) {
+      throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话无可压缩内容（刚压缩过或近期内容不足保留窗口）')
+    }
+    return outcome
+  }
+
+  /**
+   * 执行一次压缩（阈值/手动共用）。返回 undefined = prepareCompaction 判定
+   * 无可压缩（手动路转错误、自动路静默跳过）；成功返回前后 token 估算。
+   * 失败 throw（completed(error) 事件已发，调用方决定呈现方式）。
+   */
+  private async runCompaction(
+    session: Session,
+    agent: Agent,
+    reason: 'threshold' | 'manual',
+    contextTokens: number
+  ): Promise<{ tokensBefore: number; tokensAfter: number } | undefined> {
+    const sessionId = session.summary.id
+    // agent.state.model 的声明宽到 Model<any>（pi 内部态通用签名），而
+    // Models.completeSimple 收 Model<Api> —— 运行时是同一对象（模型都出自
+    // models 目录），窄化只平息 no-unsafe-argument 的 any 闸，无真实收窄
+    const model = agent.state.model as Model<Api>
+    // 保留窗口按模型夹紧：20K 对小窗口模型可能大于窗口本身，保一半
+    const keepRecent = Math.min(KEEP_RECENT_TOKENS, Math.floor(model.contextWindow / 2))
+    const preparation: CompactionPreparation | undefined = prepareCompaction(
+      agent.state.messages,
+      keepRecent,
+      contextTokens
+    )
+    if (preparation === undefined) return undefined
+
+    this.compacting.add(sessionId)
+    this.notify('compaction.started', { sessionId, reason })
+    try {
+      const response = await this.models.completeSimple(
+        model,
+        buildSummarizationContext(buildSummarizationPrompt(preparation)),
+        {
+          // 摘要请求独立于会话 run：key 从内存表现取（与 Agent 的 getApiKey 同源）
+          apiKey: this.credentials.get(model.provider),
+          ...summarizationThinkingLevel(model.reasoning, agent.state.thinkingLevel)
+        }
+      )
+      const failure = summarizationFailure(response)
+      if (failure !== undefined) throw new Error(failure)
+      const summary = contentText(response.content) + formatFileOperations(preparation.fileOps)
+
+      // tokensAfter 要进压缩条本身，只能先建 draft 估算再建真值条 —— 两次重建
+      // 只差 tokensAfter 几个数字位，对估算无感；数组拼接零成本
+      const draft = rebuildTranscript(agent.state.messages, preparation, summary, 0)
+      const tokensAfter = estimateContextTokens(convertToLlmMessages(draft)).tokens
+      const transcript = rebuildTranscript(agent.state.messages, preparation, summary, tokensAfter)
+
+      agent.state.messages = transcript
+      session.transcript = transcript
+      this.persist(sessionId)
+      this.notify('compaction.completed', {
+        sessionId,
+        reason,
+        tokensBefore: contextTokens,
+        tokensAfter,
+        summary,
+        summarizedUntil: preparation.summarizedUntil
+      })
+      return { tokensBefore: contextTokens, tokensAfter }
+    } catch (error) {
+      this.notify('compaction.completed', {
+        sessionId,
+        reason,
+        error: error instanceof Error ? error.message : String(error)
+      })
+      throw error
+    } finally {
+      this.compacting.delete(sessionId)
+    }
   }
 
   abort(sessionId: string): boolean {
@@ -691,6 +832,7 @@ export class SessionManager {
     this.sessions.clear()
     this.agentIndex.clear()
     this.streaming.clear()
+    this.compacting.clear()
   }
 
   // ———— 审批（计划-工具系统与审批.md 第 4 步，D4/D5）————
@@ -823,6 +965,10 @@ export class SessionManager {
         messages: session.transcript,
         tools: tools.map((t) => t.tool)
       },
+      // 压缩条（compactionSummary 自定义角色）→ user 消息的转换口（批次 4）：
+      // pi 官方扩展点，agent-loop 每轮请求组装前唯一转换通道（agent.ts L242
+      // 缺省恒等直通 —— 直通会把未知 role 透给 provider 被拒收，故必须显式给）
+      convertToLlm: convertToLlmMessages,
       // 审批拦截（D4 判定矩阵：ToolKind × permissionMode）。pi 时序：
       // tool_execution_start 事件先于此钩子发出（宿主的 running 工具卡先行），
       // 钩子挂起 = 卡停在执行前；block 后 pi 补发 tool_execution_end(isError)
@@ -1182,7 +1328,17 @@ export class SessionManager {
     const result: ChatMessage[] = []
     for (const message of messages) {
       // pi Message 联合类型按 role 收窄
-      if (message.role === 'user') {
+      if (message.role === 'compactionSummary') {
+        // 压缩条（批次 4）：content = 摘要全文（折叠条展开可读），不参与
+        // 回合问答切分 —— id 前缀 c- 与 u-/a- 的位置式手法一致
+        result.push({
+          id: `c-${result.length}`,
+          role: 'compaction',
+          content: message.summary,
+          compaction: { tokensBefore: message.tokensBefore, tokensAfter: message.tokensAfter },
+          timestamp: message.timestamp
+        })
+      } else if (message.role === 'user') {
         result.push({
           // 位置式 id（同 assistant 的 a-N 手法）：timestamp 在同一毫秒内可撞
           // （React key 重复），投影位置在单写者下稳定且跨加载不变
