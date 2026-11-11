@@ -126,7 +126,9 @@ export function ToolCard({
         <TraceLine status={status === 'running' ? 'running' : 'pending'}>
           <TraceIcon>{status === 'running' ? <LoaderCircleIcon className="animate-spin" /> : <BanIcon />}</TraceIcon>
           {title}
-          <span className="text-[11px]">{STATUS_LABEL[status]}</span>
+          {/* shrink-0：标题 truncate 按比例分摊收缩时，普通文本项可被压到
+              min-content —— 中文逐字可断，两字标签会被压成一列竖排（验收实录） */}
+          <span className="shrink-0 whitespace-nowrap text-[11px]">{STATUS_LABEL[status]}</span>
         </TraceLine>
         {status === 'running' && progress !== undefined && progress !== '' && <ProgressTail progress={progress} />}
       </div>
@@ -141,7 +143,7 @@ export function ToolCard({
         <TraceLine status={status === 'error' ? 'error' : undefined}>
           <TraceIcon>{status === 'ok' ? toolIcon : <CircleXIcon />}</TraceIcon>
           {title}
-          <span className="text-[11px]">{STATUS_LABEL[status]}</span>
+          <span className="shrink-0 whitespace-nowrap text-[11px]">{STATUS_LABEL[status]}</span>
         </TraceLine>
       </TraceCollapsibleTrigger>
       {(hasResult || hasDiff) && (
