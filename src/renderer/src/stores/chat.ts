@@ -383,8 +383,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   respondApproval: async (requestId, approved, options) => {
     // 乐观收面板 + 落痕迹行：requestId 全局唯一但不知落在哪个会话（多窗口广播
     // 下非活动窗口也可能裁决），全表线性扫 —— 审批是人手点击级低频路径。
-    // 痕迹行 append 到消息流末尾（此时 run 进行中，末尾 = running 工具卡之后，
-    // 与审批请求到达时的位置一致；run.completed 终态替换保留 approval 项）
+    // 痕迹行插到对应工具卡**之前**（时序：先裁决、后执行 —— 卡虽因
+    // tool_execution_start 先行而早就在列表里，但叙述上「已允许 → 完成」才不
+    // 颠倒因果；与 run.completed 终态重锚同方向）；配不上（理论缺卡）退末尾
     useChatStore.setState((state) => {
       const pendingApprovalsBySession = { ...state.pendingApprovalsBySession }
       const messagesBySession = { ...state.messagesBySession }
@@ -404,7 +405,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // spread 字面量不参与上下文类型，直接内联会被展宽成 string
         const status: ApprovalItem['status'] = approved ? 'approved' : 'denied'
         const trace: ApprovalItem = { ...settled, id: requestId, type: 'approval', status }
-        messagesBySession[sessionId] = [...(messagesBySession[sessionId] ?? []), trace]
+        const list = [...(messagesBySession[sessionId] ?? [])]
+        // 挂起中的审批：目标卡必为 running（beforeToolCall 阻塞执行，完成事件
+        // 在 resolve 之后才可能到）；按 名+摘要 配对（与工具卡同源 TOOL_METAS.summarize）
+        const at = list.findIndex(
+          (m) =>
+            m.type === 'tool' && m.status === 'running' && m.name === settled.toolName && m.summary === settled.summary
+        )
+        list.splice(at >= 0 ? at : list.length, 0, trace)
+        messagesBySession[sessionId] = list
       }
       return { pendingApprovalsBySession, messagesBySession }
     })
@@ -557,13 +566,30 @@ export function bindEngineEvents(): () => void {
               break
             }
           }
-          // 审批痕迹行是用户裁决痕迹（转录里无对应物）：终态替换保留，续在段化
-          // 终态之后 —— run 完成时审批必然已裁决，位置合并在本回合尾部
+          // 审批痕迹行是用户裁决痕迹（转录里无对应物）：终态替换保留，但**锚回
+          // 各自工具卡之前**而非一律压到回合尾部 —— 按名+摘要配对（两者均出自
+          // 引擎 TOOL_METAS.summarize）。卡前 = 时序正确（先裁决、后执行，与
+          // 流式期 respondApproval 的插入方向一致，收尾翻转零位移）；压尾曾把
+          // 「已允许」落到回合末尾思考行之下、卡后则读成「先完成再允许」（两次
+          // 验收实录）。配不上（理论上缺卡）退回合尾部兜底
           const keptApprovals =
             lastUser >= 0 ? list.slice(lastUser + 1).filter((m) => m.type === 'approval') : []
+          const flatWithApprovals = (flat: MessageItem[]): MessageItem[] => {
+            if (keptApprovals.length === 0) return flat
+            const anchored = [...flat]
+            for (const trace of keptApprovals) {
+              // 首个匹配卡之前插放：并行同摘要多卡时多条痕迹按裁决序叠在卡组
+              // 之前（[T1][T2][w1][w2]，卡间无从区分，就近成组即可）
+              const at = anchored.findIndex(
+                (item) => item.type === 'tool' && item.name === trace.toolName && item.summary === trace.summary
+              )
+              anchored.splice(at >= 0 ? at : anchored.length, 0, trace)
+            }
+            return anchored
+          }
           const finalMessages =
             lastUser >= 0
-              ? [...list.slice(0, lastUser + 1), ...flattenSegments(segments), ...keptApprovals]
+              ? [...list.slice(0, lastUser + 1), ...flatWithApprovals(flattenSegments(segments))]
               : list
           // 面板兜底清空（常态路径裁决时已收；防御 run 终态与裁决竞态的残留）
           const { [sessionId]: _cleared, ...pendingRest } = state.pendingApprovalsBySession
