@@ -548,6 +548,53 @@ export function bindEngineEvents(): () => void {
         })
         return
       }
+      case 'compaction.completed': {
+        // 压缩完成：本地消息列表做手术 —— 被摘要区（summarizedUntil 及之前）
+        // 原位换成折叠条，保留区与本回合乐观用户消息不动。不做"重拉历史整换"：
+        // 自动路的压缩发生在 prompt 之前，重拉与 prompt() 追加用户消息存在竞态
+        //（拉到含新消息的列表 → 与本地乐观消息拼出双条）。事件载荷已含折叠条
+        // 全部数据（summary/前后 token），手术零往返；形态与历史回查投影一致
+        //（折叠条 + 保留区），下 run 终态替换按 lastUser 定位不受影响
+        const { sessionId, error, tokensBefore, tokensAfter, summary, summarizedUntil } = event.params
+        if (error !== undefined || summarizedUntil === undefined) return // 失败路：自动已降级继续、手动走方法错误帧
+        useChatStore.setState((state) => {
+          const local = state.messagesBySession[sessionId]
+          if (local === undefined) return state
+          // 从尾往前找"被摘要区末条"：内容消息按 timestamp、工具卡按打点
+          //（压缩必在回合间隙，前面的卡全是终态展平、带打点）；审批痕迹行无
+          // 时间戳，采用右邻（它锚在自己的工具卡之前，与卡同进退）
+          let upcomingTime: number | undefined
+          let cut = -1
+          for (let i = local.length - 1; i >= 0; i--) {
+            const item = local[i]
+            let t: number | undefined
+            if (item.type === 'tool') t = item.endedAt ?? item.startedAt
+            else if (item.type === 'approval') t = upcomingTime
+            else t = item.timestamp
+            if (t !== undefined) upcomingTime = t
+            if (t !== undefined && t <= summarizedUntil) {
+              cut = i
+              break
+            }
+          }
+          if (cut < 0) return state // 理论不发生（引擎刚摘要过内容）；不动为兜底
+          const bar: ChatMessage = {
+            // 静态 id：转录至多一条压缩条（重建时旧的必被换掉），列表内唯一
+            id: 'compaction-bar',
+            role: 'compaction',
+            content: summary ?? '',
+            compaction: { tokensBefore: tokensBefore ?? 0, tokensAfter },
+            timestamp: Date.now()
+          }
+          return {
+            messagesBySession: {
+              ...state.messagesBySession,
+              [sessionId]: [bar, ...local.slice(cut + 1)]
+            }
+          }
+        })
+        return
+      }
       case 'run.completed': {
         const { sessionId, message, messages, stopReason } = event.params
         useChatStore.setState((state) => {

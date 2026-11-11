@@ -3,7 +3,8 @@
  * 左侧）：架构位置 = ChatComposer 工具行的常驻只读仪表；职责边界 = 从 chat
  * store 聚合会话 usage 得占用量、从 engine store 取活动模型的 contextWindow
  * 做分母，纯展示（横条 + 百分比 + 点击悬浮卡），不发起任何写操作；分类明细
- * 与压缩预警线属上下文压缩后续件。
+ * 与压缩预警线（90% 刻度 + 越线自动压缩说明）已随批次 4 落地，压缩回落 =
+ * 分子切压缩条 tokensAfter（估算口径带 ≈，见下方 useMemo 注释）。
  * formatTokens 在此导出：HomeChat 的 UsageLine（消息用量行）同需 token 紧凑
  * 格式，单一实现避免两处口径漂移。
  */
@@ -34,6 +35,12 @@ const EMPTY_MESSAGES: MessageItem[] = []
     降序，最深给最大段；三档对半递减保证 6px 小点上仍可分辨 */
 const DOT_TONES = ['bg-foreground', 'bg-foreground/50', 'bg-foreground/25']
 
+/**
+ * 自动压缩触发线（引擎 runtime/compaction.ts COMPACTION_THRESHOLD 的镜像；
+ * 协议不携带 —— 阈值变更时两处同步）。横条刻度 + 悬浮卡说明共用。
+ */
+const COMPACT_THRESHOLD = 0.9
+
 /** 明细单行：色点 + 名称 + token 数 + 占比。tokens 已按实报总量缩放（见
     breakdown）：缩放是浮点乘法，<1K 时按两位小数定长显示（K/M 走 formatTokens
     自带规格）；占比列固定 w-12 右对齐（对齐 ZCode /context）。点色 = 灰黑
@@ -63,8 +70,20 @@ function EstimateRow({
   )
 }
 
-/** 横条本体：斜纹轨道（用户参照稿图1；透明度只落在背景，合 UI 方针 3）+ 实色填充 */
-function ContextBar({ pct, tone, className }: { pct: number; tone: string; className?: string }) {
+/** 横条本体：斜纹轨道（用户参照稿图1；透明度只落在背景，合 UI 方针 3）+ 实色填充 +
+ *  可选预警线（批次 4：90% 自动压缩线，越过即下一条消息前触发压缩） */
+function ContextBar({
+  pct,
+  tone,
+  className,
+  warnAt
+}: {
+  pct: number
+  tone: string
+  className?: string
+  /** 预警线位置（0–1）；缺省不画 */
+  warnAt?: number
+}) {
   return (
     <span className={cn('relative block overflow-hidden rounded-full bg-muted', className)}>
       <span className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent_0_3px,var(--color-border)_3px_4px)]" />
@@ -72,6 +91,14 @@ function ContextBar({ pct, tone, className }: { pct: number; tone: string; class
         className={cn('absolute inset-y-0 left-0 rounded-full transition-[width] duration-300', tone)}
         style={{ width: `${pct * 100}%` }}
       />
+      {/* 压缩触发线：1px 实色刻度（背景层之上、填充层之下 —— 填充越线即"压过去"的视觉） */}
+      {warnAt !== undefined && warnAt > 0 && warnAt < 1 && (
+        <span
+          className="absolute inset-y-0 w-px bg-foreground/25"
+          style={{ left: `${warnAt * 100}%` }}
+          aria-hidden="true"
+        />
+      )}
     </span>
   )
 }
@@ -83,8 +110,9 @@ function ContextBar({ pct, tone, className }: { pct: number; tone: string; class
  * 实发量，加 output 为"下一轮将重发"；与 Claude Code status 同源（末轮端点
  * 实报而非实时计数，流式中保持上一轮值）。分母 = 活动模型 contextWindow
  * （不上网络的客户端元数据；自定义模型缺省 128K 偏保守 → 百分比偏高不偏低）。
- * 分类明细/压缩预警线待工具/MCP、上下文压缩模块落地再上（主流对照见
- * 技术笔记/token-usage.md §6）。
+ * 压缩回落（批次 4）：压缩条（role 'compaction'）比末条 usage 新 → 分子切
+ * 压缩后 tokensAfter 估算（≈ 标记），下一条回复落成新 usage 切回实报。
+ * MCP 工具/技能段明细待各自模块（主流对照见 技术笔记/token-usage.md §6）。
  */
 export function ContextIndicator({ session }: { session: HomeSession }) {
   const messages =
@@ -97,8 +125,9 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
       findActiveModel(s.models, s.keyConfigured, s.activeModelId, s.activeProviderId)?.contextWindow ?? 0
   )
 
-  const { used, cacheHit, estimate } = useMemo(() => {
+  const { used, cacheHit, estimate, approximate } = useMemo(() => {
     let usage: MessageUsage | undefined
+    let usageAt = 0
     let cacheRead = 0
     let cacheDen = 0
     // 从后往前扫：首条命中即"末条已完成回答"的 usage（流式中末条还没有 usage）；
@@ -109,26 +138,49 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
       if (item.type !== undefined) continue
       const u = item.usage
       if (!u) continue
-      if (!usage) usage = u
+      if (!usage) {
+        usage = u
+        usageAt = item.timestamp
+      }
       cacheRead += u.cacheRead
       cacheDen += u.input + u.cacheRead
     }
+    // 压缩回落（批次 4）：压缩条比末条 usage 新 = usage 还是压缩前的旧账（引擎侧
+    // 同款守卫，pi-ai estimate 按时间戳判 usage 失效）→ 分子切压缩后估算
+    // tokensAfter（估算口径，approximate 标记），明细三段随之作废不显示；
+    // 下一答落成新 usage 后自然切回实报
+    let compactionAfter: number | undefined
+    let compactionAt = 0
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const item = messages[i]
+      if (item.type === undefined && item.role === 'compaction') {
+        compactionAfter = item.compaction?.tokensAfter
+        compactionAt = item.timestamp
+        break
+      }
+    }
+    const overridden =
+      compactionAfter !== undefined && compactionAt > usageAt ? compactionAfter : undefined
     return {
-      used: usage ? usage.input + usage.cacheRead + usage.cacheWrite + usage.output : 0,
+      used:
+        overridden ??
+        (usage ? usage.input + usage.cacheRead + usage.cacheWrite + usage.output : 0),
+      approximate: overridden !== undefined,
       // 端点不报缓存的模型 cacheRead 恒 0，"0%" 是误导 → 不显示（零值省略同 UsageLine）
       cacheHit: cacheRead > 0 && cacheDen > 0 ? cacheRead / cacheDen : undefined,
-      // 明细三段（引擎粗估，随末轮 usage 落盘流转）；旧会话/引擎未算时 undefined，
-      // 明细区整块不渲染（不硬造占位行）
-      estimate: usage?.contextEstimate
+      // 明细三段（引擎粗估，随末轮 usage 落盘流转）；旧会话/引擎未算/压缩回落时
+      // undefined，明细区整块不渲染（不硬造占位行）
+      estimate: overridden !== undefined ? undefined : usage?.contextEstimate
     }
   }, [messages])
 
-  const pct = Math.min(used / contextWindow, 1)
+  const pct = contextWindow > 0 ? Math.min(used / contextWindow, 1) : 0
   // 两位小数：低占用时整数百分比信息量不足（6% 与 6.25% 是两回事）；>0 却四舍
   // 五入到 0.00 的极小占用显示 <0.01%，避免 "0.00%" 的尴尬假 0（used===0 已在
-  // 上方整体不渲染，这里 pct 恒 >0）
+  // 下方整体不渲染，这里 pct 恒 >0）。压缩回落的分子是估算 → ≈ 前缀（实报
+  // 才免标，同成本项口径）
   const pctNum = pct * 100
-  const pctLabel = pctNum < 0.005 ? '<0.01' : pctNum.toFixed(2)
+  const pctLabel = `${approximate ? '≈' : ''}${pctNum < 0.005 ? '<0.01' : pctNum.toFixed(2)}`
   // 三档变色只落在 bar（文字恒实色 muted）；阈值 75/90 与主流预警习惯对齐
   const tone = pct >= 0.9 ? 'bg-destructive' : pct >= 0.75 ? 'bg-warning' : 'bg-foreground'
 
@@ -171,7 +223,7 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
           />
         }
       >
-        <ContextBar pct={pct} tone={tone} className="h-1.5 w-20" />
+        <ContextBar pct={pct} tone={tone} warnAt={COMPACT_THRESHOLD} className="h-1.5 w-20" />
         <span className="text-xs tabular-nums">{pctLabel}%</span>
       </PopoverTrigger>
       {/* 全卡字号与间距（2026-11-11 用户多轮定调收敛）：标题 13px semibold、
@@ -182,10 +234,10 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
         <div className="flex items-baseline justify-between">
           <span className="text-[13px] font-semibold">上下文容量</span>
           <span className="text-[11px] text-muted-foreground tabular-nums">
-            {formatTokens(used)}/{formatTokens(contextWindow)}（{pctLabel}%）
+            {approximate ? '≈' : ''}{formatTokens(used)}/{formatTokens(contextWindow)}（{pctLabel}%）
           </span>
         </div>
-        <ContextBar pct={pct} tone={tone} className="mt-4 h-1.5" />
+        <ContextBar pct={pct} tone={tone} warnAt={COMPACT_THRESHOLD} className="mt-4 h-1.5" />
         {/* 明细区（对照 ZCode /context 三段可算项；MCP 工具/技能待各自模块，
             无"其他"兜底段）。口径 = 总量实报、拆分估算：顶部数字是端点实报，
             三段按估算占比缩放到该总量，加起来能对上。原"≈ 分类明细"头行
@@ -206,6 +258,12 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
             </span>
           </div>
         )}
+        {/* 压缩说明行（批次 4）：解释横条刻度的含义 —— 越线后下一条消息前自动
+            压缩，回落动画即压缩产物（分子切 tokensAfter 估算） */}
+        <div className="mt-3 flex items-center gap-1.5 border-t pt-3 text-xs text-muted-foreground">
+          <span className="h-1.5 w-px bg-foreground/40" aria-hidden="true" />
+          越过 90% 自动压缩上下文
+        </div>
       </PopoverContent>
     </Popover>
   )

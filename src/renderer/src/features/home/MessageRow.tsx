@@ -15,13 +15,17 @@ import { Markdown } from '@/components/ui/markdown'
 import { Reasoning } from '@/components/ui/reasoning'
 import { formatDuration } from '@/components/ui/run-trace'
 import { formatTokens } from './ContextIndicator'
+import { CompactionBar } from './CompactionBar'
 import type { MessageUsage } from '@/env.d'
 
 /** 消息的最小渲染形状（chat store 的 ChatMessage，props 单向传入；会话视图
-    各件 —— ConversationIndex 等 —— 共享，经 HomeChat 再导出） */
+    件 —— ConversationIndex 等 —— 共享，经 HomeChat 再导出）。role 含
+    'compaction'（批次 4 压缩折叠条）：MessageItem 联合随协议扩了角色，
+    MessageRow 是其类型流的终点，跟上才有完备分支（常态由 TurnGroup 的
+    独立行快路接管，进不到这里） */
 export type MessageLike = {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'compaction'
   content: string
   thinking?: string
   usage?: MessageUsage
@@ -87,6 +91,10 @@ export function UsageLine({
  *  setState 换数组，但历史消息对象引用稳定 —— memo 后逐 token 的重解析只落在
  *  流式占位这一条上（那条由 Streamdown 块级 memo 兜底），历史消息零重渲染 */
 export const MessageRow = memo(function MessageRow({ message }: { message: MessageLike }) {
+  // 压缩折叠条（类型完备分支，常态走 TurnGroup 独立行快路）
+  if (message.role === 'compaction') {
+    return <CompactionBar message={message} />
+  }
   if (message.role === 'user') {
     return (
       <Message align="end">
