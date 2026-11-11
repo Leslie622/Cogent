@@ -28,7 +28,13 @@ import type { AppStatus } from '../../../shared/ipc'
 
 /** 引擎 Node 版本下限 = pi 的 engines 要求 */
 const MIN_NODE: readonly [number, number, number] = [22, 19, 0]
-const HANDSHAKE_TIMEOUT_MS = 5000
+/**
+ * 握手超时：给足 Windows 冷启动余量（2026-11-11 验收实录：偶发启动握手
+ * 超时、手动重试即好 —— 冷启动时 Defender 实时扫描 service.js 大捆绑包
+ * 可拖慢 Node 起进程数秒，5s 不够；二次启动文件已热所以必成。真正的
+ * 引擎崩溃重启策略按本文件头注「后续加」，此处只放宽窗口不加重试）
+ */
+const HANDSHAKE_TIMEOUT_MS = 15_000
 
 interface Pending {
   resolve: (value: unknown) => void
