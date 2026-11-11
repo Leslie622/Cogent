@@ -46,12 +46,23 @@ function formatCost(usd: number, estimated?: boolean): string {
 
 /**
  * assistant 消息元信息行（shadcn message 的 footer 位）：输入/输出 token +
- * 缓存读/写 + 成本 + 模型耗时。数据无则整行不渲染 —— 流式占位没有 usage，
- * 统计行随 run.completed 在回答完成时出现。零值省略：无缓存命中的回答不显示
- * 缓存项、无定价模型不显示成本（"没发生"与"值为 0"在此同义，常显一排 0 是噪音）。
- * 回合聚合口径（TurnGroup 终答下方的合计行）复用本行 —— 单一格式不漂移。
+ * 缓存读/写 + 成本 + 模型耗时（+ 工具耗时，回合聚合行）。数据无则整行不渲染 ——
+ * 流式占位没有 usage，统计行随 run.completed 在回答完成时出现。零值省略：
+ * 无缓存命中的回答不显示缓存项、无定价模型不显示成本（"没发生"与"值为 0"
+ * 在此同义，常显一排 0 是噪音）。时长呈现：单条消息/纯工具回合只有模型时长，
+ * 裸数字（主流形态）；回合聚合行带工具打点时两者并挂标签（`5.7s 模型 ·
+ * 1.4s 工具`）—— 三数分解对得上头条墙钟（模型 + 工具 + 引擎开销 ≈ 墙钟）。
  */
-export function UsageLine({ usage, durationMs }: { usage?: MessageUsage; durationMs?: number }) {
+export function UsageLine({
+  usage,
+  durationMs,
+  toolMs
+}: {
+  usage?: MessageUsage
+  durationMs?: number
+  /** 工具执行墙钟（区间并集，TurnGroup sumToolMs）；仅回合聚合行传入 */
+  toolMs?: number
+}) {
   const parts: string[] = []
   if (usage) {
     parts.push(`↑ ${formatTokens(usage.input)}`, `↓ ${formatTokens(usage.output)}`)
@@ -60,7 +71,13 @@ export function UsageLine({ usage, durationMs }: { usage?: MessageUsage; duratio
     const cost = usage.totalCost
     if (cost !== undefined && cost > 0) parts.push(formatCost(cost, !usage.totalCostFromProvider))
   }
-  if (durationMs !== undefined) parts.push(formatDuration(durationMs))
+  if (durationMs !== undefined) {
+    if (toolMs !== undefined) {
+      parts.push(`${formatDuration(durationMs)} 模型`, `${formatDuration(toolMs)} 工具`)
+    } else {
+      parts.push(formatDuration(durationMs))
+    }
+  }
   if (parts.length === 0) return null
   return <div className="text-[11px] text-muted-foreground tabular-nums">{parts.join(' · ')}</div>
 }

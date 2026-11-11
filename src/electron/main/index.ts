@@ -32,6 +32,11 @@ function createWindow(): void {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      // 关 Chromium 后台节流（2026-11-11）：默认开时窗口失焦/被遮挡（用户正盯
+      // 控制台窗口看时间线）setInterval 被节流到分钟级 —— 「工作中」计时器冻在
+      // 挂载值不动，而 spinner 是合成器动画照转，观感即"计时器卡死"。VS Code
+      // 同款做法；桌面 Agent 客户端的流式 UI（计时/自动吸底）必须常活。
+      backgroundThrottling: false,
       preload: join(import.meta.dirname, '../preload/index.mjs')
     }
   })

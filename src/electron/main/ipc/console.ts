@@ -28,10 +28,12 @@ function createConsoleWindow(): void {
     title: 'Cogent 控制台',
     frame: false,
     webPreferences: {
-      // 与主窗口同配置：ESM preload 关 sandbox + 恒开 contextIsolation
+      // 与主窗口同配置：ESM preload 关 sandbox + 恒开 contextIsolation +
+      // 关后台节流（主窗口 index.ts 同款理由：控制台的实时时间线也在跑计时）
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false,
       preload: join(import.meta.dirname, '../preload/index.mjs')
     }
   })
