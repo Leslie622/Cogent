@@ -13,6 +13,10 @@ export const IPC = {
   engineRequest: 'engine:request',
   /** main → renderer：引擎事件流转发（载荷 = protocol RpcEvent） */
   engineEvent: 'engine:event',
+  /** renderer → main：审批裁决专属通道（不经 engine:request 通用代理 —— 审批是
+      安全边界，宿主侧裁决走独立通道，与「工具结果不经 renderer 转发」同理；
+      载荷 { requestId, approved }，直达引擎 approval.respond） */
+  approvalRespond: 'approval:respond',
   /** renderer → main：写入 API key（safeStorage 落盘 + 推给引擎） */
   credentialsSet: 'credentials:set',
   /** renderer → main：删除单条 API key（壳侧落盘移除 + 引擎内存表移除） */

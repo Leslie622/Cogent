@@ -25,6 +25,9 @@ declare global {
       ) => Promise<EngineMethodResult[M]>
       /** 订阅引擎事件流，返回取消订阅函数 */
       onEngineEvent: (callback: (event: EngineEvent) => void) => () => void
+      /** 审批裁决（专属通道，不经 engineRequest 通用代理 —— 安全边界独立成路）：
+          允许/拒绝引擎挂起中的写类工具调用 */
+      respondApproval: (requestId: string, approved: boolean) => Promise<{ ok: true }>
       /** 写入 API key（safeStorage 落盘 + 推引擎；明文只此一路出 renderer） */
       setApiKey: (providerId: string, apiKey: string) => Promise<{ ok: true }>
       /** 删除单条 API key（壳侧落盘移除 + 引擎内存表移除；清 key 的正路） */
@@ -126,7 +129,7 @@ export interface ProjectSummary {
 /** 与 protocol/types.ts 对应 method 的参数形状（renderer 侧镜像声明） */
 export interface EngineMethodParams {
   'session.list': Record<string, never>
-  'session.create': { title?: string; cwd?: string; projectId?: string }
+  'session.create': { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode }
   'session.delete': { sessionId: string }
   'session.messages': { sessionId: string }
   'session.setPinned': { sessionId: string; pinned: boolean }
@@ -265,6 +268,9 @@ export interface ToolCallRecord {
   status: 'ok' | 'error' | 'blocked'
   /** 结果一行摘要；错误/拒绝时为原因 */
   resultSummary?: string
+  /** 执行起/止毫秒（与 protocol 镜像；聚合行「工具时长」区间并集用，缺省跳过） */
+  startedAt?: number
+  endedAt?: number
 }
 
 /** 一次回答的 token 用量（与 protocol MessageUsage 镜像；见其字段注释） */

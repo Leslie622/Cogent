@@ -24,7 +24,7 @@
  * - handler 内信任协议类型，不做二次防御（约定.md §1.3，边界校验在 dispatch 入口）。
  */
 import { Agent } from '@earendil-works/pi-agent-core'
-import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core'
+import type { AgentEvent, AgentMessage, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import { builtinModels } from '@earendil-works/pi-ai/providers/all'
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { MutableModels, Usage } from '@earendil-works/pi-ai'
@@ -39,6 +39,7 @@ import type {
   InspectEntrySummary,
   MessageUsage,
   ModelSummary,
+  PermissionMode,
   ProviderOverrideDef,
   ProtocolEvents,
   SessionSummary,
@@ -141,18 +142,21 @@ function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
     }
   }
 
-  // 工具段（D2 修订：任何会话都有只读工具，无绑定会话以主目录为基）。
-  // 讲清有什么、路径规则（相对基根 / 绝对路径不限 —— 对齐 Claude Code 只读
-  // 默认全盘允许）。不解释参数（工具 schema 自描述，模型读 description
-  // 比提示词转述更准）
+  // 工具段（D2 修订：任何会话都有只读工具，无绑定会话以主目录为基；write
+  // 批次 2 加入）。讲清有什么、路径规则（读相对基根/绝对不限 —— 对齐 Claude
+  // Code 只读默认全盘允许；写限工作区根内 + 先审批）。不解释参数（工具 schema
+  // 自描述，模型读 description 比提示词转述更准）
   const bound = boundRoots.length > 0
+  const base =
+    bound
+      ? '相对路径相对工作区主根解析'
+      : `相对路径相对用户主目录（${toolRoots[0]}）解析`
   prompt +=
     '\n\n# 工具\n' +
     '你可以调用工具：read（读单个文件，带行号）、glob（按通配模式找文件）、' +
-    'grep（按正则全文搜索）。先用 glob/grep 定位、再用 read 读内容。\n' +
-    (bound
-      ? '相对路径相对工作区主根解析，绝对路径可以读任意位置。'
-      : `相对路径相对用户主目录（${toolRoots[0]}）解析，绝对路径可以读任意位置。`)
+    'grep（按正则全文搜索）、write（整文件写入，须在可写根内，执行前可能需要用户批准）。' +
+    '先用 glob/grep 定位、再用 read 读内容。\n' +
+    `${base}；读取的绝对路径不限位置，写入只能在${bound ? '工作区根目录内' : '用户主目录内'}。`
   return prompt
 }
 
@@ -272,6 +276,15 @@ export class SessionManager {
    */
   private agentIndex = new Map<Agent, string>()
   private streaming = new Map<string, StreamingState>()
+  /**
+   * 挂起中的审批（D4/D5）：approval.request 发出 → beforeToolCall 的 Promise 悬着
+   * 等 approval.respond。value 存 sessionId（会话删除/退出时按会话批量收尾 ——
+   * 不 resolve 则 pi 的 await 永悬、该 run 永不结束）。
+   */
+  private pendingApprovals = new Map<
+    string,
+    { sessionId: string; resolve: (result: BeforeToolCallResult) => void }
+  >()
   private models: MutableModels
   private customProviders: CustomProviderRegistry
   /** 项目注册表（构造注入；submit/createAgent 时解析 projectId → 项目多根目录） */
@@ -358,7 +371,9 @@ export class SessionManager {
 
   // ———— 会话 CRUD ————
 
-  create(params: { title?: string; cwd?: string; projectId?: string } = {}): SessionSummary {
+  create(
+    params: { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode } = {}
+  ): SessionSummary {
     const now = Date.now()
     // UUID 而非自增序号：自增在持久化后重启必然撞号（旧盘 s-1 vs 新会话 s-1）
     const summary: SessionSummary = {
@@ -367,7 +382,10 @@ export class SessionManager {
       createdAt: now,
       updatedAt: now,
       ...(params.cwd !== undefined && { cwd: params.cwd }),
-      ...(params.projectId !== undefined && { projectId: params.projectId })
+      ...(params.projectId !== undefined && { projectId: params.projectId }),
+      // 「完全访问」的物化通道（第 5 步）：新聊天页 toggle 的选择随会话落定；
+      // 缺省不带 = ask（协议缺省语义，旧宿主不破）
+      ...(params.permissionMode !== undefined && { permissionMode: params.permissionMode })
     }
     this.sessions.set(summary.id, { summary, transcript: [] })
     this.persist(summary.id)
@@ -412,6 +430,9 @@ export class SessionManager {
     const session = this.sessions.get(sessionId)
     if (!session) return false
     session.agent?.abort()
+    // 挂起审批先收尾再拆会话：resolve block 让 pi 的 await 落地、run 正常走完
+    // 收尾路径（agent.abort 后的事件流转译要能找到会话，先 settle 后删）
+    this.settleApprovals(sessionId, '会话已删除')
     if (session.agent) this.agentIndex.delete(session.agent)
     this.sessions.delete(sessionId)
     this.streaming.delete(sessionId)
@@ -558,9 +579,44 @@ export class SessionManager {
   /** 进程退出前统一收尾（引擎随宿主关闭，无需异步等待） */
   disposeAll(): void {
     for (const session of this.sessions.values()) session.agent?.abort()
+    for (const sessionId of this.sessions.keys()) this.settleApprovals(sessionId, '引擎退出')
     this.sessions.clear()
     this.agentIndex.clear()
     this.streaming.clear()
+  }
+
+  // ———— 审批（计划-工具系统与审批.md 第 4 步，D4/D5）————
+
+  /**
+   * 宿主裁决回流：resolve 挂起中的 beforeToolCall Promise。
+   * 唔配对 requestId（已裁决过 / abort 已收尾 / 不存在）→ InvalidParams ——
+   * 双击允许钮、裁决与中止竞态都属于此类，显式报错而非静默成功。
+   */
+  respondApproval(requestId: string, approved: boolean): { ok: true } {
+    const pending = this.pendingApprovals.get(requestId)
+    if (pending === undefined) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, `审批请求不存在或已被裁决: ${requestId}`)
+    }
+    this.pendingApprovals.delete(requestId)
+    pending.resolve(approved ? { block: false } : { block: true, reason: '用户拒绝了本次操作' })
+    return { ok: true }
+  }
+
+  /** 会话级权限切换（「完全访问」按钮）：beforeToolCall 每次触发时读活值，运行中切换即生效 */
+  setPermission(sessionId: string, mode: PermissionMode): SessionSummary {
+    const session = this.requireSession(sessionId)
+    session.summary.permissionMode = mode
+    this.persist(sessionId)
+    return { ...session.summary }
+  }
+
+  /** 某会话的全部挂起审批以 block 收尾（删除/退出兜底；abort 走 signal listener，D5） */
+  private settleApprovals(sessionId: string, reason: string): void {
+    for (const [requestId, pending] of this.pendingApprovals) {
+      if (pending.sessionId !== sessionId) continue
+      this.pendingApprovals.delete(requestId)
+      pending.resolve({ block: true, reason })
+    }
   }
 
   // ———— 内部 ————
@@ -583,23 +639,15 @@ export class SessionManager {
     if (session.agent) return session.agent
     // 记录器经 thunk 惰性解析：hooks 只在 prompt() 期间触发，那时 submit 已建好
     // 记录器，载入观测文件的时机正确
-    const agent = this.createAgent(
-      session.transcript,
-      this.workspaceRoots(session),
-      this.toolRoots(session),
-      () => this.ensureInspector(session)
-    )
+    const agent = this.createAgent(session, () => this.ensureInspector(session))
     session.agent = agent
     this.agentIndex.set(agent, session.summary.id)
     return agent
   }
 
-  private createAgent(
-    history: AgentMessage[],
-    boundRoots: string[],
-    toolRoots: string[],
-    getInspector: () => SessionInspector
-  ): Agent {
+  private createAgent(session: Session, getInspector: () => SessionInspector): Agent {
+    const boundRoots = this.workspaceRoots(session)
+    const toolRoots = this.toolRoots(session)
     const model = this.models.getModel(DEFAULT_PROVIDER, DEFAULT_MODEL)
     if (!model) throw new Error(`默认模型不可用: ${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`)
     const tools = buildTools(toolRoots)
@@ -609,8 +657,47 @@ export class SessionManager {
         systemPrompt: buildSystemPrompt(boundRoots, toolRoots),
         model,
         thinkingLevel: 'off',
-        messages: history,
+        messages: session.transcript,
         tools: tools.map((t) => t.tool)
+      },
+      // 审批拦截（D4 判定矩阵：ToolKind × permissionMode）。pi 时序：
+      // tool_execution_start 事件先于此钩子发出（宿主的 running 工具卡先行），
+      // 钩子挂起 = 卡停在执行前；block 后 pi 补发 tool_execution_end(isError)
+      // —— 卡自然翻成 error 态，流式段化与历史回查两条投影路径无需特判。
+      // mode 读 session.summary 的活引用（运行中切「完全访问」即生效）
+      beforeToolCall: async (context, signal) => {
+        const meta = toolMeta(context.toolCall.name)
+        // 未知名字兜底 read：与事件转译同口径（pi 只执行注册过的工具，未知 =
+        // 注册表 bug，stderr 已在转译层留诊断，这里按无害的只读放行）
+        const kind = meta?.kind ?? 'read'
+        if (kind === 'read') return undefined
+        const mode = session.summary.permissionMode ?? 'ask'
+        if (mode === 'auto') return undefined
+        if (mode === 'plan') {
+          return { block: true, reason: 'plan（只读）模式下写类工具被禁止' }
+        }
+        // ask：发审批请求并挂起（D5：无超时 —— 用户不点就一直等，宿主输入框
+        // 变停止钮可 abort；signal abort 兜底 resolve，否则中止后 Promise 永悬）
+        const requestId = `appr-${crypto.randomUUID()}`
+        const sessionId = session.summary.id
+        return new Promise<BeforeToolCallResult>((resolve) => {
+          // 先登记再发事件：respondApproval 走这张表找 resolver，时序上不存在
+          // 「事件未到、respond 先行」的窗口（宿主是收到事件才可能裁决）
+          this.pendingApprovals.set(requestId, { sessionId, resolve })
+          this.notify('approval.request', {
+            sessionId,
+            requestId,
+            toolName: context.toolCall.name,
+            kind,
+            summary: meta !== undefined ? meta.summarize(context.args) : `${context.toolCall.name}(?)`
+          })
+          signal?.addEventListener('abort', () => {
+            // 已被 respondApproval 消费则不动（用户裁决与中止竞态，先到先得）
+            if (this.pendingApprovals.delete(requestId)) {
+              resolve({ block: true, reason: '已中止' })
+            }
+          })
+        })
       },
       // streamFn 走 Models 集合：auth 解析、provider 分发、重试都由 pi-ai 承担
       streamFn: this.models.streamSimple.bind(this.models),
@@ -744,7 +831,9 @@ export class SessionManager {
           name: event.toolName,
           kind: meta?.kind ?? 'read',
           summary: meta !== undefined ? meta.summarize(event.args) : `${event.toolName}(?)`,
-          status: 'ok'
+          status: 'ok',
+          // 工具时长区间起点（UI 聚合「模型 Xs · 工具 Ys」分解用）
+          startedAt: Date.now()
         }
         streaming.tools.push(record)
         this.notify('tool.started', {
@@ -770,6 +859,9 @@ export class SessionManager {
         if (record !== undefined) {
           record.status = event.isError ? 'error' : 'ok'
           record.resultSummary = summary
+          // 区间终点（与 startedAt 同为引擎打点；历史回查路径另从 toolResult
+          // 消息重建，两条来源同一形状）
+          record.endedAt = Date.now()
         }
         this.notify('tool.completed', {
           sessionId,
@@ -860,14 +952,21 @@ export class SessionManager {
    * 不是独立消息（对模型才回灌成消息）。
    */
   private toChatMessages(messages: AgentMessage[]): ChatMessage[] {
-    // toolCallId → 执行结果（状态 + 摘要）：转录里 toolResult 消息跟在发起它的
-    // assistant 消息之后；先扫一遍建索引，投影时 O(1) 配对
-    const results = new Map<string, { isError: boolean; text: string }>()
+    // toolCallId → 执行结果（状态 + 摘要 + 起止）：转录里 toolResult 消息跟在
+    // 发起它的 assistant 消息之后；先扫一遍建索引，投影时 O(1) 配对。
+    // 起止重建自 pi 转录原生字段（timestamp = 结果创建时刻 ≈ 执行终点，
+    // durationMs 反推起点）—— 历史回查与流式打点两条来源同一形状，重启不漂移
+    const results = new Map<
+      string,
+      { isError: boolean; text: string; startedAt?: number; endedAt?: number }
+    >()
     for (const message of messages) {
       if (message.role === 'toolResult') {
         results.set(message.toolCallId, {
           isError: message.isError,
-          text: summarizeToolResult({ content: message.content })
+          text: summarizeToolResult({ content: message.content }),
+          endedAt: message.timestamp,
+          startedAt: message.durationMs !== undefined ? message.timestamp - message.durationMs : undefined
         })
       }
     }
@@ -902,7 +1001,9 @@ export class SessionManager {
             kind: meta?.kind ?? 'read',
             summary: meta !== undefined ? meta.summarize(block.arguments) : `${block.name}(?)`,
             status: paired?.isError ? 'error' : 'ok',
-            resultSummary: paired?.text
+            resultSummary: paired?.text,
+            startedAt: paired?.startedAt,
+            endedAt: paired?.endedAt
           })
         }
         result.push({

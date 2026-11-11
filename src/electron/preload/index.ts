@@ -30,6 +30,11 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.engineEvent, listener)
   },
 
+  /** 审批裁决（专属通道，不经 engineRequest 通用代理 —— 安全边界独立成路，D3）：
+      允许/拒绝引擎挂起中的写类工具调用 */
+  respondApproval: (requestId: string, approved: boolean): Promise<{ ok: true }> =>
+    ipcRenderer.invoke(IPC.approvalRespond, { requestId, approved }),
+
   /** 写入 API key：safeStorage 落盘 + 推给引擎内存（key 明文只此一路出 renderer） */
   setApiKey: (providerId: string, apiKey: string): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.credentialsSet, { providerId, apiKey }),

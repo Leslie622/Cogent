@@ -5,7 +5,8 @@
  *   进行中：过程项（思考块/工具卡/中间正文）摊开直播 + 底部 WorkingLine；
  *   终态：过程收进 RunTrace 头条（已工作 Xs/已停止/出错了），末条有正文段 =
  *   终答常驻头条之下，用量聚合一行（过程展开时各段仍带自己的用量小字）。
- * 无过程回合（单段纯文本）不渲染容器 —— ChatGPT 同款，简单回答不挂噪音条。
+ * 无过程回合（单段纯文本）也恒挂头条（D8 修订 2026-11-11，ZCode 对齐：
+ * 慢本身是信号），只是过程体为空不可展开。
  * 切分/聚合全是纯函数；TurnGroup memo 按项引用比较 —— 流式 delta 只重渲染
  * 活动回合，历史回合零重渲染。
  */
@@ -17,6 +18,7 @@ import { ToolCard } from '@/components/ui/tool'
 import type { ChatMessage, MessageUsage } from '@/env.d'
 import type { MessageItem } from '@/stores/chat'
 import { MessageRow, UsageLine } from './MessageRow'
+import { ApprovalCard } from './ApprovalCard'
 
 /** 回合（一问一答 + 其间全部过程项）；user 缺省 = 列表前导无提问
  *  （正常流不出现，分组形状自然兜底而非防御分支） */
@@ -153,11 +155,55 @@ function sumUsage(items: MessageItem[]): MessageUsage | undefined {
   }
 }
 
-/** 过程项渲染：工具卡 / 纯思考段（终答思考剥出的伪段）/ 中间正文段
+/**
+ * 回合接口时长聚合（D7 修订 2026-11-11）：各段 durationMs 求和（工具卡行无此
+ * 字段跳过；undefined 段不计 —— 与头条墙钟双口径并存，见终态分支注释）
+ */
+function sumDurationMs(items: MessageItem[]): number | undefined {
+  let total: number | undefined
+  for (const item of items) {
+    if (item.type !== undefined) continue
+    if (item.durationMs !== undefined) total = total === undefined ? item.durationMs : total + item.durationMs
+  }
+  return total
+}
+
+/**
+ * 回合工具时长聚合：各工具 [startedAt, endedAt] 区间求**并集**而非简单相加 ——
+ * pi 并行执行同批工具（实测 3 个 glob 同毫秒启动），逐个求和会按 CPU 时间口径
+ * 重复计墙钟（1.58s 之和 vs 0.55s 实占），与「已工作」墙钟对不上账。并集后
+ * 模型 + 工具 ≈ 墙钟（残差 = 引擎开销，毫秒级）。缺打点的工具（blocked /
+ * 旧转录 / 流式期事件项）自然跳过；无任何打点返回 undefined（不显示工具项）
+ */
+function sumToolMs(items: MessageItem[]): number | undefined {
+  const spans: Array<[number, number]> = []
+  for (const item of items) {
+    if (item.type !== 'tool') continue
+    const { startedAt, endedAt } = item
+    // 零/负跨度 = 数据异常（终点先于起点），丢弃而非负进总量
+    if (startedAt === undefined || endedAt === undefined || endedAt <= startedAt) continue
+    spans.push([startedAt, endedAt])
+  }
+  if (spans.length === 0) return undefined
+  spans.sort((a, b) => a[0] - b[0])
+  let total = 0
+  let cursor = spans[0][0] // 已合并区间的右端
+  for (const [start, end] of spans) {
+    if (end <= cursor) continue // 完全落在已合并区间内（并行工具）
+    total += end - Math.max(start, cursor)
+    cursor = end
+  }
+  return total
+}
+
+/** 过程项渲染：工具卡 / 审批卡 / 纯思考段（终答思考剥出的伪段）/ 中间正文段
  *  （后者带自己的用量小字 —— 展开过程的逐段透明度） */
 function ProcessItem({ item }: { item: MessageItem }) {
   if (item.type === 'tool') {
     return <ToolCard name={item.name} summary={item.summary} status={item.status} result={item.resultSummary} />
+  }
+  if (item.type === 'approval') {
+    return <ApprovalCard item={item} />
   }
   if (item.content === '' && item.thinking !== undefined) {
     return <Reasoning text={item.thinking} running={false} />
@@ -228,18 +274,23 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
           <WorkingLine startTs={turn.user?.timestamp ?? Date.now()} />
         </>
       ) : phase === 'done' && process.length === 0 ? (
-        // 无过程回合（D8）：纯文本直出，不挂"已工作"条；渲染**原文**（自带
-        // 用量/耗时 —— 此分支没有聚合行，剥过的副本会丢统计，首验即栽过）。
-        // stopped/failed 不走此分支 —— 即使过程为空也要头条作状态锚点
-        // （已停止/出错了不能只剩半截正文无声无息）
-        answerOriginal !== undefined && (
-          <MessageScrollerItem messageId={answerOriginal.id}>
-            <MessageRow message={answerOriginal} />
-          </MessageScrollerItem>
-        )
+        // 无过程回合（D8 修订 2026-11-11）：纯文本也恒挂「已工作」头条（ZCode
+        // 实测对齐：无思考无工具的问候也显示"已工作 4 秒"—— 慢本身是信号，
+        // 原"直出不挂条"让用户看着计时器数到 5s 后整行消失）；空过程体在
+        // RunTrace 内退化为不可展开单行。统计行渲染**原文**（自带 usage/接口
+        // 时长 —— 此分支没有聚合行，剥过的副本会丢统计，首验即栽过）
+        <>
+          <RunTrace phase="done" durationMs={turnDurationMs(turn)} />
+          {answerOriginal !== undefined && (
+            <MessageScrollerItem messageId={answerOriginal.id}>
+              <MessageRow message={answerOriginal} />
+            </MessageScrollerItem>
+          )}
+        </>
       ) : (
-        // 终态（D2/D6）：过程收进头条折叠体，终答常驻，用量聚合一行
-        // （时长不重复记 —— 头条已是墙钟）
+        // 终态（D2/D6）：过程收进头条折叠体，终答常驻，用量聚合一行。时长双口径
+        // 并存（2026-11-11 用户定调）：头条墙钟 = 用户等了多久；统计行接口时长
+        // = 模型净耗时（不含排队/引擎处理），两个数不冲突
         <>
           <RunTrace phase={phase} durationMs={turnDurationMs(turn)}>
             {process.map((item) => (
@@ -253,7 +304,11 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
               <MessageRow message={answer} />
             </MessageScrollerItem>
           )}
-          <UsageLine usage={sumUsage(turn.items)} />
+          <UsageLine
+            usage={sumUsage(turn.items)}
+            durationMs={sumDurationMs(turn.items)}
+            toolMs={sumToolMs(turn.items)}
+          />
         </>
       )}
     </>

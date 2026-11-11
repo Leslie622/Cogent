@@ -161,6 +161,13 @@ export interface ToolCallRecord {
   status: 'ok' | 'error' | 'blocked'
   /** 结果一行摘要（截断）；错误/拒绝时为原因 */
   resultSummary?: string
+  /** 执行起点毫秒（引擎 tool_execution_start 打点）。UI 聚合「工具时长」用 ——
+   *  与 endedAt 构成区间，渲染端做并集（并行工具同拍执行不重复计墙钟）；
+   *  blocked（未执行）与旧转录（无 durationMs 可倒推）缺省，聚合时自然跳过 */
+  startedAt?: number
+  /** 执行终点毫秒（流式 = tool_execution_end 打点；历史回查 = pi toolResult
+   *  消息 timestamp —— 转录持久化的单一来源，重启回查数字不漂移） */
+  endedAt?: number
 }
 
 /**
@@ -615,7 +622,9 @@ export interface ProtocolEvents {
    */
   'message.delta': { sessionId: string; messageId: string; delta: string; kind?: 'text' | 'thinking' }
   /**
-   * 工具开始执行（审批放行后才发 —— 挂起期间宿主只见 approval.request）。
+   * 工具开始执行。pi 时序：本事件先于 beforeToolCall 审批钩子发出 —— 写类
+   * 工具挂起期间宿主先见 running 卡，随后 approval.request 到达；拒绝/中止后
+   * 经 tool.completed(isError) 收口，卡翻 error 态（与历史回查投影同一形状）。
    * summary = 参数一行摘要（引擎生成），工具卡标题与审批卡共用。
    */
   'tool.started': { sessionId: string; callId: string; name: string; kind: ToolKind; summary?: string }

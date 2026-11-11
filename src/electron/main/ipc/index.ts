@@ -11,6 +11,7 @@ import { registerAppIpc } from './app'
 import { registerWindowIpc } from './window'
 import { registerConsoleIpc } from './console'
 import { registerEngineIpc } from './engine'
+import { registerApprovalIpc } from './approval'
 import { registerCredentialsIpc } from './credentials'
 import { registerCustomProvidersIpc } from './custom-providers'
 import { registerWorkspaceIpc } from './workspace'
@@ -27,6 +28,7 @@ export function registerIpc(deps: IpcDeps, store: CredentialStore, customProvide
   registerWindowIpc()
   registerConsoleIpc()
   registerEngineIpc(deps)
+  registerApprovalIpc(deps)
   registerCredentialsIpc(deps.service, store)
   registerCustomProvidersIpc(deps.service, customProviders)
   registerWorkspaceIpc(deps)

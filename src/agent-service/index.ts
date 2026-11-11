@@ -25,6 +25,7 @@ import {
   isRpcEvent,
   isRpcRequest,
   toRpcError,
+  type ApprovalRespondParams,
   type CredentialsListResult,
   type SessionArchiveParams,
   type CredentialsSetParams,
@@ -38,6 +39,7 @@ import {
   type RpcEvent,
   type RpcResponse,
   type SessionMessagesParams,
+  type SessionSetPermissionParams,
   type SessionSetPinnedParams
 } from '../protocol'
 import { CredentialRegistry } from './runtime/credentials'
@@ -72,6 +74,20 @@ const inspectStore = new InspectStore(STORAGE_ROOT)
 // SessionManager 对项目的使用只发生在 submit 期，无构造期回查）
 const projects = new ProjectRegistry(storage)
 const sessions = new SessionManager(credentials, storage, notify, projects, inspectStore)
+
+// 方言模块预热：pi-ai 的 API 方言是**首次请求时**才动态 import（lazyApi），
+// 冷启动一次要拉起整个厂商 SDK（openai-completions 连带 26MB 的 openai 包，
+// Windows Defender 扫描把首请求拖慢到秒级 —— 实测首句「你好」墙钟 5s 里 3.8s
+// 是它）。这笔钱付在首条消息上是错误的位置：用户正盯着「工作中」计时器。
+// 进程启动即后台预加载 Cogent 支持的全部三个方言，把成本挪进启动期 ——
+// 与懒加载命中同一模块缓存（exports 子路径与 lazy 相对 import 解析到同一
+// 文件 URL），首请求直接热。预热失败不炸启动（allSettled + 不 await）：
+// 退回懒加载语义，不比没预热差。
+void Promise.allSettled([
+  import('@earendil-works/pi-ai/api/anthropic-messages'),
+  import('@earendil-works/pi-ai/api/openai-completions'),
+  import('@earendil-works/pi-ai/api/openai-responses')
+])
 
 /** 握手：宿主确认链路可用，服务上报运行时信息（宿主据此做 Node 版本守卫）。 */
 function handleInitialize(params: unknown): InitializeResult {
@@ -143,10 +159,16 @@ function handleSessionArchive(params: unknown) {
   return { summary: sessions.archive(p.sessionId, p.archived) }
 }
 
-/** session.create 入口校验：三个 optional 字段带了就必须是非空 string。
+/** PermissionMode 值域守卫（入口校验共用）：stdio 载荷是任意 JSON，类型声明
+    不构成运行时保证，typeof 检查是真实防御（约定.md 1.1 stdio 帧边界） */
+function isPermissionMode(value: unknown): value is 'auto' | 'ask' | 'plan' {
+  return value === 'auto' || value === 'ask' || value === 'plan'
+}
+
+/** session.create 入口校验：optional 字段带了就必须合法（permissionMode 限值域）。
     逐字段独立守卫（不用 || 复合）—— TS 的控制流分析只在独立 if 里窄化类型 */
 function handleSessionCreate(params: unknown) {
-  const p = params as Partial<{ title: unknown; cwd: unknown; projectId: unknown }>
+  const p = params as Partial<{ title: unknown; cwd: unknown; projectId: unknown; permissionMode: unknown }>
   if (p.title !== undefined && typeof p.title !== 'string') {
     throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.create 的 title 必须是 string')
   }
@@ -156,7 +178,15 @@ function handleSessionCreate(params: unknown) {
   if (p.projectId !== undefined && (typeof p.projectId !== 'string' || p.projectId.length === 0)) {
     throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.create 的 projectId 必须是非空 string')
   }
-  return sessions.create({ title: p.title, cwd: p.cwd, projectId: p.projectId })
+  if (p.permissionMode !== undefined && !isPermissionMode(p.permissionMode)) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.create 的 permissionMode 必须是 auto|ask|plan 之一')
+  }
+  return sessions.create({
+    title: p.title,
+    cwd: p.cwd,
+    projectId: p.projectId,
+    permissionMode: p.permissionMode
+  })
 }
 
 /** session.delete 入口校验：sessionId 非空 string */
@@ -216,9 +246,32 @@ function handleAgentSubmit(params: unknown) {
   return { accepted: true as const }
 }
 
+/** approval.respond 入口校验：requestId 非空 string + approved 布尔。
+    唔配对 requestId（已裁决/已中止/不存在）在 SessionManager 抛 InvalidParams
+    —— 双击允许钮、裁决与中止竞态都属此类，显式报错而非静默成功 */
+function handleApprovalRespond(params: unknown) {
+  const p = params as Partial<ApprovalRespondParams>
+  if (typeof p.requestId !== 'string' || p.requestId.length === 0 || typeof p.approved !== 'boolean') {
+    throw new ProtocolError(
+      RpcErrorCode.InvalidParams,
+      'approval.respond 需要 { requestId: string, approved: boolean }'
+    )
+  }
+  return sessions.respondApproval(p.requestId, p.approved)
+}
+
+/** session.setPermission 入口校验：sessionId 非空 string + mode 限值域。
+    mode 不校验会被静默存脏值（约定.md 1.2-6：兜底掩盖非法状态） */
+function handleSessionSetPermission(params: unknown) {
+  const p = params as Partial<SessionSetPermissionParams>
+  if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 || !isPermissionMode(p.mode)) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.setPermission 需要 { sessionId: string, mode: auto|ask|plan }')
+  }
+  return { summary: sessions.setPermission(p.sessionId, p.mode) }
+}
+
 /** inspect.entries 入口校验：sessionId 非空 string */
-function handleInspectEntries(params: unknown) {
-  const p = params as Partial<{ sessionId: unknown }>
+function handleInspectEntries(params: unknown) {  const p = params as Partial<{ sessionId: unknown }>
   if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
     throw new ProtocolError(RpcErrorCode.InvalidParams, 'inspect.entries 需要 { sessionId: string }')
   }
@@ -331,6 +384,7 @@ const handlers = new Map<string, (params: unknown) => unknown>([
   ['session.setPinned', handleSessionSetPinned],
   ['session.archive', handleSessionArchive],
   ['session.listArchived', () => sessions.listArchived()],
+  ['session.setPermission', handleSessionSetPermission],
   ['project.list', () => projects.list()],
   ['project.create', handleProjectCreate],
   ['project.rename', handleProjectRename],
@@ -338,6 +392,9 @@ const handlers = new Map<string, (params: unknown) => unknown>([
   ['project.setPinned', handleProjectSetPinned],
   ['agent.submit', handleAgentSubmit],
   ['agent.abort', (params) => ({ aborted: sessions.abort((params as { sessionId: string }).sessionId) })],
+  // 宿主侧裁决通道：不经 renderer 通用代理（D3），main 的 approval:respond 专属
+  // IPC 直抵这里 —— 但协议上是普通 method（任何宿主都能驱动，无传输层特权）
+  ['approval.respond', handleApprovalRespond],
   ['credentials.set', handleCredentialsSet],
   ['credentials.remove', handleCredentialsRemove],
   ['credentials.list', handleCredentialsList],

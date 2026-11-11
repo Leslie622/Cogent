@@ -11,7 +11,17 @@ import { create } from 'zustand'
 
 export type HomeSession =
   | { kind: 'chat'; chatId: string }
-  | { kind: 'new'; projectId?: string }
+  | {
+      kind: 'new'
+      projectId?: string
+      /**
+       * 「完全访问」暂存位（新聊天视图态的一部分，计划第 5 步）：新会话还没
+       * sessionId，toggle 的选择暂存在此，submit 物化时随 session.create 落定
+       * （chat store createSession 读取）。刻意不进 settings 持久化 —— 跨会话
+       * 记住「上次开了全放行」会让用户忘了关，新会话默认回到 ask 才是安全缺省
+       */
+      fullAccess?: boolean
+    }
 
 interface HomeState {
   session: HomeSession

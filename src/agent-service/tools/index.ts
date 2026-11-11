@@ -6,14 +6,18 @@
  * 包一层 CogentTool：{ tool, kind, summarize }。summarize 把参数压成一行
  * （工具卡标题 + 审批卡文案共用），转译层与 beforeToolCall 判定都从这里取。
  *
- * 边界纪律（D2）：buildTools(roots) 按会话工作区根现建工具实例（边界在
- * 闭包里），无根会话返回空数组 = 纯聊天（不注册任何工具，模型无从调用）。
+ * 边界纪律（D2 修订，2026-11-10 用户驳回"无根零工具"原案）：任何会话都有
+ * 工具 —— buildTools(roots) 的 roots 是基根（绑定根，无绑定时调用方兜底
+ * 主目录，见 session.ts toolRoots），按会话现建工具实例（边界在闭包里）。
+ * 只读工具（read/glob/grep）以 roots 解析相对路径但不限界；写类（write）
+ * 以 roots 为可写软边界（resolveWithinRoots）。
  */
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { ToolKind } from '../../protocol'
 import { createReadTool } from './read'
 import { createGlobTool } from './glob'
 import { createGrepTool } from './grep'
+import { createWriteTool } from './write'
 
 /** Cogent 侧工具包装：pi 声明 + 产品语义（风险类别 + 参数摘要） */
 export interface CogentTool {
@@ -41,7 +45,8 @@ export function summarizeArgs(name: string, args: unknown): string {
 const TOOL_METAS: Record<string, { kind: ToolKind; summarize: (args: unknown) => string }> = {
   read: { kind: 'read', summarize: (a) => summarizeArgs('read', a) },
   glob: { kind: 'read', summarize: (a) => summarizeArgs('glob', a) },
-  grep: { kind: 'read', summarize: (a) => summarizeArgs('grep', a) }
+  grep: { kind: 'read', summarize: (a) => summarizeArgs('grep', a) },
+  write: { kind: 'write', summarize: (a) => summarizeArgs('write', a) }
 }
 
 /** 工具名 → 元数据；未注册工具（盘上旧转录里的历史名）返回 undefined */
@@ -58,6 +63,7 @@ export function buildTools(roots: string[]): CogentTool[] {
   return [
     { tool: createReadTool(roots), ...TOOL_METAS.read },
     { tool: createGlobTool(roots), ...TOOL_METAS.glob },
-    { tool: createGrepTool(roots), ...TOOL_METAS.grep }
+    { tool: createGrepTool(roots), ...TOOL_METAS.grep },
+    { tool: createWriteTool(roots), ...TOOL_METAS.write }
   ]
 }

@@ -180,6 +180,23 @@ function ChatComposer({ session }: { session: HomeSession }) {
   )
   const projects = useProjectStore((s) => s.projects)
   const sessions = useChatStore((s) => s.sessions)
+  const setPermission = useChatStore((s) => s.setPermission)
+  // 「完全访问」开关态（计划第 5 步）：chat 态读活动会话的 permissionMode（真源，
+  // 引擎判定矩阵消费同一字段）；new 态读 home store 暂存位（submit 物化时落定）
+  const sessionFullAccess =
+    useChatStore((s) => s.sessions.find((x) => x.id === s.activeSessionId)?.permissionMode) === 'auto'
+  const stagingFullAccess = useHomeStore((s) => s.session.kind === 'new' && s.session.fullAccess === true)
+  const fullAccess = session.kind === 'new' ? stagingFullAccess : sessionFullAccess
+  const toggleFullAccess = () => {
+    const activeId = useChatStore.getState().activeSessionId
+    if (session.kind === 'chat' && activeId !== null) {
+      void setPermission(activeId, fullAccess ? 'ask' : 'auto')
+      return
+    }
+    useHomeStore.setState((s) =>
+      s.session.kind === 'new' ? { session: { ...s.session, fullAccess: !fullAccess } } : s
+    )
+  }
   const { scrollToEnd } = useMessageScroller()
 
   // 信息区回显：发起时带 projectId → 项目卡（project store）；已有会话按
@@ -283,14 +300,21 @@ function ChatComposer({ session }: { session: HomeSession }) {
             >
               <IconPlus className="size-4" />
             </InputGroupButton>
-            {/* 权限提示（空位）：安全警示盾牌 + warning 琥珀；样式与右侧模型
-                选择器同款 ghost（无常驻胶囊底，hover 走全局黑 5% 软叠、
-                Button 默认 rounded-md 圆角），点击应出权限面板属后续件 */}
+            {/* 「完全访问」开关（会话级 permissionMode ask ↔ auto，计划第 5 步）：
+                关闭 = warning 琥珀 ghost（警示可选）；开启 = 浅红胶囊底
+                （bg 透明度允许、文字实色 —— 全局文字色纪律），点击即切换。
+                开启期间写类工具跳过审批直接执行 */}
             <Button
               variant="ghost"
               size="xs"
-              className="ml-2 gap-1.5 px-2 text-[13px] text-warning has-[>svg]:px-2 hover:bg-accent-foreground/5 hover:text-warning"
-              aria-label="权限设置"
+              className={cn(
+                'ml-2 gap-1.5 px-2 text-[13px] has-[>svg]:px-2 hover:bg-accent-foreground/5',
+                fullAccess
+                  ? 'rounded-full bg-destructive/10 text-destructive hover:text-destructive'
+                  : 'text-warning hover:text-warning'
+              )}
+              aria-label={fullAccess ? '关闭完全访问' : '开启完全访问'}
+              onClick={toggleFullAccess}
             >
               <IconShieldExclamation className="size-3.5" />
               完全访问

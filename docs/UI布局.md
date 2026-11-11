@@ -60,6 +60,18 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   click 双路 stopPropagation 拦 base-ui 触发器，点 X = 解绑项目（删绑定空
   脚手架会话防串归属）而非弹菜单；胶囊旁另起独立 X 钮的方案被否
   （2026-11-10 用户定稿：融进胶囊，不是两个按钮）
+- **审批卡**（features/home/ApprovalCard.tsx，2026-11-11 工具批次 2）：两态 ——
+  pending = AI Elements Confirmation 配方（base-luma `item` 原语 ItemMedia/
+  ItemContent/ItemActions + 允许/拒绝双钮，媒体位 warning 盾 IconShieldFilled）；
+  终态 = TraceLine 置灰单行（与工具卡 blocked 同族，approved 盾勾 / denied 禁止
+  / cancelled 停止，尾标已允许/已拒绝/已取消）—— run 终态替换保留（用户裁决
+  痕迹，转录无对应物）。registry 无 confirmation 项：`add item`（连带 separator）
+  照官方配方组合即正解
+- **「完全访问」钮两态**（ChatComposer，2026-11-11 接线）：关闭 = warning 琥珀
+  ghost（原警示态）；开启 = `rounded-full bg-destructive/10 text-destructive`
+  （浅红胶囊底 —— bg 透明度允许、文字实色，全局文字色纪律）+ aria-label 随态
+  换（关闭/开启完全访问）；new 态 toggle 写 home store 暂存位（不持久化，
+  新会话永远回 ask 缺省），chat 态走 session.setPermission
 - **设置页**：SettingsParts 拼装 —— SettingsGroup（组标题 + rounded-xl 描边卡 +
   divide-y 行分隔）+ SettingsRow（左标题/描述右控件）；控件四款：Switch（选中
   黑底）/ SelectControl（描边圆角 + 值 + 箭头，静态空位）/ SecondaryAction
