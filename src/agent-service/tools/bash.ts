@@ -6,7 +6,8 @@
  *
  * D2 定稿（单工具路由）：模型侧工具名恒 `bash`，实际 shell 按平台路由 ——
  * Windows = PowerShell（系统必有；GUI 产品不能像上游 CLI 那样要求装 Git Bash），
- * unix = bash。方言差异靠 description 按平台声明让模型适配。
+ * unix = bash。方言差异靠 description 按平台声明让模型适配。Windows 命令
+ * 经 UTF-8 输出前置 + PS 5.1 退出码尾缀包装（见 UTF8_OUTPUT_PREFIX 注释）。
  *
  * 输出护栏：stdout/stderr 合流进 OutputAccumulator（内存只留尾部滚动窗口，
  * 超限转存临时文件），快照走 truncateTail —— 命令输出的错误与最终结果都在
@@ -23,6 +24,7 @@ import { constants } from 'node:fs'
 import { access as fsAccess } from 'node:fs/promises'
 import { constants as osConstants } from 'node:os'
 import { spawn } from 'node:child_process'
+import { basename } from 'node:path'
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core'
 import { int, obj, opt, str, type Static } from '@earendil-works/pi-schema'
 import { OutputAccumulator } from './output-accumulator'
@@ -40,6 +42,25 @@ const MAX_TIMEOUT_MS = 2_147_483_647
 
 /** onUpdate 节流（上游 renderers/bash.ts 同值）：命令输出可逐块到达，逐块转发会刷爆事件流 */
 const UPDATE_THROTTLE_MS = 100
+
+/**
+ * Windows PowerShell 命令包装（上游 powershell.ts 原样照搬，搬运时曾遗漏、
+ * 验收时中文 ping 输出乱码回补）：中文系统的控制台程序（ping/ipconfig 等）
+ * 默认按 OEM 码页（GBK）写重定向管道，而 Node 侧按 UTF-8 解码 —— 前置
+ * [Console]::OutputEncoding=UTF8 会把控制台输出码页一并切到 65001，子进程
+ * 继承控制台后按 UTF-8 输出，PowerShell 自身文本输出同走 UTF-8。try/catch：
+ * 无控制台句柄的精简环境不炸命令。
+ */
+const UTF8_OUTPUT_PREFIX = 'try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n'
+
+/**
+ * Windows PowerShell 5.1 会把重定向的原生 stderr 变成错误记录并置 $? = false，
+ * 「命令本身成功但 stderr 有输出」被误报 exit 1（上游 #8842；pwsh 7 无此问题）。
+ * 尾缀修正退出码：最后语句成功 → 0；仅因该类错误记录失败且原生命令退出 0 → 0；
+ * 否则 1。行尾反引号（行继续符）会把尾缀续接进用户命令，此时不加。
+ */
+const WINDOWS_POWERSHELL_EXIT_SUFFIX =
+  '\n;\nif ($?) { exit 0 }\nif (($LASTEXITCODE -eq 0) -and ("$($Error[0].FullyQualifiedErrorId)" -like "NativeCommandError*")) { exit 0 }\nexit 1'
 
 function resolveTimeoutMs(timeout: number | undefined): number | undefined {
   if (timeout === undefined) return undefined
@@ -98,7 +119,17 @@ export function createLocalShellOperations(): BashOperations {
       }
 
       const commandFromStdin = shellConfig.commandTransport === 'stdin'
-      const child = spawn(shellConfig.shell, commandFromStdin ? shellConfig.args : [...shellConfig.args, command], {
+      // Windows：PowerShell 命令经 UTF-8 前置 + PS 5.1 退出码尾缀包装（见常量注释）；
+      // pwsh 7 无 stderr 错误记录问题，只吃前缀
+      let effectiveCommand = command
+      if (process.platform === 'win32') {
+        const suffix =
+          basename(shellConfig.shell).toLowerCase() === 'powershell.exe' && !command.endsWith('`')
+            ? WINDOWS_POWERSHELL_EXIT_SUFFIX
+            : ''
+        effectiveCommand = `${UTF8_OUTPUT_PREFIX}${command}${suffix}`
+      }
+      const child = spawn(shellConfig.shell, commandFromStdin ? shellConfig.args : [...shellConfig.args, effectiveCommand], {
         cwd,
         // unix 上 detached = 独立进程组（组杀的前提）；Windows 上组杀由 taskkill /T 承担
         detached: process.platform !== 'win32',

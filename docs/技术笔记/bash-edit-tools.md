@@ -131,6 +131,25 @@ unix = 进程组 SIGKILL（spawn detached 建组）→ 失败退化为杀单进�
 100ms 一帧不搬 50KB）。renderer 侧 tool.progress 更新 running 态 ToolItem.progress，
 工具卡在单行下挂直播尾行（快照末两行，等宽灰字），终态由 resultSummary 接管。
 
+### 4.4 PowerShell 命令包装：UTF-8 前置 + 退出码尾缀（2026-11-11 验收修复回补）
+
+验收实录：`ping 127.0.0.1` 的中文输出在工具卡里全成乱码 —— 搬运 bash.ts 时
+把上游 **powershell.ts 的命令包装层整个落下了**（D2 合并双工具为单工具路由时，
+只搬了 bash.ts 主体，没搬 powershell.ts 在 exec 前包的三段东西）：
+
+1. **UTF-8 前置** `try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}`：
+   中文系统控制台程序（ping/ipconfig 等）默认按 OEM 码页（GBK）写重定向管道，
+   Node 侧按 UTF-8 解码即乱码。前置一行把控制台输出码页切到 65001 —— 子进程
+   继承同一 conhost 后按 UTF-8 输出，PowerShell 自身文本输出同走 UTF-8；
+2. **PS 5.1 退出码尾缀**（上游 #8842）：5.1 把重定向的原生 stderr 变成错误记录
+   并置 `$? = false`，「命令成功但 stderr 有输出」（git push、npm run 的常态）
+   被误报 exit 1。尾缀按 `$?` / `$LASTEXITCODE` / NativeCommandError 三级判
+   exit；代价是 PS 5.1 上原生命令的具体退出码被压平成 0/1（上游同款取舍）。
+   pwsh 7 无此问题只吃前缀；行尾反引号（行继续符）会续接尾缀进用户命令，跳过。
+
+验证：`tmp/cogent-smoke/ps-utf8-smoke.mjs`（6 项断言，pwsh 7 与 `--ps51` 双跑
+全过；配方见 开发.md）。教训入 §8 勘误。
+
 ## 5. 自主模式（D6：第四档权限）
 
 置灰占位半年后兑现：`PermissionMode` + `'autonomous'`（additive）—— 文件写
@@ -177,7 +196,9 @@ bash 落地即有料。引擎矩阵一行判定 + system 通告（"文件修改�
 
 照搬：truncate 全家 / file-mutation-queue / edit-diff 核心（applyEditsToNormalized
 Content、applyReplacementsToOriginal、generateEditDiff、getDiffWindows）/
-killProcessTree / waitForChildProcess / OutputAccumulator / ls 主体。
+killProcessTree / waitForChildProcess / OutputAccumulator / ls 主体 /
+**powershell.ts 命令包装（UTF-8 前置 + PS 5.1 退出码尾缀 —— 2026-11-11 验收
+乱码后回补，初版搬运时遗漏）**。
 裁剪（有理由）：cross-spawn（spawn 的是解析后的 shell 本体）；getShellEnv 的 bin
 注入（无 bin 目录）；WSL bash 识别（Windows 走 PowerShell）；sanitizeBinaryOutput
 （UI 呈现件，需要时再搬）；computeEditsDiff/generateUnifiedPatch（无消费者）；

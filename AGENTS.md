@@ -69,7 +69,7 @@ shell
 | [docs/计划-审批交互升级.md](docs/计划-审批交互升级.md) | 审批交互升级（批次 2.5，对照主流三图）：确认面板五件套 / 工作区级允许规则 / 权限模式下拉菜单（自主模式置灰占位）/ 侧栏等待确认 tag（决策 D1–D7；**五步已全部落地** 2026-11-11） | 做审批 UI、权限菜单、审批规则表、侧栏 tag 前必读 |
 | [docs/计划-回合过程折叠.md](docs/计划-回合过程折叠.md) | ZCode 式回合两态呈现（过程直播 → 完成收进「已工作」轨迹）+ 用量聚合 + 已停止/出错了头条的分步计划（决策 D1–D8；批次 A 已落地、批次 B 并入 计划-pi借鉴.md，**已归档**） | 动消息流呈现（TurnGroup / MessageRow / run-trace）时回查决策 |
 | [docs/计划-pi借鉴.md](docs/计划-pi借鉴.md) | pi-coding-agent 借鉴总纲 + 全部旧计划遗留件归并：**批次 3 工具终章已落地**（2026-11-11，六步全过：截断护栏/并发写队列/edit+bash/自主模式/gitignore 加固）；后续批次 4 压缩 / 5 技能命令 / 6 MCP / 7 小件与归并件 / 8 存量对照审计（§1.5 全量过堂）+ 远期池、已封印与不偷清单（决策 D1–D10 已定稿，用户授权按倾向执行） | **唯一活跃主计划，所有新工作按它走**；每批完成回填状态列与 §1.5 销账 |
-| `reference/pi/` | pi 上游源码本地参照（sparse clone：agent / ai / coding-agent 三包，MIT；已 gitignore + eslint ignore，**不入库 —— 新机器按 开发.md「reference/pi 上游源码参照」节重新拉**，当前锚点 74dcca7） | 写工具、对照官方实现、查引擎源码时；更新走 `git -C reference/pi pull`（仓库级代理已配） |
+| `reference/pi/` | pi 上游源码本地参照（sparse clone：agent / ai / coding-agent 三包，MIT；已 gitignore + eslint ignore，**不入库 —— 新机器按 开发.md「reference/pi 上游源码参照」节重新拉**，当前锚点 74dcca7d4） | 写工具、对照官方实现、查引擎源码时；更新走 `git -C reference/pi pull`（仓库级代理已配） |
 
 ## 维护纪律
 
