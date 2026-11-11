@@ -14,6 +14,7 @@
 import { create } from 'zustand'
 import type { ChatMessage, PermissionMode, SessionSummary } from '@/env.d'
 import { useHomeStore } from '@/stores/home'
+import { useEngineStore } from '@/stores/engine'
 
 /**
  * 工具调用项（消息流里的独立行，工具卡数据源）：
@@ -26,13 +27,18 @@ export interface ToolItem {
   /** 判别字段：消息列表元素联合（ChatMessage 无此字段） */
   type: 'tool'
   name: string
-  /** ToolKind（read/write/exec/network；呈现用） */
+  /** ToolKind（read/write/edit/exec/network；呈现用） */
   toolKind: string
   /** 参数一行摘要（引擎生成，如 read("src/index.ts")） */
   summary: string
   status: 'running' | 'ok' | 'error' | 'blocked'
   /** 结果一行摘要；错误/拒绝时为原因 */
   resultSummary?: string
+  /** 执行中的流式尾部快照（bash 直播窗；终态由 resultSummary 接管，此字段清空） */
+  progress?: string
+  /** edit 工具的展示 diff（带行号 +-/ 上下文）；流式（tool.completed 事件）与
+   *  历史回查（ToolCallRecord）双来源同形 */
+  diff?: string
   /** 执行起/止毫秒（终态/历史路径来自 ToolCallRecord 投影；流式事件路径缺省 ——
    *  聚合行只在终态渲染，恰好只消费有打点的那条来源） */
   startedAt?: number
@@ -40,10 +46,10 @@ export interface ToolItem {
 }
 
 /**
- * 审批卡项（写类工具挂起时的裁决行，计划-工具系统与审批.md 第 4 步）：
- * approval.request 事件建卡（pending），点击允许/拒绝 → respondApproval 翻终态；
- * run 终态事件收尾（failed/abort → cancelled）。它是用户裁决痕迹，模型转录里
- * 无对应物（引擎侧只是 error 工具结果）—— run.completed 终态替换时保留。
+ * 审批痕迹行（审批交互升级 D1：pending 态改走会话级 pendingApprovalBySession，
+ * 联合里的 approval 类型**只承载终态痕迹** —— 裁决完成时落行，随裁决历史留存；
+ * pending 态不再进消息流，呈现迁至对话底部确认面板 ApprovalPanel）。
+ * 模型转录里无对应物（引擎侧只是工具结果），run 终态替换时保留。
  */
 export interface ApprovalItem {
   /** = 引擎 requestId（approval.respond 的配对键） */
@@ -55,7 +61,21 @@ export interface ApprovalItem {
   toolKind: string
   /** 参数一行摘要（引擎生成，与工具卡标题同源） */
   summary: string
-  status: 'pending' | 'approved' | 'denied' | 'cancelled'
+  status: 'approved' | 'denied' | 'cancelled'
+}
+
+/**
+ * 会话级挂起审批（面板数据源，D1）：approval.request 建、裁决/中止收尾。
+ * 数组形态 —— pi 并行执行同批工具（多个 write 同轮并发），每个 beforeToolCall
+ * 挂起各发一个 approval.request，面板逐条呈现逐条裁决。
+ */
+export interface PendingApproval {
+  requestId: string
+  toolName: string
+  /** ToolKind（呈现用） */
+  toolKind: string
+  /** 参数一行摘要（引擎生成，与工具卡标题同源） */
+  summary: string
 }
 
 /** 消息列表元素：内容消息（ChatMessage）或工具调用行（ToolItem）或审批卡行（ApprovalItem） */
@@ -78,6 +98,7 @@ function flattenSegments(segments: ChatMessage[]): MessageItem[] {
         summary: call.summary,
         status: call.status,
         resultSummary: call.resultSummary,
+        diff: call.diff,
         startedAt: call.startedAt,
         endedAt: call.endedAt
       })
@@ -100,6 +121,9 @@ export interface ChatState {
   activeSessionId: string | null
   /** sessionId → 消息列表（含流式中的 assistant 消息） */
   messagesBySession: MessagesBySession
+  /** sessionId → 挂起审批（确认面板数据源；run 终态兜底清空 —— 引擎侧挂起
+      审批在 run 终态前必被 resolve，此清是防御不是常态路径） */
+  pendingApprovalsBySession: Partial<Record<string, PendingApproval[]>>
   /** sessionId → 是否流式中（发送/停止钮切换；分域防跨会话互踩） */
   runningBySession: Partial<Record<string, boolean>>
   /** sessionId → 用户点了停止（run 终态事件消费后清零 —— 回合头条
@@ -125,8 +149,14 @@ export interface ChatState {
   archive: (sessionId: string, archived: boolean) => Promise<void>
   submit: (text: string, model?: string, thinkingLevel?: string, provider?: string) => Promise<void>
   abort: () => Promise<void>
-  /** 审批裁决（专属 IPC 通道）：先翻卡终态（乐观），引擎侧竞态失败不回滚 */
-  respondApproval: (requestId: string, approved: boolean) => Promise<void>
+  /** 审批裁决（专属 IPC 通道）：先收面板/落痕迹行（乐观），引擎侧竞态失败不回滚；
+      options.message = 拒绝附言（「告诉模型接下来怎么做」），options.always =
+      'workspace' 落工作区级始终允许规则（审批交互升级 D2） */
+  respondApproval: (
+    requestId: string,
+    approved: boolean,
+    options?: { message?: string; always?: 'workspace' }
+  ) => Promise<void>
 }
 
 /** 活动会话是否流式中（组件订阅用；返回原始值，selector 引用稳定） */
@@ -154,6 +184,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
   messagesBySession: {},
+  pendingApprovalsBySession: {},
   runningBySession: {},
   stoppingBySession: {},
   lastErrorBySession: {},
@@ -195,14 +226,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   createSession: async (params) => {
-    // 「完全访问」暂存位随物化落定（计划第 5 步）：新聊天视图 toggle 的选择
-    // 只能在 create 时绑定（同 projectId 的串归属边界），显式 params 优先
+    // 权限模式随物化落定（审批交互升级第 3 步）：显式 params > 新聊天暂存位 >
+    // 设置页「默认权限」（engine store；ask 缺省语义与协议/引擎一致）
     const home = useHomeStore.getState().session
+    // 链尾 engine store 字段非 optional，链必有值 → 直接落（等值覆盖 params 的
+    // 同名字段，语义 = 显式选择优先已由 ?? 链前段保证）
     const permissionMode =
-      params?.permissionMode ?? (home.kind === 'new' && home.fullAccess ? 'auto' : undefined)
+      params?.permissionMode ??
+      (home.kind === 'new' ? home.permissionMode : undefined) ??
+      useEngineStore.getState().defaultPermissionMode
     const summary = await window.cogent.engineRequest('session.create', {
       ...params,
-      ...(permissionMode !== undefined && { permissionMode })
+      permissionMode
     })
     set((state) => ({
       sessions: [{ ...summary }, ...state.sessions],
@@ -254,6 +289,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const sessions = state.sessions.filter((s) => s.id !== sessionId)
       const messagesBySession = { ...state.messagesBySession }
       delete messagesBySession[sessionId]
+      const pendingApprovalsBySession = { ...state.pendingApprovalsBySession }
+      delete pendingApprovalsBySession[sessionId]
       const runningBySession = { ...state.runningBySession }
       delete runningBySession[sessionId]
       const stoppingBySession = { ...state.stoppingBySession }
@@ -265,6 +302,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return {
         sessions,
         messagesBySession,
+        pendingApprovalsBySession,
         runningBySession,
         stoppingBySession,
         lastErrorBySession,
@@ -342,27 +380,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await window.cogent.engineRequest('agent.abort', { sessionId })
   },
 
-  respondApproval: async (requestId, approved) => {
-    // 乐观先翻卡终态：requestId 全局唯一但不知落在哪个会话（多窗口广播下
-    // 非活动窗口也可能裁决），全表线性扫 —— 审批是人手点击级低频路径。
-    // status 用带注解中间变量锚定字面量联合（同 tool.completed 的 nextStatus
-    // 手法）：spread 字面量不参与上下文类型，直接内联会被展宽成 string
-    const status: ApprovalItem['status'] = approved ? 'approved' : 'denied'
+  respondApproval: async (requestId, approved, options) => {
+    // 乐观收面板 + 落痕迹行：requestId 全局唯一但不知落在哪个会话（多窗口广播
+    // 下非活动窗口也可能裁决），全表线性扫 —— 审批是人手点击级低频路径。
+    // 痕迹行 append 到消息流末尾（此时 run 进行中，末尾 = running 工具卡之后，
+    // 与审批请求到达时的位置一致；run.completed 终态替换保留 approval 项）
     useChatStore.setState((state) => {
+      const pendingApprovalsBySession = { ...state.pendingApprovalsBySession }
       const messagesBySession = { ...state.messagesBySession }
-      for (const [sessionId, list] of Object.entries(messagesBySession)) {
-        if (list === undefined) continue
-        if (!list.some((m) => m.id === requestId)) continue
-        messagesBySession[sessionId] = list.map((m) =>
-          m.type === 'approval' && m.id === requestId ? { ...m, status } : m
-        )
+      let sessionId: string | undefined
+      let settled: PendingApproval | undefined
+      for (const [sid, list] of Object.entries(pendingApprovalsBySession)) {
+        const hit = list?.find((p) => p.requestId === requestId)
+        if (hit !== undefined) {
+          sessionId = sid
+          settled = hit
+          pendingApprovalsBySession[sid] = list!.filter((p) => p.requestId !== requestId)
+          break
+        }
       }
-      return { messagesBySession }
+      if (sessionId !== undefined && settled !== undefined) {
+        // status 用带注解中间变量锚定字面量联合（同 tool.completed 手法）：
+        // spread 字面量不参与上下文类型，直接内联会被展宽成 string
+        const status: ApprovalItem['status'] = approved ? 'approved' : 'denied'
+        const trace: ApprovalItem = { ...settled, id: requestId, type: 'approval', status }
+        messagesBySession[sessionId] = [...(messagesBySession[sessionId] ?? []), trace]
+      }
+      return { pendingApprovalsBySession, messagesBySession }
     })
     // renderer→引擎边界（合法设防位）：引擎拒识 requestId（中止竞态收口在前 /
-    // 重复点击）时抛 InvalidParams —— 卡的终局以 run 终态事件为准（failed 会把
-    // pending 置 cancelled），这里不回滚不报错
-    await window.cogent.respondApproval(requestId, approved).catch(() => {})
+    // 重复点击）时抛 InvalidParams —— 痕迹行不回滚，终局以 run 终态事件为准
+    await window.cogent.respondApproval(requestId, approved, options).catch(() => {})
   }
 }))
 
@@ -436,7 +484,7 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'tool.completed': {
-        const { sessionId, callId, isError, summary } = event.params
+        const { sessionId, callId, isError, summary, diff } = event.params
         useChatStore.setState((state) => {
           const messages = state.messagesBySession[sessionId]
           if (messages === undefined) return state
@@ -449,7 +497,26 @@ export function bindEngineEvents(): () => void {
               ...state.messagesBySession,
               [sessionId]: messages.map((m): MessageItem =>
                 m.type === 'tool' && m.id === callId
-                  ? { ...m, status: nextStatus, resultSummary: summary }
+                  ? { ...m, status: nextStatus, resultSummary: summary, diff, progress: undefined }
+                  : m
+              )
+            }
+          }
+        })
+        return
+      }
+      case 'tool.progress': {
+        // bash 等长时工具的流式尾部快照（整段替换非增量）：只更新 running 项
+        const { sessionId, callId, text } = event.params
+        useChatStore.setState((state) => {
+          const messages = state.messagesBySession[sessionId]
+          if (messages === undefined) return state
+          return {
+            messagesBySession: {
+              ...state.messagesBySession,
+              [sessionId]: messages.map((m): MessageItem =>
+                m.type === 'tool' && m.id === callId && m.status === 'running'
+                  ? { ...m, progress: text }
                   : m
               )
             }
@@ -460,18 +527,15 @@ export function bindEngineEvents(): () => void {
       case 'approval.request': {
         const { sessionId, requestId, toolName, kind, summary } = event.params
         useChatStore.setState((state) => {
-          const messages = state.messagesBySession[sessionId] ?? []
-          const item: ApprovalItem = {
-            id: requestId,
-            type: 'approval',
-            toolName,
-            toolKind: kind,
-            summary,
-            status: 'pending'
+          // D1：pending 不进消息流 —— 会话级状态，确认面板（ApprovalPanel）
+          // 是唯一呈现位；数组追加（并行写工具会并发多个请求）
+          const list = state.pendingApprovalsBySession[sessionId] ?? []
+          return {
+            pendingApprovalsBySession: {
+              ...state.pendingApprovalsBySession,
+              [sessionId]: [...list, { requestId, toolName, toolKind: kind, summary }]
+            }
           }
-          // 挂消息流末尾：pi 时序 tool.started 先行（running 工具卡已在），
-          // 占位若有也被它封段，直接 append 即是审批卡的位置
-          return { messagesBySession: { ...state.messagesBySession, [sessionId]: [...messages, item] } }
         })
         return
       }
@@ -493,7 +557,7 @@ export function bindEngineEvents(): () => void {
               break
             }
           }
-          // 审批卡是用户裁决痕迹（转录里无对应物）：终态替换保留，续在段化
+          // 审批痕迹行是用户裁决痕迹（转录里无对应物）：终态替换保留，续在段化
           // 终态之后 —— run 完成时审批必然已裁决，位置合并在本回合尾部
           const keptApprovals =
             lastUser >= 0 ? list.slice(lastUser + 1).filter((m) => m.type === 'approval') : []
@@ -501,12 +565,15 @@ export function bindEngineEvents(): () => void {
             lastUser >= 0
               ? [...list.slice(0, lastUser + 1), ...flattenSegments(segments), ...keptApprovals]
               : list
+          // 面板兜底清空（常态路径裁决时已收；防御 run 终态与裁决竞态的残留）
+          const { [sessionId]: _cleared, ...pendingRest } = state.pendingApprovalsBySession
           return {
             runningBySession: { ...state.runningBySession, [sessionId]: false },
             // abort raced 完成（完成先到）：停止位一并消费
             stoppingBySession: { ...state.stoppingBySession, [sessionId]: false },
             truncatedBySession: { ...state.truncatedBySession, [sessionId]: stopReason === 'length' },
             messagesBySession: { ...state.messagesBySession, [sessionId]: finalMessages },
+            pendingApprovalsBySession: pendingRest,
             // 首条消息后标题已在引擎侧生成；updatedAt 顺带推进（排序口径）
             sessions: state.sessions.map((session) =>
               session.id === sessionId ? { ...session, updatedAt: Date.now() } : session
@@ -538,24 +605,28 @@ export function bindEngineEvents(): () => void {
               ...state.messagesBySession,
               // 失败收尾：中止 = 半截占位改名封存（同 tool.started 的封段接力，
               // 已出文本留在消息流）；真失败 = 占位移除（既有口径）。
-              // 挂在 run 里的工具卡若还 running（打断在工具处）标 blocked、
-              // 挂起中的审批卡置 cancelled（引擎侧 signal 已 resolve block）——
-              // 不留永久转圈/等待
-              [sessionId]: list
-                .map((m) =>
-                  m.type === undefined && m.id === 'streaming' && wasStopped
-                    ? { ...m, id: `live-${crypto.randomUUID()}` }
-                    : m
-                )
-                .filter((m) => m.id !== 'streaming')
-                .map((m) =>
-                  m.type === 'tool' && m.status === 'running'
-                    ? { ...m, status: 'blocked' as const }
-                    : m.type === 'approval' && m.status === 'pending'
-                      ? { ...m, status: 'cancelled' as const }
+              // 挂在 run 里的工具卡若还 running（打断在工具处）标 blocked；挂起中
+              // 的审批（会话级面板态）收面板 + 落 cancelled 痕迹行（引擎侧
+              // signal 已 resolve block）—— 不留永久等待面板/痕迹缺口
+              [sessionId]: [
+                ...list
+                  .map((m) =>
+                    m.type === undefined && m.id === 'streaming' && wasStopped
+                      ? { ...m, id: `live-${crypto.randomUUID()}` }
                       : m
+                  )
+                  .filter((m) => m.id !== 'streaming')
+                  .map((m) =>
+                    m.type === 'tool' && m.status === 'running'
+                      ? { ...m, status: 'blocked' as const }
+                      : m
+                  ),
+                ...(state.pendingApprovalsBySession[sessionId] ?? []).map(
+                  (p): ApprovalItem => ({ ...p, id: p.requestId, type: 'approval', status: 'cancelled' })
                 )
-            }
+              ]
+            },
+            pendingApprovalsBySession: { ...state.pendingApprovalsBySession, [sessionId]: [] }
           }
         })
         return

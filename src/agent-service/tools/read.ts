@@ -3,8 +3,13 @@
  *
  * 设计取舍：
  * - 带行号：模型后续引用行号（edit 工具的定位语义），Claude Code Read 同款；
- * - 行数/字节双上限（计划 D8）：工具结果进模型上下文，不设上限一次读穿窗口；
- *   截断时附提示行，模型知道还有余量、可用 offset 分段读；
+ * - 上限走统一截断器 truncate.ts（步骤 3.1 迁移，取代原先各工具零散上限）：
+ *   行数 2000 / 64KB 字节双上限先到先停。字节上限与旧字符上限数值相同 ——
+ *   多字节内容下字节口径恒 ≥ 字符口径，只收紧不放水；
+ * - 截断提示带"用 offset=N 续读"（截断元数据 TruncationResult 供弹药），
+ *   模型知道余量在哪、怎么翻页，而不是一句干巴巴的"已截断"；
+ * - 单行超字节上限（压缩/打包文件典型）：给行头片段 + 指引，不给空结果
+ *   （空结果让模型以为调用失败）；
  * - 二进制文件（含 \0）拒绝而非乱码回灌 —— 乱码既浪费 token 又误导模型。
  *
  * roots 经工厂闭包注入（边界判定需要工作区根，见 path.ts）；pi 的 AgentTool
@@ -14,10 +19,14 @@ import { readFile, stat } from 'node:fs/promises'
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core'
 import { obj, opt, int, str, type Static } from '@earendil-works/pi-schema'
 import { resolveAgainstBase } from './path'
+import { formatSize, sliceHead, truncateHead } from './truncate'
 
-/** 读取上限：行数 2000（Claude Code 同款）且 64KB 字符，先到先停 */
+/** 行数上限（默认 limit 同值：不给 limit 时读到这个行数为止） */
 const MAX_LINES = 2000
-const MAX_CHARS = 64_000
+/** 字节上限：与旧字符上限同数值（64_000），字节口径下只收紧不放水 */
+const MAX_BYTES = 64_000
+/** 单行超限场景显示的行头字符量（保底产出：通常文件头/元数据就在开头） */
+const OVERFLOW_LINE_HEAD_CHARS = 20_000
 
 const parameters = obj({
   path: str({ description: '要读的文件路径（相对工作区主根或绝对路径）' }),
@@ -61,24 +70,45 @@ export function createReadTool(roots: string[]): AgentTool {
       if (offset > lines.length) {
         return errorResult(`起始行 ${offset} 超出文件总行数 ${lines.length}`)
       }
-      const selected: string[] = []
-      let chars = 0
-      for (let i = offset - 1; i < lines.length && selected.length < limit; i++) {
-        const numbered = `${String(i + 1).padStart(6)}\t${lines[i]}`
-        // 字符上限先到先停（首行豁免，保证至少有产出，不给模型空结果）
-        if (chars + numbered.length > MAX_CHARS && selected.length > 0) {
-          selected.push(`…已达 ${MAX_CHARS} 字符上限，用 offset=${i + 1} 继续读`)
-          break
-        }
-        selected.push(numbered)
-        chars += numbered.length
+
+      // 业务切片（offset/limit 翻页）先行，护栏截断在后 —— 用户指定的 limit
+      // 决定"选哪些行"，统一截断器决定"这些行里放多少进上下文"
+      const end = Math.min(offset - 1 + limit, lines.length)
+      const numbered: string[] = []
+      for (let i = offset - 1; i < end; i++) {
+        numbered.push(`${String(i + 1).padStart(6)}\t${lines[i]}`)
       }
-      if (selected.length >= limit && offset + limit - 1 < lines.length) {
-        selected.push(`…已读 ${limit} 行（至第 ${offset + limit - 1} 行，共 ${lines.length} 行），用 offset=${offset + limit} 继续读`)
+
+      const trunc = truncateHead(numbered.join('\n'), { maxLines: MAX_LINES, maxBytes: MAX_BYTES })
+      const totalLines = lines.length
+
+      // 单行超字节上限：截断器按约定返回空内容 + 标记；给行头片段 + 指引替代
+      if (trunc.firstLineExceedsLimit) {
+        const firstRaw = lines[offset - 1]
+        const head = sliceHead(firstRaw, OVERFLOW_LINE_HEAD_CHARS)
+        const text =
+          `${String(offset).padStart(6)}\t${head}\n` +
+          `…第 ${offset} 行单行 ${formatSize(Buffer.byteLength(firstRaw, 'utf-8'))}，超过 ${formatSize(MAX_BYTES)} 上限` +
+          `（多为压缩/打包文件），仅显示开头。可用 grep 提取目标片段`
+        return {
+          content: [{ type: 'text', text }],
+          details: { path: absolute, totalLines, shown: 1, offset, truncated: true }
+        }
+      }
+
+      let text = trunc.content
+      if (trunc.truncated) {
+        // 截断提示 = 可行动续读指令（行号可从 outputLines 精确算出）
+        const endLine = offset + trunc.outputLines - 1
+        const reason = trunc.truncatedBy === 'bytes' ? `${formatSize(MAX_BYTES)} 上限` : '行数上限'
+        text += `\n…已截断：显示第 ${offset}–${endLine} 行（共 ${totalLines} 行，${reason}）。用 offset=${endLine + 1} 继续读`
+      } else if (numbered.length >= limit && offset - 1 + limit < totalLines) {
+        // 用户 limit 停得比文件短（截断器未介入）：同样给续读提示
+        text += `\n…已读 ${limit} 行（至第 ${offset - 1 + limit} 行，共 ${totalLines} 行），用 offset=${offset + limit} 继续读`
       }
       return {
-        content: [{ type: 'text', text: selected.join('\n') }],
-        details: { path: absolute, totalLines: lines.length, shown: selected.length, offset }
+        content: [{ type: 'text', text }],
+        details: { path: absolute, totalLines, shown: trunc.outputLines, offset, truncated: trunc.truncated }
       }
     }
   }

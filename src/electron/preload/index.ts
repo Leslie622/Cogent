@@ -31,9 +31,14 @@ const api = {
   },
 
   /** 审批裁决（专属通道，不经 engineRequest 通用代理 —— 安全边界独立成路，D3）：
-      允许/拒绝引擎挂起中的写类工具调用 */
-  respondApproval: (requestId: string, approved: boolean): Promise<{ ok: true }> =>
-    ipcRenderer.invoke(IPC.approvalRespond, { requestId, approved }),
+      允许/拒绝引擎挂起中的写类工具调用；options.message = 拒绝附言（「告诉模型
+      接下来怎么做」），options.always = 'workspace' 落工作区级始终允许规则 */
+  respondApproval: (
+    requestId: string,
+    approved: boolean,
+    options?: { message?: string; always?: 'workspace' }
+  ): Promise<{ ok: true }> =>
+    ipcRenderer.invoke(IPC.approvalRespond, { requestId, approved, ...options }),
 
   /** 写入 API key：safeStorage 落盘 + 推给引擎内存（key 明文只此一路出 renderer） */
   setApiKey: (providerId: string, apiKey: string): Promise<{ ok: true }> =>

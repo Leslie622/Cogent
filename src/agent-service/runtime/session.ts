@@ -28,12 +28,17 @@ import type { AgentEvent, AgentMessage, BeforeToolCallResult } from '@earendil-w
 import { builtinModels } from '@earendil-works/pi-ai/providers/all'
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { MutableModels, Usage } from '@earendil-works/pi-ai'
+// 上下文粗估（2026-11-11 明细区）：与 pi clampMaxTokensToContext 同一实现 ——
+// 引擎每轮算 max_tokens 预算用的就是 estimateContextTokens，明细口径与之同源
+import { estimateContextTokens, estimateMessageTokens, estimateTextTokens } from '@earendil-works/pi-ai/utils/estimate'
+import { getSystemMessageText } from '@earendil-works/pi-ai/utils/text'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { ProtocolError, RpcErrorCode } from '../../protocol'
 import type {
   ChatMessage,
+  ContextEstimate,
   CustomProviderDef,
   InspectEntryDetail,
   InspectEntrySummary,
@@ -43,12 +48,14 @@ import type {
   ProviderOverrideDef,
   ProtocolEvents,
   SessionSummary,
-  ToolCallRecord
+  ToolCallRecord,
+  ToolKind
 } from '../../protocol'
 import type { CredentialRegistry } from './credentials'
 import { CustomProviderRegistry } from './custom-providers'
 import { SessionInspector } from './inspector'
 import type { ProjectRegistry } from './project'
+import type { ApprovalRegistry } from './approvals'
 import type { InspectStore, StorageDriver } from '../storage'
 import { buildTools, toolMeta } from '../tools'
 
@@ -154,10 +161,33 @@ function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
   prompt +=
     '\n\n# 工具\n' +
     '你可以调用工具：read（读单个文件，带行号）、glob（按通配模式找文件）、' +
-    'grep（按正则全文搜索）、write（整文件写入，须在可写根内，执行前可能需要用户批准）。' +
-    '先用 glob/grep 定位、再用 read 读内容。\n' +
+    'grep（按正则全文搜索，可带上下文行）、ls（列目录一层内容）、' +
+    'write（整文件写入，须在可写根内，执行前可能需要用户批准）、' +
+    'edit（对已有文件做精确文本替换，边界同 write，执行前可能需要用户批准）、' +
+    `bash（执行 shell 命令${process.platform === 'win32' ? '，Windows 上为 PowerShell 语法' : ''}，工作目录${bound ? '为工作区主根' : '为用户主目录'}，执行前可能需要用户批准）。` +
+    '先用 ls/glob/grep 定位、再用 read 读内容；修改已有文件优先 edit（带上下文精确匹配），' +
+    '整文件新建或重写才用 write。\n' +
     `${base}；读取的绝对路径不限位置，写入只能在${bound ? '工作区根目录内' : '用户主目录内'}。`
   return prompt
+}
+
+/**
+ * 权限模式通告文本（D6，plan 随权限菜单首次真接线）：ask 是缺省行为不声明，
+ * 只讲例外。通告不进 buildSystemPrompt（leading 固化后运行中切换改不动），
+ * 而是作为独立 system 消息落在 transcript —— pi 的 systemPrompt 是全部
+ * system 消息的重放拼接，各方言组装请求时会把中部 system 合并到领头
+ * （pi-ai collapseSystemMessages），追加是官方支持的改提示词通道。
+ */
+const PERMISSION_NOTICE_PREFIX = '[cogent:permission]'
+
+function permissionNotice(mode: Exclude<PermissionMode, 'ask'>): string {
+  const body =
+    mode === 'plan'
+      ? '# 权限\n你处于 plan（只读）模式：写类工具一律被阻止。只做阅读、分析与方案输出，不修改任何文件。'
+      : mode === 'autonomous'
+        ? '# 权限\n你处于自主模式：文件修改直接执行；shell 命令属于风险操作，执行前需用户逐次确认。'
+        : '# 权限\n用户已授予完全访问：写类工具直接执行，无需用户逐次确认。'
+  return `${PERMISSION_NOTICE_PREFIX}\n${body}`
 }
 
 
@@ -219,6 +249,20 @@ function summarizeToolResult(result: unknown): string {
   return text.length > 200 ? `${text.slice(0, 200)}…` : text
 }
 
+/**
+ * 工具结果 details → 展示 diff（edit 工具专用，D4 定稿进协议）。流式路径从
+ * tool_execution_end 的 result 取，历史回查从 toolResult 消息的 details 取
+ * （pi 转录持久化 details）—— 两条路径同源同形。非 edit / 无 diff 自然
+ * 返回 undefined（协议 optional，UI 不渲染）。
+ */
+function extractResultDiff(result: unknown): string | undefined {
+  if (typeof result !== 'object' || result === null) return undefined
+  const details = (result as { details?: unknown }).details
+  if (typeof details !== 'object' || details === null) return undefined
+  const diff = (details as { diff?: unknown }).diff
+  return typeof diff === 'string' ? diff : undefined
+}
+
 /** pi Usage → 协议 MessageUsage：只投影 UI 所需（cost 明细不带，total 一项即总账） */
 function projectUsage(usage: Usage): MessageUsage {
   return {
@@ -260,11 +304,53 @@ function accumulateUsage(current: MessageUsage | undefined, add: MessageUsage): 
   }
 }
 
+/**
+ * 上下文明细三段估算（悬浮卡分类区数据源，2026-11-11）。
+ *
+ * 为什么用 pi 的 estimate 而不是自己数：clampMaxTokensToContext（simple-options.js）
+ * 每轮算 max_tokens 预算用的就是 estimateContextTokens —— 明细与引擎真实预算
+ * 同源自洽，这是 tiktoken/count_tokens 都给不了的（另一套词表对真实预算反而失真）。
+ * 代价：3.5 chars/token 的字符粗估对中文偏松，UI 据此带 ≈ 标记。
+ *
+ * 三段拆法：pi 把系统提示词与工具声明合并放在 leading system message
+ * （toolsAdded 字段，estimateMessageTokens 对 system 消息 = 文本 + 工具 schema），
+ * 按字段拆开各算各的；其余消息（user/assistant/toolResult）全归"消息"段。
+ * total 直接取 estimateContextTokens().tokens（= 末轮实报 usage + 其后 trailing
+ * 估算，即预算式里的"占用"），保证三段和与引擎看到的占用一致。
+ *
+ * 无对话时（首问前）estimateContextTokens 返回 0/无 usage 锚点，照常算 ——
+ * 调用方只在回合结束（有 usage）时才挂到消息上，空转录不会走到这。
+ */
+function estimateContext(messages: AgentMessage[]): ContextEstimate {
+  let systemPrompt = 0
+  let toolDefs = 0
+  const rest: AgentMessage[] = []
+  for (const message of messages) {
+    if (message.role === 'system') {
+      // content 可能是 string 或 TextContent[]；getSystemMessageText 统一成
+      // 模型可见的完整文本（含 sections 渲染），与 estimate 内部口径一致
+      systemPrompt += estimateTextTokens(getSystemMessageText(message))
+      if (message.toolsAdded) toolDefs += estimateTextTokens(JSON.stringify(message.toolsAdded))
+      continue
+    }
+    rest.push(message)
+  }
+  return {
+    systemPrompt,
+    toolDefs,
+    messages: rest.reduce((sum, m) => sum + estimateMessageTokens(m), 0),
+    total: estimateContextTokens(messages).tokens
+  }
+}
+
 /** 盘上文档格式版本（将来字段演进据此迁移，同 credentials.json 的 version 手法） */
-const SESSION_FILE_VERSION = 1/** 会话集合名（StorageDriver 顶层目录 ~/.cogent/sessions/） */
+const SESSION_FILE_VERSION = 1
+/** 会话集合名（StorageDriver 顶层目录 ~/.cogent/sessions/） */
 const SESSION_COLLECTION = 'sessions'
 /** 首条消息截断为会话标题的长度上限 */
 const TITLE_MAX_CHARS = 24
+/** 拒绝附言截断上限（D2：防长附言打爆工具结果，与 D8 截断纪律同源） */
+const APPROVAL_MESSAGE_MAX_CHARS = 2_000
 const DEFAULT_MODEL = 'claude-sonnet-4-5'
 const DEFAULT_PROVIDER = 'anthropic'
 
@@ -279,25 +365,30 @@ export class SessionManager {
   /**
    * 挂起中的审批（D4/D5）：approval.request 发出 → beforeToolCall 的 Promise 悬着
    * 等 approval.respond。value 存 sessionId（会话删除/退出时按会话批量收尾 ——
-   * 不 resolve 则 pi 的 await 永悬、该 run 永不结束）。
+   * 不 resolve 则 pi 的 await 永悬、该 run 永不结束）+ 工具类别（respond 的
+   * always='workspace' 落规则时要知道落哪类，审批交互升级 D3）。
    */
   private pendingApprovals = new Map<
     string,
-    { sessionId: string; resolve: (result: BeforeToolCallResult) => void }
+    { sessionId: string; kind: ToolKind; resolve: (result: BeforeToolCallResult) => void }
   >()
   private models: MutableModels
   private customProviders: CustomProviderRegistry
   /** 项目注册表（构造注入；submit/createAgent 时解析 projectId → 项目多根目录） */
   private projects: ProjectRegistry
+  /** 审批规则表（构造注入；beforeToolCall ask 判定前查「始终允许此工作区」，D3） */
+  private approvals: ApprovalRegistry
 
   constructor(
     private credentials: CredentialRegistry,
     private storage: StorageDriver,
     private notify: Notify,
     projects: ProjectRegistry,
+    approvals: ApprovalRegistry,
     private inspectStore: InspectStore
   ) {
     this.projects = projects
+    this.approvals = approvals
     // pi 内置全部 provider 的模型目录；凭据解析经 Agent.getApiKey 查我们的内存表
     this.models = builtinModels()
     this.customProviders = new CustomProviderRegistry(this.models)
@@ -450,7 +541,24 @@ export class SessionManager {
    */
   messages(sessionId: string): ChatMessage[] {
     const session = this.requireSession(sessionId)
-    return this.toChatMessages(session.agent ? session.agent.state.messages : session.transcript)
+    const source = session.agent ? session.agent.state.messages : session.transcript
+    const projected = this.toChatMessages(source)
+    // 上下文明细按需现算挂"末条带 usage 的消息"（历史回查路径，重启/切换会话
+    // 走这）：agent_end 只把估算挂到事件侧 streaming 对象随 run.completed 飞走，
+    // 盘上 transcript 是 pi 形状（其 Usage 无此字段，塞协议字段会浑浊真源）——
+    // 不现算的话明细只在运行当次可见，重启即丢（2026-11-11 用户报障）。
+    // estimateContext 是纯转录函数，读时重算幂等、免盘上迁移，旧会话也由此
+    // 直接有明细（免"无字段降级"）。挂点 = 从后往前首条带 usage 的 assistant，
+    // 与指示器分子的读取序一致；纯工具段末条无正文本体的边角与事件路径同缺
+    // （flattenSegments 不落本体），不另补
+    for (let i = projected.length - 1; i >= 0; i--) {
+      const m = projected[i]
+      if (m.role === 'assistant' && m.usage) {
+        m.usage = { ...m.usage, contextEstimate: estimateContext(source) }
+        break
+      }
+    }
+    return projected
   }
 
   // ———— 运行时控制台（inspect 域后端）————
@@ -588,26 +696,76 @@ export class SessionManager {
   // ———— 审批（计划-工具系统与审批.md 第 4 步，D4/D5）————
 
   /**
-   * 宿主裁决回流：resolve 挂起中的 beforeToolCall Promise。
-   * 唔配对 requestId（已裁决过 / abort 已收尾 / 不存在）→ InvalidParams ——
-   * 双击允许钮、裁决与中止竞态都属于此类，显式报错而非静默成功。
+   * 宿主裁决回流：resolve 挂起中的 beforeToolCall Promise（审批交互升级 D2 扩
+   * message/always）。唔配对 requestId（已裁决过 / abort 已收尾 / 不存在）→
+   * InvalidParams —— 双击允许钮、裁决与中止竞态都属于此类，显式报错而非静默成功。
    */
-  respondApproval(requestId: string, approved: boolean): { ok: true } {
+  respondApproval(
+    requestId: string,
+    approved: boolean,
+    message?: string,
+    always?: 'workspace'
+  ): { ok: true } {
     const pending = this.pendingApprovals.get(requestId)
     if (pending === undefined) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, `审批请求不存在或已被裁决: ${requestId}`)
     }
+    // always 的语义校验在消费 pending 之前：无绑定根会话不落规则（防"全放主
+    // 目录"的过大授权，D3 —— UI 不显示此项但协议直达，引擎侧是最后一道闸）；
+    // 报错时请求未被消费，宿主仍可改发普通 respond
+    if (always === 'workspace') {
+      const roots = this.workspaceRoots(this.requireSession(pending.sessionId))
+      if (roots.length === 0) {
+        throw new ProtocolError(RpcErrorCode.InvalidParams, '无绑定工作区的会话不支持「始终允许」')
+      }
+      // 允许本次 + 落工作区级规则（同 roots 集合幂等，见 ApprovalRegistry.add）
+      this.approvals.add(roots, pending.kind)
+    }
     this.pendingApprovals.delete(requestId)
-    pending.resolve(approved ? { block: false } : { block: true, reason: '用户拒绝了本次操作' })
+    // 拒绝附言（D2「告诉模型接下来怎么做」）：进 block reason → pi 工具错误结果
+    // 给模型。截断上限防打爆工具结果（与 D8 截断纪律同源）；加前缀让模型明确
+    // 这是拒绝后的用户指示而非工具输出
+    const denyReason =
+      !approved && message !== undefined && message.trim() !== ''
+        ? `用户拒绝了本次操作。用户指示：${message.trim().slice(0, APPROVAL_MESSAGE_MAX_CHARS)}`
+        : '用户拒绝了本次操作'
+    pending.resolve(approved ? { block: false } : { block: true, reason: denyReason })
     return { ok: true }
   }
 
-  /** 会话级权限切换（「完全访问」按钮）：beforeToolCall 每次触发时读活值，运行中切换即生效 */
+  /**
+   * 会话级权限切换（权限模式菜单）：beforeToolCall 每次触发时读活值，运行中
+   * 切换即生效；**提示词时效（D6 评审补）** —— 对已建 agent 以**替换式单条**
+   * system 通告落新权限语义（pi 的 systemPrompt 重放全部 system 消息，纯追加
+   * 会随来回切换堆积拼接，故按前缀识别原地替换；ask = 移除 —— 切回后无
+   * 「已授予完全访问」残留）。惰性会话无 agent 则只记 summary（下次 ensureAgent
+   * 建后按 mode 补通告）。运行中（含审批挂起）切换安全：通告在下一轮请求生效，
+   * anthropic/openai 方言组装时中部 system 合并领头，不打断 toolUse/toolResult 配对。
+   */
   setPermission(sessionId: string, mode: PermissionMode): SessionSummary {
     const session = this.requireSession(sessionId)
     session.summary.permissionMode = mode
+    if (session.agent) this.applyPermissionNotice(session.agent, mode)
     this.persist(sessionId)
     return { ...session.summary }
+  }
+
+  /** 权限通告的替换式更新：transcript 内至多一条（PERMISSION_NOTICE_PREFIX 识别） */
+  private applyPermissionNotice(agent: Agent, mode: PermissionMode): void {
+    const messages = agent.state.messages
+    const at = messages.findIndex(
+      (m) => m.role === 'system' && typeof m.content === 'string' && m.content.startsWith(PERMISSION_NOTICE_PREFIX)
+    )
+    if (mode === 'ask') {
+      // 回到缺省：移除通告（无通告则不动 —— setter 拷贝顶层，避免无谓新引用）
+      if (at >= 0) agent.state.messages = messages.filter((_, i) => i !== at)
+      return
+    }
+    const notice = { role: 'system' as const, content: permissionNotice(mode), timestamp: Date.now() }
+    agent.state.messages =
+      at >= 0
+        ? messages.map((m, i) => (i === at ? notice : m))
+        : [...messages, notice]
   }
 
   /** 某会话的全部挂起审批以 block 收尾（删除/退出兜底；abort 走 signal listener，D5） */
@@ -642,6 +800,11 @@ export class SessionManager {
     const agent = this.createAgent(session, () => this.ensureInspector(session))
     session.agent = agent
     this.agentIndex.set(agent, session.summary.id)
+    // 模式非 ask 则落权限通告（D6）：新会话物化即 plan/auto 时 transcript 还没有
+    // 通告；恢复会话的通告已在 transcript（agent_end 落盘带上），替换幂等不重复
+    if (session.summary.permissionMode !== undefined && session.summary.permissionMode !== 'ask') {
+      this.applyPermissionNotice(agent, session.summary.permissionMode)
+    }
     return agent
   }
 
@@ -676,6 +839,14 @@ export class SessionManager {
         if (mode === 'plan') {
           return { block: true, reason: 'plan（只读）模式下写类工具被禁止' }
         }
+        // 自主模式（D6 定稿）：文件写信任放行（工作区根内，越界仍有工具层
+        // 软边界兜底），exec/network 风险类照旧走询问
+        if (mode === 'autonomous' && (kind === 'write' || kind === 'edit')) return undefined
+        // ask 判定前先查「始终允许」规则表（审批交互升级 D3）：会话工作区根与
+        // 某条同类别规则任一根命中即放行 —— 规则只能放行"边界内"的写，越界写
+        // 在工具执行层（resolveWithinRoots）恒拒，双保险。无绑定根（workspaceRoots
+        // 为空）天然不命中，无根会话不落规则的 UI 语义在引擎侧自洽
+        if (this.approvals.allows(this.workspaceRoots(session), kind)) return undefined
         // ask：发审批请求并挂起（D5：无超时 —— 用户不点就一直等，宿主输入框
         // 变停止钮可 abort；signal abort 兜底 resolve，否则中止后 Promise 永悬）
         const requestId = `appr-${crypto.randomUUID()}`
@@ -683,7 +854,7 @@ export class SessionManager {
         return new Promise<BeforeToolCallResult>((resolve) => {
           // 先登记再发事件：respondApproval 走这张表找 resolver，时序上不存在
           // 「事件未到、respond 先行」的窗口（宿主是收到事件才可能裁决）
-          this.pendingApprovals.set(requestId, { sessionId, resolve })
+          this.pendingApprovals.set(requestId, { sessionId, kind, resolve })
           this.notify('approval.request', {
             sessionId,
             requestId,
@@ -845,6 +1016,23 @@ export class SessionManager {
         })
         return
       }
+      case 'tool_execution_update': {
+        // 工具流式进度（当前消费者 = bash 的 OutputAccumulator 快照，100ms 节流
+        // 已在工具内做了，这里只透传）。快照语义（整段替换非增量），UI 直接渲染；
+        // 文本取尾部 2000 字符 —— 比 resultSummary 的 200 字符宽（bash 直播窗
+        // 要看得见量），又比accumulator 全量快照窄（100ms 一帧不搬 50KB）
+        const streaming = this.streaming.get(sessionId)
+        if (!streaming) return
+        const full = summarizeToolResult(event.partialResult)
+        if (full === '') return
+        const text = full.length > 2000 ? full.slice(-2000) : full
+        this.notify('tool.progress', {
+          sessionId,
+          callId: event.toolCallId,
+          text
+        })
+        return
+      }
       case 'tool_execution_end': {
         this.sessions.get(sessionId)?.inspector?.toolCompleted(
           event.toolName,
@@ -855,10 +1043,12 @@ export class SessionManager {
         const streaming = this.streaming.get(sessionId)
         if (!streaming) return
         const summary = summarizeToolResult(event.result)
+        const diff = extractResultDiff(event.result)
         const record = streaming.tools.find((t) => t.callId === event.toolCallId)
         if (record !== undefined) {
           record.status = event.isError ? 'error' : 'ok'
           record.resultSummary = summary
+          if (diff !== undefined) record.diff = diff
           // 区间终点（与 startedAt 同为引擎打点；历史回查路径另从 toolResult
           // 消息重建，两条来源同一形状）
           record.endedAt = Date.now()
@@ -867,7 +1057,8 @@ export class SessionManager {
           sessionId,
           callId: event.toolCallId,
           isError: event.isError,
-          summary
+          summary,
+          diff
         })
         return
       }
@@ -890,6 +1081,22 @@ export class SessionManager {
         // 这里同步一次保证盘上盘内一致（pi 语义：半截回复留存、后续请求可见）
         session.transcript = [...agent.state.messages]
         this.persist(sessionId)
+
+        // 上下文明细估算挂到本回合 usage 上（turn_end 逐轮累加的 usage 已聚合；
+        // 明细只描述"此刻转录长什么样"，与轮次无关，算一次即可）。挂 usage 而非
+        // 单独字段：renderer 旧数据无此字段自然降级（additive，见
+        // MessageUsage.contextEstimate）。聚合与末段各挂一份 —— 指示器分子读的是
+        // "末条带 usage 的消息"（分段终态下 = 末段），聚合份供兼容形态与观测
+        // 快照，两处是独立对象不共享。注意这里只覆盖事件路径：估算挂的是协议侧
+        // streaming 对象、随 run.completed 飞走，不进盘上 transcript（pi 形状，
+        // 其 Usage 无此字段）—— 历史回查路径在 messages() 按需现算，两条路
+        // 各自出同源数据（estimateContext 纯转录函数，见其注释）
+        if (streaming?.usage) {
+          const estimate = estimateContext(session.transcript)
+          streaming.usage.contextEstimate = estimate
+          const lastSegment = streaming.segments.at(-1)
+          if (lastSegment?.usage) lastSegment.usage.contextEstimate = { ...estimate }
+        }
 
         // 观测快照吃结构类型（顶层 text/thinking）—— 段化后顶层缓冲已清空，
         // 传各段聚合值（口径 = 拼接后总字符，与旧实现一致）
@@ -958,13 +1165,14 @@ export class SessionManager {
     // durationMs 反推起点）—— 历史回查与流式打点两条来源同一形状，重启不漂移
     const results = new Map<
       string,
-      { isError: boolean; text: string; startedAt?: number; endedAt?: number }
+      { isError: boolean; text: string; diff?: string; startedAt?: number; endedAt?: number }
     >()
     for (const message of messages) {
       if (message.role === 'toolResult') {
         results.set(message.toolCallId, {
           isError: message.isError,
           text: summarizeToolResult({ content: message.content }),
+          diff: extractResultDiff({ details: message.details }),
           endedAt: message.timestamp,
           startedAt: message.durationMs !== undefined ? message.timestamp - message.durationMs : undefined
         })
@@ -1002,6 +1210,7 @@ export class SessionManager {
             summary: meta !== undefined ? meta.summarize(block.arguments) : `${block.name}(?)`,
             status: paired?.isError ? 'error' : 'ok',
             resultSummary: paired?.text,
+            diff: paired?.diff,
             startedAt: paired?.startedAt,
             endedAt: paired?.endedAt
           })

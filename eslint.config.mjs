@@ -10,7 +10,19 @@
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['out/**', 'dist/**', 'node_modules/**', 'eslint.config.mjs'] },
+  // tmp/** = 仓库内冒烟脚本临时产物目录（同 out/ 口径 —— 冒烟惯例从仓库外
+  // /tmp 挪进项目内时随行，不入 tsconfig 也不挨 lint）
+  // reference/** = pi 上游源码参照（上游自己的 .ts 会在类型感知 lint 下炸）
+  {
+    ignores: [
+      'out/**',
+      'dist/**',
+      'node_modules/**',
+      'eslint.config.mjs',
+      'tmp/**',
+      'reference/**'
+    ]
+  },
   ...tseslint.configs.recommendedTypeChecked,
   {
     languageOptions: {

@@ -7,3 +7,6 @@ dist/
 .env
 .env.*
 .zcode/
+tmp/
+# pi 上游源码参照（sparse clone，本地参考用，不进 git 历史）
+reference/

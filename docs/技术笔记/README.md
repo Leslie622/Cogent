@@ -41,3 +41,4 @@
 | [运行时控制台](runtime-console.md) | inspect 域（pi hooks 观测 + 独立 DevTools 窗口 + 实时时间线） | 已完成（2026-11-10） |
 | [Markdown 渲染](markdown-rendering.md) | 路线空位 4 前半（Streamdown + Shiki + CJK 插件） | 已完成（2026-11-10） |
 | [工具系统与审批](tools-approval.md) | 路线空位 2/4/6（工具循环 + beforeToolCall 审批挂起 + 权限矩阵，批次 1+2 全景） | 已完成（2026-11-11） |
+| [bash / edit 工具与输出护栏](bash-edit-tools.md) | 计划-pi借鉴 批次 3（截断三件套 + 并发写队列 + edit CRLF 映射 + bash 进程树 + 自主模式 + gitignore 加固） | 已完成（2026-11-11） |

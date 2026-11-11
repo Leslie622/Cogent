@@ -282,7 +282,7 @@
     <tr><td><code>models.list</code></td><td>pi 模型目录摘要（UI 下拉数据源）；2026-11-10 起回带 <code>defaultModel</code>（provider+id 双键）—— 宿主不再自持默认模型常量副本（漂移后回填偏好会指向不可用模型）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>providers.custom.sync</code></td><td>自定义 provider + 内置 provider 本地调整（baseUrl 覆盖 / 模型增删 / 目录禁用）的<b>全量替换</b>同步</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>inspect.entries / inspect.entry</code></td><td>运行时控制台（2026-11-10）：拉会话观测条目摘要（时间线数据源）/ 按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词，数据源 = pi hooks 截获，见 <a href="技术笔记/runtime-console.md">笔记</a>）</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>approval.respond</code></td><td>用户对审批请求的裁决回执（2026-11-11 已接线）：resolve 挂起中的 beforeToolCall；唔配对 requestId（重复裁决/已中止）→ InvalidParams</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>approval.respond</code></td><td>用户对审批请求的裁决回执（2026-11-11 已接线，批次 2.5 扩参）：resolve 挂起中的 beforeToolCall；optional <code>message</code> = 拒绝附言（「告诉模型接下来怎么做」→ block reason → 工具 error 结果回灌模型）、<code>always: 'workspace'</code> = 允许本次 + 落工作区级「始终允许」规则（无绑定根会话 → InvalidParams）；唔配对 requestId（重复裁决/已中止）→ InvalidParams</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>session.setPermission</code></td><td>会话级权限切换（「完全访问」按钮 ask ↔ auto）；引擎判定矩阵每次钩子触发读活值，运行中切换即生效</td><td><span class="st ok">已实现</span></td></tr>
   </table>
 
@@ -293,7 +293,8 @@
     <tr><td><code>message.delta</code></td><td>流式文本增量；转译 text_delta / thinking_delta 两路（<code>kind</code> 区分，2026-11-08）；toolcall 无增量事件（工具起止走下方 tool.*）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>run.completed</code></td><td>执行正常结束：最终完整 assistant 消息（UI 用它替换流式累积，免拼 delta；2026-11-09 起带 <code>usage</code> token 用量 / <code>durationMs</code> 模型耗时 / <code>model</code> 模型名三件套）+ stopReason（length = 被 token 上限截断）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>run.failed</code></td><td>执行失败：message 来自 pi 约定的 <code>Agent.state.errorMessage</code>（stream error / 中止后异常都汇于此）</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>tool.started / tool.completed</code></td><td>工具调用起止（带 ToolKind + 参数一行摘要；pi 时序 start 先于审批钩子 —— 挂起期宿主见 running 卡，拒绝后 completed(isError) 收口，2026-11-10 起发射）</td><td><span class="st ok">已发射</span></td></tr>
+    <tr><td><code>tool.started / tool.completed</code></td><td>工具调用起止（带 ToolKind + 参数一行摘要；pi 时序 start 先于审批钩子 —— 挂起期宿主见 running 卡，拒绝后 completed(isError) 收口，2026-11-10 起发射；completed 带 optional diff = edit 的展示 diff，批次 3 D4）</td><td><span class="st ok">已发射</span></td></tr>
+    <tr><td><code>tool.progress</code></td><td>工具执行中的流式进度（bash 输出尾部快照，整段替换非增量，引擎侧 100ms 节流 + 尾部 2000 字符；批次 3 D5，2026-11-11 additive）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>approval.request</code></td><td>审批拦截（2026-11-11 已接线）：写类工具 ask 模式下挂起（无超时），宿主以 <code>approval.respond</code> 裁决；中止/删会话引擎侧兜底收口</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>inspect.event</code></td><td>观测条目实时推送（2026-11-10）：引擎每个底层动作（厂商请求/响应/SSE 分片/turn/工具/run + 系统提示词）沉淀一条摘要实时外推，详情不随流走（<code>inspect.entry</code> 按需）——控制台窗口的时间线增量</td><td><span class="st ok">已发射</span></td></tr>
   </table>
@@ -514,14 +515,27 @@
     引擎的工具能力分两层：<b>工具本体</b>（<code>tools/</code> 目录，pi 的 AgentTool 声明 +
     Cogent 的 <code>{ tool, kind, summarize }</code> 包装 —— pi 没有"风险类别"概念，ToolKind
     是产品语义）与 <b>审批矩阵</b>（session.ts 的 beforeToolCall 钩子，判定逻辑全引擎一处）。
-    四件只读/写工具：read / glob / grep（只读不限界，D2 修订：相对路径以基根解析、绝对任意）
-    + write（软限界 resolveWithinRoots，越界 error 结果带可写根提示）。
+    七件工具（批次 3 后）：read / glob / grep / ls（只读不限界，D2 修订：相对路径以基根解析、
+    绝对任意；walk 尊重 .gitignore/.ignore + 嵌套仓边界）+ write（软限界 resolveWithinRoots，
+    越界 error 结果带可写根提示）+ edit（精确替换，同 write 边界；diff 进协议 D4）+
+    bash（D2 单工具平台路由：Windows=PowerShell / unix=bash；killProcessTree + 超时 +
+    tool.progress 流式）。写类（write/edit）与 bash 落盘/执行段走 file-mutation-queue
+    （同文件串行，防并行工具竞态）；输出统一走 truncate 三件套（双上限 + 流式累积器 +
+    超限临时文件）。
   </p>
   <ul>
-    <li><b>判定矩阵（ToolKind × permissionMode）</b>：read 恒放行；write 按 mode ——
-    auto（完全访问）放行 / plan 直接 block / ask（缺省）发 <code>approval.request</code> 挂起。
-    mode 读会话 summary 活引用，运行中切换即生效；矩阵判定在引擎协议层 ——
-    换壳不改安全语义，UI 只是裁决面板；</li>
+    <li><b>判定矩阵（ToolKind × permissionMode）</b>：read 恒放行；write/edit/bash 按 mode ——
+    auto（完全访问）放行 / plan 直接 block / ask（缺省）先查「始终允许」规则表再发
+    <code>approval.request</code> 挂起 / <b>autonomous（自主模式，批次 3 D6）</b>write·edit
+    信任放行、exec 类（bash）照旧询问。规则表（批次 2.5，<code>runtime/approvals.ts</code>）=
+    <code>~/.cogent/approvals.json</code> 单文件，条目为 roots×kind 快照（只存位置不存
+    内容），判定 = 会话工作区根与条目任一根交集；优先序 = 软边界（工具执行层越界恒拒）
+    &gt; 规则表放行 &gt; mode 矩阵。mode 读会话 summary 活引用，运行中切换即生效；
+    矩阵判定在引擎协议层 —— 换壳不改安全语义，UI 只是裁决面板；</li>
+    <li><b>权限通告（批次 2.5 D6）</b>：plan/auto 语义以 transcript 内单条
+    <code>[cogent:permission]</code> system 通告呈现（替换式更新 —— pi 的 systemPrompt
+    是全部 system 消息重放拼接，纯追加会堆积；ask = 移除）；setPermission 与 ensureAgent
+    两处驱动，切回 ask 零残留 —— 不进 buildSystemPrompt（leading 固化后运行中切不动）；</li>
     <li><b>挂起手法</b>：beforeToolCall 返回 pending Promise（pi 约定 undefined=放行、
     block=拒绝），pendingApprovals 表登记 resolver；三路收尾兜底 —— signal abort
     listener（挂起必须监听，否则中止后永悬）、会话删除 settleApprovals、disposeAll；

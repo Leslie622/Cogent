@@ -9,6 +9,7 @@ import { useState } from 'react'
 import { IconChevronDown } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { useEngineStore } from '@/stores/engine'
 import { SettingsGroup, SettingsRow } from './SettingsParts'
 
 /** 下拉占位钮：描边圆角 + 值 + 箭头（点击出菜单属后续件）。
@@ -42,8 +43,12 @@ function SecondaryAction({ label }: { label: string }) {
 }
 
 export function GeneralSection() {
-  // 开关演示态：设置持久化接入引擎后由 store 替换
-  const [defaultPermission, setDefaultPermission] = useState(true)
+  // 「默认权限」真接线（审批交互升级 D6）：开关两态 = 新会话默认 ask ↔ auto
+  // （plan 不进默认 —— 临时切入的工作方式而非开局常态，2026-11-11 拍板）；
+  // 落 ~/.cogent/settings.json，chat store createSession 在显式选择缺席时消费
+  const defaultPermissionMode = useEngineStore((s) => s.defaultPermissionMode)
+  const setDefaultPermissionMode = useEngineStore((s) => s.setDefaultPermissionMode)
+  // 其余开关仍为演示态：设置持久化接入引擎后由 store 替换
   const [fullAccess, setFullAccess] = useState(true)
   const [fullView, setFullView] = useState(false)
 
@@ -55,11 +60,11 @@ export function GeneralSection() {
       <SettingsGroup label="权限">
         <SettingsRow
           title="默认权限"
-          desc="默认情况下，Cogent 可以读取和编辑其工作空间中的文件。需要时，它可以请求额外访问权限"
+          desc="开启后新会话默认以完全访问运行（写操作无需确认）；关闭则新会话默认写入前询问"
         >
           <Switch
-            checked={defaultPermission}
-            onCheckedChange={setDefaultPermission}
+            checked={defaultPermissionMode === 'auto'}
+            onCheckedChange={(checked) => setDefaultPermissionMode(checked ? 'auto' : 'ask')}
             aria-label="默认权限"
           />
         </SettingsRow>

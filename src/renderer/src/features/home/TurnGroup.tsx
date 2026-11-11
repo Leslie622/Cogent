@@ -200,7 +200,16 @@ function sumToolMs(items: MessageItem[]): number | undefined {
  *  （后者带自己的用量小字 —— 展开过程的逐段透明度） */
 function ProcessItem({ item }: { item: MessageItem }) {
   if (item.type === 'tool') {
-    return <ToolCard name={item.name} summary={item.summary} status={item.status} result={item.resultSummary} />
+    return (
+      <ToolCard
+        name={item.name}
+        summary={item.summary}
+        status={item.status}
+        result={item.resultSummary}
+        progress={item.progress}
+        diff={item.diff}
+      />
+    )
   }
   if (item.type === 'approval') {
     return <ApprovalCard item={item} />

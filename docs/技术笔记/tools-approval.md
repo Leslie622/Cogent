@@ -38,7 +38,17 @@ pi 无内置工具包（连 read 都没有），只给骨架：
   Promise 永悬、run 永不收尾；block 后 pi 照发 `tool_execution_end(isError)`，
   事件流不需要合成任何帧；
 - **转录**：工具调用 = assistant 消息的 toolCall 块，结果 = 独立
-  `role:'toolResult'` 消息（toolCallId 配对）—— 恢复历史按 id 配对投影。
+  `role:'toolResult'` 消息（toolCallId 配对）—— 恢复历史按 id 配对投影；
+- **systemPrompt 是重放产物，不是存储字段**（批次 2.5 调研，改提示词的官方
+  通道）：`AgentState.systemPrompt` 只读，getter = `getCurrentSystemPrompt(
+  messages)` —— 遍历 transcript **全部** system 消息按序拼接文本（pi-ai
+  `utils/transcript.js`）；要改提示词就**追加 system 消息**（types.d.ts 注释
+  原话）。mid-conversation system 的落点：请求组装时 `resolveTranscript` 按
+  方言分叉 —— 模型支持（`supportsMidConvoSystemMessages`）则原位保留；
+  不支持（anthropic 默认 false、openai-completions 按模型 compat）则
+  `collapseSystemMessages`：重放合并的 system 提到最前、原位置各条全部滤掉
+  —— **合并而非丢弃**，toolUse/toolResult 配对不被中部 system 打断。这使
+  "权限通告"可以安全地落在 transcript 里随切换更新（见取舍记录）。
 
 Cogent 在 pi 骨架外补的：`CogentTool { tool, kind, summarize }` 包装（pi 的
 AgentTool 无风险类别 —— kind 是产品语义不是引擎语义）；`TOOL_METAS` 静态表
@@ -48,11 +58,18 @@ AgentTool 无风险类别 —— kind 是产品语义不是引擎语义）；`TO
 
 | | 风险分级 | 审批判定 | 挂起实现 | 记忆（"总是允许"） |
 | --- | --- | --- | --- | --- |
-| **Cogent** | ToolKind 四类（read/write/exec/network） | 引擎一处矩阵：kind × permissionMode（会话级 auto/ask/plan） | beforeToolCall 返回 pending Promise + pendingApprovals 表 + signal 兜底 | 无（逐次裁决，批次 3 再议） |
-| **Claude Code** | 工具名 × 参数（Write/Edit/Bash 分立，Bash 按命令前缀） | permission-mode（default/acceptEdits/plan/bypassPermissions）× settings.json 的 allow/deny 规则表 + PreToolUse hook 可改写判定 | SDK 侧 control protocol 挂起（CLI 内联 canApprove 弹窗；headless 模式 canUseTool 回调） | 有：`Always allow` 写会话级规则，可持久化到 settings |
-| **OpenAI Codex CLI** | 沙箱三档（read-only/workspace-write/danger-full-access）与审批策略（untrusted/on-failure/on-request/never）**两维独立** | Rust 引擎 exec 前按 (sandbox, approval_policy, 命令分类) 查表 | TUI 收到审批请求渲染按钮，通道双向（approveRequest/denyRequest） | 有：session 级 remember choice |
+| **Cogent** | ToolKind 四类（read/write/exec/network） | 引擎一处矩阵：kind × permissionMode（会话级 auto/ask/plan）+ 工作区级规则表（批次 2.5） | beforeToolCall 返回 pending Promise + pendingApprovals 表 + signal 兜底 | **工作区级持久**（`~/.cogent/approvals.json`，roots×kind 快照；批次 2.5） |
+| **Claude Code** | 工具名 × 参数（Write/Edit/Bash 分立，Bash 按命令前缀） | permission-mode（default/acceptEdits/plan/bypassPermissions）× settings.json 的 allow/deny 规则表 + PreToolUse hook 可改写判定 | SDK 侧 control protocol 挂起（CLI 内联 canApprove 弹窗；headless 模式 canUseTool 回调） | 分工具：Bash/WebSearch 域 = 永久落盘 settings（存精确命令，**曾泄漏密钥** —— Apiiro 实锤 settings.local.json 被误提交）；文件写（Edit/Write）**只到会话结束，刻意不落盘**，永久放行走模式不走规则 |
+| **OpenAI Codex CLI** | 沙箱三档（read-only/workspace-write/danger-full-access）与审批策略（untrusted/on-failure/on-request/never）**两维独立** | Rust 引擎 exec 前按 (sandbox, approval_policy, 命令分类) 查表 | TUI 收到审批请求渲染按钮，通道双向（approveRequest/denyRequest） | 无 always 规则；等价物 = trusted projects（`~/.codex/config.toml` 目录信任）；`untrusted` 策略因太烦已退役（0.49+） |
 | **DeepAgent**（LangChain deepagents） | 工具粒度：human_in_the_loop=[...] 指定哪些工具要审 | 包装层：待审工具改为先返"待确认"标记内容 | **LangGraph interrupt()**：图执行硬停在节点边界，Command(resume) 恢复 —— 挂起即图状态，天然可持久化/可恢复（Cogent 的挂起是进程内 Promise，引擎重启=丢） | 无内置（resume 时业务自己记） |
 | **ChatGPT 桌面 Agent** | 操作分级（浏览/改动/系统） | 会话级"完全访问"开关（关=逐操作确认） | 产品侧（非开源），确认卡挂在消息流 | 会话级记住 |
+
+规则表流派补充（批次 2.5 三家调研，详表见 计划-审批交互升级.md §1.5）：
+Qoder「始终允许本项目」= 项目级持久（Cogent 同流派）；三家共识 = **文件写的
+永久放行绑定"位置"不绑定"内容"** —— Cogent 只存 roots 不存命令/内容，且存
+引擎侧全局（`~/.cogent`）不进项目目录，杜绝 Claude Code 的 repo 内误提交
+泄漏面。判定优先序 = 软边界（工具执行层越界恒拒）> 规则表放行 > mode 矩阵，
+与 Claude Code「deny > allow 严格序、跨作用域 deny 终局」铁律同构。
 
 关键分歧点：
 
@@ -81,7 +98,35 @@ AgentTool 无风险类别 —— kind 是产品语义不是引擎语义）；`TO
 - **「完全访问」暂存位不持久化**：跨会话记住"上次开了全放行"会让用户忘了关；
   新会话永远回 ask 缺省（home store 视图态暂存，物化时随 session.create 落定）；
 - **重复裁决 → InvalidParams 而非静默**：双击/与中止竞态都属此类，显式报错让
-  宿主可感知（store 层乐观翻卡 + catch 收声，终局以 run 终态事件为准）。
+  宿主可感知（store 层乐观翻卡 + catch 收声，终局以 run 终态事件为准）；
+- **确认面板 vs 弹窗（批次 2.5 D1；2026-11-11 用户两次定调）**：弹窗打断感强
+  （模态抢焦点，多审批排队更糟），Claude Code/Codex/图 1 产品全是内嵌面板 ——
+  Cogent 落对话底部确认面板，且**待审批时替换输入区**（首版「输入区上方常驻
+  + 输入框仍可打字」被用户推翻：run 挂起中本就发不出消息，留着能打字的框是
+  误导 —— HomeChat 条件切换 Panel/Composer，输入草稿提升父层持防卸载丢字）；
+  **卡内布局照参考图定稿** = 竖排全宽选项列表 + 序号 + 选中态高亮（终端式
+  选择的 GUI 化：↑↓/Tab 移动选中、Enter/确认钮执行选中项、点击直接执行），
+  替代首版的横排按钮组 —— 竖排每项带说明文案的空间是横排给不出的。pending
+  态是会话级状态（pendingApprovalsBySession，数组形态 —— pi 并行执行同批工具
+  会并发多个 approval.request），裁决完成后落置灰痕迹行进消息流（ApprovalCard
+  收窄为终态 TraceLine；痕迹是进程内存态，跨重启审计靠工具卡 error 形态 ——
+  拒绝的写在转录里是 isError toolResult，持久）；
+- **「告诉模型接下来怎么做」= 拒绝 + 附言（D2）**：附言拼进 block reason →
+  pi 工具 error 结果回灌模型（2000 字符截断），是 steering 的最小雏形 —— 真
+  运行中插话（pi 已有 steer()/followUp() 队列）是后续空位，不混做；
+- **规则表为什么单文件 + 只存 roots（D3）**：规则是全局一小份（预计个位数），
+  单文件整读整写最贴切（driver collection 是一实体一文件的目录语义，不匹配）；
+  Claude Code 的 settings.local.json 存精确命令（含密钥）被误提交泄漏的教训
+  → 只存位置；`untrusted` 策略太烦被 Codex 退役的教训 → 面板五件套封顶、
+  「本会话始终允许」中间档不做（完全访问已覆盖会话级需求）；
+- **权限通告走 transcript 单条替换，不进 buildSystemPrompt（D6 评审补）**：
+  leading system message 在 createAgent 固化，而模式运行中可切 —— 若把权限
+  句固化进 leading，auto 切回 ask 后残留「已授予完全访问」的有害提示。正道
+  （pi systemPrompt 重放机制，见 §2）：transcript 内单条 `[cogent:permission]`
+  system 通告，setPermission 时按前缀识别**原地替换**（纯追加会随来回切换
+  堆积 —— 重放是文本拼接不是覆盖）；ask = 移除。审批挂起时切「完全访问」
+  也安全：中部 system 在请求组装时被 collapse 合并领头，不打断
+  toolUse/toolResult 配对，下一轮即生效。
 
 ## 5. 在 Cogent 的落点
 
@@ -89,10 +134,12 @@ AgentTool 无风险类别 —— kind 是产品语义不是引擎语义）；`TO
 | --- | --- | --- |
 | 工具本体 | `tools/read|glob|grep|write.ts`（path/walk 底座） | 只读不限界（resolveAgainstBase）；write 软限界（resolveWithinRoots，越界 error 结果带可写根提示） |
 | 注册表 | `tools/index.ts` | buildTools(基根) + TOOL_METAS（kind/摘要静态表，历史回查共用） |
-| 审批矩阵 | `runtime/session.ts` createAgent.beforeToolCall | read 放行；write 按 mode：auto 放行 / plan block / ask 发 approval.request 挂起（D5 无超时；signal abort、会话删除、disposeAll 三路收尾） |
-| 协议 | `protocol/types.ts` | approval.request 事件 / approval.respond、session.setPermission method / SessionSummary.permissionMode（全部 additive） |
-| 壳 | `electron/main/ipc/approval.ts` | `approval:respond` 专属 IPC（D3：不经 renderer 通用代理，安全边界独立成路） |
-| renderer | `stores/chat.ts`（ApprovalItem）+ `features/home/ApprovalCard.tsx` | 审批卡（AI Elements Confirmation 配方 = Item 原语 + 双钮；终态 TraceLine 置灰）；respondApproval 走 preload 专属通道 |
+| 审批矩阵 | `runtime/session.ts` createAgent.beforeToolCall | read 放行；write 按 mode：auto 放行 / plan block / ask 先查规则表（任一根命中放行）再发 approval.request 挂起（D5 无超时；signal abort、会话删除、disposeAll 三路收尾） |
+| 规则表 | `runtime/approvals.ts` ApprovalRegistry | `~/.cogent/approvals.json` 单文件（tmp+rename 原子写，不走 driver collection）；roots×kind 快照、判定 = 会话根交集、add 幂等、损坏旁置 .corrupt 按空表继续 |
+| 权限通告 | `runtime/session.ts` applyPermissionNotice | transcript 内单条 `[cogent:permission]` system 通告（替换式更新，ask = 移除）；setPermission/ensureAgent 两处驱动 |
+| 协议 | `protocol/types.ts` | approval.request 事件 / approval.respond（message 附言 + always='workspace' 扩参，additive）、session.setPermission method / SessionSummary.permissionMode |
+| 壳 | `electron/main/ipc/approval.ts` + `ipc/settings.ts` | `approval:respond` 专属 IPC 透传 optional 新参；settings.json 增 defaultPermissionMode（新会话默认，开关两态） |
+| renderer | `stores/chat.ts`（pendingApprovalsBySession + ApprovalItem 痕迹行）+ `features/home/ApprovalPanel.tsx` / `PermissionMenu.tsx` / `ApprovalCard.tsx`（终态痕迹） | 底部确认面板五件套（允许/始终允许此工作区/完全访问两步串/拒绝/附言输入）；权限模式菜单三档 + 自主置灰占位；侧栏等待确认 tag（HomeSidebar 派生） |
 
 冒烟：`/tmp/cogent-smoke/approval-smoke.mjs`（14 项断言：允许往返落盘 / 拒绝
 error 结果 / 重复裁决 InvalidParams / auto 零审批直写 / 越界拦截 / abort 挂起

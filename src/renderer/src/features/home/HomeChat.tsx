@@ -24,7 +24,6 @@ import {
   IconLayoutSidebarRightCollapse,
   IconLayoutSidebarRightExpand,
   IconPlus,
-  IconShieldExclamation,
   IconSquare,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
@@ -54,6 +53,8 @@ import {
 import type { MessageItem } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
 import { ProjectPicker } from './ProjectPicker'
+import { ApprovalPanel } from './ApprovalPanel'
+import { PermissionMenu } from './PermissionMenu'
 import { findActiveModel, useEngineStore } from '@/stores/engine'
 import { ConversationIndex } from './ConversationIndex'
 import { ModelMenu } from './ModelMenu'
@@ -162,10 +163,22 @@ function ChatMessages() {
  * 底部输入区：输入卡上方灰条（项目会话信息区，新聊天限定）+
  * 输入卡（24px 圆角白卡 + 极浅 1px 边，聚焦无反馈）：Enter 发送（isComposing
  * 挡输入法误发）、流式中发送钮变停止钮（agent.abort）、底部工具行 = 裸 +
- * 附件 / 完全访问 / 上下文指示器 / 模型下拉（ModelMenu）/ 发送。
+ * 附件 / 权限模式菜单 / 上下文指示器 / 模型下拉（ModelMenu）/ 发送。
+ * 输入草稿是 props（提升到 HomeChat 层持有）：待审批时本组件整体被
+ * ApprovalPanel **替换**（2026-11-11 用户定调：审批卡覆盖输入位、不支持
+ * 输入 —— run 挂起中本就发不出，留着能打字的框是误导），本地态会随卸载
+ * 丢草稿，父层持有则裁决后回来字还在。
  */
-function ChatComposer({ session }: { session: HomeSession }) {
-  const [value, setValue] = useState('')
+function ChatComposer({
+  session,
+  value,
+  onValueChange
+}: {
+  session: HomeSession
+  value: string
+  onValueChange: (next: string) => void
+}) {
+  const setValue = onValueChange
   const running = useChatStore(selectRunning)
   const submit = useChatStore((s) => s.submit)
   const abort = useChatStore((s) => s.abort)
@@ -180,23 +193,6 @@ function ChatComposer({ session }: { session: HomeSession }) {
   )
   const projects = useProjectStore((s) => s.projects)
   const sessions = useChatStore((s) => s.sessions)
-  const setPermission = useChatStore((s) => s.setPermission)
-  // 「完全访问」开关态（计划第 5 步）：chat 态读活动会话的 permissionMode（真源，
-  // 引擎判定矩阵消费同一字段）；new 态读 home store 暂存位（submit 物化时落定）
-  const sessionFullAccess =
-    useChatStore((s) => s.sessions.find((x) => x.id === s.activeSessionId)?.permissionMode) === 'auto'
-  const stagingFullAccess = useHomeStore((s) => s.session.kind === 'new' && s.session.fullAccess === true)
-  const fullAccess = session.kind === 'new' ? stagingFullAccess : sessionFullAccess
-  const toggleFullAccess = () => {
-    const activeId = useChatStore.getState().activeSessionId
-    if (session.kind === 'chat' && activeId !== null) {
-      void setPermission(activeId, fullAccess ? 'ask' : 'auto')
-      return
-    }
-    useHomeStore.setState((s) =>
-      s.session.kind === 'new' ? { session: { ...s.session, fullAccess: !fullAccess } } : s
-    )
-  }
   const { scrollToEnd } = useMessageScroller()
 
   // 信息区回显：发起时带 projectId → 项目卡（project store）；已有会话按
@@ -300,25 +296,9 @@ function ChatComposer({ session }: { session: HomeSession }) {
             >
               <IconPlus className="size-4" />
             </InputGroupButton>
-            {/* 「完全访问」开关（会话级 permissionMode ask ↔ auto，计划第 5 步）：
-                关闭 = warning 琥珀 ghost（警示可选）；开启 = 浅红胶囊底
-                （bg 透明度允许、文字实色 —— 全局文字色纪律），点击即切换。
-                开启期间写类工具跳过审批直接执行 */}
-            <Button
-              variant="ghost"
-              size="xs"
-              className={cn(
-                'ml-2 gap-1.5 px-2 text-[13px] has-[>svg]:px-2 hover:bg-accent-foreground/5',
-                fullAccess
-                  ? 'rounded-full bg-destructive/10 text-destructive hover:text-destructive'
-                  : 'text-warning hover:text-warning'
-              )}
-              aria-label={fullAccess ? '关闭完全访问' : '开启完全访问'}
-              onClick={toggleFullAccess}
-            >
-              <IconShieldExclamation className="size-3.5" />
-              完全访问
-            </Button>
+            {/* 权限模式菜单（审批交互升级第 3 步，原「完全访问」toggle 升级）：
+                三档真选项 + 自主置灰占位 + 危险分组分隔线，触发钮显当前模式名 */}
+            <PermissionMenu session={session} />
             <div className="ml-auto flex items-center gap-3">
               {/* 上下文指示器紧邻模型下拉：分母（contextWindow）跟着模型走 */}
               <ContextIndicator session={session} />
@@ -365,6 +345,12 @@ export function HomeChat({
   const title = useChatStore(
     (s) => s.sessions.find((x) => x.id === s.activeSessionId)?.title ?? '新聊天'
   )
+  // 待审批 = ApprovalPanel **替换**输入区（2026-11-11 用户定调：审批卡覆盖
+  // 输入位、待审批不支持输入）。草稿提升到本层持有，Composer 卸载不丢字
+  const hasPendingApproval = useChatStore(
+    (s) => (s.pendingApprovalsBySession[s.activeSessionId ?? '']?.length ?? 0) > 0
+  )
+  const [draft, setDraft] = useState('')
   return (
     <div className="flex h-full min-w-0 flex-col">
       <ChatHeader title={title} tabsCollapsed={tabsCollapsed} onToggleTabs={onToggleTabs} />
@@ -374,7 +360,11 @@ export function HomeChat({
           Composer 发送时调 scrollToEnd 恢复跟随，翻历史/锚点定位后发送照样吸底 */}
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <ChatMessages />
-        <ChatComposer session={session} />
+        {hasPendingApproval ? (
+          <ApprovalPanel />
+        ) : (
+          <ChatComposer session={session} value={draft} onValueChange={setDraft} />
+        )}
       </MessageScrollerProvider>
     </div>
   )

@@ -152,9 +152,56 @@ MCP/消息 各段分别计数，pi 无 estimator API。主流三条路：
 模型无公开 count 端点；② **本地 tokenizer**——tiktoken 对 OpenAI 精确
 （词表公开），对 GLM/DeepSeek 只能近似（各家 BPE 词表不同）；
 ③ **chars 粗估**（~4 chars/token，中文更密）——Cherry Studio 等通用客户端
-做法，跨模型一视同仁地不准。Cogent 当前无工具/MCP，明细只有"消息"一项，
+做法，跨模型一视同仁地不准。Cogent 当时无工具/MCP，明细只有"消息"一项，
 是空架子；待工具铺开后若主力 Anthropic 系可接 ①，通用场景退 ③ 并标 ≈。
 压缩预警线（Claude Code "Context left until auto compact"）同理等压缩模块。
+**→ 明细已于 2026-11-11 接上，见 §6.1。**
+
+## 6.1 分类明细三段（2026-11-11，工具落地后接上）
+
+**先修正 §6 的一个过时判断**："pi 无 estimator API" 不成立 —— pi-ai
+`utils/estimate.js` 导出 `estimateContextTokens`/`estimateMessageTokens`/
+`estimateTextTokens`（3.5 chars/token 粗估 + 图片按 4800 chars），且
+`clampMaxTokensToContext`（simple-options.js）每轮算 max_tokens 预算用的
+正是它（`窗口 − estimate − 4096`）。**明细与引擎真实预算同源自洽**，这是
+tiktoken/count_tokens 都给不了的（另一套词表对真实预算反而失真）——
+当初列的三条路之外还有第四条：用引擎自己的估算器。误差特性随之变化：
+不是"跨模型一视同仁地不准"，而是"对引擎预算零漂移、对端点实报有字符
+粗估误差"（中文偏松）。UI 标记的演变：初版全区 ≈ + "≈ 分类明细"头行，
+同日用户定调收敛 —— 头行去掉（估算语义记在本笔记，UI 不重复占行），
+拆分靠"总量实报 + 按占比缩放对账"自明。
+
+**三段拆法**：pi 把系统提示词与工具声明合并放在 leading system message
+（`toolsAdded` 字段；`estimateMessageTokens` 对 system 消息 = 文本 +
+`estimateToolsTokens`），按字段拆开各算各的——文本走
+`getSystemMessageText`（含 sections 渲染，与 estimate 内部口径一致），
+工具声明 `JSON.stringify(toolsAdded)` 走 `estimateTextTokens`（即 pi
+`estimateToolsTokens` 的实现）；其余消息（user/assistant/toolResult）
+全归"消息"段。total 直接取 `estimateContextTokens().tokens`
+（= 末轮实报 usage + trailing 估算，即预算式里的"占用"），三段和与
+引擎看到的占用天然一致。
+
+**ZCode /context 对照**（6 段 vs 3 段）：系统提示词/系统工具/消息 三段
+可算已接；MCP 工具（无 MCP 模块）、技能（无技能系统）待各自模块；
+"其他"兜底段不仿——Cogent 三段之外没有数不清来源的段，硬凑即假明细。
+ZCode 那边是 Anthropic count_tokens 逐段精确计数，Cogent 是粗估 + 实报
+总量缩放对账，诚实口径不同。
+
+**实现落点**：协议 `MessageUsage.contextEstimate?`（additive，搭 usage
+便车不新增事件；`ContextEstimate` = systemPrompt/toolDefs/messages/
+total）；**两条路径各自出数**（estimateContext 纯转录函数同源）：事件路径
+在 `agent_end` 转录同步后算一次挂到协议侧 streaming 对象（聚合份与末段份
+各一份，随 run.completed 飞走——不进盘上 transcript，pi 形状的 Usage 无
+此字段，塞进去浑浊真源）；历史回查路径在 `session.messages` 投影后**按需
+现算**挂"末条带 usage 的消息"（读时重算幂等、免盘上迁移）。首版只挂了
+事件侧、历史路径无人补算 → 重启后明细消失（2026-11-11 用户报障修复），
+附带旧会话从"无字段降级"升级为直接有明细。renderer 悬浮卡明细区
+（色点 + 段名 + token + 占比，按占比降序、点色灰黑阶随行序变浅 —— 对标
+ZCode /context 色阶的"越大越深"编码，2026-11-11 用户定调：去 ≈ 头行、
+灰黑系不引调色板外的色，foreground 透明度阶梯即项目灰阶）。压缩预警线
+仍等压缩模块。
+
+**明细（分类占比）为什么先不做**：需要把总量拆成 系统提示词/系统工具/
 
 **实现落点**：纯 renderer 零协议改动——chat store `messagesBySession`
 （usage 已持久化，老会话直接可用）+ engine store `ModelSummary.contextWindow`

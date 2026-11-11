@@ -13,12 +13,17 @@
  *
  * 整文件写（非 patch）：edit 增量改写属批次 3，本工具 = Claude Code Write 同款。
  * 空内容合法（清空文件是明确的用户意图，不设防）。
+ *
+ * 并发写队列（步骤 3.2）：pi 并行执行同批工具，两个 write 撞同一文件 =
+ * 截断/分块写交错撕裂；落盘段包 withFileMutationQueue 按 realpath 串行（见
+ * file-mutation-queue.ts）。edit（3.3）将入同一队列。
  */
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import { obj, str, type Static } from '@earendil-works/pi-schema'
 import { errorResult } from './read'
+import { withFileMutationQueue } from './file-mutation-queue'
 import { outsideRootsMessage, resolveWithinRoots } from './path'
 
 const parameters = obj({
@@ -41,14 +46,21 @@ export function createWriteTool(roots: string[]): AgentTool {
       if (absolute === null) {
         return errorResult(outsideRootsMessage(roots))
       }
-      await mkdir(dirname(absolute), { recursive: true })
-      await writeFile(absolute, p.content, 'utf-8')
-      // 成功结果保持一行短摘要：工具结果全文进模型上下文，回显 content 纯浪费
-      const lines = p.content === '' ? 0 : p.content.split('\n').length
-      return {
-        content: [{ type: 'text', text: `已写入 ${p.path}（${lines} 行，${p.content.length} 字符）` }],
-        details: { path: absolute, bytes: Buffer.byteLength(p.content, 'utf-8') }
-      }
+      // 落盘段整段入队：mkdir + writeFile 是一次写变更的两步，中途让位给
+      // 另一个同文件写 = 目录建了内容被别人覆盖半截。不同文件不互斥（队列按
+      // 路径分键）。不做上游 write 的逐 await abort 轮询：我们的 abort 语义
+      // 挂在审批（beforeToolCall）与 run 级 signal，execute 内两步毫秒级，
+      // 轮询只添噪音；bash（3.4）才是真需要过程级 abort 的工具
+      return withFileMutationQueue(absolute, async () => {
+        await mkdir(dirname(absolute), { recursive: true })
+        await writeFile(absolute, p.content, 'utf-8')
+        // 成功结果保持一行短摘要：工具结果全文进模型上下文，回显 content 纯浪费
+        const lines = p.content === '' ? 0 : p.content.split('\n').length
+        return {
+          content: [{ type: 'text', text: `已写入 ${p.path}（${lines} 行，${p.content.length} 字符）` }],
+          details: { path: absolute, bytes: Buffer.byteLength(p.content, 'utf-8') }
+        }
+      })
     }
   }
   return tool

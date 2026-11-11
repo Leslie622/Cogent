@@ -114,7 +114,8 @@ const ChatRow = memo(function ChatRow({
   onSelect,
   onTogglePin,
   onArchive,
-  actions
+  actions,
+  waitingApproval
 }: {
   chat: SessionSummary
   active: boolean
@@ -125,6 +126,10 @@ const ChatRow = memo(function ChatRow({
   /** 归档（回收站语义）：会话从主列表消失，设置页「已归档的聊天」可恢复/删除 */
   onArchive: (chatId: string) => void
   actions?: ReactNode
+  /** 等待确认 tag（审批交互升级 D7；2026-11-11 用户定调形态）：会话有挂起
+      *  审批即显，**占行尾动作钮簇的位置**（此时置顶/归档钮不渲染 —— 待审批
+      *  是行当前的唯一状态，常显不随 hover 隐藏） */
+  waitingApproval?: boolean
 }) {
   return (
     <div
@@ -136,41 +141,53 @@ const ChatRow = memo(function ChatRow({
       )}
     >
       {/* active 只用底色区分不加粗（字重变化引起抖动）；文字一律近黑，层级靠
-          底色/分区标题灰 */}
+          底色/分区标题灰；pr-12 给 hover 钮簇让位（待审批时钮簇不在，收窄） */}
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-1.5 pr-12 text-[13px] text-foreground"
+        className={cn(
+          'flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-foreground',
+          waitingApproval ? 'pr-2' : 'pr-12'
+        )}
         aria-current={active ? 'true' : undefined}
         onClick={() => onSelect(chat.id)}
       >
         <span className="truncate">{chat.title}</span>
       </button>
-      <div className={ACTIONS}>
-        {actions ?? (
-          <>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className={ACTION_BUTTON}
-              aria-label={chat.pinnedAt ? '取消置顶' : '置顶聊天'}
-              onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}
-            >
-              {chat.pinnedAt ? <IconPinFilled className="size-4" /> : <IconPin className="size-4" />}
-            </Button>
-            {/* 归档 = 回收站语义（软删）：会话从主列表消失，设置页「已归档的
-                聊天」可恢复/彻底删除 */}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className={ACTION_BUTTON}
-              aria-label="归档聊天"
-              onClick={() => onArchive(chat.id)}
-            >
-              <IconArchive className="size-4" />
-            </Button>
-          </>
-        )}
-      </div>
+      {waitingApproval ? (
+        // 浅绿底 + 实色深绿字（文字色纪律：透明度只许用在背景）+ 呼吸点
+        // （控制台 timeline 同款 pulse 语言，「进行中」感）
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700">
+          <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+          等待确认
+        </span>
+      ) : (
+        <div className={ACTIONS}>
+          {actions ?? (
+            <>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={ACTION_BUTTON}
+                aria-label={chat.pinnedAt ? '取消置顶' : '置顶聊天'}
+                onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}
+              >
+                {chat.pinnedAt ? <IconPinFilled className="size-4" /> : <IconPin className="size-4" />}
+              </Button>
+              {/* 归档 = 回收站语义（软删）：会话从主列表消失，设置页「已归档的
+                  聊天」可恢复/彻底删除 */}
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={ACTION_BUTTON}
+                aria-label="归档聊天"
+                onClick={() => onArchive(chat.id)}
+              >
+                <IconArchive className="size-4" />
+              </Button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 })
@@ -189,6 +206,7 @@ const ProjectRow = memo(function ProjectRow({
   onDeleteProject,
   onArchiveChat,
   onTogglePin,
+  isWaitingApproval,
   pinned
 }: {
   projectId: string
@@ -205,6 +223,8 @@ const ProjectRow = memo(function ProjectRow({
   onArchiveChat: (chatId: string) => void
   /** 项目置顶/取消（菜单项接线） */
   onTogglePin: (projectId: string) => void
+  /** 会话是否有挂起审批（等待确认 tag，D7；下传给子 ChatRow） */
+  isWaitingApproval: (chatId: string) => boolean
   pinned: boolean
 }) {
   // 子会话置顶回调：行内 useCallback —— ProjectRow 自身少渲染，但真渲染时
@@ -302,6 +322,7 @@ const ProjectRow = memo(function ProjectRow({
                 onSelect={onSelectSession}
                 onArchive={onArchiveChat}
                 onTogglePin={handleToggleChatPin}
+                waitingApproval={isWaitingApproval(chat.id)}
               />
             ))
           ) : (
@@ -325,6 +346,14 @@ export function HomeSidebar() {
   // 会话/项目都是引擎真数据：chat store（session.list）+ project store（project.list）
   const sessions = useChatStore((s) => s.sessions)
   const createSession = useChatStore((s) => s.createSession)
+  // 等待确认 tag 的派生源（D7）：pendingApprovalsBySession 非空即显。函数签名
+  // 下传（useCallback 稳定引用保 ProjectRow/ChatRow memo；pending 变化只让
+  // 涉事行因 waitingApproval 布尔翻转而重渲染）
+  const pendingApprovals = useChatStore((s) => s.pendingApprovalsBySession)
+  const isWaitingApproval = useCallback(
+    (chatId: string): boolean => (pendingApprovals[chatId]?.length ?? 0) > 0,
+    [pendingApprovals]
+  )
   // 行点击真选中：selectSession 拉历史 + 置 activeSessionId（HomeChat 呈现源）——
   // 此前只切 home 视图态不选会话，行与内容错位（真实化要修的核心之一）
   const selectSession = useChatStore((s) => s.selectSession)
@@ -520,6 +549,7 @@ export function HomeSidebar() {
                     onDeleteProject={deleteProject}
                     onArchiveChat={archiveChat}
                     onTogglePin={toggleProjectPin}
+                    isWaitingApproval={isWaitingApproval}
                     pinned
                   />
                 ))}
@@ -532,6 +562,7 @@ export function HomeSidebar() {
                     onSelect={openSession}
                     onArchive={archiveChat}
                     onTogglePin={toggleChatPin}
+                    waitingApproval={isWaitingApproval(chat.id)}
                   />
                 ))}
               </>
@@ -579,6 +610,7 @@ export function HomeSidebar() {
                   onDeleteProject={deleteProject}
                   onArchiveChat={archiveChat}
                   onTogglePin={toggleProjectPin}
+                  isWaitingApproval={isWaitingApproval}
                   pinned={project.pinnedAt !== undefined}
                 />
               ))
@@ -622,6 +654,7 @@ export function HomeSidebar() {
                   onSelect={openSession}
                   onArchive={archiveChat}
                   onTogglePin={toggleChatPin}
+                  waitingApproval={isWaitingApproval(chat.id)}
                 />
               ))
             ) : (

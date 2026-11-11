@@ -26,6 +26,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cn": "^0.5.2",
+    "diff": "^8.0.4",
+    "ignore": "^7.0.14",
     "lucide-react": "^1.69.0",
     "radix-ui": "^1.8.1",
     "react": "^19.3.1",

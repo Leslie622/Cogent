@@ -60,18 +60,57 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   click 双路 stopPropagation 拦 base-ui 触发器，点 X = 解绑项目（删绑定空
   脚手架会话防串归属）而非弹菜单；胶囊旁另起独立 X 钮的方案被否
   （2026-11-10 用户定稿：融进胶囊，不是两个按钮）
-- **审批卡**（features/home/ApprovalCard.tsx，2026-11-11 工具批次 2）：两态 ——
-  pending = AI Elements Confirmation 配方（base-luma `item` 原语 ItemMedia/
-  ItemContent/ItemActions + 允许/拒绝双钮，媒体位 warning 盾 IconShieldFilled）；
-  终态 = TraceLine 置灰单行（与工具卡 blocked 同族，approved 盾勾 / denied 禁止
-  / cancelled 停止，尾标已允许/已拒绝/已取消）—— run 终态替换保留（用户裁决
-  痕迹，转录无对应物）。registry 无 confirmation 项：`add item`（连带 separator）
-  照官方配方组合即正解
-- **「完全访问」钮两态**（ChatComposer，2026-11-11 接线）：关闭 = warning 琥珀
-  ghost（原警示态）；开启 = `rounded-full bg-destructive/10 text-destructive`
-  （浅红胶囊底 —— bg 透明度允许、文字实色，全局文字色纪律）+ aria-label 随态
-  换（关闭/开启完全访问）；new 态 toggle 写 home store 暂存位（不持久化，
-  新会话永远回 ask 缺省），chat 态走 session.setPermission
+- **审批确认面板**（features/home/ApprovalPanel.tsx，2026-11-11 审批交互升级
+  D1/D2；**布局定稿 = 完全模仿用户参考图**的竖排选项列表形态）：**待审批时
+  替换输入区**（HomeChat 底部条件切换 hasPendingApproval ? Panel : Composer，
+  输入草稿提升 HomeChat 层持有防卸载丢字 —— run 挂起中本就发不出消息）。
+  卡片结构逐行对位参考图：「需要权限」小标题 → 参数行（IconPencil + 等待
+  确认灰字 + IconFileText + 文件名深色 + 路径灰字 —— 从引擎 summary `write(
+  path,…)` 首参拆 basename/dirname，解析失败整条原样显）→ **竖排全宽选项**
+  （序号 tabular 灰 + 主文案 + 说明灰字同行；允许/始终允许此工作区（无根
+  不显，序号顺移）/完全访问/拒绝）→ 附言输入框（h-9 rounded-lg **border-0
+  bg-muted/60** 无框浅灰条，placeholder「告诉模型接下来应该怎么做…」）→
+  底部行（ⓘ IconInfoCircle「使用 ↑↓ 选择，回车确认」+ 右侧深色确认主钮
+  `bg-foreground text-background`，发送钮同族）。**键盘模型 = 终端式选择的
+  GUI 化**：↑↓/Tab 移动**选中态**（React state 浅灰底 bg-muted 高亮，非 DOM
+  焦点轮转；hover 同步选中，**mouseLeave/附言框 focus 清高亮** —— 聚焦输入
+  框后选项灰底赖着不消是首验翻车点），Enter/确认钮 = 执行选中项，点击行 =
+  直接执行；面板出现即聚焦卡容器（tabIndex -1，替换了输入框焦点不能漂移）；
+  附言框 Enter = 拒绝并附言（stopPropagation，isComposing 挡输入法）、↑↓
+  交还列表；多条挂起竖排多卡（pi 并行工具并发），首卡聚焦。确认主钮反馈
+  阶梯：`bg-foreground → hover:/85 → active:/70` —— 近黑底上 hover:/90 只差
+  10% 透明度肉眼无感（首验「没 hover」翻车点）；base-luma button 原语**无
+  active 按压态**（cva 只有 hover + focus ring），深色主钮的按压色阶自补。
+  裁决痕迹行 = ApprovalCard（TraceLine 置灰单行随裁决落消息流，run 终态
+  替换保留）
+- **权限模式菜单**（features/home/PermissionMenu.tsx，2026-11-11 升级第 3 步，
+  原「完全访问」toggle 退役；当日用户定调修订配色）：dropdown-menu = 三档真
+  选项（计划模式 IconClipboardList / 变更前确认 IconShieldQuestion / 完全访问
+  IconShieldExclamation）+ 自主模式置灰占位（IconSparkles，exec/network 落地
+  后启用）+ **分隔线危险分组隔离**（完全访问独组，照图 2）；每项两行（名称 +
+  muted 说明）+ 当前项 IconCheck 右浮；完全访问的强调 = **warning 琥珀（警告
+  非错误 —— 曾用 destructive 红被推翻）**（菜单项 icon+label 与触发钮同语言）。
+  触发钮显**当前模式名 + ⌄**：**无常态背景**（含完全访问态，红胶囊常驻底
+  已废），仅 `hover:bg-accent-foreground/5` 出底；整体 `text-warning`，箭头
+  不单独给色（继承 currentColor，与主体统一）。
+  坑：base-luma dropdown Trigger 是 Base UI `render={<Button/>}` 模式，**不是**
+  Radix `asChild`；菜单 side="top"（钮在底部输入区）。
+  **坑 2（dropdown item 的强调色必须走原语变体）**：item 的 focus 高亮带
+  `**:text-accent-foreground` 通配染色 —— 把**所有后代**文字/svg 强制压黑，
+  子元素自己染的 `text-warning` 等强调色在 hover 下必被打掉（权限菜单
+  「完全访问」琥珀 hover 变黑的根因）；解法 = 在 item 层声明变体并从通配中
+  排除（原语已补 `variant="warning"`，照 destructive 的
+  `data-[variant=…]:text-*` + `not-data-[variant=…]:focus:**:` 排除链同款），
+  叠子元素类是对抗不了通配选择器优先级的
+- **侧栏等待确认 tag**（HomeSidebar ChatRow，2026-11-11 升级第 4 步；当日用户
+  定调修订形态）：**占行尾动作钮簇的位置**（有挂起审批时置顶/归档钮整簇不
+  渲染 —— 待审批是行当前的唯一状态；首版「标题右侧小字 + hover 淡出避让」
+  被推翻：太小、且 hover 藏 tag 与钮簇互挤）。胶囊 = `bg-emerald-500/15` +
+  实色 `text-emerald-700` text-xs px-2 py-0.5（文字色纪律：透明度只许用在
+  背景）+ `size-1.5 animate-pulse` 呼吸点（控制台 timeline 同款「进行中」
+  语言）；**常显**不随 hover 隐藏，标题 pr 随之收窄（pr-2，无钮簇要让位）。
+  派生 = chat store pendingApprovalsBySession 非空即显，useCallback 函数签名
+  下传保行级 memo
 - **设置页**：SettingsParts 拼装 —— SettingsGroup（组标题 + rounded-xl 描边卡 +
   divide-y 行分隔）+ SettingsRow（左标题/描述右控件）；控件四款：Switch（选中
   黑底）/ SelectControl（描边圆角 + 值 + 箭头，静态空位）/ SecondaryAction

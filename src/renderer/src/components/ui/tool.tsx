@@ -5,11 +5,14 @@
  * 状态映射照官方表：运行中 = 单行 TraceLine（不可折叠）；有输出 = 可折叠卡
  * （CodeBlock 展示结果，错误走 destructive 变体）；拒绝 = 置灰单行（denied）。
  * 数据 = ToolItem（协议 tool.started/completed 事件与 ChatMessage.toolCalls 共用投影）。
+ * 批次 3 扩展（2026-11-11）：运行中且有 progress（bash 流式尾部快照）时挂
+ * 直播尾行；终态有 diff（edit 工具）时折叠体首块渲染 diff（+绿 -红 上下文灰）。
  */
 import { useState } from 'react'
 import {
   BanIcon,
   CircleXIcon,
+  FileDiffIcon,
   FileTextIcon,
   FolderSearchIcon,
   LoaderCircleIcon,
@@ -42,22 +45,71 @@ const TOOL_ICON: Record<string, React.ReactNode> = {
   read: <FileTextIcon />,
   glob: <FolderSearchIcon />,
   grep: <SearchIcon />,
-  write: <WrenchIcon />
+  ls: <FolderSearchIcon />,
+  write: <WrenchIcon />,
+  edit: <FileDiffIcon />
+}
+
+/** edit 的展示 diff 行染色：+ 增 / - 删 / 其余（行号上下文）灰 */
+function DiffBlock({ diff }: { diff: string }) {
+  const lines = diff.split('\n')
+  return (
+    <CodeBlock size="sm">
+      <CodeBlockContent wrap className="max-h-64 font-mono text-xs leading-5">
+        {lines.map((line, i) => (
+          <div
+            key={i}
+            className={
+              line.startsWith('+')
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : line.startsWith('-')
+                  ? 'text-red-600 dark:text-red-400'
+                  : 'text-muted-foreground'
+            }
+          >
+            {line === '' ? '\u00A0' : line}
+          </div>
+        ))}
+      </CodeBlockContent>
+    </CodeBlock>
+  )
+}
+
+/** bash 运行中的直播尾行：progress 快照取末几行（窗口向上滚动的观感） */
+function ProgressTail({ progress }: { progress: string }) {
+  const lines = progress.split('\n').filter((l) => l.trim() !== '')
+  const tail = lines.slice(-2)
+  if (tail.length === 0) return null
+  return (
+    <div className="ml-7 mt-0.5 font-mono text-[11px] leading-4 text-muted-foreground">
+      {tail.map((line, i) => (
+        <div key={i} className="truncate">
+          {line}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export function ToolCard({
   name,
   summary,
   status,
-  result
+  result,
+  progress,
+  diff
 }: {
-  /** 工具名（read/glob/grep/write…，图标映射键） */
+  /** 工具名（read/glob/grep/write/edit/bash…，图标映射键） */
   name: string
   /** 参数一行摘要（如 read("src/index.ts")，引擎生成） */
   summary: string
   status: ToolStatus
   /** 结果一行摘要（截断；错误/拒绝时为原因） */
   result?: string
+  /** 执行中的流式尾部快照（bash；终态由 result 接管） */
+  progress?: string
+  /** edit 的展示 diff（带行号 +-/ 上下文） */
+  diff?: string
 }) {
   // 开合只在"有输出可看"时有意义；运行中/拒绝是单行（官方同款），
   // 折叠状态留给完成/失败态
@@ -68,16 +120,21 @@ export function ToolCard({
 
   if (status === 'running' || status === 'blocked') {
     // 运行中：shimmer 标题 + spinner；拒绝：置灰单行（denied，无 status 色）
+    // 运行中且有流式进度（bash）：单行下挂直播尾行（快照末两行，等宽灰字）
     return (
-      <TraceLine status={status === 'running' ? 'running' : 'pending'}>
-        <TraceIcon>{status === 'running' ? <LoaderCircleIcon className="animate-spin" /> : <BanIcon />}</TraceIcon>
-        {title}
-        <span className="text-[11px]">{STATUS_LABEL[status]}</span>
-      </TraceLine>
+      <div>
+        <TraceLine status={status === 'running' ? 'running' : 'pending'}>
+          <TraceIcon>{status === 'running' ? <LoaderCircleIcon className="animate-spin" /> : <BanIcon />}</TraceIcon>
+          {title}
+          <span className="text-[11px]">{STATUS_LABEL[status]}</span>
+        </TraceLine>
+        {status === 'running' && progress !== undefined && progress !== '' && <ProgressTail progress={progress} />}
+      </div>
     )
   }
 
   const hasResult = result !== undefined && result !== ''
+  const hasDiff = diff !== undefined && diff !== ''
   return (
     <TraceCollapsible open={open} onOpenChange={setOpen}>
       <TraceCollapsibleTrigger>
@@ -87,15 +144,19 @@ export function ToolCard({
           <span className="text-[11px]">{STATUS_LABEL[status]}</span>
         </TraceLine>
       </TraceCollapsibleTrigger>
-      {hasResult && (
+      {(hasResult || hasDiff) && (
         <TraceCollapsibleContent>
-          {/* 官方配方：CodeBlock size="sm" + wrap + max-h 展示工具输出；
-              失败原因走 destructive 变体（红调） */}
-          <CodeBlock size="sm" variant={status === 'error' ? 'destructive' : 'default'}>
-            <CodeBlockContent wrap className="max-h-64">
-              {result}
-            </CodeBlockContent>
-          </CodeBlock>
+          {/* diff 块在前（edit 的"改了什么"是主内容），结果摘要在后 */}
+          {hasDiff && <DiffBlock diff={diff} />}
+          {hasResult && (
+            /* 官方配方：CodeBlock size="sm" + wrap + max-h 展示工具输出；
+               失败原因走 destructive 变体（红调） */
+            <CodeBlock size="sm" variant={status === 'error' ? 'destructive' : 'default'}>
+              <CodeBlockContent wrap className="max-h-64">
+                {result}
+              </CodeBlockContent>
+            </CodeBlock>
+          )}
         </TraceCollapsibleContent>
       )}
     </TraceCollapsible>

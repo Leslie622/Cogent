@@ -26,8 +26,14 @@ declare global {
       /** 订阅引擎事件流，返回取消订阅函数 */
       onEngineEvent: (callback: (event: EngineEvent) => void) => () => void
       /** 审批裁决（专属通道，不经 engineRequest 通用代理 —— 安全边界独立成路）：
-          允许/拒绝引擎挂起中的写类工具调用 */
-      respondApproval: (requestId: string, approved: boolean) => Promise<{ ok: true }>
+          允许/拒绝引擎挂起中的写类工具调用；options.message = 拒绝附言（「告诉
+          模型接下来怎么做」进工具结果给模型），options.always = 'workspace' 落
+          工作区级始终允许规则（隐含允许本次） */
+      respondApproval: (
+        requestId: string,
+        approved: boolean,
+        options?: { message?: string; always?: 'workspace' }
+      ) => Promise<{ ok: true }>
       /** 写入 API key（safeStorage 落盘 + 推引擎；明文只此一路出 renderer） */
       setApiKey: (providerId: string, apiKey: string) => Promise<{ ok: true }>
       /** 删除单条 API key（壳侧落盘移除 + 引擎内存表移除；清 key 的正路） */
@@ -95,6 +101,8 @@ export interface AppSettingsFile {
   activeModelId?: string
   activeProviderId?: string
   thinkingLevel?: string
+  /** 新会话默认权限（开关两态 ask↔auto；plan 不进默认，见 D6 拍板） */
+  defaultPermissionMode?: 'ask' | 'auto'
 }
 
 /** 会话摘要（与 protocol SessionSummary 镜像；optional 字段=未设置） */
@@ -114,7 +122,7 @@ export interface SessionSummary {
 }
 
 /** 会话级权限模式（与 protocol PermissionMode 镜像） */
-export type PermissionMode = 'auto' | 'ask' | 'plan'
+export type PermissionMode = 'auto' | 'ask' | 'plan' | 'autonomous'
 
 /** 项目摘要（与 protocol ProjectSummary 镜像）：项目 = 目录绑定（多根，首个主根） */
 export interface ProjectSummary {
@@ -196,7 +204,8 @@ export type EngineEvent =
       params: { sessionId: string; messageId: string; delta: string; kind?: 'text' | 'thinking' }
     }
   | { method: 'tool.started'; params: { sessionId: string; callId: string; name: string; kind: string; summary?: string } }
-  | { method: 'tool.completed'; params: { sessionId: string; callId: string; isError: boolean; summary: string } }
+  | { method: 'tool.completed'; params: { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string } }
+  | { method: 'tool.progress'; params: { sessionId: string; callId: string; text: string } }
   | { method: 'approval.request'; params: { sessionId: string; requestId: string; toolName: string; kind: string; summary: string } }
   | { method: 'inspect.event'; params: { sessionId: string; entry: InspectEntrySummary } }
 
@@ -261,7 +270,7 @@ export interface ChatMessage {
 export interface ToolCallRecord {
   callId: string
   name: string
-  /** 'read' | 'write' | 'exec' | 'network'（与 protocol ToolKind 镜像） */
+  /** 'read' | 'write' | 'edit' | 'exec' | 'network'（与 protocol ToolKind 镜像） */
   kind: string
   /** 参数一行摘要（工具卡标题） */
   summary: string
@@ -271,6 +280,8 @@ export interface ToolCallRecord {
   /** 执行起/止毫秒（与 protocol 镜像；聚合行「工具时长」区间并集用，缺省跳过） */
   startedAt?: number
   endedAt?: number
+  /** edit 工具的展示 diff（与 protocol 镜像；缺省不渲染 diff 块） */
+  diff?: string
 }
 
 /** 一次回答的 token 用量（与 protocol MessageUsage 镜像；见其字段注释） */
@@ -286,6 +297,16 @@ export interface MessageUsage {
   totalCost?: number
   /** 成本是否端点实报；false/缺省 = 目录估价（UI 加 ≈ 前缀） */
   totalCostFromProvider?: boolean
+  /** 上下文明细三段估算（粗估口径带 ≈）；引擎未算/旧会话缺省 */
+  contextEstimate?: ContextEstimate
+}
+
+/** 上下文明细三段估算（与 protocol ContextEstimate 镜像；见其字段注释） */
+export interface ContextEstimate {
+  systemPrompt: number
+  toolDefs: number
+  messages: number
+  total: number
 }
 
 export interface ProviderSummary {

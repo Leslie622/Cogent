@@ -143,6 +143,25 @@ export interface MessageUsage {
   totalCost?: number
   /** 成本是否端点实报（OpenRouter 等）；false/缺省 = 目录估价（旧会话数据同按估价处理） */
   totalCostFromProvider?: boolean
+  /**
+   * 上下文明细估算（2026-11-11 additive；悬浮卡分类区数据源）。粗估口径 =
+   * pi estimateContextTokens（3.5 chars/token，与引擎 max_tokens 预算同源），
+   * 与末轮端点实报的 input/cache* 有误差 —— UI 据此带 ≈ 标记。
+   * 三段：系统提示词 / 系统工具声明 / 对话消息；缺省 = 引擎未算（旧会话投影）。
+   */
+  contextEstimate?: ContextEstimate
+}
+
+/** 上下文明细三段估算（token 数；见 MessageUsage.contextEstimate） */
+export interface ContextEstimate {
+  /** leading system message 文本（工作区上下文 + 权限通告等） */
+  systemPrompt: number
+  /** 工具 JSON schema 声明（toolsAdded，estimateToolsTokens 口径） */
+  toolDefs: number
+  /** 其余全部消息（user/assistant/toolResult） */
+  messages: number
+  /** 三段之和（= estimateContextTokens().tokens，即 max_tokens 预算式里的"占用"） */
+  total: number
 }
 
 /**
@@ -168,6 +187,10 @@ export interface ToolCallRecord {
   /** 执行终点毫秒（流式 = tool_execution_end 打点；历史回查 = pi toolResult
    *  消息 timestamp —— 转录持久化的单一来源，重启回查数字不漂移） */
   endedAt?: number
+  /** edit 工具的展示 diff（带行号的 +-/ 上下文 diff，引擎从工具 details 提取；
+   *  2026-11-11 批次 3 D4 定稿进协议 —— 工具卡 diff 呈现的数据源。缺省 = 非
+   *  edit 工具或旧转录，UI 自然不渲染 diff 块） */
+  diff?: string
 }
 
 /**
@@ -234,11 +257,16 @@ export interface ModelSummary {
   userDefined?: boolean
 }
 
-/** 工具的风险类别：审批策略按此分级 */
-export type ToolKind = 'read' | 'write' | 'exec' | 'network'
+/** 工具的风险类别：审批策略按此分级（edit 属写类，2026-11-11 批次 3 加入） */
+export type ToolKind = 'read' | 'write' | 'edit' | 'exec' | 'network'
 
-/** 会话级权限模式：auto=全自动；ask=写类操作需确认；plan=只读规划 */
-export type PermissionMode = 'auto' | 'ask' | 'plan'
+/**
+ * 会话级权限模式：auto=全自动；ask=写类操作需确认；plan=只读规划；
+ * autonomous=自主模式（2026-11-11 批次 3 D6 定稿随 bash 落地启用：文件写
+ * write/edit 信任放行，exec/network 风险类逐次询问 —— 之前无 exec/network
+ * 工具时它只能是 ask 同义词，故一直置灰占位）
+ */
+export type PermissionMode = 'auto' | 'ask' | 'plan' | 'autonomous'
 
 // ———— 方法映射：method 名 → 参数/结果 ————
 
@@ -284,6 +312,18 @@ export interface AgentSubmitResult {
 export interface ApprovalRespondParams {
   requestId: string
   approved: boolean
+  /**
+   * 拒绝附言（「告诉模型接下来怎么做」，审批交互升级 D2）：进 block reason →
+   * 工具错误结果给模型，自我纠正依据。仅在 approved=false 时有意义。
+   */
+  message?: string
+  /**
+   * 'workspace' = 允许本次 + 落工作区级「始终允许」规则（D3；隐含 approved=true，
+   * 与 approved=false 同发是矛盾载荷，入口校验拒绝）。规则存引擎侧全局
+   * approvals.json，只记 roots 不记命令/内容（无泄漏面，对照 Claude Code
+   * settings.local.json 事故，调研见计划 §1.5）。
+   */
+  always?: 'workspace'
 }
 export interface ApprovalRespondResult {
   ok: true
@@ -529,6 +569,7 @@ export type InspectEntryKind =
   | 'api.stream'
   | 'tool.started'
   | 'tool.completed'
+  | 'tool.progress'
 
 /**
  * 观测条目摘要（时间线一行）。刻意小体积：控制台未打开时引擎也在实时推送，
@@ -632,8 +673,17 @@ export interface ProtocolEvents {
    * 工具执行结束：summary = 结果一行摘要（截断；错误/拒绝时为原因）。
    * isError 含审批拒绝/中止（blocked 语义在 status 维度，事件里不细分 ——
    * 宿主若关心可在 ChatMessage.toolCalls.status 看到）。
+   * diff = edit 工具的展示 diff（与 ToolCallRecord.diff 同源，流式路径数据源，
+   * 2026-11-11 additive）。
    */
-  'tool.completed': { sessionId: string; callId: string; isError: boolean; summary: string }
+  'tool.completed': { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string }
+  /**
+   * 工具执行中的流式进度（D5 定稿，2026-11-11 批次 3 additive）：长时工具
+   *（当前 = bash）的尾部输出快照，引擎侧 100ms 节流。text = 滚动快照全文
+   *（非增量 delta —— 快照语义让 UI 无需自己累积/截断，直接整段替换渲染）。
+   * 宿主按 callId 配对到 tool.started 建的工具卡。
+   */
+  'tool.progress': { sessionId: string; callId: string; text: string }
   /** 审批请求：宿主（最终是用户）裁决后以 approval.respond 回复 */
   'approval.request': {
     sessionId: string

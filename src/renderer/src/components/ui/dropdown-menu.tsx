@@ -77,7 +77,7 @@ function DropdownMenuItem({
   ...props
 }: MenuPrimitive.Item.Props & {
   inset?: boolean
-  variant?: "default" | "destructive"
+  variant?: "default" | "destructive" | "warning"
 }) {
   return (
     <MenuPrimitive.Item
@@ -85,7 +85,11 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "group/dropdown-menu-item relative flex cursor-default items-center gap-2.5 rounded-2xl px-3 py-2 text-sm font-medium outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-9.5 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive",
+        // warning 变体（2026-11-11 加，照 destructive 同款模式）：focus 高亮态的
+        // `**:text-accent-foreground` 会把所有后代强制染黑，子元素自定义色打不过
+        // 它 —— 强调色必须在 item 层以变体声明并从通配染色中排除（权限菜单
+        // 「完全访问」warning 琥珀 hover 变黑的修复）
+        "group/dropdown-menu-item relative flex cursor-default items-center gap-2.5 rounded-2xl px-3 py-2 text-sm font-medium outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:not-data-[variant=warning]:focus:**:text-accent-foreground data-inset:pl-9.5 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=warning]:text-warning data-[variant=warning]:focus:bg-warning/10 data-[variant=warning]:focus:text-warning data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive data-[variant=warning]:*:[svg]:text-warning",
         className
       )}
       {...props}

@@ -14,12 +14,25 @@ import { IPC } from '../../../shared/ipc'
 import type { IpcDeps } from './index'
 
 export function registerApprovalIpc({ service }: IpcDeps): void {
-  // 信任边界：renderer 不可信 —— 载荷形状在此收窄（业务校验在引擎 dispatch）
+  // 信任边界：renderer 不可信 —— 载荷形状在此收窄（业务校验在引擎 dispatch）。
+  // optional 的 message（拒绝附言）/ always（落工作区级规则）带了就约束形状，
+  // 语义矛盾（always + approved=false）在引擎入口拦 —— 这里只管传输形状
   ipcMain.handle(IPC.approvalRespond, async (_event, raw: unknown) => {
-    const payload = raw as { requestId: unknown; approved: unknown }
+    const payload = raw as { requestId: unknown; approved: unknown; message?: unknown; always?: unknown }
     if (typeof payload.requestId !== 'string' || payload.requestId.length === 0 || typeof payload.approved !== 'boolean') {
       throw new Error('approval:respond 非法调用：需要 { requestId: string, approved: boolean }')
     }
-    return service.request('approval.respond', { requestId: payload.requestId, approved: payload.approved })
+    if (payload.message !== undefined && typeof payload.message !== 'string') {
+      throw new Error('approval:respond 非法调用：message 必须是 string')
+    }
+    if (payload.always !== undefined && payload.always !== 'workspace') {
+      throw new Error("approval:respond 非法调用：always 只支持 'workspace'")
+    }
+    return service.request('approval.respond', {
+      requestId: payload.requestId,
+      approved: payload.approved,
+      ...(payload.message !== undefined && { message: payload.message }),
+      ...(payload.always !== undefined && { always: payload.always })
+    })
   })
 }

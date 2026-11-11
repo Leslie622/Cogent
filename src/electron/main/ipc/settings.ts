@@ -34,7 +34,8 @@ function readAll(): SettingsFile {
       version: 1,
       activeModelId: raw.activeModelId,
       activeProviderId: raw.activeProviderId,
-      thinkingLevel: raw.thinkingLevel
+      thinkingLevel: raw.thinkingLevel,
+      defaultPermissionMode: raw.defaultPermissionMode === 'auto' ? 'auto' : 'ask'
     }
   } catch (error) {
     console.warn(`[main] settings.json 损坏，按默认处理（${filePath()}）: ${(error as Error).message}`)
@@ -52,9 +53,14 @@ export function registerSettingsIpc(): void {
   ipcMain.handle(IPC.settingsGet, () => readAll())
 
   ipcMain.handle(IPC.settingsSave, (_event, raw: unknown) => {
-    // 信任边界：字段级收窄（unknown → 只认三个可选字段）。带了但类型不对 = 越界，
+    // 信任边界：字段级收窄（unknown → 只认可选字段）。带了但类型不对 = 越界，
     // 直接抛错而非静默忽略 —— 假成功会掩盖 renderer 侧 bug（约定.md §1.1"越界即抛"）
-    const payload = raw as Partial<{ activeModelId: unknown; activeProviderId: unknown; thinkingLevel: unknown }>
+    const payload = raw as Partial<{
+      activeModelId: unknown
+      activeProviderId: unknown
+      thinkingLevel: unknown
+      defaultPermissionMode: unknown
+    }>
     if (payload.activeModelId !== undefined && typeof payload.activeModelId !== 'string') {
       throw new Error('settings:save 的 activeModelId 必须是 string')
     }
@@ -64,10 +70,14 @@ export function registerSettingsIpc(): void {
     if (payload.thinkingLevel !== undefined && typeof payload.thinkingLevel !== 'string') {
       throw new Error('settings:save 的 thinkingLevel 必须是 string')
     }
+    if (payload.defaultPermissionMode !== undefined && payload.defaultPermissionMode !== 'ask' && payload.defaultPermissionMode !== 'auto') {
+      throw new Error("settings:save 的 defaultPermissionMode 必须是 'ask' | 'auto'")
+    }
     const settings = readAll()
     if (payload.activeModelId !== undefined) settings.activeModelId = payload.activeModelId
     if (payload.activeProviderId !== undefined) settings.activeProviderId = payload.activeProviderId
     if (payload.thinkingLevel !== undefined) settings.thinkingLevel = payload.thinkingLevel
+    if (payload.defaultPermissionMode !== undefined) settings.defaultPermissionMode = payload.defaultPermissionMode
     writeAll(settings)
     return { ok: true as const }
   })

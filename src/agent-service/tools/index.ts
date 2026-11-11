@@ -18,6 +18,9 @@ import { createReadTool } from './read'
 import { createGlobTool } from './glob'
 import { createGrepTool } from './grep'
 import { createWriteTool } from './write'
+import { createEditTool } from './edit'
+import { createBashTool } from './bash'
+import { createLsTool } from './ls'
 
 /** Cogent 侧工具包装：pi 声明 + 产品语义（风险类别 + 参数摘要） */
 export interface CogentTool {
@@ -46,7 +49,10 @@ const TOOL_METAS: Record<string, { kind: ToolKind; summarize: (args: unknown) =>
   read: { kind: 'read', summarize: (a) => summarizeArgs('read', a) },
   glob: { kind: 'read', summarize: (a) => summarizeArgs('glob', a) },
   grep: { kind: 'read', summarize: (a) => summarizeArgs('grep', a) },
-  write: { kind: 'write', summarize: (a) => summarizeArgs('write', a) }
+  write: { kind: 'write', summarize: (a) => summarizeArgs('write', a) },
+  edit: { kind: 'edit', summarize: (a) => summarizeArgs('edit', a) },
+  bash: { kind: 'exec', summarize: (a) => summarizeArgs('bash', a) },
+  ls: { kind: 'read', summarize: (a) => summarizeArgs('ls', a) }
 }
 
 /** 工具名 → 元数据；未注册工具（盘上旧转录里的历史名）返回 undefined */
@@ -64,6 +70,9 @@ export function buildTools(roots: string[]): CogentTool[] {
     { tool: createReadTool(roots), ...TOOL_METAS.read },
     { tool: createGlobTool(roots), ...TOOL_METAS.glob },
     { tool: createGrepTool(roots), ...TOOL_METAS.grep },
-    { tool: createWriteTool(roots), ...TOOL_METAS.write }
+    { tool: createWriteTool(roots), ...TOOL_METAS.write },
+    { tool: createEditTool(roots), ...TOOL_METAS.edit },
+    { tool: createBashTool(roots), ...TOOL_METAS.bash },
+    { tool: createLsTool(roots), ...TOOL_METAS.ls }
   ]
 }

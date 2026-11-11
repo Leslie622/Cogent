@@ -32,6 +32,7 @@ import {
   type CustomProviderDef,
   type InitializeParams,
   type InitializeResult,
+  type PermissionMode,
   type ProtocolEvents,
   type ProviderOverrideDef,
   type ProvidersCustomSyncParams,
@@ -45,7 +46,9 @@ import {
 import { CredentialRegistry } from './runtime/credentials'
 import { SessionManager } from './runtime/session'
 import { ProjectRegistry } from './runtime/project'
+import { ApprovalRegistry } from './runtime/approvals'
 import { InspectStore, JsonStorageDriver } from './storage'
+import { killTrackedDetachedChildren } from './tools/shell'
 
 /** 事件发送：service → 宿主（notification 帧） */
 function notify<E extends keyof ProtocolEvents>(method: E, params: ProtocolEvents[E]): void {
@@ -70,10 +73,12 @@ const credentials = new CredentialRegistry()
 const storage = new JsonStorageDriver(STORAGE_ROOT)
 // 观测记录落盘（~/.cogent/inspect/*.jsonl，重启回看；构造无 I/O，惰性到会话首用）
 const inspectStore = new InspectStore(STORAGE_ROOT)
-// 装配顺序：projects 先建（无依赖），sessions 后建（构造即拿到项目引用；
-// SessionManager 对项目的使用只发生在 submit 期，无构造期回查）
+// 装配顺序：projects/approvals 先建（无依赖），sessions 后建（构造即拿到引用；
+// SessionManager 对它们的使用只发生在 submit/respond 期，无构造期回查）
 const projects = new ProjectRegistry(storage)
-const sessions = new SessionManager(credentials, storage, notify, projects, inspectStore)
+// 审批规则表（~/.cogent/approvals.json 单文件，构造即恢复；「始终允许此工作区」）
+const approvals = new ApprovalRegistry(STORAGE_ROOT)
+const sessions = new SessionManager(credentials, storage, notify, projects, approvals, inspectStore)
 
 // 方言模块预热：pi-ai 的 API 方言是**首次请求时**才动态 import（lazyApi），
 // 冷启动一次要拉起整个厂商 SDK（openai-completions 连带 26MB 的 openai 包，
@@ -161,8 +166,8 @@ function handleSessionArchive(params: unknown) {
 
 /** PermissionMode 值域守卫（入口校验共用）：stdio 载荷是任意 JSON，类型声明
     不构成运行时保证，typeof 检查是真实防御（约定.md 1.1 stdio 帧边界） */
-function isPermissionMode(value: unknown): value is 'auto' | 'ask' | 'plan' {
-  return value === 'auto' || value === 'ask' || value === 'plan'
+function isPermissionMode(value: unknown): value is PermissionMode {
+  return value === 'auto' || value === 'ask' || value === 'plan' || value === 'autonomous'
 }
 
 /** session.create 入口校验：optional 字段带了就必须合法（permissionMode 限值域）。
@@ -246,9 +251,10 @@ function handleAgentSubmit(params: unknown) {
   return { accepted: true as const }
 }
 
-/** approval.respond 入口校验：requestId 非空 string + approved 布尔。
-    唔配对 requestId（已裁决/已中止/不存在）在 SessionManager 抛 InvalidParams
-    —— 双击允许钮、裁决与中止竞态都属此类，显式报错而非静默成功 */
+/** approval.respond 入口校验：requestId 非空 string + approved 布尔；optional
+    的 message/always 带了就约束形状，且 always（落规则）与 approved=false 同发
+    是矛盾载荷直接拒绝。唔配对 requestId 在 SessionManager 抛 InvalidParams ——
+    双击允许钮、裁决与中止竞态都属此类，显式报错而非静默成功 */
 function handleApprovalRespond(params: unknown) {
   const p = params as Partial<ApprovalRespondParams>
   if (typeof p.requestId !== 'string' || p.requestId.length === 0 || typeof p.approved !== 'boolean') {
@@ -257,7 +263,16 @@ function handleApprovalRespond(params: unknown) {
       'approval.respond 需要 { requestId: string, approved: boolean }'
     )
   }
-  return sessions.respondApproval(p.requestId, p.approved)
+  if (p.message !== undefined && typeof p.message !== 'string') {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'approval.respond 的 message 必须是 string')
+  }
+  if (p.always !== undefined && !(['workspace'] as readonly string[]).includes(p.always)) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, "approval.respond 的 always 只支持 'workspace'")
+  }
+  if (p.always !== undefined && !p.approved) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'always（始终允许）只能伴随 approved=true')
+  }
+  return sessions.respondApproval(p.requestId, p.approved, p.message, p.always)
 }
 
 /** session.setPermission 入口校验：sessionId 非空 string + mode 限值域。
@@ -449,9 +464,17 @@ stdin.on('line', (line) => {
   const trimmed = line.trim()
   if (trimmed) void dispatch(trimmed)
 })
-// 宿主关闭管道（退出/被杀）时服务随行退出，不做任何延迟收尾。
-stdin.on('close', () => process.exit(0))
-process.on('SIGTERM', () => process.exit(0))
+// 宿主关闭管道（退出/被杀）时服务随行退出。退出前杀掉 bash 工具拉起的
+// detached 子进程树 —— 引擎死了没人替我们杀，留着就是孤儿（宿主侧 Electron
+// 的教训在引擎侧同样成立，见 tools/shell.ts）
+stdin.on('close', () => {
+  killTrackedDetachedChildren()
+  process.exit(0)
+})
+process.on('SIGTERM', () => {
+  killTrackedDetachedChildren()
+  process.exit(0)
+})
 
 // 冒烟自检：无需宿主，直接管道喂数据即可验证协议链路，命令见 docs/开发.md。
 void reply // dispatch 内已用；保留导出位避免 noUnusedLocals 误报（与原骨架一致的做法）

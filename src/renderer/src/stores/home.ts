@@ -8,6 +8,7 @@
  * （2026-11-09：演示数据域已退役，chatId 即引擎会话 id。）
  */
 import { create } from 'zustand'
+import type { PermissionMode } from '@/env.d'
 
 export type HomeSession =
   | { kind: 'chat'; chatId: string }
@@ -15,12 +16,14 @@ export type HomeSession =
       kind: 'new'
       projectId?: string
       /**
-       * 「完全访问」暂存位（新聊天视图态的一部分，计划第 5 步）：新会话还没
-       * sessionId，toggle 的选择暂存在此，submit 物化时随 session.create 落定
-       * （chat store createSession 读取）。刻意不进 settings 持久化 —— 跨会话
-       * 记住「上次开了全放行」会让用户忘了关，新会话默认回到 ask 才是安全缺省
+       * 权限模式暂存位（新聊天视图态的一部分；审批交互升级第 3 步由
+       * fullAccess 布尔三档化）：新会话还没 sessionId，权限菜单的选择暂存在
+       * 此，submit 物化时随 session.create 落定（chat store createSession 读取）。
+       * undefined = 未显式选择 → 物化时用设置页「默认权限」（engine store）。
+       * 刻意不进 settings 持久化 —— 跨会话记住「上次开了全放行」会让用户忘了
+       * 关，显式缺省回 ask 才是安全缺省
        */
-      fullAccess?: boolean
+      permissionMode?: PermissionMode
     }
 
 interface HomeState {

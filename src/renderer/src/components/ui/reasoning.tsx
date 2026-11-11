@@ -36,7 +36,7 @@ export function Reasoning({
       <TraceIcon>
         {running ? <LoaderCircleIcon className="animate-spin" /> : <BrainIcon />}
       </TraceIcon>
-      <TraceTitle>{running ? '思考中' : '深度思考'}</TraceTitle>
+      <TraceTitle>{running ? '思考中' : '思考'}</TraceTitle>
     </TraceLine>
   )
 
@@ -45,7 +45,7 @@ export function Reasoning({
   return (
     <TraceCollapsible open={open ?? running} onOpenChange={setOpen}>
       <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
-      <TraceCollapsibleContent className="whitespace-pre-wrap">{text}</TraceCollapsibleContent>
+      <TraceCollapsibleContent className="text-[13px] whitespace-pre-wrap">{text}</TraceCollapsibleContent>
     </TraceCollapsible>
   )
 }

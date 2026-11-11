@@ -48,6 +48,9 @@ interface EngineState {
   activeProviderId: string | null
   /** 推理力度（pi ThinkingLevel；随 agent.submit 下发） */
   thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  /** 新会话默认权限（审批交互升级 D6：设置页「默认权限」开关两态，开 = auto /
+   *  关/缺省 = ask；chat store createSession 在显式选择缺席时消费） */
+  defaultPermissionMode: 'ask' | 'auto'
   loaded: boolean
   /** 引擎链路失败的原因（load 失败时；App 横幅呈现 + 重试入口）。null = 正常 */
   engineError: string | null
@@ -58,6 +61,8 @@ interface EngineState {
   saveProviders: (providers: CustomProviderDef[], overrides: ProviderOverrideDef[]) => Promise<void>
   setActiveModel: (modelId: string, providerId?: string | null) => void
   setThinkingLevel: (level: EngineState['thinkingLevel']) => void
+  /** 设置页「默认权限」开关：落盘 + 内存态（新会话物化缺省随动） */
+  setDefaultPermissionMode: (mode: 'ask' | 'auto') => void
 }
 
 function toKeyMap(status: Array<{ providerId: string; keyConfigured: boolean }>): Record<string, boolean> {
@@ -86,6 +91,7 @@ interface AppSettings {
   activeModelId?: string
   activeProviderId?: string
   thinkingLevel?: string
+  defaultPermissionMode?: 'ask' | 'auto'
 }
 
 /** 载入落盘偏好；thinkingLevel 做值域归一（未来版本的档位/手改文件按缺省处理，偏好可再生） */
@@ -94,7 +100,8 @@ async function loadSettings(): Promise<AppSettings> {
   return {
     activeModelId: file.activeModelId,
     activeProviderId: file.activeProviderId,
-    thinkingLevel: file.thinkingLevel
+    thinkingLevel: file.thinkingLevel,
+    defaultPermissionMode: file.defaultPermissionMode
   }
 }
 
@@ -113,6 +120,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   activeModelId: '',
   activeProviderId: null,
   thinkingLevel: 'off',
+  defaultPermissionMode: 'ask',
   loaded: false,
   engineError: null,
 
@@ -141,6 +149,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
         activeModelId: settings.activeModelId ?? defaultModel.id,
         activeProviderId: settings.activeProviderId ?? defaultModel.provider,
         thinkingLevel: normalizeThinkingLevel(settings.thinkingLevel),
+        defaultPermissionMode: settings.defaultPermissionMode ?? 'ask',
         loaded: true,
         engineError: null
       })
@@ -199,6 +208,10 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   setThinkingLevel: (thinkingLevel) => {
     set({ thinkingLevel })
     void window.cogent.saveSettings({ thinkingLevel })
+  },
+  setDefaultPermissionMode: (defaultPermissionMode) => {
+    set({ defaultPermissionMode })
+    void window.cogent.saveSettings({ defaultPermissionMode })
   }
 }))
 

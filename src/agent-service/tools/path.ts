@@ -12,6 +12,7 @@
  * macOS 默认同样不敏感；Linux 区分大小写但小写化只是放宽不是漏放）。
  * 前缀比对必须补分隔符，否则 `C:\work` 会误放行 `C:\work-secret`。
  */
+import { homedir } from 'node:os'
 import { isAbsolute, resolve, sep } from 'node:path'
 
 /** 越界错误文案前缀（写类工具返回给模型；提示有效根让它自我纠正） */
@@ -20,12 +21,26 @@ export function outsideRootsMessage(roots: string[]): string {
 }
 
 /**
+ * `~` 前缀展开为主目录（上游 path-utils 吸收项，批次 3.6 顺手对照）：模型
+ * 与用户都惯写 `~/.xxx`，展开后走既有解析。仅 `~` 与 `~/` 开头展开
+ * （`~user` 形态 Windows 无对应物，不碰）。
+ */
+function expandTilde(input: string): string {
+  if (input === '~' || input.startsWith('~/') || input.startsWith('~\\')) {
+    return homedir() + input.slice(1)
+  }
+  return input
+}
+
+/**
  * 相对路径 → 基根下的绝对路径（只读工具用，不设界）。
- * 绝对路径原样归一。基根 = 工作区绑定根（首个为主根），无绑定时调用方
- * 传用户主目录 —— 保证"任何会话都有工具"的主流口径（桌面应用的 launch cwd）。
+ * 绝对路径原样归一；`~` 展开为主目录。基根 = 工作区绑定根（首个为主根），
+ * 无绑定时调用方传用户主目录 —— 保证"任何会话都有工具"的主流口径
+ * （桌面应用的 launch cwd）。
  */
 export function resolveAgainstBase(input: string, baseRoots: string[]): string {
-  return isAbsolute(input) ? resolve(input) : resolve(baseRoots[0], input)
+  const expanded = expandTilde(input)
+  return isAbsolute(expanded) ? resolve(expanded) : resolve(baseRoots[0], expanded)
 }
 
 /**
@@ -36,7 +51,8 @@ export function resolveAgainstBase(input: string, baseRoots: string[]): string {
 export function resolveWithinRoots(input: string, roots: string[]): string | null {
   if (roots.length === 0) return null
   // 相对路径相对首个根解析（主根，系统提示词已声明该规则）
-  const absolute = isAbsolute(input) ? resolve(input) : resolve(roots[0], input)
+  const expanded = expandTilde(input)
+  const absolute = isAbsolute(expanded) ? resolve(expanded) : resolve(roots[0], expanded)
   const normalizedRoots = roots.map((r) => resolve(r))
   for (const root of normalizedRoots) {
     const a = absolute.toLowerCase()
