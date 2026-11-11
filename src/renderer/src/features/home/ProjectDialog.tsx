@@ -1,12 +1,19 @@
 /**
- * 创建项目弹窗（参考稿两步流，计划 §3.5；2026-11-09 多目录 + 信任确认）：
- * ① 项目类型三选一卡片（本地默认选中，云端/远程禁选置灰 —— 引擎无对应能力，
- * 是终态不是占位）→ ② 命名 + 多目录列表（每行右 X 移除、底部「添加文件夹」行；
- * 协议 cwds: string[]，跨仓库项目 = 一个项目多根）→ 点「创建项目」出
- * 「信任这些文件夹吗」确认（参考稿流程；信任 = 真提交，取消 = 留在弹窗）。
+ * 项目弹窗（创建/编辑双模式，2026-11-11 合流）：
+ * 创建 = 参考稿两步流（计划 §3.5）：① 类型三选一卡片（本地默认选中，云端/
+ * 远程禁选置灰 —— 引擎无对应能力，是终态不是占位）→ ② 命名 + 多目录列表
+ * （每行右 X 移除、底部「添加文件夹」行）→ 全量目录「信任这些文件夹吗」确认。
+ * 编辑 = 直落第二步**同一张表单**（用户定调：编辑与创建行为要一致，也支持
+ * 添加文件夹 —— 此前独立 EditProjectDialog 只有改名被否），预填项目现值，
+ * 只有**新加**目录走信任确认（已在项目里的信任过，重复问是噪音）。
+ *
+ * 提交：创建 = store.create；编辑 = store.update（引擎 project.update，
+ * name + cwds 全量替换一次落）。编辑挂载点带 key={project.id}，每次打开
+ * 全新实例，预填即初值，免手写重置。
  *
  * 卡片形态照参考稿：浅灰圆角卡、左上图标右上 radio 点（选中蓝环实心）。
- * 受控 open：入口在 HomeSidebar（项目分区「创建项目」钮）。
+ * 受控 open：入口在 HomeSidebar（创建 = 分区标题「创建项目」钮；编辑 =
+ * 项目行菜单「编辑」项条件渲染）。
  */
 import { useState } from 'react'
 import {
@@ -28,6 +35,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { useProjectStore } from '@/stores/project'
+import type { ProjectSummary } from '@/env.d'
 
 /** 第一步的三张类型卡（kind: 'cloud'/'remote' 本期禁选，见文件头） */
 type ProjectKind = 'local' | 'cloud' | 'remote'
@@ -124,28 +132,43 @@ function KindCard({
   )
 }
 
-export function CreateProjectDialog({
+export function ProjectDialog({
   open,
   onOpenChange,
-  onCreated
+  onCreated,
+  project
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** 创建成功回调（侧栏借此展开新项目分区） */
+  /** 创建成功回调（侧栏借此展开新项目分区；仅创建模式） */
   onCreated?: (projectId: string) => void
+  /** 在场 = 编辑模式：直落第二步表单预填现值，提交走 update；缺省 = 创建两步流 */
+  project?: ProjectSummary
 }) {
-  const [step, setStep] = useState<1 | 2>(1)
-  const [name, setName] = useState('')
-  /** 已选工作区根目录列表（首个 = 主根；协议 cwds: string[]） */
-  const [cwds, setCwds] = useState<string[]>([])
+  const [step, setStep] = useState<1 | 2>(project !== undefined ? 2 : 1)
+  const [name, setName] = useState(project?.name ?? '')
+  /** 已选工作区根目录列表（首个 = 主根；协议 cwds: string[]）；编辑模式预填 */
+  const [cwds, setCwds] = useState<string[]>(project?.cwds ?? [])
   const [confirming, setConfirming] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const create = useProjectStore((s) => s.create)
+  const update = useProjectStore((s) => s.update)
+
+  /** 编辑模式有无改动（名字变化或目录集变化；目录顺序 UI 不可调，数组直比）。
+      没改动不给提交 —— 空提交是对话框噪音 */
+  const dirty =
+    project === undefined ||
+    name.trim() !== project.name ||
+    cwds.length !== project.cwds.length ||
+    cwds.some((d, i) => d !== project.cwds[i])
+
+  /** 信任确认的范围：创建 = 全量目录；编辑 = 只问新加的（已在项目里的信任过） */
+  const untrustedDirs = project === undefined ? cwds : cwds.filter((d) => !project.cwds.includes(d))
 
   const reset = () => {
-    setStep(1)
-    setName('')
-    setCwds([])
+    setStep(project !== undefined ? 2 : 1)
+    setName(project?.name ?? '')
+    setCwds(project?.cwds ?? [])
     setConfirming(false)
     setSubmitting(false)
   }
@@ -164,13 +187,17 @@ export function CreateProjectDialog({
     if (dir && !cwds.includes(dir)) setCwds([...cwds, dir])
   }
 
-  /** 点「创建项目」→ 信任确认层（参考稿流程）；确认才真提交 */
+  /** 点「创建项目 / 保存」→ 有未信任目录先出确认层（参考稿流程）；确认才真提交 */
   const submit = async () => {
     if (!name.trim() || cwds.length === 0 || submitting) return
     setSubmitting(true)
     try {
-      const summary = await create(name, cwds)
-      onCreated?.(summary.id)
+      if (project !== undefined) {
+        await update(project.id, name.trim(), cwds)
+      } else {
+        const summary = await create(name, cwds)
+        onCreated?.(summary.id)
+      }
       close()
     } finally {
       // 引擎报错（磁盘）时 stay：落 submitting 复位，错误经控制台可见
@@ -191,7 +218,7 @@ export function CreateProjectDialog({
           两层弹窗会一样宽，见 UI布局.md 技术坑 1） */}
       <DialogContent className="sm:max-w-xl gap-5 rounded-2xl">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold">创建项目</DialogTitle>
+          <DialogTitle className="text-2xl font-bold">{project !== undefined ? '编辑项目' : '创建项目'}</DialogTitle>
         </DialogHeader>
 
         {step === 1 && (
@@ -288,23 +315,24 @@ export function CreateProjectDialog({
               <Button variant="ghost" className="text-muted-foreground" onClick={close}>
                 取消
               </Button>
+              {/* 无未信任目录跳过确认层直接提交（编辑模式只改名的常态路径） */}
               <Button
                 className="rounded-full bg-foreground px-5 text-background hover:bg-foreground/90"
-                disabled={!name.trim() || cwds.length === 0 || submitting}
-                onClick={() => setConfirming(true)}
+                disabled={!dirty || !name.trim() || cwds.length === 0 || submitting}
+                onClick={() => (untrustedDirs.length > 0 ? setConfirming(true) : void submit())}
               >
-                创建项目
+                {project !== undefined ? '保存' : '创建项目'}
               </Button>
             </DialogFooter>
           </>
         )}
       </DialogContent>
 
-      {/* 信任确认（参考图第二层弹窗）：列出全部目录；信任 = 真提交。
-          只在第二步有内容时挂，避免空列表时出现 */}
-      {step === 2 && confirming && (
+      {/* 信任确认（参考图第二层弹窗）：列出**未信任**目录（创建 = 全量；
+          编辑 = 只问新加的）；信任 = 真提交。仅在有待确认目录时挂，避免空列表 */}
+      {step === 2 && confirming && untrustedDirs.length > 0 && (
         <TrustConfirmDialog
-          cwds={cwds}
+          cwds={untrustedDirs}
           onTrust={() => {
             setConfirming(false)
             void submit()

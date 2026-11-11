@@ -30,7 +30,7 @@ import { Button } from '@/components/ui/button'
 import { useProjectStore } from '@/stores/project'
 import { useChatStore } from '@/stores/chat'
 import { useHomeStore } from '@/stores/home'
-import { CreateProjectDialog } from './CreateProjectDialog'
+import { ProjectDialog } from './ProjectDialog'
 
 /** 行 hover 底：全局黑 5% 软叠配方（同侧栏行） */
 const ROW_HOVER = 'hover:bg-accent-foreground/5'
@@ -262,7 +262,7 @@ export function ProjectPicker({
 
       {/* 新建项目流：创建成功 = 选中它（物化绑定会话，回到弹层原本的选中路径）。
           取消/关闭时 createOpen 落 false，回到界面原状（弹层已关，无残留态） */}
-      <CreateProjectDialog
+      <ProjectDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={(id) => {

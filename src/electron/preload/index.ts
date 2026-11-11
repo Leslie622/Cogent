@@ -76,6 +76,9 @@ const api = {
   /** 弹系统目录选择框（创建项目用）；用户取消返回 null */
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke(IPC.workspacePickDirectory),
 
+  /** 系统默认程序打开路径/目录（目录 = 资源管理器）；成功 null，失败错误串 */
+  openPath: (path: string): Promise<string | null> => ipcRenderer.invoke(IPC.shellOpenPath, path),
+
   /** 窗口控制（自绘 header 专用，白名单动作） */
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke(IPC.windowMinimize),
   toggleMaximizeWindow: (): Promise<void> => ipcRenderer.invoke(IPC.windowMaximizeToggle),

@@ -30,6 +30,7 @@ const ALLOWED_METHODS = new Set<string>([
   'project.list',
   'project.create',
   'project.rename',
+  'project.update',
   'project.delete',
   'project.setPinned',
   'agent.submit',

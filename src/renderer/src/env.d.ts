@@ -53,6 +53,8 @@ declare global {
       ) => Promise<{ ok: true }>
       /** 弹系统目录选择框（创建项目用）；用户取消返回 null */
       pickDirectory: () => Promise<string | null>
+      /** 系统默认程序打开路径/目录（目录 = 资源管理器）；成功 null，失败错误串 */
+      openPath: (path: string) => Promise<string | null>
       /** 打开（或聚焦已开的）运行时控制台窗口 */
       openConsole: () => Promise<void>
       /** 读会话级偏好（选中模型/思考力度）；形状与 shared/ipc.ts 的 SettingsFile 镜像 */

@@ -41,21 +41,36 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { CreateProjectDialog } from './CreateProjectDialog'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
+import { ProjectDialog } from './ProjectDialog'
 import { useChatStore, type SessionSummary } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
 import { useHomeStore } from '@/stores/home'
 
-/** 行 hover 时右侧浮现的动作钮簇；focus-within 兜底键盘聚焦/菜单开着时也可见 */
+/** 行 hover 时右侧浮现的动作钮簇；focus-within 兜底键盘聚焦时也可见。
+    菜单开着时也保持显现（2026-11-11 用户反馈）：右键菜单开着 = trigger（行 div
+    自身）带 data-popup-open → group-data-popup-open；行内「更多」dropdown 开着 =
+    子 trigger 带 data-popup-open → group-has 兜住（此时焦点已被 Base UI 移进
+    弹层，focus-within 不可靠，不能只靠它） */
 const ACTIONS =
-  'absolute right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100'
+  'absolute right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 group-data-popup-open:opacity-100 group-has-[[data-popup-open]]:opacity-100'
 
 /** 行内动作钮：24px 热区（icon-xs），hover 底比行底再深一档（/15）才可辨 */
 const ACTION_BUTTON = 'text-muted-foreground hover:bg-accent-foreground/15 hover:text-foreground'
 
 /** 行 hover / active 底色：黑低透明软叠，active 与 hover 同色（用户定的规则：
     选中态不加深，就是"常驻的 hover 色"，同 ChatGPT）；深度 5% */
-const ROW_HOVER = 'bg-transparent transition-colors duration-100 hover:bg-accent-foreground/5'
+/** 菜单开着时同色保持（2026-11-11 用户反馈：右键/「更多」菜单弹出后鼠标移出行，
+    高亮就掉了）：data-popup-open = 行自身是右键菜单 trigger（开着即挂）；
+    has-[[data-popup-open]] = 行内有 dropdown trigger 开着（项目行「更多」）——
+    :has() 只看后代、匹配不到元素自身，两条各管一头，缺一不可 */
+const ROW_HOVER =
+  'bg-transparent transition-colors duration-100 hover:bg-accent-foreground/5 data-popup-open:bg-accent-foreground/5 has-[[data-popup-open]]:bg-accent-foreground/5'
 const ROW_ACTIVE = 'bg-accent-foreground/5'
 
 /** 分区标题行：标题 + 折叠箭头（hover 显现，展开=下/收起=右旋转过渡） */
@@ -132,63 +147,83 @@ const ChatRow = memo(function ChatRow({
   waitingApproval?: boolean
 }) {
   return (
-    <div
-      className={cn(
-        'group relative flex h-8 items-center rounded-md pr-2',
-        indent ? 'pl-8' : 'pl-2',
-        ROW_HOVER,
-        active && ROW_ACTIVE
-      )}
-    >
-      {/* active 只用底色区分不加粗（字重变化引起抖动）；文字一律近黑，层级靠
-          底色/分区标题灰；pr-12 给 hover 钮簇让位（待审批时钮簇不在，收窄） */}
-      <button
-        type="button"
-        className={cn(
-          'flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-foreground',
-          waitingApproval ? 'pr-2' : 'pr-12'
-        )}
-        aria-current={active ? 'true' : undefined}
-        onClick={() => onSelect(chat.id)}
+    // 行 div 即右键菜单 trigger（render 注入保留原元素与类）：右键行内任意处
+    // （含标题钮/hover 钮）都在指针处弹出；菜单开着 trigger 挂 data-popup-open，
+    // ROW_HOVER/ACTIONS 据此保持高亮与钮簇显现
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={
+          <div
+            className={cn(
+              'group relative flex h-8 items-center rounded-md pr-2',
+              indent ? 'pl-8' : 'pl-2',
+              ROW_HOVER,
+              active && ROW_ACTIVE
+            )}
+          />
+        }
       >
-        <span className="truncate">{chat.title}</span>
-      </button>
-      {waitingApproval ? (
-        // 浅绿底 + 实色深绿字（文字色纪律：透明度只许用在背景）+ 呼吸点
-        // （控制台 timeline 同款 pulse 语言，「进行中」感）
-        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700">
-          <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-          等待确认
-        </span>
-      ) : (
-        <div className={ACTIONS}>
-          {actions ?? (
-            <>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className={ACTION_BUTTON}
-                aria-label={chat.pinnedAt ? '取消置顶' : '置顶聊天'}
-                onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}
-              >
-                {chat.pinnedAt ? <IconPinFilled className="size-4" /> : <IconPin className="size-4" />}
-              </Button>
-              {/* 归档 = 回收站语义（软删）：会话从主列表消失，设置页「已归档的
-                  聊天」可恢复/彻底删除 */}
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className={ACTION_BUTTON}
-                aria-label="归档聊天"
-                onClick={() => onArchive(chat.id)}
-              >
-                <IconArchive className="size-4" />
-              </Button>
-            </>
+        {/* active 只用底色区分不加粗（字重变化引起抖动）；文字一律近黑，层级靠
+            底色/分区标题灰；pr-12 给 hover 钮簇让位（待审批时钮簇不在，收窄） */}
+        <button
+          type="button"
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-foreground',
+            waitingApproval ? 'pr-2' : 'pr-12'
           )}
-        </div>
-      )}
-    </div>
+          aria-current={active ? 'true' : undefined}
+          onClick={() => onSelect(chat.id)}
+        >
+          <span className="truncate">{chat.title}</span>
+        </button>
+        {waitingApproval ? (
+          // 浅绿底 + 实色深绿字（文字色纪律：透明度只许用在背景）+ 呼吸点
+          // （控制台 timeline 同款 pulse 语言，「进行中」感）
+          <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700">
+            <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+            等待确认
+          </span>
+        ) : (
+          <div className={ACTIONS}>
+            {actions ?? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className={ACTION_BUTTON}
+                  aria-label={chat.pinnedAt ? '取消置顶' : '置顶聊天'}
+                  onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}
+                >
+                  {chat.pinnedAt ? <IconPinFilled className="size-4" /> : <IconPin className="size-4" />}
+                </Button>
+                {/* 归档 = 回收站语义（软删）：会话从主列表消失，设置页「已归档的
+                    聊天」可恢复/彻底删除 */}
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className={ACTION_BUTTON}
+                  aria-label="归档聊天"
+                  onClick={() => onArchive(chat.id)}
+                >
+                  <IconArchive className="size-4" />
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+      </ContextMenuTrigger>
+      {/* 右键菜单项 = hover 钮同权动作（置顶/归档），主入口一个不少 */}
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}>
+          {chat.pinnedAt ? <IconPinFilled className="size-[17px]" /> : <IconPin className="size-[17px]" />}
+          {chat.pinnedAt ? '取消置顶' : '置顶'}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => onArchive(chat.id)}>
+          <IconArchive className="size-[17px]" />
+          归档聊天
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 })
 
@@ -204,6 +239,7 @@ const ProjectRow = memo(function ProjectRow({
   onSelectSession,
   onStartChat,
   onDeleteProject,
+  onEditProject,
   onArchiveChat,
   onTogglePin,
   isWaitingApproval,
@@ -219,6 +255,8 @@ const ProjectRow = memo(function ProjectRow({
   onSelectSession: (chatId: string) => void
   onStartChat: (projectId: string) => void
   onDeleteProject: (projectId: string) => void
+  /** 编辑项目（菜单项接线 → HomeSidebar 开编辑弹窗） */
+  onEditProject: (projectId: string) => void
   /** 子会话归档（回收站语义，下传给 ChatRow） */
   onArchiveChat: (chatId: string) => void
   /** 项目置顶/取消（菜单项接线） */
@@ -233,77 +271,109 @@ const ProjectRow = memo(function ProjectRow({
     void useChatStore.getState().setPinned(chatId, next)
   }, [])
 
+  /** 项目动作清单：「更多」dropdown 与右键 context menu 双入口同权同项 ——
+      抽成单一数据源，两处 map 各配自己的 Item 组件，防两份手抄漂移。
+      归档仍是空位，接线时改这里即可；「编辑」= 改名弹窗（引擎只有 rename，
+      目录增删无通道）；「在资源管理器中打开」走 main 侧 shell.openPath
+      （renderer 不碰文件系统，contextIsolation 纪律） */
+  const actions = [
+    {
+      key: 'pin',
+      icon: pinned ? <IconPinFilled className="size-[17px]" /> : <IconPin className="size-[17px]" />,
+      label: pinned ? '取消置顶' : '置顶',
+      onClick: () => onTogglePin(projectId)
+    },
+    { key: 'edit', icon: <IconPencil className="size-[17px]" />, label: '编辑', onClick: () => onEditProject(projectId) },
+    {
+      key: 'reveal',
+      icon: <IconFolderShare className="size-[17px]" />,
+      label: '在资源管理器中打开',
+      // 打开项目主根目录（cwds 首个 = 创建时选的主根）。打开失败（目录已删等）
+      // 是外部世界常态：错误串打到控制台即可诊断，不弹不打断菜单流
+      onClick: () => {
+        const project = useProjectStore.getState().projects.find((p) => p.id === projectId)
+        if (project !== undefined) {
+          void window.cogent.openPath(project.cwds[0]).then((error) => {
+            if (error !== null) console.error(`打开项目目录失败：${error}`)
+          })
+        }
+      }
+    },
+    { key: 'archive', icon: <IconArchive className="size-[17px]" />, label: '归档聊天' },
+    { key: 'remove', icon: <IconTrash className="size-[17px]" />, label: '移除项目', onClick: () => onDeleteProject(projectId) }
+  ]
+
   return (
     <>
-      <div className={cn('group relative flex h-8 items-center rounded-md px-2', ROW_HOVER)}>
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 pr-12 text-[13px] text-foreground"
-          aria-expanded={expanded}
-          onClick={() => onToggle(projectId)}
+      <ContextMenu>
+        <ContextMenuTrigger
+          render={<div className={cn('group relative flex h-8 items-center rounded-md px-2', ROW_HOVER)} />}
         >
-          {/* 文件夹开/合两形态（IconFolder/IconFolderOpen，恢复此前语义）+
-              CrossFade：两个 svg 叠放，透明度交叉渐变 150ms —— 不回到三元
-              瞬跳（那是闪动参与因子之一），也不像旋转那样丢掉"打开"形态 */}
-          <span className="relative size-4 shrink-0">
-            <IconFolder
-              className={cn(
-                'absolute inset-0 size-4 text-muted-foreground transition-opacity duration-150',
-                expanded && 'opacity-0'
-              )}
-            />
-            <IconFolderOpen
-              className={cn(
-                'absolute inset-0 size-4 text-muted-foreground transition-opacity duration-150',
-                !expanded && 'opacity-0'
-              )}
-            />
-          </span>
-          <span className="truncate">{projectName}</span>
-        </button>
-        <div className={ACTIONS}>
-          {/* 更多：项目级菜单；「移除项目」只删项目不级联删会话（引擎 delete 语义，
-              会话落回"最近"，见 docs/计划-工作区与会话真实化.md 第 4 步） */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多" />}
-            >
-              <IconDots className="size-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" sideOffset={2}>
-              <DropdownMenuItem onClick={() => onTogglePin(projectId)}>
-                {pinned ? <IconPinFilled className="size-[17px]" /> : <IconPin className="size-[17px]" />}
-                {pinned ? '取消置顶' : '置顶'}
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <IconPencil className="size-[17px]" />
-                编辑
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <IconFolderShare className="size-[17px]" />
-                在资源管理器中打开
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <IconArchive className="size-[17px]" />
-                归档聊天
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDeleteProject(projectId)}>
-                <IconTrash className="size-[17px]" />
-                移除项目
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className={ACTION_BUTTON}
-            aria-label="新建聊天"
-            onClick={() => onStartChat(projectId)}
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 pr-12 text-[13px] text-foreground"
+            aria-expanded={expanded}
+            onClick={() => onToggle(projectId)}
           >
-            <IconMessagePlus className="size-4" />
-          </Button>
-        </div>
-      </div>
+            {/* 文件夹开/合两形态（IconFolder/IconFolderOpen，恢复此前语义）+
+                CrossFade：两个 svg 叠放，透明度交叉渐变 150ms —— 不回到三元
+                瞬跳（那是闪动参与因子之一），也不像旋转那样丢掉"打开"形态 */}
+            <span className="relative size-4 shrink-0">
+              <IconFolder
+                className={cn(
+                  'absolute inset-0 size-4 text-muted-foreground transition-opacity duration-150',
+                  expanded && 'opacity-0'
+                )}
+              />
+              <IconFolderOpen
+                className={cn(
+                  'absolute inset-0 size-4 text-muted-foreground transition-opacity duration-150',
+                  !expanded && 'opacity-0'
+                )}
+              />
+            </span>
+            <span className="truncate">{projectName}</span>
+          </button>
+          <div className={ACTIONS}>
+            {/* 更多：项目级菜单；「移除项目」只删项目不级联删会话（引擎 delete 语义，
+                会话落回"最近"，见 docs/计划-工作区与会话真实化.md 第 4 步）。
+                菜单项来自上方 actions 数据源（与右键菜单同权同项） */}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多" />}
+              >
+                <IconDots className="size-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" sideOffset={2}>
+                {actions.map(({ key, icon, label, onClick }) => (
+                  <DropdownMenuItem key={key} onClick={onClick}>
+                    {icon}
+                    {label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={ACTION_BUTTON}
+              aria-label="新建聊天"
+              onClick={() => onStartChat(projectId)}
+            >
+              <IconMessagePlus className="size-4" />
+            </Button>
+          </div>
+        </ContextMenuTrigger>
+        {/* 右键菜单：与「更多」dropdown 同一组动作（actions 数据源），双入口同权 */}
+        <ContextMenuContent>
+          {actions.map(({ key, icon, label, onClick }) => (
+            <ContextMenuItem key={key} onClick={onClick}>
+              {icon}
+              {label}
+            </ContextMenuItem>
+          ))}
+        </ContextMenuContent>
+      </ContextMenu>
       {/* 展开子区：单一容器条件渲染（内部才变），不做三元结构跳变 —— 此前
           chats.map(...) ↔ EmptyHint 两种结构在 Fragment 同一位置互换，React 按
           "不同类型"整棵卸载重建，点击展开/收起时列表闪一下（用户实测）。另：
@@ -342,6 +412,9 @@ export function HomeSidebar() {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   // 创建项目弹窗（入口 = 项目分区标题的「创建项目」钮）
   const [createOpen, setCreateOpen] = useState(false)
+  // 编辑项目弹窗（入口 = 项目行菜单「编辑」）：持 projectId 而非布尔 —— key
+  // 之用，弹窗每次打开都是全新实例（name 初值从 store 取，免手写重置）
+  const [editProjectId, setEditProjectId] = useState<string | null>(null)
 
   // 会话/项目都是引擎真数据：chat store（session.list）+ project store（project.list）
   const sessions = useChatStore((s) => s.sessions)
@@ -409,6 +482,9 @@ export function HomeSidebar() {
   // 引用 → ProjectRow/ChatRow 的 memo 全部失效（props 每次都"变"），任何一次
   // setExpanded 都让整棵列表树重渲染（闪动的参与因子之一）
   const listedProjects = projects.filter((p) => p.pinnedAt === undefined)
+  // 编辑弹窗的目标（菜单打开时行在渲染 = store 必有；编辑中项目被删则 undefined
+  // → 弹窗条件渲染自然消失）
+  const editingProject = editProjectId !== null ? projects.find((p) => p.id === editProjectId) : undefined
   const chatsByProject = useMemo(() => {
     const map = new Map<string, SessionSummary[]>()
     for (const project of projects) {
@@ -464,6 +540,11 @@ export function HomeSidebar() {
     },
     [removeProject]
   )
+
+  /** 编辑项目（开改名弹窗）；id 签名 + 稳定引用（ProjectRow memo 前提） */
+  const editProject = useCallback((projectId: string) => {
+    setEditProjectId(projectId)
+  }, [])
 
   /** 项目置顶/取消（project store 接引擎；移动语义由分区渲染实现）。
       查找走 getState 快照而非闭包捕获 projects —— 依赖数组少一项，引用更稳定 */
@@ -547,6 +628,7 @@ export function HomeSidebar() {
                     onSelectSession={openSession}
                     onStartChat={startNew}
                     onDeleteProject={deleteProject}
+                    onEditProject={editProject}
                     onArchiveChat={archiveChat}
                     onTogglePin={toggleProjectPin}
                     isWaitingApproval={isWaitingApproval}
@@ -608,6 +690,7 @@ export function HomeSidebar() {
                   onSelectSession={openSession}
                   onStartChat={startNew}
                   onDeleteProject={deleteProject}
+                  onEditProject={editProject}
                   onArchiveChat={archiveChat}
                   onTogglePin={toggleProjectPin}
                   isWaitingApproval={isWaitingApproval}
@@ -663,9 +746,9 @@ export function HomeSidebar() {
         </section>
       </div>
 
-      {/* 创建成功 → 主体落该项目下的新会话（startNew 自带同项目空会话复用，
-          信息区回显项目卡）+ 展开其分区 */}
-      <CreateProjectDialog
+      {/* 创建项目（两步流）。创建成功 → 主体落该项目下的新会话（startNew 自带
+          同项目空会话复用，信息区回显项目卡）+ 展开其分区 */}
+      <ProjectDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={(projectId) => {
@@ -673,6 +756,20 @@ export function HomeSidebar() {
           startNew(projectId)
         }}
       />
+
+      {/* 编辑项目：与创建同一张表单（改名 + 目录增删，新加目录才走信任确认）。
+          key = projectId 每次打开全新实例（预填即初值免重置）；项目被删
+        （编辑中他人移除）则不渲染，弹窗自然消失 */}
+      {editingProject !== undefined && (
+        <ProjectDialog
+          key={editingProject.id}
+          open
+          project={editingProject}
+          onOpenChange={(next) => {
+            if (!next) setEditProjectId(null)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -341,6 +341,28 @@ function handleProjectRename(params: unknown) {
   return { summary: projects.rename(p.projectId, p.name) }
 }
 
+/** project.update 入口校验（编辑弹窗：改名 + 目录增删一次提交）：name/cwds
+    口径与 create 完全一致（name 非空 + cwds ≥1 个非空 string，全量替换语义） */
+function handleProjectUpdate(params: unknown) {
+  const p = params as Partial<{ projectId: unknown; name: unknown; cwds: unknown }>
+  if (
+    typeof p.projectId !== 'string' ||
+    p.projectId.length === 0 ||
+    typeof p.name !== 'string' ||
+    p.name.trim().length === 0
+  ) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'project.update 需要 { projectId: string, name: string, cwds: string[] }')
+  }
+  if (
+    !Array.isArray(p.cwds) ||
+    p.cwds.length === 0 ||
+    !p.cwds.every((c) => typeof c === 'string' && c.length > 0)
+  ) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'project.update 需要至少一个工作区目录（cwds: string[]）')
+  }
+  return { summary: projects.update(p.projectId, p.name, p.cwds as string[]) }
+}
+
 /** providers.custom.sync 入口校验：两数组存在、每项字段形状收窄（id 带 custom/ 前缀的交由 registry 处理）。
     载荷实为外部任意 JSON，协议类型只是声明 —— 按 unknown 收窄，不依赖标注类型 */
 function handleProvidersCustomSync(params: unknown): ProvidersCustomSyncResult {
@@ -415,6 +437,7 @@ const handlers = new Map<string, (params: unknown) => unknown>([
   ['project.list', () => projects.list()],
   ['project.create', handleProjectCreate],
   ['project.rename', handleProjectRename],
+  ['project.update', handleProjectUpdate],
   ['project.delete', handleProjectDelete],
   ['project.setPinned', handleProjectSetPinned],
   ['agent.submit', handleAgentSubmit],

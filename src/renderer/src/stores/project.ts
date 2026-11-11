@@ -1,6 +1,6 @@
 /**
  * 项目域状态（zustand）：引擎 project.* 的 renderer 消费端。
- * 数据源 = 引擎 RPC（project.list/create/rename/delete），store 只做缓冲；
+ * 数据源 = 引擎 RPC（project.list/create/update/delete/setPinned），store 只做缓冲；
  * 会话归属靠 chat store 的 SessionSummary.projectId 关联（本 store 不持有会话）。
  */
 import { create } from 'zustand'
@@ -11,7 +11,8 @@ interface ProjectState {
   loaded: boolean
   load: () => Promise<void>
   create: (name: string, cwds: string[]) => Promise<ProjectSummary>
-  rename: (projectId: string, name: string) => Promise<void>
+  /** 编辑（改名 + 目录增删一次提交，project.update 全量替换语义） */
+  update: (projectId: string, name: string, cwds: string[]) => Promise<void>
   remove: (projectId: string) => Promise<void>
   setPinned: (projectId: string, pinned: boolean) => Promise<void>
 }
@@ -31,8 +32,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
     return summary
   },
 
-  rename: async (projectId, name) => {
-    const { summary } = await window.cogent.engineRequest('project.rename', { projectId, name })
+  update: async (projectId, name, cwds) => {
+    const { summary } = await window.cogent.engineRequest('project.update', { projectId, name, cwds })
     set((state) => ({
       projects: state.projects.map((p) => (p.id === projectId ? summary : p))
     }))

@@ -460,6 +460,15 @@ export interface ProjectRenameResult {
 
 /** 项目编辑（改名 + 目录增删一次提交；编辑弹窗走此方法，rename 保留给纯改名场景）。
     cwds 语义同 create：全量替换（≥1，首个 = 主根）—— UI 编辑表单本就是整表提交 */
+export interface ProjectUpdateParams {
+  projectId: string
+  name: string
+  cwds: string[]
+}
+export interface ProjectUpdateResult {
+  summary: ProjectSummary
+}
+
 export interface ProjectDeleteParams {
   projectId: string
 }
@@ -642,6 +651,7 @@ export interface ProtocolMethods {
   'project.list': { params: Record<string, never>; result: ProjectSummary[] }
   'project.create': { params: ProjectCreateParams; result: ProjectCreateResult }
   'project.rename': { params: ProjectRenameParams; result: ProjectRenameResult }
+  'project.update': { params: ProjectUpdateParams; result: ProjectUpdateResult }
   'project.delete': { params: ProjectDeleteParams; result: ProjectDeleteResult }
   'project.setPinned': { params: ProjectSetPinnedParams; result: ProjectSetPinnedResult }
   'agent.submit': { params: AgentSubmitParams; result: AgentSubmitResult }

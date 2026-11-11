@@ -101,6 +101,16 @@ export class ProjectRegistry {
     return { ...summary }
   }
 
+  /** 编辑（改名 + 目录全量替换）。cwds 由 dispatch 入口校验 ≥1，这里信任入参 ——
+      引擎不复核磁盘（同 create：存的是绑定声明，submit 时才复查存在性） */
+  update(projectId: string, name: string, cwds: string[]): ProjectSummary {
+    const summary = this.require(projectId)
+    summary.name = name.trim()
+    summary.cwds = [...cwds]
+    this.persist(projectId)
+    return { ...summary }
+  }
+
   /** 项目置顶/取消（字段落盘，同会话 setPinned 口径） */
   setPinned(projectId: string, pinned: boolean): ProjectSummary {
     const summary = this.require(projectId)

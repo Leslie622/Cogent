@@ -49,7 +49,19 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
 - **列表行**（侧栏/信息区条目通用）：h-8 relative group 容器（hover 底）+ 占满
   button（pr-12 给动作钮让位）+ `absolute right-1` 钮簇 opacity-0
   group-hover:opacity-100；信息区条目的钮簇**保留 focus-within**（菜单 portal 在
-  行外，hover 已断），折叠箭头**不挂** focus-within（焦点残留会赖着不灭）
+  行外，hover 已断），折叠箭头**不挂** focus-within（焦点残留会赖着不灭）。
+  **右键菜单 + 菜单开着保高亮**（2026-11-11）：行 div 经 `render` 顶替为
+  ContextMenuTrigger（base-luma context-menu，Base UI 原生右键/长按触发，
+  Positioner 默认锚指针位置）；菜单开着时行不掉高亮 —— trigger 挂
+  `data-popup-open`，行底配 `data-popup-open:`（行自身=右键菜单）+
+  `has-[[data-popup-open]]:`（行内「更多」dropdown 开着，:has 只看后代匹配不到
+  自身，两条各管一头）同 hover 色，钮簇配 group- 同款两条保显现（此时焦点已被
+  Base UI 移进弹层，focus-within 不可靠）。项目行菜单项抽成 actions 数据数组，
+  「更多」dropdown 与右键菜单 map 各自的 Item 组件 —— 双入口同权同项不漂移。
+  项目弹窗创建/编辑双模式合流（2026-11-12 ProjectDialog，用户定调"编辑与创建
+  行为一致"）：编辑 = 直落创建第二步同一张表单（改名 + 目录增删），只有**新加**
+  目录走信任确认（已信任过的重复问是噪音），引擎配套 project.update
+  （name+cwds 全量替换；rename 保留给纯改名场景）
 - **输入区**（HomeChat.ChatComposer）：白卡 rounded-3xl border-foreground/10，
   无投影、聚焦无任何反馈（has-[focus-visible] 反制掉组件默认 ring）；上方项目
   会话信息区 mx-5 h-9 rounded-t-xl bg-muted —— **新聊天限定**（无项目 = "选择项目"
