@@ -1,6 +1,7 @@
 # 计划 — pi 借鉴总纲（把 pi-coding-agent 的好东西分批"偷"进 Cogent）
 
-> 状态：**进行中 —— 唯一活跃主计划**（2026-11-11 立项；**批次 3（工具终章）六步已于同日全部落地**，tools-smoke 39 项全过；同日归并
+> 状态：**进行中 —— 唯一活跃主计划**（2026-11-11 立项；**批次 3（工具终章）六步已于同日全部落地**，tools-smoke 39 项全过；**批次 4（上下文压缩）两步
+> 已于 2026-11-12 落地**，compaction-smoke 8 项全过；同日归并
 > 计划-工具系统与审批.md 与 计划-回合过程折叠.md 的全部遗留件，其余计划文档
 > 均已归档——**日常只看本文档**）。素材库已就位：`reference/pi/`（sparse clone
 > agent / ai / coding-agent 三包，MIT，gitignore + eslint ignore 隔离；更新走
@@ -43,7 +44,7 @@
 | 批次 1 工具加固 | `core/tools/read.ts`(365) / `grep.ts`(337) / `find.ts`(359) / `ls.ts`(175) | 既有 read/glob/grep 对照上游补差距：offset/limit 翻页、.gitignore 尊重、grep 参数、ls 可选；图片读取依赖空位 1 挂起 | 3（步骤 3.6） | **✅ 3.6 完成**（gitignore 层叠+嵌套仓边界 / grep context / ls / 文件级搜索存量 bug 修复 / ~ 展开吸收） |
 | edit 工具 | `core/tools/edit.ts`(221) + `edit-diff.ts`(745) | old/new 串替换 + diff 算法（CRLF↔LF 偏移映射对 Windows 关键），工具计划批次 3 本体 | 3 | **✅ 3.3 完成**（D4 diff 进协议双路径；CRLF 映射冒烟验证） |
 | bash 工具 | `core/tools/bash.ts`(476) + `powershell.ts` + `core/bash-executor.ts` + `utils/shell.ts`(杀进程树/detached 跟踪) + `utils/child-process.ts` | shell 执行全家；Windows 有官方 PowerShell 答案 | 3 | **✅ 3.4/3.5 完成**（D2 单工具 PowerShell 路由 / killProcessTree+引擎退出清场 / tool.progress 流式 / 超时杀树 / abort 心跳法无孤儿 / 自主模式第四档 D6） |
-| 上下文压缩 | `core/compaction/compaction.ts`(1104 纯函数) + `utils.ts`(164) | 阈值触发摘要压缩 + 会话重建；上下文指示器"预警线"一直等它 | 4 | 未开始 |
+| 上下文压缩 | `core/compaction/compaction.ts`(1104 纯函数) + `utils.ts`(164) | 阈值触发摘要压缩 + 会话重建；上下文指示器"预警线"一直等它 | 4 | **✅ 4.1/4.2 完成**（2026-11-12；D7 双路：submit 前阈值 90% + session.compact 手动；compactionSummary 转录角色 + convertToLlm；切点线性改造只取 user 边界；冒烟 8 项全过；笔记 compaction.md） |
 | 技能 | `core/skills.ts`(505) + `resource-loader.ts` + `source-info.ts` | SKILL.md 发现（frontmatter 规范 / .gitignore 尊重 / 全局+项目双层）、系统提示词技能段 | 5 | 未开始 |
 | 斜杠命令 | `core/slash-commands.ts`(44) + `core/prompt-templates.ts`(341) | 自定义命令模板（$ARGUMENTS 类）；Cogent 输入框 "/" 菜单 | 5 | 未开始 |
 | MCP | `extensions/mcp/`(~3900) + `core/mcp-servers.ts` | stdio client / 配置 / 工具投影 / resources；上下文明细"MCP 段"空位 | 6 | 未开始 |
@@ -141,16 +142,27 @@
 
 ## 4. 批次 4：上下文压缩
 
-- **步骤 4.1 引擎压缩本体**：搬 compaction 纯函数（1104 行主体是提示词工程 +
-  转录重建，照搬后按 Cogent 转录结构接线）；SessionManager 在 submit 前检查
-  `estimateContextTokens`（与 max_tokens 预算同源，token-usage §6.1 已铺路）
-  超阈值 → completeSimple 摘要 → 转录插压缩条目 → 重建 Agent；D7 定触发策略。
-  事件 `compaction.started/completed`（additive）。验收：mock 长会话触发 →
-  外发请求体 token 显著变小断言 → 续聊上下文仍在 → 杀引擎重启复原。
-- **步骤 4.2 UI 联动**：上下文指示器预警线终于接上（压缩后回落动画）+ 消息流
-  「已压缩」折叠条（run-trace 家族复用）。验收：用户人工验收。
-- **笔记**：`技术笔记/compaction.md`（对比：Claude Code auto-compact 与 /compact、
-  DeepAgent summarization、上游"压缩后会话 reload"语义）。
+- **步骤 4.1 引擎压缩本体** ✅（2026-11-12）：搬 compaction 纯函数，按线性转录
+  改造（详尽取舍见 技术笔记/compaction.md §4）——压缩记录 = 转录内
+  `compactionSummary` 自定义消息角色（pi 声明合并通道 + Agent `convertToLlm`
+  选项转 user 消息），system 消息全保留前置（权限通告在转录里，不能随摘要丢）；
+  切点只取 user 边界（回合原子，砍上游 split-turn 二次摘要）；文件表靠摘要文本
+  自身跨代合并（UPDATE 提示词 PRESERVE 规则）；submit 前单点触发（自动失败不拦
+  提交的尽力语义）+ `session.compact` 手动路（忙/无可压缩 → InvalidRequest）；
+  `compacting` 集合护栏堵 pi 在 prompt 前不置 isStreaming 的并发窗口。
+  事件 `compaction.started/completed`（completed 带 summary/前后 token/
+  summarizedUntil 锚/失败 error，additive）。验收：compaction-smoke 8 项全过
+  （阈值触发 / 前后 token / 请求体不携带已摘要原文 / 摘要+保留区+新问进请求 /
+  重启复原 / 手动双态 / 迭代 previous-summary）。
+- **步骤 4.2 UI 联动** ✅（2026-11-12）：上下文指示器预警线接上（90% 刻度 +
+  越线说明行 + 压缩回落：压缩条新于末条 usage → 分子切 tokensAfter 估算带 ≈）
+  + 消息流「已压缩」折叠条（TraceCollapsible 家族，独立行快路不套「已工作」
+  头条）；completed 事件做本地列表手术（summarizedUntil 之前原位换折叠条，
+  不重拉历史——与 prompt() 追加用户消息有竞态）。验收：用户人工验收。
+- **笔记** ✅：`技术笔记/compaction.md`（对比：Claude Code auto-compact 与
+  /compact、Codex 自动压缩、DeepAgent summarization、上游"压缩后会话 reload"
+  语义；不搬清单：overflow 恢复 / retryAssistantCall（批次 8.4 挂账）/
+  branch-summarization）。
 - **注**：上游 `branch-summarization.ts`（会话树导航用）不随本批搬——我们转录
   是线性的，树结构属远期池。
 
