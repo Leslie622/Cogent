@@ -3,7 +3,8 @@
  * 左侧）：架构位置 = ChatComposer 工具行的常驻只读仪表；职责边界 = 从 chat
  * store 聚合会话 usage 得占用量、从 engine store 取活动模型的 contextWindow
  * 做分母，纯展示（横条 + 百分比 + 点击悬浮卡），不发起任何写操作；分类明细
- * 与压缩预警线（90% 刻度 + 越线自动压缩说明）已随批次 4 落地，压缩回落 =
+ * 与压缩预警线已随批次 4 落地（完备化 R1 起刻度 = 引擎随目录下发的有效触发
+ * 占比，小窗模型前移），压缩回落 =
  * 分子切压缩条 tokensAfter（估算口径带 ≈，见下方 useMemo 注释）。
  * formatTokens 在此导出：HomeChat 的 UsageLine（消息用量行）同需 token 紧凑
  * 格式，单一实现避免两处口径漂移。
@@ -12,7 +13,7 @@ import { useMemo } from 'react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, selectCompacting } from '@/stores/chat'
 import type { MessageItem } from '@/stores/chat'
 import { findActiveModel, useEngineStore } from '@/stores/engine'
 import type { HomeSession } from '@/stores/home'
@@ -36,10 +37,12 @@ const EMPTY_MESSAGES: MessageItem[] = []
 const DOT_TONES = ['bg-foreground', 'bg-foreground/50', 'bg-foreground/25']
 
 /**
- * 自动压缩触发线（引擎 runtime/compaction.ts COMPACTION_THRESHOLD 的镜像；
- * 协议不携带 —— 阈值变更时两处同步）。横条刻度 + 悬浮卡说明共用。
+ * 自动压缩触发线的回落值（完备化 R1 后真值随模型目录下发：ModelSummary
+ * .compactionThresholdRatio，引擎按 model.compaction 覆盖与窗口解出）——
+ * 仅老目录无字段时兜底 0.9。小窗模型触发线显著前移（20K 窗 ≈59%），
+ * 常量镜像已废。
  */
-const COMPACT_THRESHOLD = 0.9
+const COMPACT_THRESHOLD_FALLBACK = 0.9
 
 /** 明细单行：色点 + 名称 + token 数 + 占比。tokens 已按实报总量缩放（见
     breakdown）：缩放是浮点乘法，<1K 时按两位小数定长显示（K/M 走 formatTokens
@@ -119,11 +122,16 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
     useChatStore((s) => (session.kind === 'chat' ? s.messagesBySession[session.chatId] : undefined)) ?? EMPTY_MESSAGES
   // 分母模型与 ModelMenu 同源（findActiveModel 双键）：同名模型跨 provider 收录时
   // id 单键命中错家 —— 未配 key 的收录家、或都配了 key 时目录在前的那家（后者
-  // 上下文窗口大小还可能与自定义网关那份不同，分母就错了）
-  const contextWindow = useEngineStore(
-    (s) =>
-      findActiveModel(s.models, s.keyConfigured, s.activeModelId, s.activeProviderId)?.contextWindow ?? 0
+  // 上下文窗口大小还可能与自定义网关的那份不同，分母就错了）
+  const activeModel = useEngineStore((s) =>
+    findActiveModel(s.models, s.keyConfigured, s.activeModelId, s.activeProviderId)
   )
+  const contextWindow = activeModel?.contextWindow ?? 0
+  // 有效压缩触发占比（完备化 R1）：引擎随目录下发，预警线/变色带/说明行三处
+  // 共用；老目录无字段回落 0.9
+  const compactThreshold = activeModel?.compactionThresholdRatio ?? COMPACT_THRESHOLD_FALLBACK
+  // 压缩进行中（完备化 D8）：手动入口的禁用位（会话级护栏，引擎侧另有一道）
+  const compacting = useChatStore(selectCompacting)
 
   const { used, cacheHit, estimate, approximate } = useMemo(() => {
     let usage: MessageUsage | undefined
@@ -181,8 +189,11 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
   // 才免标，同成本项口径）
   const pctNum = pct * 100
   const pctLabel = `${approximate ? '≈' : ''}${pctNum < 0.005 ? '<0.01' : pctNum.toFixed(2)}`
-  // 三档变色只落在 bar（文字恒实色 muted）；阈值 75/90 与主流预警习惯对齐
-  const tone = pct >= 0.9 ? 'bg-destructive' : pct >= 0.75 ? 'bg-warning' : 'bg-foreground'
+  // 三档变色只落在 bar（文字恒实色 muted）；预警带锚定有效触发线（前 0.15 起
+  // 警、越线转红）—— 90% 线时与原 75/90 档一致，小窗线前移后配色跟着走，
+  // 避免"线早越过了横条还黑着"
+  const tone =
+    pct >= compactThreshold ? 'bg-destructive' : pct >= compactThreshold - 0.15 ? 'bg-warning' : 'bg-foreground'
 
   // 没有对话（首答前无实报数据）整个指示器不渲染：0% 横条 + 空态悬浮卡都是
   // 噪音（用户定调），首答产出 usage 后自然出现
@@ -223,7 +234,7 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
           />
         }
       >
-        <ContextBar pct={pct} tone={tone} warnAt={COMPACT_THRESHOLD} className="h-1.5 w-20" />
+        <ContextBar pct={pct} tone={tone} warnAt={compactThreshold} className="h-1.5 w-20" />
         <span className="text-xs tabular-nums">{pctLabel}%</span>
       </PopoverTrigger>
       {/* 全卡字号与间距（2026-11-11 用户多轮定调收敛）：标题 13px semibold、
@@ -237,7 +248,7 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
             {approximate ? '≈' : ''}{formatTokens(used)}/{formatTokens(contextWindow)}（{pctLabel}%）
           </span>
         </div>
-        <ContextBar pct={pct} tone={tone} warnAt={COMPACT_THRESHOLD} className="mt-4 h-1.5" />
+        <ContextBar pct={pct} tone={tone} warnAt={compactThreshold} className="mt-4 h-1.5" />
         {/* 明细区（对照 ZCode /context 三段可算项；MCP 工具/技能待各自模块，
             无"其他"兜底段）。口径 = 总量实报、拆分估算：顶部数字是端点实报，
             三段按估算占比缩放到该总量，加起来能对上。原"≈ 分类明细"头行
@@ -259,11 +270,24 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
           </div>
         )}
         {/* 压缩说明行（批次 4）：解释横条刻度的含义 —— 越线后下一条消息前自动
-            压缩，回落动画即压缩产物（分子切 tokensAfter 估算） */}
+            压缩，回落动画即压缩产物（分子切 tokensAfter 估算）。百分比 = 有效
+            触发线（完备化 R1 随模型下发，小窗前移），四舍五入整显 */}
         <div className="mt-3 flex items-center gap-1.5 border-t pt-3 text-xs text-muted-foreground">
           <span className="h-1.5 w-px bg-foreground/40" aria-hidden="true" />
-          越过 90% 自动压缩上下文
+          越过 {Math.round(compactThreshold * 100)}% 自动压缩上下文
         </div>
+        {/* 手动压缩入口（完备化 D8）：session.compact 已通协议（批次 4），此处补
+            UI 面 —— 无可压缩（刚压过/内容不足）引擎报错落 chat store 错误条；
+            压缩中按钮禁用（会话级护栏引擎侧也有） */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-2 w-full justify-center rounded-lg text-xs text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
+          disabled={compacting}
+          onClick={() => void useChatStore.getState().compactNow()}
+        >
+          {compacting ? '压缩中…' : '立即压缩上下文'}
+        </Button>
       </PopoverContent>
     </Popover>
   )

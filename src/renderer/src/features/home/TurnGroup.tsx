@@ -19,7 +19,7 @@ import type { ChatMessage, MessageUsage } from '@/env.d'
 import type { MessageItem } from '@/stores/chat'
 import { MessageRow, UsageLine } from './MessageRow'
 import { ApprovalCard } from './ApprovalCard'
-import { CompactionBar } from './CompactionBar'
+import { CompactionBar, PrunedBar } from './CompactionBar'
 
 /** 回合（一问一答 + 其间全部过程项）；user 缺省 = 列表前导无提问
  *  （正常流不出现，分组形状自然兜底而非防御分支） */
@@ -215,6 +215,10 @@ function ProcessItem({ item }: { item: MessageItem }) {
   if (item.type === 'approval') {
     return <ApprovalCard item={item} />
   }
+  // 裁剪副行（完备化 R3/D8）：折叠条同区的一行「已裁剪 N 处工具输出」
+  if (item.type === 'pruned') {
+    return <PrunedBar item={item} />
+  }
   // 压缩条类型分支（常态走 TurnGroupImpl 的独立行快路，不进过程体 ——
   // 塞进「已工作」折叠体里的压缩标记等于看不见；此分支是类型完备兜底）
   if (item.role === 'compaction') {
@@ -229,13 +233,24 @@ function ProcessItem({ item }: { item: MessageItem }) {
 function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
   // 压缩折叠条独立行：它恒是列表头部无用户消息的单独回合组（引擎重建 =
   // [system] + [压缩条] + [保留区]，保留区以 user 消息开头另起回合）——
-  // 不套「已工作」头条/统计行（那是一个 run 的语义，压缩不是 run）
+  // 不套「已工作」头条/统计行（那是一个 run 的语义，压缩不是 run）。
+  // 组内可带 L1 prune 副行（completed 手术把 [折叠条, 副行] 一起放头部）
   const first = turn.items[0]
-  if (turn.user === undefined && turn.items.length === 1 && first.type === undefined && first.role === 'compaction') {
+  if (turn.user === undefined && first.type === undefined && first.role === 'compaction') {
     return (
-      <MessageScrollerItem messageId={first.id}>
-        <CompactionBar message={first} />
-      </MessageScrollerItem>
+      <div className="flex flex-col gap-2">
+        {turn.items.map((item) =>
+          item.type === 'pruned' ? (
+            <MessageScrollerItem key={item.id} messageId={item.id}>
+              <PrunedBar item={item} />
+            </MessageScrollerItem>
+          ) : item.type === undefined && item.role === 'compaction' ? (
+            <MessageScrollerItem key={item.id} messageId={item.id}>
+              <CompactionBar message={item} />
+            </MessageScrollerItem>
+          ) : null
+        )}
+      </div>
     )
   }
   const split = splitTurn(turn.items, phase === 'live')

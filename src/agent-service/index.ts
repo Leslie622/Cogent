@@ -40,6 +40,7 @@ import {
   type RpcEvent,
   type RpcResponse,
   type SessionCompactParams,
+  SessionContinueParams,
   type SessionMessagesParams,
   type SessionSetPermissionParams,
   type SessionSetPinnedParams
@@ -296,6 +297,16 @@ function handleSessionCompact(params: unknown) {
   return sessions.compactSession(p.sessionId)
 }
 
+/** session.continue 入口校验：sessionId 非空 string（完备化 R6③ 手动续写）。
+    异步 handler —— 与 compact 同形，dispatch 对结果 await，拒绝转错误帧 */
+function handleSessionContinue(params: unknown) {
+  const p = params as Partial<SessionContinueParams>
+  if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
+    throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.continue 需要 { sessionId: string }')
+  }
+  return sessions.continueSession(p.sessionId)
+}
+
 /** inspect.entries 入口校验：sessionId 非空 string */
 function handleInspectEntries(params: unknown) {  const p = params as Partial<{ sessionId: unknown }>
   if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
@@ -434,6 +445,7 @@ const handlers = new Map<string, (params: unknown) => unknown>([
   ['session.listArchived', () => sessions.listArchived()],
   ['session.setPermission', handleSessionSetPermission],
   ['session.compact', handleSessionCompact],
+  ['session.continue', handleSessionContinue],
   ['project.list', () => projects.list()],
   ['project.create', handleProjectCreate],
   ['project.rename', handleProjectRename],

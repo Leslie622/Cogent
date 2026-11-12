@@ -263,6 +263,14 @@ export interface ModelSummary {
    * 改，只能调配置）；显示层一律用 id（2026-11-10 定调），name 不参与呈现。
    */
   userDefined?: boolean
+  /**
+   * 有效压缩触发阈值占窗口比（0–1，完备化批次 R1）：引擎按 model.compaction
+   * 覆盖代入触发公式对 contextWindow 解出（max(50%, min(ratio, 1−floor/ctx))）。
+   * 指示器预警线直接画它 —— 小窗模型触发线显著前移（20K 窗 ≈59%），引擎侧
+   * 真值随目录下发，消灭 renderer 侧 0.9 常量双处镜像。窗口缺数据（≤0）的
+   * 怪模型不带，渲染端回落 0.9。
+   */
+  compactionThresholdRatio?: number
 }
 
 /** 工具的风险类别：审批策略按此分级（edit 属写类，2026-11-11 批次 3 加入） */
@@ -426,6 +434,19 @@ export interface SessionCompactResult {
 }
 
 /**
+ * 手动续写（完备化 R6③，截断动作条「继续生成」的引擎通道）：对末条
+ * stopReason=length 的回复注入显式 continue 指令再跑（与自动路同消息同
+ * 循环，续写预算重新给满）。会话回复中拒绝；末条非截断拒绝（明确结果）。
+ * 事件面 = 新一段 run.started → message.delta… → run.completed。
+ */
+export interface SessionContinueParams {
+  sessionId: string
+}
+export interface SessionContinueResult {
+  ok: true
+}
+
+/**
  * 项目摘要（= 目录绑定，计划 D3）：会话经 projectId 归属项目并继承其全部目录。
  * cwds 多根（2026-11-09 二次决策收编）：跨仓库任务（前端+后端两仓库一个项目）
  * 是主流 Agent（VS Code workspace / Claude Code --add-dir）的既定能力；
@@ -512,6 +533,59 @@ export interface ModelDef {
   reasoning?: boolean
   /** 支持的思考等级子集；缺省 = 跟随端点默认（不下发映射）。仅 reasoning 时有意义 */
   thinkingLevels?: ThinkingLevel[]
+  /**
+   * 压缩参数覆盖（完备化批次 R1）：字段全可选，缺省走引擎默认
+   * （thresholdRatio 0.9 / roomFloorTokens 8192）。小窗口模型可调低让触发
+   * 更早。设置 UI 收在「高级」折叠（S7，与 compat 同面板同受众）。
+   */
+  compaction?: CompactionParamsOverride
+  /**
+   * 思考预算（完备化 R7，token 按档位）：推理模型的思考硬钳制，防小窗
+   * 输出预算被思考吃光（死锁复盘的第四环）。字段全可选，缺省跟 pi 内建
+   * 预算表。设置 UI 收在「高级」折叠。
+   */
+  thinkingBudgets?: ThinkingBudgetsOverride
+}
+
+/**
+ * 压缩触发参数的用户覆盖（ModelDef.compaction 的形状）。解析序照 pi
+ * settings-manager 的三级形态：模型覆盖 →（全局设置，S7 随高级面板补）→
+ * 内建默认。生效公式见 runtime/compaction.ts compactionThreshold。
+ */
+export interface CompactionParamsOverride {
+  /** 占比触发线 (0,1]；默认 0.9（与 dsh 0.8 / Codex 90% 封顶同量级） */
+  thresholdRatio?: number
+  /** 绝对余量下限（token）；默认 8192（dsh headroom 64K 的桌面版） */
+  roomFloorTokens?: number
+}
+
+/**
+ * 思考预算（token，按档位；完备化 R7）：自托管 openai 系端点（vLLM/Qwen/
+ * DashScope/SGLang/llama.cpp）的硬钳制 —— 引擎按当前思考档取预算并夹到
+ * 输出余量（pi clampThinkingBudgetToAnswerRoom，答案保底 1024）。pi
+ * ThinkingBudgets 的协议镜像；xhigh/max 档 pi 侧归 high（clampReasoning）。
+ * 下发到请求体的字段名由 provider 的 compat.thinkingTokenBudgetField 决定。
+ */
+export interface ThinkingBudgetsOverride {
+  minimal?: number
+  low?: number
+  medium?: number
+  high?: number
+}
+
+/**
+ * provider 级兼容覆盖（完备化 R7）：面向懂端点用户的高级面（设置页「高级」
+ * 折叠），字段与 pi OpenAICompletionsCompat 同名直通 —— 未设置时 pi 按
+ * baseUrl 自动探测。仅 openai 系方言消费（anthropic 走官方 budget_tokens，
+ * 不经此面）。
+ */
+export interface ProviderCompatDef {
+  /** 思考预算的请求体字段名（自托管方言三选）；缺省不发预算字段 */
+  thinkingTokenBudgetField?: 'thinking_budget' | 'thinking_budget_tokens' | 'thinking_token_budget'
+  /** thinkingTokenBudgetField 的简写：置 true 等价 'thinking_token_budget' */
+  supportsThinkingTokenBudget?: boolean
+  /** max_tokens 字段名（部分网关只认其一） */
+  maxTokensField?: 'max_tokens' | 'max_completion_tokens'
 }
 
 /**
@@ -541,6 +615,13 @@ export interface CustomProviderDef {
   disabledModels?: string[]
   /** 整 provider 禁用：保留定义不注册（再启用即恢复），区别于 deleteProvider 的彻底移除 */
   disabled?: boolean
+  /**
+   * 端点兼容覆盖（完备化 R7，高级面）：字段与 pi OpenAICompletionsCompat
+   * 同名直通，作用于本 provider 全部模型（pi 上游 models.json 的
+   * ProviderConfig.compat 同位）。仅 openai 系方言消费；未设置时 pi 按
+   * baseUrl 自动探测
+   */
+  compat?: ProviderCompatDef
 }
 
 /**
@@ -648,6 +729,7 @@ export interface ProtocolMethods {
   'session.archive': { params: SessionArchiveParams; result: SessionArchiveResult }
   'session.setPermission': { params: SessionSetPermissionParams; result: SessionSetPermissionResult }
   'session.compact': { params: SessionCompactParams; result: SessionCompactResult }
+  'session.continue': { params: SessionContinueParams; result: SessionContinueResult }
   'project.list': { params: Record<string, never>; result: ProjectSummary[] }
   'project.create': { params: ProjectCreateParams; result: ProjectCreateResult }
   'project.rename': { params: ProjectRenameParams; result: ProjectRenameResult }
@@ -759,5 +841,26 @@ export interface ProtocolEvents {
     summary?: string
     summarizedUntil?: number
     error?: string
+  }
+  /**
+   * L1 工具结果裁剪（完备化 R3 additive）：检查点内 L2 摘要前的确定性降载 ——
+   * 全转录超限（8192 code point）的 toolResult 原位改写为保头 4096 / 保尾
+   * 1024 + middle 替换 marker，零 LLM 成本。entries 每处一条（含字符量对账，
+   * dsh shadow-price 事件的 Cogent 简化版 —— 单写者无需按事件扣减，UI 呈
+   * 「已裁剪 N 处工具输出」副行用）。原位改写不动条数，宿主已有的消息列表
+   * 无需手术；下一次历史回查自然读到裁剪后的结果文本。
+   * R10 图片卸载预留：Cogent 当前无图片输入路径，无对象可卸；将来落地时
+   * 在压缩域追加 `compaction.offloaded`（形状同本事件：entries 带
+   * messageId + 估算省下的 token），不经本事件扩展。
+   */
+  'compaction.pruned': {
+    sessionId: string
+    entries: Array<{
+      toolCallId: string
+      /** 裁剪前文本总量（code point，跨全部 text 块） */
+      originalChars: number
+      /** 裁剪后文本总量（头 + marker + 尾） */
+      prunedChars: number
+    }>
   }
 }

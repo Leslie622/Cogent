@@ -9,9 +9,10 @@
  * 件，摘要里的 ## 标题按原文看反而保真），容器放开 select-text（UI 方针 5：
  * 正文类内容逐处放开）。
  */
-import { IconArrowRight, IconFolderFilled } from '@tabler/icons-react'
+import { IconArrowRight, IconFileScissorsFilled, IconFolderFilled } from '@tabler/icons-react'
 import { TraceIcon, TraceLine, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger } from '@/components/ui/trace'
 import { formatTokens } from './ContextIndicator'
+import type { PrunedItem } from '@/stores/chat'
 import type { ChatMessage } from '@/env.d'
 
 export function CompactionBar({ message }: { message: ChatMessage }) {
@@ -40,6 +41,40 @@ export function CompactionBar({ message }: { message: ChatMessage }) {
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent className="max-h-64 overflow-y-auto select-text">
         <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed">{message.content}</pre>
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  )
+}
+
+/**
+ * L1 prune 副行（完备化 R3/D8）：「已裁剪 N 处工具输出」—— 与折叠条同区的
+ * 置灰单行（TraceLine 家族一致）；展开列每处的字符量对账（N → M，格式化走
+ * formatTokens 同款紧凑口径，字符非 token，行首注明）。历史回查不产此行
+ * （转录真源是改写后的 toolResult，marker 自带痕迹），仅事件路径落
+ */
+export function PrunedBar({ item }: { item: PrunedItem }) {
+  const saved = item.entries.reduce((sum: number, e: { originalChars: number; prunedChars: number }) => sum + (e.originalChars - e.prunedChars), 0)
+  return (
+    <TraceCollapsible>
+      <TraceCollapsibleTrigger>
+        <TraceLine status="pending">
+          <TraceIcon>
+            <IconFileScissorsFilled />
+          </TraceIcon>
+          已裁剪 {item.entries.length} 处工具输出
+          <span className="flex items-center gap-1 font-mono text-[11px] tabular-nums">
+            −{formatTokens(saved)} 字符
+          </span>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent className="select-text">
+        <div className="flex flex-col gap-1 font-mono text-[11px] tabular-nums">
+          {item.entries.map((e) => (
+            <div key={e.toolCallId}>
+              {e.toolCallId}：{formatTokens(e.originalChars)} → {formatTokens(e.prunedChars)}
+            </div>
+          ))}
+        </div>
       </TraceCollapsibleContent>
     </TraceCollapsible>
   )

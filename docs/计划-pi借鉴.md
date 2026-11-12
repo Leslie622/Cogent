@@ -142,6 +142,15 @@
 
 ## 4. 批次 4：上下文压缩
 
+> **完备化加码（2026-11-12 立项）**：UI 验收实测发现「小窗输出预算饿死」
+> 死锁（20K 窗 + 推理模型，67% 即被思考吃光 room，到不了 90% 触发线）。
+> 五家调研与决策定稿见 [方案-上下文压缩.md](方案-上下文压缩.md)，
+> **执行计划见 [计划-上下文压缩完备化.md](计划-上下文压缩完备化.md)**
+> （十维路线选择 + S1–S8 步骤 + 冒烟扩至 22 项；用户定调：一步到位
+> 不设远期、以 pi 与 DeepSeek-Harness 源码为主要参照，dsh 源码已浅克隆
+> reference/deepseek-harness）。**批次 4 已完结（2026-11-12）**：4.1/4.2
+> 引擎与 UI + 4.3 完备化 S1–S8 全部落地。**
+
 - **步骤 4.1 引擎压缩本体** ✅（2026-11-12）：搬 compaction 纯函数，按线性转录
   改造（详尽取舍见 技术笔记/compaction.md §4）——压缩记录 = 转录内
   `compactionSummary` 自定义消息角色（pi 声明合并通道 + Agent `convertToLlm`
@@ -163,6 +172,29 @@
   /compact、Codex 自动压缩、DeepAgent summarization、上游"压缩后会话 reload"
   语义；不搬清单：overflow 恢复 / retryAssistantCall（批次 8.4 挂账）/
   branch-summarization）。
+- **步骤 4.3 完备化 S1–S8** ✅（2026-11-12，批次 4 完结）：S1 = `max(ctx×50%, min(ctx×90%,
+  ctx−ROOM_FLOOR(8192)))` 触发公式 + ModelDef.compaction 按模型覆盖（声明合并
+  通道挂 Model）+ 有效阈值随目录下发（指示器预警线跟随）；S2 =
+  `prepareNextTurnWithContext` 工具轮间检查点（pi 原生钩子，压缩后返回新
+  context 对齐 loop 工作副本）+ R6② 核实（pi 原生 fail length 停因的
+  toolCall，参数完整也 fail）；S3 = L1 prune（dsh 数值与算法同款：全转录
+  8192 线 / 保头 4096 / 保尾 1024 / 单 marker，compaction.pruned 事件）+
+  检查点 L1→重计量→L2 链（L1 单独够时零摘要请求）；S4 = 摘要指令内联（R4：会话
+  system+被摘要区原消息+指令 user 真前缀构造，KV cache 复用；投影前导语换 dsh
+  CHECKPOINT_PREAMBLE 措辞）；S5 = 溢出恢复（R5：isContextOverflow 判定 →
+  删失败轮 → L1/L2 → agent.continue 重试一次,单次闸;可恢复失败在 agent_end
+  抑制 run.failed、streaming 保活,UI 全程一个 run）；S6 = auto-continue
+  （R6③:length 截断注入 [cogent:continue] 显式指令再跑,上限 3 次,单 run 语义
+  + 段合并投影 + session.continue 手动路 + 截断动作条「继续生成/立即压缩」）；S7 = compat
+  通道（R7 评审修正落点:provider 级 compat + 模型级 thinkingBudgets,buildModel
+  挂 Model.compat/thinkingBudgets,session 同步 Agent.thinkingBudgets;设置 UI
+  两处高级折叠:provider 详情「端点兼容」预算字段名选择 + 模型弹窗压缩参数/
+  档位预算）；S8 = UI 三件补齐（压缩中状态条 compactingBySession + 指示器
+  手动压缩入口 + prune 副行 PrunedBar）+ R10 图片卸载事件形状预留（协议注释
+  声明 compaction.offloaded 约定）。**完备化计划就此归档**（否决项继续有效）。评审修正四件（R1 特小窗
+  公式表述/R3 L1 全转录范围/R7 compat 落 Model 非 createProvider/S1·S7 UI
+  归属）已并入完备化计划。冒烟 22/22 + tools-smoke 39/39 + approval 18/18 回归，三关绿。**批次 4 全部完结**。
+  见 [计划-上下文压缩完备化.md](计划-上下文压缩完备化.md) 执行日志。
 - **注**：上游 `branch-summarization.ts`（会话树导航用）不随本批搬——我们转录
   是线性的，树结构属远期池。
 

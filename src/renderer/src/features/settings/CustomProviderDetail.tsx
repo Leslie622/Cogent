@@ -1,12 +1,18 @@
 /**
  * 自定义供应商详情卡（2026-11-10 从 ModelsSection.tsx 拆出）：ModelsSection
  * master-detail 右栏的自定义分支。字段组成：名称（头部行内编辑）/ Base URL /
- * API 格式 / API Key / 模型列表；模型行复用 ProviderModelRow（与内置详情共享），
- * 增改走 ModelDialog。
+ * API 格式 / API Key / 模型列表 / 高级（端点兼容，完备化 R7）；模型行复用
+ * ProviderModelRow（与内置详情共享），增改走 ModelDialog。
  */
 import { useMemo, useState } from 'react'
-import { IconDots, IconTrash } from '@tabler/icons-react'
+import { IconChevronDown, IconDots, IconTrash } from '@tabler/icons-react'
+import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Toggle } from '@/components/ui/toggle'
 import { ProviderLogo } from '@/components/ProviderLogo'
 import { useEngineStore } from '@/stores/engine'
 import type { CustomProviderDef, ModelDef } from '@/env.d'
@@ -28,6 +35,15 @@ import {
   toggleDisabledModel,
 } from './ProviderModelRow'
 import { FIELD_GAP, FIELD_LABEL } from './models-recipes'
+
+/** 思考预算字段名的可选项（完备化 R7）：自托管 openai 系方言的三种认法 +
+    不下发（缺省）。字段名原样透传引擎 → pi 方言层落请求体 */
+const BUDGET_FIELD_OPTIONS: ReadonlyArray<{ label: string; value: 'thinking_budget' | 'thinking_budget_tokens' | 'thinking_token_budget' | undefined }> = [
+  { label: '不下发', value: undefined },
+  { label: 'thinking_budget', value: 'thinking_budget' },
+  { label: 'thinking_budget_tokens', value: 'thinking_budget_tokens' },
+  { label: 'thinking_token_budget', value: 'thinking_token_budget' }
+]
 
 /** 自定义供应商详情。文本输入本地编辑、失焦提交（每次修改即时全量保存，见
     ModelsSection.tsx 文件头"保存语义"）；模型行 = ModelDef 文本 + hover 动作簇 +
@@ -137,6 +153,56 @@ export function CustomProviderDetail({
         <label className={FIELD_LABEL}>API 格式</label>
         <FormatSelect value={def.apiFormat} onChange={(apiFormat) => patch({ apiFormat })} />
       </div>
+
+      {/* 高级折叠（完备化 R7）：端点兼容覆盖 —— 懂端点用户的面，默认收起。
+          思考预算字段名 = 自托管 openai 系端点（vLLM/Qwen/DashScope/SGLang/
+          llama.cpp）对方言字段名的认法，选对后模型级思考预算才会随请求下发；
+          anthropic 方言走官方 budget_tokens 不经此面 */}
+      <Collapsible>
+        <CollapsibleTrigger
+          className={
+            '-ml-2 flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground ' +
+            'hover:bg-accent-foreground/5 hover:text-foreground'
+          }
+        >
+          <IconChevronDown className="size-3.5 transition-transform duration-200 [[data-state=closed]_&]:rotate-180" aria-hidden="true" />
+          高级（端点兼容）
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-2 border-t pt-3">
+            <label className={FIELD_LABEL}>思考预算字段名</label>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {BUDGET_FIELD_OPTIONS.map((option) => (
+                <Toggle
+                  key={option.value ?? 'none'}
+                  variant="outline"
+                  size="sm"
+                  title={option.value ?? '不下发预算字段'}
+                  pressed={def.compat?.thinkingTokenBudgetField === option.value}
+                  onPressedChange={(on) =>
+                    on &&
+                    patch({
+                      compat:
+                        option.value === undefined
+                          ? undefined
+                          : { ...def.compat, thinkingTokenBudgetField: option.value }
+                    })
+                  }
+                  className={cn(
+                    'text-[13px] font-normal',
+                    'aria-pressed:bg-foreground/10 aria-pressed:text-foreground'
+                  )}
+                >
+                  {option.label}
+                </Toggle>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              官方端点无需配置（引擎按 baseUrl 自动探测）；配置后请在模型编辑的「高级」里按档位填思考预算
+            </p>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       <ApiKeyField providerId={def.id} />
 

@@ -83,6 +83,7 @@ export type EngineMethod =
   | 'session.listArchived'
   | 'session.setPermission'
   | 'session.compact'
+  | 'session.continue'
   | 'project.list'
   | 'project.create'
   | 'project.rename'
@@ -149,6 +150,7 @@ export interface EngineMethodParams {
   'session.listArchived': Record<string, never>
   'session.setPermission': { sessionId: string; mode: PermissionMode }
   'session.compact': { sessionId: string }
+  'session.continue': { sessionId: string }
   'project.list': Record<string, never>
   'project.create': { name: string; cwds: string[] }
   'project.rename': { projectId: string; name: string }
@@ -174,6 +176,7 @@ export interface EngineMethodResult {
   'session.listArchived': SessionSummary[]
   'session.setPermission': { summary: SessionSummary }
   'session.compact': { tokensBefore: number; tokensAfter: number }
+  'session.continue': { ok: true }
   'project.list': ProjectSummary[]
   'project.create': { summary: ProjectSummary }
   'project.rename': { summary: ProjectSummary }
@@ -217,6 +220,13 @@ export type EngineEvent =
   | { method: 'approval.request'; params: { sessionId: string; requestId: string; toolName: string; kind: string; summary: string } }
   | { method: 'inspect.event'; params: { sessionId: string; entry: InspectEntrySummary } }
   | { method: 'compaction.started'; params: { sessionId: string; reason: 'threshold' | 'manual' } }
+  | {
+      method: 'compaction.pruned'
+      params: {
+        sessionId: string
+        entries: Array<{ toolCallId: string; originalChars: number; prunedChars: number }>
+      }
+    }
   | {
       method: 'compaction.completed'
       params: {
@@ -349,8 +359,11 @@ export interface ModelSummary {
   thinkingLevels: ThinkingLevelWithOff[]
   contextWindow: number
   maxTokens: number
-  /** 是否用户添加（缺省 false = pi 目录原生）；默认模型编辑时 UI 锁 id */
+  /** 是否用户添加（缺省 false = pi 目录原生）；默认模型设置 UI 锁 id */
   userDefined?: boolean
+  /** 有效压缩触发阈值占比（完备化 R1，引擎按 model.compaction 与窗口解出）；
+      指示器预警线画它，小窗模型显著前移（20K 窗 ≈59%）。缺省回落 0.9 */
+  compactionThresholdRatio?: number
 }
 
 /**
@@ -372,6 +385,36 @@ export interface ModelDef {
   input?: Array<'text' | 'image'>
   reasoning?: boolean
   thinkingLevels?: ThinkingLevel[]
+  /** 压缩参数覆盖（完备化 R1；缺省走引擎默认 0.9/8192）。设置 UI 在「高级」
+      折叠（S7），此处先随协议形状同步 */
+  compaction?: CompactionParamsOverride
+  /** 思考预算（完备化 R7，token 按档位）：推理模型思考硬钳制，防小窗输出
+      预算被吃光。设置 UI 在「高级」折叠 */
+  thinkingBudgets?: ThinkingBudgetsOverride
+}
+
+/** 思考预算（token 按档位），镜像 protocol/types.ts；xhigh/max 档引擎侧归 high */
+export interface ThinkingBudgetsOverride {
+  minimal?: number
+  low?: number
+  medium?: number
+  high?: number
+}
+
+/** provider 级兼容覆盖（完备化 R7 高级面），镜像 protocol/types.ts；仅 openai
+    系方言消费，未设置时引擎按 baseUrl 自动探测 */
+export interface ProviderCompatDef {
+  thinkingTokenBudgetField?: 'thinking_budget' | 'thinking_budget_tokens' | 'thinking_token_budget'
+  supportsThinkingTokenBudget?: boolean
+  maxTokensField?: 'max_tokens' | 'max_completion_tokens'
+}
+
+/** 压缩触发参数的用户覆盖（ModelDef.compaction 的形状，镜像 protocol/types.ts） */
+export interface CompactionParamsOverride {
+  /** 占比触发线 (0,1]；默认 0.9 */
+  thresholdRatio?: number
+  /** 绝对余量下限（token）；默认 8192 */
+  roomFloorTokens?: number
 }
 
 /** 自定义 provider 定义（与 protocol/types.ts CustomProviderDef 镜像；key 走 credentials 单独管理） */
@@ -390,6 +433,8 @@ export interface CustomProviderDef {
   disabledModels?: string[]
   /** 整 provider 禁用：保留定义不注册 */
   disabled?: boolean
+  /** 端点兼容覆盖（完备化 R7 高级面，仅 openai 系方言消费） */
+  compat?: ProviderCompatDef
 }
 
 /**

@@ -4,9 +4,14 @@
  * 扁平字段表单 + 目录智能预填，保存经 onSave 上抛由调用方写回 provider 定义。
  */
 import { useEffect, useState } from 'react'
-import { IconCheck } from '@tabler/icons-react'
+import { IconCheck, IconChevronDown } from '@tabler/icons-react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -17,7 +22,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Toggle } from '@/components/ui/toggle'
-import type { ModelDef, ModelSummary, ThinkingLevel } from '@/env.d'
+import type { ModelDef, ModelSummary, ThinkingBudgetsOverride, ThinkingLevel } from '@/env.d'
 import { ContextWindowSlider } from './ContextWindowSlider'
 import { FIELD_LABEL, formatContext } from './models-recipes'
 
@@ -31,6 +36,20 @@ const THINKING_LEVELS: ReadonlyArray<{ id: ThinkingLevel; label: string }> = [
   { id: 'xhigh', label: '极高' },
   { id: 'max', label: '最大' },
 ]
+
+/** 思考预算四档的中文标签与占位（占位 = pi 内建默认表的量级示意，仅提示不承诺） */
+const BUDGET_LABEL: Record<'minimal' | 'low' | 'medium' | 'high', string> = {
+  minimal: '最低',
+  low: '低',
+  medium: '中',
+  high: '高'
+}
+const BUDGET_PLACEHOLDER: Record<'minimal' | 'low' | 'medium' | 'high', string> = {
+  minimal: '1024',
+  low: '2048',
+  medium: '8192',
+  high: '16384'
+}
 
 /** 对话框 chip 统一配方：13px 中文 400 字重（小号中文禁 500，组件默认 500 要压掉）
     + 选中黑 10% 软叠（三组 chip 同款） */
@@ -62,6 +81,16 @@ export function ModelDialog({
   const [imageInput, setImageInput] = useState(false)
   const [reasoning, setReasoning] = useState(false)
   const [thinkingLevels, setThinkingLevels] = useState<ThinkingLevel[]>([])
+  // 高级面（完备化 R1/R7）：压缩参数 + 思考预算，文本输入 → 保存时解析，
+  // 空串 = 不覆盖（走引擎默认 / pi 内建预算表）
+  const [compactionRatio, setCompactionRatio] = useState('')
+  const [compactionRoom, setCompactionRoom] = useState('')
+  const [budgets, setBudgets] = useState<Record<'minimal' | 'low' | 'medium' | 'high', string>>({
+    minimal: '',
+    low: '',
+    medium: '',
+    high: ''
+  })
 
   // 当前 id 的目录命中（编辑/新增通用，改 id 实时跟随）：默认模型锁定的判定源
   const catalogHit = catalog.get(id.trim())
@@ -80,6 +109,14 @@ export function ModelDialog({
     setImageInput(initial?.input?.includes('image') === true)
     setReasoning(initial?.reasoning === true)
     setThinkingLevels(initial?.thinkingLevels ?? [])
+    setCompactionRatio(initial?.compaction?.thresholdRatio !== undefined ? String(initial.compaction.thresholdRatio) : '')
+    setCompactionRoom(initial?.compaction?.roomFloorTokens !== undefined ? String(initial.compaction.roomFloorTokens) : '')
+    setBudgets({
+      minimal: initial?.thinkingBudgets?.minimal !== undefined ? String(initial.thinkingBudgets.minimal) : '',
+      low: initial?.thinkingBudgets?.low !== undefined ? String(initial.thinkingBudgets.low) : '',
+      medium: initial?.thinkingBudgets?.medium !== undefined ? String(initial.thinkingBudgets.medium) : '',
+      high: initial?.thinkingBudgets?.high !== undefined ? String(initial.thinkingBudgets.high) : ''
+    })
   }, [open, initial])
 
   // 智能预填：新增态下 id 命中目录 → 用目录元数据补齐（编辑态不动已有值）。
@@ -101,6 +138,15 @@ export function ModelDialog({
       return raw.trim().length > 0 && Number.isFinite(n) && n > 0 ? n : undefined
     }
     const maxTokensValue = parseCount(maxTokens)
+    // 高级面解析：空 = 不覆盖。压缩占比额外夹 (0,1]（越界值按缺省处理，不静默
+    // 存脏 —— 引擎公式对 0 或负占比无意义）
+    const ratioValue = parseCount(compactionRatio)
+    const ratio = ratioValue !== undefined && ratioValue <= 1 ? ratioValue : undefined
+    const roomValue = parseCount(compactionRoom)
+    const budgetEntries = (Object.entries(budgets) as Array<['minimal' | 'low' | 'medium' | 'high', string]>)
+      .map(([level, raw]) => [level, parseCount(raw)] as const)
+      .filter(([, n]) => n !== undefined)
+    const budgetOverride: ThinkingBudgetsOverride = Object.fromEntries(budgetEntries)
     onSave(
       {
         id: trimmed,
@@ -109,7 +155,14 @@ export function ModelDialog({
         // 文本恒含；仅当勾了图片才落 input（['text'] 是引擎默认值，不必写）
         ...(imageInput && { input: ['text', 'image'] as Array<'text' | 'image'> }),
         ...(reasoning && { reasoning: true }),
-        ...(reasoning && thinkingLevels.length > 0 && { thinkingLevels })
+        ...(reasoning && thinkingLevels.length > 0 && { thinkingLevels }),
+        ...((ratio !== undefined || roomValue !== undefined) && {
+          compaction: {
+            ...(ratio !== undefined && { thresholdRatio: ratio }),
+            ...(roomValue !== undefined && { roomFloorTokens: roomValue })
+          }
+        }),
+        ...(Object.keys(budgetOverride).length > 0 && { thinkingBudgets: budgetOverride })
       },
       initial?.id ?? null
     )
@@ -212,6 +265,75 @@ export function ModelDialog({
               </div>
             </div>
           )}
+          {/* 高级折叠（完备化 R1/R7）：压缩参数 + 思考预算 —— 懂端点/懂窗口的
+              用户面，默认收起；空 = 不覆盖（引擎默认 0.9/8192、pi 内建预算表） */}
+          <Collapsible>
+            <CollapsibleTrigger
+              className={
+                '-ml-2 flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground ' +
+                'hover:bg-accent-foreground/5 hover:text-foreground'
+              }
+            >
+              <IconChevronDown className="size-3.5 transition-transform duration-200 [[data-state=closed]_&]:rotate-180" aria-hidden="true" />
+              高级（压缩参数{reasoning ? ' / 思考预算' : ''}）
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-2 flex flex-col gap-3 border-t pt-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={FIELD_LABEL}>压缩触发占比</label>
+                    <Input
+                      value={compactionRatio}
+                      onChange={(event) => setCompactionRatio(event.target.value)}
+                      placeholder="默认 0.9"
+                      inputMode="decimal"
+                      className="mt-1.5 rounded-lg text-[13px]"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label className={FIELD_LABEL}>余量下限（token）</label>
+                    <Input
+                      value={compactionRoom}
+                      onChange={(event) => setCompactionRoom(event.target.value)}
+                      placeholder="默认 8192"
+                      inputMode="numeric"
+                      className="mt-1.5 rounded-lg text-[13px]"
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  触发线 = max(半窗兜底, min(占比, 窗口−余量))；小窗口模型可调低让压缩更早发生
+                </p>
+                {reasoning && (
+                  <div>
+                    <label className={FIELD_LABEL}>思考预算（token，按档位）</label>
+                    <div className="mt-1.5 grid grid-cols-4 gap-2">
+                      {(['minimal', 'low', 'medium', 'high'] as const).map((level) => (
+                        <div key={level}>
+                          <Input
+                            value={budgets[level]}
+                            onChange={(event) => setBudgets((b) => ({ ...b, [level]: event.target.value }))}
+                            placeholder={BUDGET_PLACEHOLDER[level]}
+                            inputMode="numeric"
+                            className="rounded-lg text-[13px]"
+                            autoComplete="off"
+                          />
+                          <p className="mt-1 text-center text-xs text-muted-foreground">
+                            {BUDGET_LABEL[level]}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      推理模型的思考硬上限（空 = 引擎内建表）；预算随档位下发并夹到输出余量，防小窗被思考吃光。极高/最大档按「高」计
+                    </p>
+                  </div>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>

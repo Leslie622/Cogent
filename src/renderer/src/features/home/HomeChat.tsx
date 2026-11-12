@@ -23,8 +23,10 @@ import {
   IconDots,
   IconLayoutSidebarRightCollapse,
   IconLayoutSidebarRightExpand,
+  IconPlayerPlayFilled,
   IconPlus,
   IconSquare,
+  IconStack2Filled,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
@@ -47,6 +49,7 @@ import {
   selectLastError,
   selectRunning,
   selectStopping,
+  selectCompacting,
   selectTruncated,
   useChatStore,
 } from '@/stores/chat'
@@ -116,6 +119,8 @@ function ChatMessages() {
   const running = useChatStore(selectRunning)
   const stopping = useChatStore(selectStopping)
   const truncated = useChatStore(selectTruncated)
+  // 压缩进行中（完备化 D8）：started→completed 窗口，消息流内状态条
+  const compacting = useChatStore(selectCompacting)
   const lastError = useChatStore(selectLastError)
 
   // 末回合相位从会话级运行位推导（计划-回合过程折叠 D6）：live 优先，其后
@@ -145,8 +150,40 @@ function ChatMessages() {
               <TurnGroup turn={turn} phase={turn === turns.at(-1) ? lastPhase : 'done'} />
             </div>
           ))}
-          {truncated && (
-            <div className="text-center text-xs text-warning">回复被输出长度上限截断</div>
+          {/* 压缩中状态条（完备化 D8，Codex 两态的前态）：started→completed 窗口
+              常驻行；摘要是一次秒级 LLM 调用，期间本条与流式占位/工具卡并存 */}
+          {compacting && (
+            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground" aria-hidden="true" />
+              正在压缩上下文…
+            </div>
+          )}
+          {/* 截断动作条（完备化 R6③，原批次 4 的纯提示升级）：自动续写预算尽
+              （3 次）仍截断时交还用户 ——「继续生成」走 session.continue（引擎注入
+              续写指令并再给满预算），「立即压缩」走 session.compact（腾地后重发更
+              稳）。流式中隐藏（续写中 truncated 已被乐观清位，双保险） */}
+          {truncated && !running && (
+            <div className="flex items-center justify-center gap-1.5 text-xs text-warning">
+              <span>回复被输出长度上限截断</span>
+              <Button
+                variant="ghost"
+                size="xs"
+                className="h-6 gap-1 rounded-lg px-2 text-warning hover:bg-warning/10 hover:text-warning"
+                onClick={() => void useChatStore.getState().continueGeneration()}
+              >
+                <IconPlayerPlayFilled className="size-3" aria-hidden="true" />
+                继续生成
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
+                className="h-6 gap-1 rounded-lg px-2 text-warning hover:bg-warning/10 hover:text-warning"
+                onClick={() => void useChatStore.getState().compactNow()}
+              >
+                <IconStack2Filled className="size-3" aria-hidden="true" />
+                立即压缩
+              </Button>
+            </div>
           )}
           {lastError && <div className="text-center text-xs text-destructive">{lastError}</div>}
         </MessageScrollerContent>

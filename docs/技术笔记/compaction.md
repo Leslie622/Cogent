@@ -104,21 +104,88 @@ retry，Cogent D7 明确不做（provider 溢出走 run.failed 显式暴露，�
 - **自动失败不拦提交**（尽力语义）：摘要服务抖一下不该吞掉用户消息；真
   溢出由 provider 报错走 run.failed 显式暴露。手动路相反：无可压缩/失败都
   以协议错误显式反馈（手动动作要明确结果）；
-- **不搬清单**：overflow compact-and-retry（D7）、retryAssistantCall 包装
-  （批次 8.4 provider 网络层对照后统一）、branch-summarization（会话树在
-  远期池）。
+- **不搬清单（批次 4 当时）**：overflow compact-and-retry（D7）、
+  retryAssistantCall 包装（批次 8.4 provider 网络层对照后统一）、
+  branch-summarization（会话树在远期池）。
+  —— 完备化（2026-11-12）**修正其中 overflow 一条**：死锁复盘证明"显式
+  暴露"之后应有自动出路，S5 按 pi 同款补齐（见 §4.1）。
+
+## 4.1 完备化增补（2026-11-12，S1–S8 十维路线全落，详录见 计划-上下文压缩完备化.md）
+
+- **触发公式（R1）**：90% 单线 → `max(ctx×50%, min(ctx×0.9, ctx−8192))`
+  （dsh 同构：thresholdRatio×headroom 双参数合成 + 特小窗**阈值**兜底——评审
+  修正：兜底对象是阈值而非余量，后者按字面 max 在 8K 窗是 no-op；绑定边界
+  ctx < 2×8192 = 16K）。参数按模型覆盖：`ModelDef.compaction` → 声明合并挂
+  pi `Model` 接口（官方扩展通道，compactionSummary 同款）→ 引擎真值随
+  `ModelSummary.compactionThresholdRatio` 下发，指示器预警线跟随（0.9 双处
+  镜像废除）。**对比 DeepAgent/Claude Code**：只看占比，无 room 感知；pi 用
+  固定绝对值 reserve（小窗失控）——本公式是五家中唯一"占比+绝对余量取先到+
+  兜底"的合成式；
+- **检查点双点（R2）**：submit 前单点 → + `prepareNextTurnWithContext`
+  （pi 1.5.0 原生钩子，`_installAgentNextTurnRefresh` 同款）。关键工程点有
+  **两层**（2026-11-12 用户验收实测抓到，回归用例 S14 固化）：① loop 的
+  currentContext 是 prompt 起点的**独立数组**（浅拷贝），压缩写回必须
+  **原位 splice**（applyCompactionInPlace）而非换引用 —— 换引用后 loop 旧
+  引用与 agent.state 各写各的，当轮收尾消息双份落转录；② 钩子返回的
+  context.messages 必须是 agent.state.messages 的**浅拷贝**—— 返回同引用
+  时，后续轮流式 partial 经 loop 线与 processEvents 状态线对同一数组双
+  push。一句话：**原位写回 + 拷贝出请求线**，两条引用线所有权显式分工
+  （pi 上游无此问题：它的状态真相在 session 树投影，钩子返回投影数组天然
+  分离）；
+- **L1 prune（R3）**：dsh tool-result-pruner 数值与算法同款（8192 code
+  point 线 / 保头 4096 / 保尾 1024 / 单 marker，头尾按**全局位置**跨块连续
+  计量）+ **原位改写**（vs dsh shadow 追加式：那套要"只追加+位置语义"的
+  存储架构，是会话层重构而非压缩功能，Cogent 单写者线性转录等价于直接换
+  内容）。范围 = **全转录含保留区**（dsh pruneSession 同款；只裁被摘要区的
+  话小窗场景 L1 几乎必然不够）。检查点内 **L1 → 重计量 → 仍超线才 L2**，
+  L1 单独够时零摘要请求（microcompact/dsh prune 双重验证）；
+- **摘要指令内联（R4）**：独立 summarizer system prompt → 会话 system 原对象
+  + 被摘要区原消息直传 + 指令作末条 user（dsh 源码注释实证：辅助调用成为
+  上一次主请求的**真前缀，provider KV cache 复用而非失效**）。`<conversation>`
+  文本化撤下（防续写意图由指令护栏段承担）；投影前导语换 dsh
+  CHECKPOINT_PREAMBLE 措辞（"既定背景，直接续"）。**对比 pi**：独立提示词，
+  压缩点后缓存全断——这是缓存钱的最大单项改善。**预算守卫（验收修复
+  2026-11-12）**：真前缀的代价在 20K 级小窗深占用时暴露 —— 整转录重放把
+  pi clampMaxTokensToContext 的输出预算夹到 ≈0,摘要自身必然 length
+  （「要压缩先得有空间压缩」的死结）；守卫 = 重放后 available < 2048 即
+  降级被摘要区直传（放弃缓存换可生成,退化为无损失）。小窗场景缓存收益本就
+  趋零,守卫只在大窗保留;
+- **溢出恢复（R5，修正 D7）**：isContextOverflow（pi-ai 模式聚合 30+ 家
+  报文）→ 删失败轮 → L1/L2 → `agent.continue()` 重试一次（单次闸）。**单
+  run 语义**：可恢复失败在 agent_end 抑制 run.failed、streaming 保活，重试
+  的流式增量沿同一对象飞——UI 全程只见一个 run（pi 上游是 run 间隙静默压缩，
+  宿主感知不同）；
+- **auto-continue（R6③，唯一无源码参照件）**：纯文本 length 截断 → 注入
+  `[cogent:continue]` 显式 user 指令续写（≤3 次）→ **段合并双投影**（事件
+  路径相邻纯文本段并一 + 历史路径指令泡跳过/无工具 assistant 并回，门 =
+  双方无工具卡）。带 toolCall 的 length 走 pi 原生 failToolCallsFromTruncated
+  （核实：门控只看 stopReason，参数完整也 fail——冒烟固化）。**对比五家**：
+  Claude Code 的 append 式续写独有；pi/dsh 无（放 Cogent run 编排层 =
+  settleRun 循环：溢出恢复与续写同环消化）；
+- **思考预算通道（R7）**：`ProviderCompatDef.compat` + `ModelDef
+  .thinkingBudgets` → buildModel 挂 Model（**评审修正：compat 是 Model 字段
+  非 createProvider 参数**，pi 上游 provider-composer 即 merge 到 Model）→
+  Agent.thinkingBudgets（构造 + 切模型两处同步）→ pi 方言
+  `compat.thinkingTokenBudgetField × thinkingBudgetForLevel` 落请求体（冒烟
+  ⑱ 全链实证）。**对比 pi coding-agent**：models.json 胶水；Cogent 设置 UI
+  两处「高级」折叠（provider 级字段名 chip + 模型级四档预算）；
+- **UI 四件（D8）**：压缩中状态条（started→completed 窗口，Codex 前态）/
+  指示器手动压缩入口 / prune 副行（PrunedBar 字符量对账）/ 截断动作条
+  （继续生成=预算重满的 session.continue / 立即压缩）。R10 图片卸载：无输入
+  路径，协议注释声明 `compaction.offloaded` 形状预留。
 
 ## 5. 在 Cogent 的落点
 
 | 层 | 文件 | 职责 |
 | --- | --- | --- |
-| 纯函数 | `runtime/compaction.ts` | 角色声明 + convertToLlmMessages（Agent 选项与估算前置共用）、shouldCompact（90%）、findCutPoint（user 边界）、prepareCompaction / rebuildTranscript（system 前置 + 压缩条 + 保留区）、双摘要提示词 + serializeConversation、文件表提取与 XML 尾缀、响应安全判定 |
-| 接线 | `runtime/session.ts` | submit 前 maybeCompactBeforePrompt（阈值检查→runCompaction→prompt 串行）；compactSession 手动路（忙/无可压缩 → InvalidRequest）；runCompaction（completeSimple + 落盘 + 双事件 + compacting 护栏）；estimateContext 先过转换（自定义角色防估算炸）；toChatMessages 投影 role 'compaction' |
-| 协议 | `protocol/types.ts` | `compaction.started/completed` 事件（additive；completed 带 summary/前后 token/summarizedUntil 锚/失败 error）、`session.compact` 方法、ChatMessage role 'compaction' + compaction 元数据 |
-| 壳 | `electron/main/ipc/engine.ts` | 白名单加 session.compact |
-| renderer | `stores/chat.ts` + `features/home/CompactionBar.tsx` + `TurnGroup.tsx` + `ContextIndicator.tsx` | completed 事件做**本地列表手术**（summarizedUntil 之前的条目原位换折叠条，不重拉历史——重拉与 prompt() 追加用户消息有竞态）；折叠条（TraceCollapsible 家族，展开可读摘要全文）；TurnGroup 独立行快路（不套「已工作」头条——压缩不是 run）；指示器 90% 预警刻度 + 回落（压缩条新于末条 usage → 分子切 tokensAfter 估算，≈ 标记） |
+| 纯函数 | `runtime/compaction.ts` | 角色声明 + convertToLlmMessages、compactionThreshold（完备化 R1 合成公式）、shouldCompact（带模型覆盖）、compactionThreshold 声明合并（Model.compaction）、**pruneToolResults（R3：code point 快路/全局头尾/单 marker/幂等）**、findCutPoint（user 边界）、prepareCompaction / rebuildTranscript、**buildSummarizationInstruction + buildSummarizationContext（R4 真前缀构造）**、双摘要提示词 + 文件表 XML、响应安全判定 |
+| 接线 | `runtime/session.ts` | **compactWithPrune 检查链（L1→重计量→L2，submit 前 + 轮间钩子两处共用）**；prepareNextTurnWithContext（pi 原生钩子，返回新 context 对齐 loop 工作副本）；compactSession 手动路；runCompaction（真前缀摘要请求 + 落盘 + 双事件 + compacting 护栏）；**overflowRecoverable / recoverOverflow / settleRun（R5 单次闸 + R6③ 续写同环）**；mergeContinuedSegments（续写段合并）；toChatMessages（compaction 投影 + 指令泡跳过 + 无工具 assistant 并回）；Agent.thinkingBudgets 同步（构造 + 切模型） |
+| 协议 | `protocol/types.ts` | `compaction.started/completed/pruned` 事件、`session.compact/continue` 方法、ModelDef.compaction/thinkingBudgets、CustomProviderDef.compat、ChatMessage role 'compaction'、ModelSummary.compactionThresholdRatio |
+| 壳 | `electron/main/ipc/engine.ts` | 白名单加 session.compact / session.continue |
+| renderer | `stores/chat.ts` + `features/home/{CompactionBar,TurnGroup,ContextIndicator,HomeChat}.tsx` | 三事件消费（completed 本地列表手术 + started 压缩中位 + pruned 副行数据）；CompactionBar / **PrunedBar**；TurnGroup 独立行快路（折叠条+副行组）；指示器预警线（引擎真值）+ 回落 + **手动压缩入口**；HomeChat **压缩中状态条 + 截断动作条**（continueGeneration/compactNow 动作） |
 
-冒烟：`tmp/cogent-smoke/compaction-smoke.mjs`（8 项断言：阈值触发 / 前后
-token / 请求体不携带已摘要原文 / 摘要投影+保留区+新问进请求 / 重启复原 /
-手动无可压缩报错 / 手动成功 / 迭代 previous-summary 合并；mock 不回 usage
-——回了反而锚在假数上永不触发），配方入 开发.md。
+冒烟：`tmp/cogent-smoke/compaction-smoke.mjs`（**22 项**：批次 4 原 8 项 +
+完备化 14 项 —— 20K 窗 60% 触发 / 轮间 L2 / length fail 自愈 / L1 零摘要 /
+prune 落盘 / 摘要真前缀 / 溢出恢复与单次闸 / auto-continue 段合并 / 思考
+预算字段；mock 不回 usage——回了反而锚在假数上永不触发），配方与 mock 关键
+点入 开发.md。

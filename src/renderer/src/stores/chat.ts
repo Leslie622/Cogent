@@ -78,8 +78,22 @@ export interface PendingApproval {
   summary: string
 }
 
-/** 消息列表元素：内容消息（ChatMessage）或工具调用行（ToolItem）或审批卡行（ApprovalItem） */
-export type MessageItem = ChatMessage | ToolItem | ApprovalItem
+/**
+ * L1 prune 副行（完备化 R3/D8）：一次检查点裁了 N 处工具输出 → 一行
+ * 「已裁剪 N 处工具输出」；转录里对应物是改写后的 toolResult（marker 即
+ * 痕迹），本行是纯呈现物 —— 历史回查投影不产此行（引擎投影的 toolResult
+ * 摘要自带 marker），仅事件路径落。
+ */
+export interface PrunedItem {
+  id: string
+  type: 'pruned'
+  entries: Array<{ toolCallId: string; originalChars: number; prunedChars: number }>
+  timestamp: number
+}
+
+/** 消息列表元素：内容消息（ChatMessage）或工具调用行（ToolItem）或审批卡行
+    （ApprovalItem）或裁剪副行（PrunedItem，完备化 R3/D8） */
+export type MessageItem = ChatMessage | ToolItem | ApprovalItem | PrunedItem
 
 /**
  * 段化消息 → 消息流元素展平（终态替换与历史加载共用）：
@@ -133,6 +147,12 @@ export interface ChatState {
   lastErrorBySession: Partial<Record<string, string>>
   /** sessionId → 最近一次回复是否被 token 上限截断（stopReason=length） */
   truncatedBySession: Partial<Record<string, boolean>>
+  /** sessionId → 压缩进行中（完备化 D8，compaction.started→completed 窗口）：
+      消息流内状态条呈「正在压缩上下文」（Codex 两态形态的前态） */
+  compactingBySession: Partial<Record<string, boolean>>
+  /** sessionId → 最近一次 L1 prune（完备化 R3）：pruned 副行文案与折叠条同区
+      呈现；completed 大手术会重排列表，副行在 completed 后落（时序见事件分支） */
+  prunedBySession: Partial<Record<string, Array<{ toolCallId: string; originalChars: number; prunedChars: number }>>>
   /** 初载失败的原因（引擎不可用等；App 横幅呈现）。null = 正常 */
   loadError: string | null
 
@@ -157,6 +177,12 @@ export interface ChatState {
     approved: boolean,
     options?: { message?: string; always?: 'workspace' }
   ) => Promise<void>
+  /** 手动续写（完备化 R6③，截断动作条）：注入引擎侧续写指令再跑 —— 无用户
+      泡（指令消息在引擎投影层并入相邻段），乐观置运行态，事件流照常驱动 */
+  continueGeneration: () => Promise<void>
+  /** 手动压缩（截断动作条的腾地方向）：session.compact，折叠条/回落由既有
+      compaction 事件路径呈现；失败落会话错误条（手动动作要明确结果） */
+  compactNow: () => Promise<void>
 }
 
 /** 活动会话是否流式中（组件订阅用；返回原始值，selector 引用稳定） */
@@ -180,6 +206,11 @@ export function selectTruncated(state: ChatState): boolean {
   return state.activeSessionId !== null && state.truncatedBySession[state.activeSessionId] === true
 }
 
+/** 活动会话压缩进行中（完备化 D8：started→completed 窗口的状态条判别位） */
+export function selectCompacting(state: ChatState): boolean {
+  return state.activeSessionId !== null && state.compactingBySession[state.activeSessionId] === true
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
@@ -189,6 +220,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   stoppingBySession: {},
   lastErrorBySession: {},
   truncatedBySession: {},
+  compactingBySession: {},
+  prunedBySession: {},
   loadError: null,
 
   // 初载不自动建会话：归档是回收站语义，"活跃列表空"有两种含义 —— 首装，或
@@ -299,6 +332,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       delete lastErrorBySession[sessionId]
       const truncatedBySession = { ...state.truncatedBySession }
       delete truncatedBySession[sessionId]
+      const compactingBySession = { ...state.compactingBySession }
+      delete compactingBySession[sessionId]
+      const prunedBySession = { ...state.prunedBySession }
+      delete prunedBySession[sessionId]
       return {
         sessions,
         messagesBySession,
@@ -307,6 +344,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         stoppingBySession,
         lastErrorBySession,
         truncatedBySession,
+        compactingBySession,
+        prunedBySession,
         // 删除活动会话与归档同款落点：视图落"新聊天"（不再自动跳 sessions[0] ——
         // 旧行为不触发 selectSession，目标会话消息未拉取会白屏）
         activeSessionId: wasActive ? null : state.activeSessionId
@@ -378,6 +417,46 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 封存保留、清错误条）与「出错了」（真失败，错误条照旧）—— D6
     set((state) => ({ stoppingBySession: { ...state.stoppingBySession, [sessionId]: true } }))
     await window.cogent.engineRequest('agent.abort', { sessionId })
+  },
+
+  continueGeneration: async () => {
+    const sessionId = get().activeSessionId
+    if (sessionId === null) return
+    // 乐观置运行态（事件流的 run.started 随后到，双保险）；无用户泡 —— 续写
+    // 指令由引擎注入并在投影层并入相邻段，这里不往列表里塞任何东西
+    set((state) => ({
+      runningBySession: { ...state.runningBySession, [sessionId]: true },
+      truncatedBySession: { ...state.truncatedBySession, [sessionId]: undefined }
+    }))
+    try {
+      await window.cogent.engineRequest('session.continue', { sessionId })
+    } catch (error) {
+      // 引擎侧拒绝（忙/末条非截断）或边界失败：回落运行态，错误落会话错误条
+      useChatStore.setState((state) => ({
+        runningBySession: { ...state.runningBySession, [sessionId]: false },
+        lastErrorBySession: {
+          ...state.lastErrorBySession,
+          [sessionId]: error instanceof Error ? error.message : String(error)
+        }
+      }))
+    }
+  },
+
+  compactNow: async () => {
+    const sessionId = get().activeSessionId
+    if (sessionId === null) return
+    try {
+      await window.cogent.engineRequest('session.compact', { sessionId })
+      // 成功的折叠条/回落走既有 compaction 事件路径（completed 做列表手术）
+    } catch (error) {
+      // 无可压缩/引擎拒绝：手动动作要明确结果 —— 落会话错误条
+      useChatStore.setState((state) => ({
+        lastErrorBySession: {
+          ...state.lastErrorBySession,
+          [sessionId]: error instanceof Error ? error.message : String(error)
+        }
+      }))
+    }
   },
 
   respondApproval: async (requestId, approved, options) => {
@@ -548,6 +627,26 @@ export function bindEngineEvents(): () => void {
         })
         return
       }
+      case 'compaction.started': {
+        // 压缩进行中（完备化 D8）：置状态条判别位，completed 分支清零。自动路
+        // 发生在 run 事件间隙（submit 前 / 工具轮间），状态条与流式占位并存
+        const { sessionId } = event.params
+        useChatStore.setState((state) => ({
+          compactingBySession: { ...state.compactingBySession, [sessionId]: true }
+        }))
+        return
+      }
+      case 'compaction.pruned': {
+        // L1 裁剪落账（完备化 R3）：先记副行数据 —— completed 大手术（原位换
+        // 折叠条）会重排列表，副行在 completed 分支手术时一并带上（时序：pruned
+        // 恒先于同检查点的 completed）；无 completed（L1 单独够）则副行独立呈
+        const { sessionId, entries } = event.params
+        if (entries.length === 0) return
+        useChatStore.setState((state) => ({
+          prunedBySession: { ...state.prunedBySession, [sessionId]: entries }
+        }))
+        return
+      }
       case 'compaction.completed': {
         // 压缩完成：本地消息列表做手术 —— 被摘要区（summarizedUntil 及之前）
         // 原位换成折叠条，保留区与本回合乐观用户消息不动。不做"重拉历史整换"：
@@ -556,6 +655,10 @@ export function bindEngineEvents(): () => void {
         // 全部数据（summary/前后 token），手术零往返；形态与历史回查投影一致
         //（折叠条 + 保留区），下 run 终态替换按 lastUser 定位不受影响
         const { sessionId, error, tokensBefore, tokensAfter, summary, summarizedUntil } = event.params
+        // 无论成败清「压缩中」位（失败也结束窗口）
+        useChatStore.setState((state) => ({
+          compactingBySession: { ...state.compactingBySession, [sessionId]: undefined }
+        }))
         if (error !== undefined || summarizedUntil === undefined) return // 失败路：自动已降级继续、手动走方法错误帧
         useChatStore.setState((state) => {
           const local = state.messagesBySession[sessionId]
@@ -586,11 +689,26 @@ export function bindEngineEvents(): () => void {
             compaction: { tokensBefore: tokensBefore ?? 0, tokensAfter },
             timestamp: Date.now()
           }
+          // L1 prune 副行（完备化 R3/D8）：随折叠条同区呈现「已裁剪 N 处工具
+          // 输出」，取后即清（下次裁剪再来）
+          const pruned = state.prunedBySession[sessionId]
+          const prunedBySession = { ...state.prunedBySession }
+          delete prunedBySession[sessionId]
+          const head: MessageItem[] = [bar]
+          if (pruned !== undefined && pruned.length > 0) {
+            head.push({
+              id: 'compaction-pruned',
+              type: 'pruned',
+              entries: pruned,
+              timestamp: bar.timestamp
+            })
+          }
           return {
             messagesBySession: {
               ...state.messagesBySession,
-              [sessionId]: [bar, ...local.slice(cut + 1)]
-            }
+              [sessionId]: [...head, ...local.slice(cut + 1)]
+            },
+            prunedBySession
           }
         })
         return

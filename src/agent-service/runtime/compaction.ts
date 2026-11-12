@@ -7,8 +7,10 @@
  * - 照搬：compactionSummary 自定义消息角色 + convertToLlm 投影（上游
  *   core/messages.ts 的声明合并手法）、结构化摘要提示词（Goal/Progress/
  *   Key Decisions/Next Steps checkpoint + 迭代更新双提示词）、保留窗口
- *   切点算法（从尾回累计 token）、文件操作 XML 尾缀、对话文本化序列化
- *   （防模型把原文当对话继续）；
+ *   切点算法（从尾回累计 token）、文件操作 XML 尾缀；
+ *   对话文本化序列化（<conversation> 防续写）已被完备化 R4 撤下 —— 摘要
+ *   请求改为被摘要区原消息直传 + 指令内联（真前缀缓存复用，见摘要请求节），
+ *   防续写意图改由指令护栏段承担；
  * - 裁剪（线性转录结构差异，偷法第 1 则"接线照 Cogent"）：
  *   ① 切点只取 user 消息边界（回合原子）—— 上游可切 assistant 消息并配
  *   turn-prefix 二次摘要（split-turn），那是树状存储为精确命中预算的复杂度；
@@ -21,13 +23,23 @@
  *   手动双路，provider 溢出走 run.failed 显式暴露；
  *   ④ branch-summarization 整件不搬（会话树在远期池）。
  *
- * 触发阈值 D7 定稿 = 90% 百分比（上游是 reserveTokens 固定 16384 绝对值，
- * 对小窗口模型反而更严、对大窗口更松；百分比语义在各窗口下一致）。
+ * 触发阈值：批次 4 D7 定稿 90% 百分比 → 完备化批次 R1 升级为
+ * dsh 同构公式 max(ctx×0.5, min(ctx×0.9, ctx−ROOM_FLOOR))（拆小窗输出预算
+ * 饿死死锁，见 docs/方案-上下文压缩.md §4 死锁复盘），并支持 ModelDef
+ * 的按模型覆盖（触发判定节）。
  */
 import type { AgentMessage, ThinkingLevel as SessionThinkingLevel } from '@earendil-works/pi-agent-core'
-import type { AssistantMessage, Message, ThinkingLevel, TranscriptContext } from '@earendil-works/pi-ai'
-import { contentText, normalizeContext } from '@earendil-works/pi-ai'
-import { estimateMessageTokens, estimateTextTokens } from '@earendil-works/pi-ai/utils/estimate'
+import type {
+  Api,
+  AssistantMessage,
+  Message,
+  ThinkingLevel,
+  ToolResultMessage,
+  TranscriptContext
+} from '@earendil-works/pi-ai'
+import { normalizeContext } from '@earendil-works/pi-ai'
+import { estimateContextTokens, estimateMessageTokens, estimateTextTokens } from '@earendil-works/pi-ai/utils/estimate'
+import type { CompactionParamsOverride } from '../../protocol'
 
 /**
  * 单条消息 token 估算（类型域补丁）：pi-ai estimateMessageTokens 只认标准
@@ -63,7 +75,14 @@ declare module '@earendil-works/pi-agent-core' {
   }
 }
 
-export const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
+/**
+ * 压缩条投影前导语(dsh CHECKPOINT_PREAMBLE 同款措辞,完备化 R4):把摘要
+ * 框定为「既定背景」而非「压缩事件」—— 模型直接续任务,不复述也不承认
+ * 检查点。旧的 pi 前缀("history before this point was compacted…")会诱导
+ * 模型把压缩本身当话题,dsh 措辞消除这层噪音。标签仍用 Cogent 一贯的
+ * <summary>(dsh 是 <compacted-summary>,语义等价,不跟)。
+ */
+export const COMPACTION_SUMMARY_PREFIX = `This is an automatically generated checkpoint condensing an earlier span of the conversation to free up context. Treat the captured context as established background and build on it without restating it. Continue the task directly from the messages that follow, without acknowledging this checkpoint.
 
 <summary>
 `
@@ -91,17 +110,179 @@ export function convertToLlmMessages(messages: AgentMessage[]): Message[] {
   )
 }
 
-// ———— 触发判定（D7：阈值 90%，自动默认开） ————
+// ———— 触发判定（完备化 R1：dsh 同构公式 + 特小窗阈值兜底 + 按模型覆盖） ————
 
+/** 占比触发线（缺省；dsh 0.8 / Codex 90% 封顶同量级，pi 靠 reserve 兜） */
 export const COMPACTION_THRESHOLD = 0.9
+/**
+ * 绝对余量下限（token）：触发线取「占比线 / 余量线」先到者。构成 =
+ * 4096 边际（pi clampMaxTokensToContext 同款固定边际）+ 2048 思考 typical
+ * + 1024 答案保底（pi clampThinkingBudgetToAnswerRoom）+ 余量；dsh
+ * headroomTokens 64K 的桌面版。这是 R1 拆小窗死锁的治本件：20K 窗在 59%
+ * 即触发，room 恒 ≥ 8K，思考吃不光工具调用的预算。
+ */
+export const ROOM_FLOOR_TOKENS = 8_192
+/**
+ * 特小窗阈值兜底占比：触发线恒 ≥ ctx×0.5。绑定区 ctx < 2×ROOM_FLOOR = 16K
+ * —— 余量线在那儿低于半窗，不兜底的话 8K 窗阈值 = 8K−8K = 0 每回合必触发。
+ * 兜底对象是**阈值**而非 ROOM_FLOOR（后者按字面取 max 在 8K 窗是 no-op，
+ * 计划评审修正 2026-11-12）；等价写法 = roomFloor 取 min(ROOM_FLOOR, ctx/2)。
+ * 防呆线不是调优钮，不做用户参数。
+ */
+const SMALL_WINDOW_THRESHOLD_FLOOR = 0.5
 /** 保留窗口（token）：压缩后保留的近期对话量，上游同值。挂点按窗口夹紧
  *  （小窗口模型的 20K 可能大于窗口本身，保一半） */
 export const KEEP_RECENT_TOKENS = 20_000
 
-export function shouldCompact(contextTokens: number, contextWindow: number): boolean {
-  // contextWindow <= 0 = 目录缺数据的怪模型，无从谈百分比 —— 不触发
-  if (contextWindow <= 0) return false
-  return contextTokens > contextWindow * COMPACTION_THRESHOLD
+/**
+ * Model 对象上的压缩参数覆盖通道（声明合并，同上方 CustomAgentMessages 的
+ * 官方扩展手法）：custom-providers 的 buildModel 从 ModelDef.compaction 透传，
+ * pi 自身不读、缺省无字段 = 走内建默认。解析序照 pi settings-manager 三级
+ * 形态：模型覆盖 →（全局设置，S7 随高级面板补）→ 内建默认。
+ */
+declare module '@earendil-works/pi-ai' {
+  // 类型参数表必须与原接口一致（合并语法要求），TApi 未用属刻意 —— 见上行注释
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface Model<TApi extends Api> {
+    compaction?: CompactionParamsOverride
+  }
+}
+
+/**
+ * 有效触发阈值（token）= max(兜底, min(占比线, 余量线))。两线的分界：
+ * 占比线更低 ⟺ ctx×0.9 < ctx−8192 ⟺ ctx > 81920 —— 即 80K+ 窗维持 90%
+ * 行为不变；16K–80K 窗走余量线（触发占比 = 1 − 8192/ctx，从 50% 平滑爬到
+ * 90%）；<16K 窗被半窗兜底接管。contextWindow ≤ 0 = 目录缺数据的怪模型，
+ * 无从谈阈值 → Infinity（不触发）。
+ */
+export function compactionThreshold(contextWindow: number, override?: CompactionParamsOverride): number {
+  if (contextWindow <= 0) return Number.POSITIVE_INFINITY
+  const thresholdRatio = override?.thresholdRatio ?? COMPACTION_THRESHOLD
+  const roomFloor = override?.roomFloorTokens ?? ROOM_FLOOR_TOKENS
+  return Math.max(
+    contextWindow * SMALL_WINDOW_THRESHOLD_FLOOR,
+    Math.min(contextWindow * thresholdRatio, contextWindow - roomFloor)
+  )
+}
+
+export function shouldCompact(
+  contextTokens: number,
+  contextWindow: number,
+  override?: CompactionParamsOverride
+): boolean {
+  return contextTokens > compactionThreshold(contextWindow, override)
+}
+
+// ———— L1 prune(完备化 R3:dsh tool-result-pruner 数值与算法同款) ————
+
+/** 单结果裁剪触发线(code point)—— dsh 源码默认 */
+export const PRUNE_THRESHOLD_CHARS = 8_192
+/** 保头(code point)—— dsh 源码默认 */
+export const PRUNE_HEAD_CHARS = 4_096
+/** 保尾(code point)—— dsh 源码默认 */
+export const PRUNE_TAIL_CHARS = 1_024
+/** middle 替换标记(dsh 同文)—— 模型与 UI 共同的审计痕迹 */
+export const PRUNE_MARKER = '[... tool result middle pruned ...]'
+
+/** code point 计量:UTF-16 代理对算 1(dsh 同款,防切半 emoji/CJK 扩展区) */
+function codePointLength(text: string): number {
+  let n = 0
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    // 高代理且后随低代理 → 跳 2 个 UTF-16 单元计 1 个 code point
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+      const next = text.charCodeAt(i + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) i++
+    }
+    n++
+  }
+  return n
+}
+
+/** toolResult 内容块的类型别名(与 pi ToolResultMessage.content 同源) */
+type ToolResultContent = ToolResultMessage['content']
+
+/** 内容块的文本总量(code point,跨全部 text 块 —— 多块结果按合并口径判线) */
+function measureBlocks(blocks: ToolResultContent): number {
+  let n = 0
+  for (const block of blocks) {
+    if (block.type === 'text') n += codePointLength(block.text)
+  }
+  return n
+}
+
+/**
+ * 裁一组内容块:头尾按**全局位置**保留(跨块连续计量,块边界落在保留区内的
+ * 整块直通),被移除的 middle 只插一个 marker(首个与移除区相交的块)。
+ * dsh pruneContent 同款算法;非 text 块原样保留(rich-block 顺序不动)。
+ */
+function pruneBlocks(blocks: ToolResultContent, totalChars: number): ToolResultContent {
+  const removedStart = PRUNE_HEAD_CHARS
+  const removedEnd = totalChars - PRUNE_TAIL_CHARS
+  const pruned: ToolResultContent = []
+  let consumed = 0
+  let markerInserted = false
+  for (const block of blocks) {
+    if (block.type !== 'text') {
+      pruned.push(block)
+      continue
+    }
+    // 按 code point 切(代理对不切半),只有真正要裁的块才付 Array.from 的成本
+    const points = Array.from(block.text)
+    const blockStart = consumed
+    const blockEnd = blockStart + points.length
+    const headEnd = Math.min(points.length, Math.max(0, removedStart - blockStart))
+    const tailStart = Math.min(points.length, Math.max(0, removedEnd - blockStart))
+    const intersectsRemoved = blockStart < removedEnd && blockEnd > removedStart
+    const marker = intersectsRemoved && !markerInserted ? PRUNE_MARKER : ''
+    if (marker !== '') markerInserted = true
+    const text = points.slice(0, headEnd).join('') + marker + points.slice(tailStart).join('')
+    if (text.length > 0) pruned.push({ ...block, text })
+    consumed = blockEnd
+  }
+  return pruned
+}
+
+/** L1 裁剪清单条目(协议 compaction.pruned.entries 的形状) */
+export interface PrunedToolResult {
+  toolCallId: string
+  originalChars: number
+  prunedChars: number
+}
+
+/**
+ * 全转录 L1:逐条 toolResult,文本总量超线才裁,**原位改写**消息对象(dsh 追加
+ * shadow + surfaceOp 的投影式在 Cogent 线性转录下等价于直接换内容 —— 单写者
+ * 无多消费者扣减需求,标记文本自身即审计痕迹)。幂等:裁后的结果 ≤ 阈值自然
+ * 跳过。范围 = **全转录含保留区**(dsh pruneSession 裁整个当前 surface 同款
+ * —— 只裁被摘要区的话小窗场景 L1 几乎必然不够,「L1 单独够、零摘要请求」
+ * 不成立;保留区大结果同样只保头尾是 dsh 生产验证的取舍)。
+ * 无裁剪返回原数组引用(检查点热路径零拷贝)。
+ */
+export function pruneToolResults(messages: AgentMessage[]): {
+  messages: AgentMessage[]
+  pruned: PrunedToolResult[]
+} {
+  const pruned: PrunedToolResult[] = []
+  const result = messages.map((message): AgentMessage => {
+    if (message.role !== 'toolResult') return message
+    // 快路:UTF-16 长度 ≥ code point 数,快路不过线就免精确计量
+    let utf16 = 0
+    for (const block of message.content) {
+      if (block.type === 'text') utf16 += block.text.length
+    }
+    if (utf16 <= PRUNE_THRESHOLD_CHARS) return message
+    const originalChars = measureBlocks(message.content)
+    if (originalChars <= PRUNE_THRESHOLD_CHARS) return message
+    const content = pruneBlocks(message.content, originalChars)
+    pruned.push({
+      toolCallId: message.toolCallId,
+      originalChars,
+      prunedChars: measureBlocks(content)
+    })
+    return { ...message, content }
+  })
+  return pruned.length > 0 ? { messages: result, pruned } : { messages, pruned }
 }
 
 // ———— 切点（线性转录改造：user 消息边界 = 回合原子） ————
@@ -232,6 +413,33 @@ export function rebuildTranscript(
   return [...systems, bar, ...kept]
 }
 
+/**
+ * 原位重建(完备化 S2 验收 bug 修复,2026-11-12):与 rebuildTranscript 同一
+ * 结果形态,但**写入回同一数组对象**(splice 头部)而非换新引用。
+ *
+ * 为什么必须原位:轮间钩子触发时,pi loop 手里还持着**同一数组的旧引用**
+ * (loop 的 currentContext 是 prompt 起点快照,当轮的 toolResult push、流式
+ * partial 替换都落在这个引用上),而 Agent.processEvents 的 message_end 又
+ * push 到 agent.state.messages —— 换引用后两条线各写各的,当轮收尾消息
+ * (assistant+toolResult)双份落进转录,请求里 tool_calls 配对重复、400
+ * invalid_request_error(验收实测)。原位 splice 让所有引用线共享同一数组
+ * 内容,loop 当轮剩余写入自然落在压缩后的形态上;返回 context.messages
+ * 用同一引用,下一请求即见新前缀。
+ *
+ * 拼接序 = systems 前置 + 压缩条 + 保留区,与 rebuildTranscript 逐字节一致
+ * (session.transcript 双写处消费同一形态)。
+ */
+export function applyCompactionInPlace(
+  messages: AgentMessage[],
+  preparation: CompactionPreparation,
+  summary: string,
+  tokensAfter: number
+): AgentMessage[] {
+  const rebuilt = rebuildTranscript(messages, preparation, summary, tokensAfter)
+  messages.splice(0, messages.length, ...rebuilt)
+  return messages
+}
+
 // ———— 文件操作提取（上游 compaction/utils.ts 照搬；工具名恰好同款） ————
 
 /** 从 assistant 消息的 toolCall 块提取读写文件表：write/edit → modified，
@@ -264,54 +472,20 @@ export function formatFileOperations(ops: FileOperations): string {
   return sections.length === 0 ? '' : `\n\n${sections.join('\n\n')}`
 }
 
-// ———— 对话文本化（上游 utils.ts serializeConversation 照搬） ————
-
-/** 工具结果进摘要的截断上限（字符）—— 摘要要的是"发生了什么"，不是全文 */
-const TOOL_RESULT_MAX_CHARS = 2000
-
-function truncateForSummary(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text
-  return `${text.slice(0, maxChars)}\n\n[... ${text.length - maxChars} more characters truncated]`
-}
+// ———— 摘要请求（完备化 R4：指令内联 —— 摘要请求是主请求的真前缀） ————
 
 /**
- * 对话序列化成带角色标注的纯文本进 <conversation> 标签 —— 模型读的是
- * "待总结的材料"而非可续写的对话（直接喂消息会被当上下文继续）。
- * thinking 不序列化（上游同口径：重放的思考常被方言丢弃，白占摘要请求）；
- * toolResult 截 2000 字符。
+ * 摘要指令的护栏段(dsh 手法:指令作为最后一条 user 消息跟在被摘要区原消息
+ * 之后,而非独立 summarizer system prompt)。保留会话自己的 system/工具声明/
+ * 消息前缀,使这次辅助调用成为上一次真实请求的**真前缀** —— provider KV
+ * cache 复用而非失效(dsh summarizer.ts 注释原话 "a genuine prefix of the
+ * last routed request")。被摘要区原消息直传(不再 <conversation> 文本化):
+ * token 更省、工具调用结构保真;「防把原文当对话续写」的意图由护栏段的
+ * 显式规则承担(dsh 模板同款 "Do NOT continue")。
  */
-function serializeConversation(messages: AgentMessage[]): string {
-  const parts: string[] = []
-  for (const message of messages) {
-    if (message.role === 'user') {
-      const text = contentText(message.content, '')
-      if (text !== '') parts.push(`[User]: ${text}`)
-    } else if (message.role === 'assistant') {
-      const toolCalls: string[] = []
-      for (const block of message.content) {
-        if (block.type !== 'toolCall') continue
-        const args = Object.entries(block.arguments as Record<string, unknown>)
-          .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-          .join(', ')
-        toolCalls.push(`${block.name}(${args})`)
-      }
-      if (message.content.some((block) => block.type === 'text')) {
-        parts.push(`[Assistant]: ${contentText(message.content)}`)
-      }
-      if (toolCalls.length > 0) parts.push(`[Assistant tool calls]: ${toolCalls.join('; ')}`)
-    } else if (message.role === 'toolResult') {
-      const text = contentText(message.content, '')
-      if (text !== '') parts.push(`[Tool result]: ${truncateForSummary(text, TOOL_RESULT_MAX_CHARS)}`)
-    }
-  }
-  return parts.join('\n\n')
-}
+const SUMMARIZATION_INSTRUCTION_GUARD = `You are now acting as a compaction engine for this conversation. Condense the conversation ABOVE into a structured checkpoint summary.
 
-// ———— 摘要提示词（上游 compaction.ts 照搬） ————
-
-const SUMMARIZATION_SYSTEM_PROMPT = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.
-
-Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.`
+Do NOT continue the conversation. Do NOT respond to any questions in it. Output ONLY the structured summary — do not call any tool.`
 
 const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
 
@@ -344,7 +518,7 @@ Use this EXACT format:
 - [Any data, examples, or references needed to continue]
 - [Or "(none)" if not applicable]
 
-Keep each section concise. Preserve exact file paths, function names, and error messages.`
+Keep each section concise. Preserve exact file paths, function names, and error messages. Capture user feedback and explicit corrections faithfully. Do NOT mention this summarization request or that the context was compacted.`
 
 const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
 
@@ -354,6 +528,7 @@ Update the existing structured summary with new information. RULES:
 - UPDATE the Progress section: move items from "In Progress" to "Done" when completed
 - UPDATE "Next Steps" based on what was accomplished
 - PRESERVE exact file paths, function names, and error messages
+- Capture user feedback and explicit corrections faithfully
 - If something is no longer relevant, you may remove it
 
 Use this EXACT format:
@@ -383,23 +558,73 @@ Use this EXACT format:
 ## Critical Context
 - [Preserve important context, add new if needed]
 
-Keep each section concise. Preserve exact file paths, function names, and error messages.`
+Keep each section concise. Preserve exact file paths, function names, and error messages. Do NOT mention this summarization request or that the context was compacted.`
 
-/** 组装摘要请求的用户提示：<conversation> + 可选 <previous-summary> + 指令 */
-export function buildSummarizationPrompt(preparation: CompactionPreparation): string {
-  let promptText = `<conversation>\n${serializeConversation(preparation.messagesToSummarize)}\n</conversation>\n\n`
+/**
+ * 组装摘要指令(最后一条 user 消息全文):护栏 + 可选 <previous-summary>
+ * (迭代合并,旧检查点进指令而非靠模型从重放区里翻)+ 结构模板。
+ */
+export function buildSummarizationInstruction(preparation: CompactionPreparation): string {
+  let instruction = SUMMARIZATION_INSTRUCTION_GUARD
   if (preparation.previousSummary !== undefined) {
-    promptText += `<previous-summary>\n${preparation.previousSummary}\n</previous-summary>\n\n`
+    instruction +=
+      `\n\nThe checkpoint you produce must merge with and supersede the PRIOR checkpoint in <previous-summary> tags:\n\n` +
+      `<previous-summary>\n${preparation.previousSummary}\n</previous-summary>`
   }
-  promptText += preparation.previousSummary !== undefined ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT
-  return promptText
+  return `${instruction}\n\n${preparation.previousSummary !== undefined ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT}`
 }
 
-/** 摘要请求的 provider context（独立小请求：系统提示词 + 单条用户消息） */
-export function buildSummarizationContext(promptText: string): TranscriptContext {
+/**
+ * 摘要请求的 provider context(真前缀构造,R4):[会话 system 原序] +
+ * [被摘要区原消息(convertToLlm 投影)] + [指令 user]。领头 system 的
+ * toolsAdded(工具声明)与主请求逐字相同,中部 system(权限通告)由方言层
+ * 合并领头 —— LLM 可见前缀与主请求等价。normalizeContext 在 systemPrompt/
+ * tools 双缺省时原样放行 messages(transcript.js:createInitialSystemMessage
+ * 双缺省返回 undefined),不会重造领头破坏前缀。
+ */
+/**
+ * 摘要输出的保底预算(token):低于此值时摘要大概率被截断(8 节结构 ≈1–2K),
+ * 触发降级。pi clampMaxTokensToContext 的边际是 4096,此处取「边际的一半」
+ * 为可生成线 —— available 低于它 = 输出预算被夹死,重放策略必须收缩。
+ */
+const MIN_SUMMARY_OUTPUT_TOKENS = 2048
+
+/**
+ * 摘要请求的 provider context(真前缀构造 + **预算守卫**,R4 + 完备化验收
+ * 修复 2026-11-12):首选 [会话 system 原序] + [被摘要区原消息] + [指令 user]
+ * —— 与主请求真前缀对齐,KV cache 复用。但 20K 级小窗深度占用时,整转录
+ * 重放会把 pi clampMaxTokensToContext 的输出预算夹到趋零
+ * (available = ctx − input − 4096 ≈ 0),摘要写一个 token 就截断 —— 而
+ * 压缩恰是为了腾空间,「要压缩先得有空间压缩」是鸡生蛋死结(验收实测:
+ * 20K 窗 15.9K 占用,摘要必 length)。
+ * 守卫:重放估算后若 available < 2048,降级为「被摘要区直传 + 精简指令」
+ * —— 放弃前缀缓存(退化为无损失),换摘要请求自己的输出预算
+ * (≈ ctx − 被摘要区 − 4096,验收场景 ≈10K,充裕)。被摘要区本身超预算的
+ * 极端(单回合巨大)由 pi 夹制兜住,摘要照常尽力生成。
+ */
+export function buildSummarizationContext(
+  systemMessages: Message[],
+  preparation: CompactionPreparation,
+  instruction: string,
+  contextWindow: number
+): TranscriptContext {
+  const replay = normalizeContext({
+    messages: [
+      ...systemMessages,
+      ...convertToLlmMessages(preparation.messagesToSummarize),
+      { role: 'user', content: [{ type: 'text', text: instruction }], timestamp: Date.now() }
+    ]
+  })
+  const replayInput = estimateContextTokens(replay.messages).tokens
+  const available = contextWindow - replayInput - 4096
+  if (available >= MIN_SUMMARY_OUTPUT_TOKENS || contextWindow <= 0) return replay
+  // 降级:只送被摘要区(+指令),不带会话 system(省头 —— 摘要任务不需要
+  // 工作区指令;指令自身含角色与护栏)。指令原样复用(迭代合并信息都在)
   return normalizeContext({
-    systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: [{ type: 'text', text: promptText }], timestamp: Date.now() }]
+    messages: [
+      ...convertToLlmMessages(preparation.messagesToSummarize),
+      { role: 'user', content: [{ type: 'text', text: instruction }], timestamp: Date.now() }
+    ]
   })
 }
 

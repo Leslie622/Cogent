@@ -15,8 +15,22 @@ import { createProvider } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
-import type { Api, Model, MutableModels, Provider } from '@earendil-works/pi-ai'
-import type { CustomProviderDef, ModelDef, ProviderOverrideDef } from '../../protocol'
+import type { Api, Model, MutableModels, Provider, ThinkingBudgets } from '@earendil-works/pi-ai'
+import type { CustomProviderDef, ModelDef, ProviderCompatDef, ProviderOverrideDef } from '../../protocol'
+
+/**
+ * Model 对象上的思考预算通道（完备化 R7，声明合并 —— compaction.ts 的
+ * compaction 字段同款手法）：buildModel 从 ModelDef.thinkingBudgets 透传，
+ * pi 自身不读；session 侧在 ensureAgent/模型切换时同步到 Agent
+ * .thinkingBudgets（pi 的预算消费在请求选项层，不在 Model 层）。
+ */
+declare module '@earendil-works/pi-ai' {
+  // 类型参数表须与原接口一致（合并语法要求），TApi 未用属刻意
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface Model<TApi extends Api> {
+    thinkingBudgets?: ThinkingBudgets
+  }
+}
 
 /** 自定义模型的兜底参数：无成本的通用 OpenAI-compatible 档位（用户端点上实际可用为准） */
 const CUSTOM_MODEL_CONTEXT_WINDOW = 128_000
@@ -45,7 +59,8 @@ function buildModel(
   api: Api,
   providerId: string,
   baseUrl: string,
-  catalogBase?: Model<Api>
+  catalogBase?: Model<Api>,
+  compat?: ProviderCompatDef
 ): Model<Api> {
   const ALL_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
   return {
@@ -56,7 +71,7 @@ function buildModel(
     baseUrl,
     reasoning: def.reasoning ?? catalogBase?.reasoning ?? false,
     input: def.input ?? catalogBase?.input ?? ['text'],
-    ...(def.thinkingLevels !== undefined && def.reasoning === true && {
+    ...(def.thinkingLevels !== undefined && def.reasoning === true &&{
       thinkingLevelMap: Object.fromEntries(
         ALL_LEVELS.map((level) => [level, def.thinkingLevels?.includes(level) ? level : null])
       )
@@ -67,7 +82,16 @@ function buildModel(
     }),
     cost: catalogBase?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: def.contextWindow ?? catalogBase?.contextWindow ?? CUSTOM_MODEL_CONTEXT_WINDOW,
-    maxTokens: def.maxTokens ?? catalogBase?.maxTokens ?? CUSTOM_MODEL_MAX_TOKENS
+    maxTokens: def.maxTokens ?? catalogBase?.maxTokens ?? CUSTOM_MODEL_MAX_TOKENS,
+    // 压缩参数覆盖（完备化 R1）：Cogent 附加字段走 compaction.ts 的声明合并通道，
+    // pi 不读；目录基底无此维度（pi 目录不标压缩参数），用户没配 = 引擎默认公式
+    ...(def.compaction !== undefined && { compaction: def.compaction }),
+    // 思考预算（完备化 R7）：同样走声明合并附加字段，session 侧同步到 Agent
+    ...(def.thinkingBudgets !== undefined && { thinkingBudgets: def.thinkingBudgets }),
+    // 端点兼容覆盖（完备化 R7）：provider 级 compat 下沉到每个模型（pi 上游
+    // provider-composer 同位语义）。字段同名直通（ProviderCompatDef 是
+    // OpenAICompletionsCompat 的子集）；anthropic 方言不经此面 —— 调用处不传
+    ...(compat !== undefined && { compat })
   }
 }
 
@@ -157,15 +181,18 @@ export class CustomProviderRegistry {
     const advanced = def.modelDefs ?? []
     const seen = new Set<string>()
     const models: Model<Api>[] = []
+    // compat 仅 openai 系方言消费（anthropic-messages 走官方 budget_tokens，
+    // 形状不同不经此面）—— 门在此处，buildModel 只管透传
+    const compat = apiFormat === 'anthropic-messages' ? undefined : def.compat
     for (const modelDef of advanced) {
       if (disabled.has(modelDef.id) || seen.has(modelDef.id)) continue
       seen.add(modelDef.id)
-      models.push(buildModel(modelDef, apiFormat, def.id, def.baseUrl))
+      models.push(buildModel(modelDef, apiFormat, def.id, def.baseUrl, undefined, compat))
     }
     for (const modelId of def.models) {
       if (disabled.has(modelId) || seen.has(modelId)) continue
       seen.add(modelId)
-      models.push(buildModel({ id: modelId }, apiFormat, def.id, def.baseUrl))
+      models.push(buildModel({ id: modelId }, apiFormat, def.id, def.baseUrl, undefined, compat))
     }
     return createProvider({
       id: def.id,
