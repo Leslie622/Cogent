@@ -18,5 +18,6 @@
       "@shared/*": ["./src/shared/*"]
     }
   },
-  "include": ["src/renderer/src/**/*", "src/shared/**/*"]
+  "include": [
+    "tests/setup-web.ts","src/renderer/src/**/*", "src/shared/**/*"]
 }

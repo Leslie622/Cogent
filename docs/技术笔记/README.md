@@ -43,4 +43,5 @@
 | [工具系统与审批](tools-approval.md) | 路线空位 2/4/6（工具循环 + beforeToolCall 审批挂起 + 权限矩阵，批次 1+2 全景） | 已完成（2026-11-11） |
 | [bash / edit 工具与输出护栏](bash-edit-tools.md) | 计划-pi借鉴 批次 3（截断三件套 + 并发写队列 + edit CRLF 映射 + bash 进程树 + 自主模式 + gitignore 加固） | 已完成（2026-11-11） |
 | [上下文压缩](compaction.md) | 计划-pi借鉴 批次 4（阈值/手动双路 + 结构化 checkpoint 摘要 + compactionSummary 转录角色 + 折叠条与指示器回落） | 已完成（2026-11-12） |
+| [测试体系](测试体系.md) | 计划-测试体系.md（Vitest 三层 + 冒烟正名迁移 + CI；三家上游对照与迁移踩坑） | 已完成（2026-11-13） |
 | [内置浏览器与聚合面板](browser-and-panels.md) | 未立项调研（内置浏览器四层模型 / browser-use 插件与面板双面性 / ZCode + ChatGPT + dsh 三家对照，含引擎路线对照） | 调研完成（2026-11-12，无代码落点） |

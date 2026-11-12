@@ -16,6 +16,7 @@ export default tseslint.config(
   {
     ignores: [
       'out/**',
+      'coverage/**',
       'dist/**',
       'node_modules/**',
       'eslint.config.mjs',

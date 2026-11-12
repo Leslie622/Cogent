@@ -17,6 +17,8 @@
     }
   },
   "include": [
+    "vitest.config.ts",
+    "tests/integration/**/*",
     "electron.vite.config.ts",
     "src/electron/**/*",
     "src/agent-service/**/*",

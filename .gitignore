@@ -10,3 +10,6 @@ dist/
 tmp/
 # pi 上游源码参照（sparse clone，本地参考用，不进 git 历史）
 reference/
+
+# vitest 覆盖率报告（npm run coverage 产物）
+coverage/

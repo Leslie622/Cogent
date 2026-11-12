@@ -1,0 +1,32 @@
+# CI —— 三关 + 测试全绿（docs/计划-测试体系.md D9）
+#
+# windows-latest 单 job：ps-utf8 集成绑 PowerShell 行为（5.1 尾缀断言在
+# Linux 无从谈起），Electron 构建也是本机开发平台。缓存两件：npm 依赖
+# （package-lock 键）与 Electron 二进制（postinstall 下载 ~100MB，键随
+# lock 走）。integration project 的 global-setup 会自动补 build，无需
+# 单独步骤。
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: 缓存 Electron 二进制
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
