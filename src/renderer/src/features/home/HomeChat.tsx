@@ -146,7 +146,10 @@ function ChatMessages() {
             逐个挂 scroller item（TurnGroup 内包）—— 刻度/定位按 messageId 查表 */}
         <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 py-6 pr-6 pl-16 select-text">
           {turns.map((turn) => (
-            <div key={turn.user?.id ?? 'head'} className="flex min-w-0 flex-col gap-3">
+            // key：user 有则用 user；无 user 头组取首项 id（D9 保留式下压缩条
+            // 原位成组、可多条并存，静态 'head' 会撞 key；无 user 的组结构上
+            // 必有首项 —— 压缩条组带 bar、尾部兜底组先 push 再填 items）
+            <div key={turn.user?.id ?? turn.items[0].id} className="flex min-w-0 flex-col gap-3">
               <TurnGroup turn={turn} phase={turn === turns.at(-1) ? lastPhase : 'done'} />
             </div>
           ))}

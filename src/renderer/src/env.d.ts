@@ -237,6 +237,8 @@ export type EngineEvent =
         summary?: string
         /** 被摘要区末条消息 timestamp（折叠条原位锚点）；失败时缺省 */
         summarizedUntil?: number
+        /** 摘要请求的用量（与 protocol 镜像）：摘要不进 run 分段账，折叠条小字呈现 */
+        summaryUsage?: MessageUsage
         error?: string
       }
     }
@@ -296,8 +298,9 @@ export interface ChatMessage {
   /** 本条消息发起的工具调用（按发生序；与 protocol ChatMessage.toolCalls 镜像） */
   toolCalls?: ToolCallRecord[]
   /** 压缩元数据（仅 role 'compaction'；与 protocol ChatMessage.compaction 镜像）：
-   *  content = checkpoint 摘要全文，折叠条展开可读 */
-  compaction?: { tokensBefore: number; tokensAfter?: number }
+   *  content = checkpoint 摘要全文，折叠条展开可读；summaryUsage = 摘要调用
+   *  自身的账（不进回合统计，折叠条小字呈现；旧引擎投影无此字段） */
+  compaction?: { tokensBefore: number; tokensAfter?: number; summaryUsage?: MessageUsage }
   timestamp: number
 }
 

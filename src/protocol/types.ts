@@ -223,8 +223,9 @@ export interface ChatMessage {
   /** 本条消息发起的工具调用（仅 assistant，按发生序）；缺省 = 无工具轮 */
   toolCalls?: ToolCallRecord[]
   /** 压缩元数据（仅 role 'compaction'）：前后 token 估算，折叠条文案与
-   *  指示器回落的数据源；缺省 = 非 compaction 消息或旧引擎投影 */
-  compaction?: { tokensBefore: number; tokensAfter?: number }
+   *  指示器回落的数据源；summaryUsage = 摘要调用自身的账（不进 run 统计，
+   *  折叠条小字呈现）；缺省 = 非 compaction 消息或旧引擎投影 */
+  compaction?: { tokensBefore: number; tokensAfter?: number; summaryUsage?: MessageUsage }
   timestamp: number
 }
 
@@ -840,6 +841,10 @@ export interface ProtocolEvents {
     tokensAfter?: number
     summary?: string
     summarizedUntil?: number
+    /** 摘要请求的用量（D9 验收后增补）：摘要是一次独立 LLM 调用，其 token/
+     *  成本不进 run 分段账 —— 经此显式带给宿主呈现（折叠条小字），端点
+     *  未报 usage 时缺省 */
+    summaryUsage?: MessageUsage
     error?: string
   }
   /**

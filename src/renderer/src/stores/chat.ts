@@ -96,6 +96,17 @@ export interface PrunedItem {
 export type MessageItem = ChatMessage | ToolItem | ApprovalItem | PrunedItem
 
 /**
+ * 引擎 IPC 错误剥壳（R10）：ipcRenderer.invoke 对 main 侧拒绝统一包一层
+ * "Error invoking remote method 'engine:request': Error: " 前缀（Electron
+ * 行为，非协议内容），协议帧的 message 才是给人读的文案 —— lastErrorBySession
+ * 直出渲染前剥掉，否则用户看到的是裸 IPC 报文（验收实测）。
+ */
+function unwrapIpcError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error)
+  return raw.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '')
+}
+
+/**
  * 段化消息 → 消息流元素展平（终态替换与历史加载共用）：
  * 每段先落它的工具卡（toolCalls 按序），再落消息本体；纯工具段（无正文无思考）
  * 不落消息本体 —— 只留卡，避免空消息占行。
@@ -399,7 +410,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         runningBySession: { ...state.runningBySession, [sessionId]: false },
         lastErrorBySession: {
           ...state.lastErrorBySession,
-          [sessionId]: error instanceof Error ? error.message : String(error)
+          [sessionId]: unwrapIpcError(error)
         },
         messagesBySession: {
           ...state.messagesBySession,
@@ -436,7 +447,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         runningBySession: { ...state.runningBySession, [sessionId]: false },
         lastErrorBySession: {
           ...state.lastErrorBySession,
-          [sessionId]: error instanceof Error ? error.message : String(error)
+          [sessionId]: unwrapIpcError(error)
         }
       }))
     }
@@ -453,7 +464,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       useChatStore.setState((state) => ({
         lastErrorBySession: {
           ...state.lastErrorBySession,
-          [sessionId]: error instanceof Error ? error.message : String(error)
+          [sessionId]: unwrapIpcError(error)
         }
       }))
     }
@@ -637,24 +648,33 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'compaction.pruned': {
-        // L1 裁剪落账（完备化 R3）：先记副行数据 —— completed 大手术（原位换
-        // 折叠条）会重排列表，副行在 completed 分支手术时一并带上（时序：pruned
-        // 恒先于同检查点的 completed）；无 completed（L1 单独够）则副行独立呈
+        // L1 裁剪落账（完备化 R3/D8，D9 起独立呈现）：副行**立即追加**到列表
+        // 尾（当前流内的过程行）—— L1 单独够（无后续 completed）时它就是本次
+        // 裁剪的全部呈现；同一检查点若跟进 L2（completed），completed 手术会
+        // 撤下独立行、随折叠条配对重插，不双份。entries 同时记 prunedBySession
+        // 供 completed 配对（取后即清）
         const { sessionId, entries } = event.params
         if (entries.length === 0) return
+        const timestamp = Date.now()
         useChatStore.setState((state) => ({
-          prunedBySession: { ...state.prunedBySession, [sessionId]: entries }
+          prunedBySession: { ...state.prunedBySession, [sessionId]: entries },
+          messagesBySession: {
+            ...state.messagesBySession,
+            [sessionId]: [
+              ...(state.messagesBySession[sessionId] ?? []),
+              { id: `compaction-pruned-${timestamp}`, type: 'pruned', entries, timestamp }
+            ]
+          }
         }))
         return
       }
       case 'compaction.completed': {
-        // 压缩完成：本地消息列表做手术 —— 被摘要区（summarizedUntil 及之前）
-        // 原位换成折叠条，保留区与本回合乐观用户消息不动。不做"重拉历史整换"：
-        // 自动路的压缩发生在 prompt 之前，重拉与 prompt() 追加用户消息存在竞态
-        //（拉到含新消息的列表 → 与本地乐观消息拼出双条）。事件载荷已含折叠条
-        // 全部数据（summary/前后 token），手术零往返；形态与历史回查投影一致
-        //（折叠条 + 保留区），下 run 终态替换按 lastUser 定位不受影响
-        const { sessionId, error, tokensBefore, tokensAfter, summary, summarizedUntil } = event.params
+        // 压缩完成：在压缩发生位置（被摘要区末条之后）**原位插入**折叠条，
+        // 旧消息不删（D9 保留式呈现，Codex 形态 —— 历史不因压缩消失，标记
+        // 行停在自己发生的地方）。引擎转录同形（影子区保留 + 标记条原位），
+        // 历史回查投影天然一致；事件载荷已含折叠条全部数据（summary/前后
+        // token/锚点/摘要用量），手术零往返，无"重拉历史"竞态
+        const { sessionId, error, tokensBefore, tokensAfter, summary, summarizedUntil, summaryUsage } = event.params
         // 无论成败清「压缩中」位（失败也结束窗口）
         useChatStore.setState((state) => ({
           compactingBySession: { ...state.compactingBySession, [sessionId]: undefined }
@@ -663,50 +683,70 @@ export function bindEngineEvents(): () => void {
         useChatStore.setState((state) => {
           const local = state.messagesBySession[sessionId]
           if (local === undefined) return state
-          // 从尾往前找"被摘要区末条"：内容消息按 timestamp、工具卡按打点
-          //（压缩必在回合间隙，前面的卡全是终态展平、带打点）；审批痕迹行无
-          // 时间戳，采用右邻（它锚在自己的工具卡之前，与卡同进退）
+          const timestamp = Date.now()
+          const pruned = state.prunedBySession[sessionId]
+          const prunedBySession = { ...state.prunedBySession }
+          delete prunedBySession[sessionId]
+          let cleaned = local
+          // 撤下同检查点的独立副行（pruned 事件先行追加、恒为列表**末条**
+          // pruned）：entries 深比较命中才撤 —— 早前 L1-alone 检查点的独立
+          // 行是历史痕迹，保留；配对行随 bar 插入，不双份
+          if (pruned !== undefined && pruned.length > 0) {
+            for (let i = local.length - 1; i >= 0; i--) {
+              // 先落局部再判别（元素访问不参与窄化，同 run.completed 的 lastUser 扫描）
+              const item = local[i]
+              if (item.type !== 'pruned') continue
+              if (JSON.stringify(item.entries) === JSON.stringify(pruned)) {
+                cleaned = local.filter((_, j) => j !== i)
+              }
+              break // 只看末条 pruned
+            }
+          }
+          // D9 呈现位 = 时间序：插在「压缩时刻之前已存在的最后一条内容」之后
+          // —— 即「正在压缩上下文…」状态条当时所在的位置（Codex 形态：标记
+          // 行嵌在压缩打断流的地方），而非引擎转录的切点（切点是影子区/活区
+          // 语义边界，落在那里 = 标记行跑到保留区 20K 之前的旧消息堆里，验收
+          // 实测"留痕跳到上面去了"）。时间取法：内容消息 timestamp、工具卡
+          // 打点、审批痕迹行无时间戳采用右邻（与卡同进退）
           let upcomingTime: number | undefined
-          let cut = -1
-          for (let i = local.length - 1; i >= 0; i--) {
-            const item = local[i]
+          let insertAt = -1
+          for (let i = cleaned.length - 1; i >= 0; i--) {
+            const item = cleaned[i]
             let t: number | undefined
             if (item.type === 'tool') t = item.endedAt ?? item.startedAt
             else if (item.type === 'approval') t = upcomingTime
             else t = item.timestamp
             if (t !== undefined) upcomingTime = t
-            if (t !== undefined && t <= summarizedUntil) {
-              cut = i
+            if (t !== undefined && t <= timestamp) {
+              insertAt = i
               break
             }
           }
-          if (cut < 0) return state // 理论不发生（引擎刚摘要过内容）；不动为兜底
           const bar: ChatMessage = {
-            // 静态 id：转录至多一条压缩条（重建时旧的必被换掉），列表内唯一
-            id: 'compaction-bar',
+            // 唯一 id：保留式下多次压缩多条折叠条并存（历史回查投影用 c-N
+            // 位置 id，两路径不撞）
+            id: `compaction-bar-${timestamp}`,
             role: 'compaction',
             content: summary ?? '',
-            compaction: { tokensBefore: tokensBefore ?? 0, tokensAfter },
-            timestamp: Date.now()
+            compaction: { tokensBefore: tokensBefore ?? 0, tokensAfter, summaryUsage },
+            timestamp
           }
-          // L1 prune 副行（完备化 R3/D8）：随折叠条同区呈现「已裁剪 N 处工具
-          // 输出」，取后即清（下次裁剪再来）
-          const pruned = state.prunedBySession[sessionId]
-          const prunedBySession = { ...state.prunedBySession }
-          delete prunedBySession[sessionId]
+          // L1 prune 副行（完备化 R3/D8）：随折叠条同区配对呈现「已裁剪 N 处
+          // 工具输出」，取后即清（下次裁剪再来）
           const head: MessageItem[] = [bar]
           if (pruned !== undefined && pruned.length > 0) {
             head.push({
-              id: 'compaction-pruned',
+              id: `compaction-pruned-${timestamp}`,
               type: 'pruned',
               entries: pruned,
-              timestamp: bar.timestamp
+              timestamp
             })
           }
+          const at = insertAt + 1
           return {
             messagesBySession: {
               ...state.messagesBySession,
-              [sessionId]: [...head, ...local.slice(cut + 1)]
+              [sessionId]: [...cleaned.slice(0, at), ...head, ...cleaned.slice(at)]
             },
             prunedBySession
           }
@@ -752,9 +792,46 @@ export function bindEngineEvents(): () => void {
             }
             return anchored
           }
+          // 压缩条/裁剪副行不是 run 的产物（D9：压缩发生在 run 边界/轮间，
+          // completed/pruned 事件插进替换区）：终态替换不得吞掉 —— 按时间序
+          // 并回替换区（与 completed 手术同规则；验收实测 L1 副行被整段替换
+          // 吃掉=「已裁剪」行不显示）。审批锚回在其后组合，卡匹配不受影响
+          const keptCompaction = (
+            lastUser >= 0
+              ? list
+                  .slice(lastUser + 1)
+                  .filter((m) => m.type === 'pruned' || (m.type === undefined && m.role === 'compaction'))
+              : []
+          ) as Array<ChatMessage | PrunedItem> // 谓词保证形状，联合收窄用断言（filter 不做类型谓词）
+          const itemTime = (item: MessageItem): number | undefined => {
+            if (item.type === 'tool') return item.endedAt ?? item.startedAt
+            // 审批痕迹行无时间戳：返回 undefined 跳过该行比较（并回位置退化为
+            // 首个可比较项之前/末尾，呈现层无感）
+            if (item.type === 'approval') return undefined
+            return item.timestamp
+          }
+          const flatWithCompaction = (flat: MessageItem[]): MessageItem[] => {
+            if (keptCompaction.length === 0) return flat
+            const merged = [...flat]
+            for (const extra of keptCompaction) {
+              let at = -1
+              for (let i = 0; i < merged.length; i++) {
+                const t = itemTime(merged[i])
+                if (t !== undefined && t > extra.timestamp) {
+                  at = i
+                  break
+                }
+              }
+              merged.splice(at >= 0 ? at : merged.length, 0, extra)
+            }
+            return merged
+          }
           const finalMessages =
             lastUser >= 0
-              ? [...list.slice(0, lastUser + 1), ...flatWithApprovals(flattenSegments(segments))]
+              ? [
+                  ...list.slice(0, lastUser + 1),
+                  ...flatWithApprovals(flatWithCompaction(flattenSegments(segments)))
+                ]
               : list
           // 面板兜底清空（常态路径裁决时已收；防御 run 终态与裁决竞态的残留）
           const { [sessionId]: _cleared, ...pendingRest } = state.pendingApprovalsBySession

@@ -62,11 +62,10 @@ import {
   buildSummarizationInstruction,
   compactionThreshold,
   convertToLlmMessages,
+  insertCompactionMarker,
   KEEP_RECENT_TOKENS,
   prepareCompaction,
   pruneToolResults,
-  applyCompactionInPlace,
-  rebuildTranscript,
   shouldCompact,
   summarizationFailure,
   summarizationThinkingLevel,
@@ -692,7 +691,8 @@ export class SessionManager {
     // 在受理入口显式拒绝成协议错误，而不是放它落进异步段崩进程；压缩窗口同理
     //（见 compacting 字段注释 —— prompt 前的摘要期 isStreaming 还是 false）
     if (agent.state.isStreaming || this.compacting.has(sessionId)) {
-      throw new ProtocolError(RpcErrorCode.InvalidRequest, `会话正在回复中，请先停止或等待完成: ${sessionId}`)
+      // 文案不带 sessionId（渲染层 lastError 直出给用户看；定位信息走日志）
+      throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话正在回复中，请先停止或等待完成')
     }
     if (model) {
       // provider 双键限定优先：同名模型会被多家目录收录（azure 目录也有
@@ -916,7 +916,7 @@ export class SessionManager {
     const session = this.requireSession(sessionId)
     const agent = this.ensureAgent(session)
     if (agent.state.isStreaming || this.compacting.has(sessionId)) {
-      throw new ProtocolError(RpcErrorCode.InvalidRequest, `会话正在回复中，无法续写: ${sessionId}`)
+      throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话正在回复中，无法续写')
     }
     const last = agent.state.messages.at(-1)
     if (last === undefined || last.role !== 'assistant' || last.stopReason !== 'length') {
@@ -955,7 +955,7 @@ export class SessionManager {
     const session = this.requireSession(sessionId)
     const agent = this.ensureAgent(session)
     if (agent.state.isStreaming || this.compacting.has(sessionId)) {
-      throw new ProtocolError(RpcErrorCode.InvalidRequest, `会话正在回复中，请等待完成后再压缩: ${sessionId}`)
+      throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话正在回复中，请等待完成后再压缩')
     }
     const contextTokens = estimateContextTokens(convertToLlmMessages(agent.state.messages)).tokens
     const outcome = await this.runCompaction(session, agent, 'manual', contextTokens)
@@ -1014,19 +1014,22 @@ export class SessionManager {
       const failure = summarizationFailure(response)
       if (failure !== undefined) throw new Error(failure)
       const summary = contentText(response.content) + formatFileOperations(preparation.fileOps)
+      // 摘要调用自身的账（D9 验收后增补）：不走 run 分段、不进回合统计 ——
+      // 落压缩条随历史持久，宿主折叠条小字呈现。端点未报 usage 时 pi 补零
+      // （AssistantMessage.usage 必有），按 totalTokens>0 判"真报了"才落账
+      const projectedUsage = projectUsage(response.usage)
+      const summaryUsage = projectedUsage.totalTokens > 0 ? projectedUsage : undefined
 
-      // tokensAfter 要进压缩条本身，只能先建 draft 估算再建真值条 —— 两次重建
-      // 只差 tokensAfter 几个数字位，对估算无感；数组拼接零成本。
-      // **必须原位写回**(applyCompactionInPlace,S2 验收 bug 修复):轮间钩子
-      // 触发时 pi loop 手里还持着同一数组的旧引用(当轮 toolResult push/流式
-      // partial 替换都落在这个引用上),换引用 = loop 旧引用与 agent.state 各写
-      // 各的,当轮收尾消息双份落转录 → 请求里 tool_calls 配对重复 → 400。
-      // 原位 splice 后所有引用线共享同一数组,submit 前单点检查(无并发引用)
-      // 也走同一形态,行为一致
-      const draft = rebuildTranscript(agent.state.messages, preparation, summary, 0)
-      const tokensAfter = estimateContextTokens(convertToLlmMessages(draft)).tokens
-      const transcript = applyCompactionInPlace(agent.state.messages, preparation, summary, tokensAfter)
-      session.transcript = transcript
+      // tokensAfter 要进压缩条本身：先以占位值原位插入（D9 保留式 —— 被摘要区
+      // 不删除，压缩条插在切点），估算投影后的上下文再回填真值 —— 单次插入
+      // 不换数组引用（S2 验收 400 的原位纪律：轮间钩子时 pi loop 还持着同一
+      // 数组旧引用，换引用 = 当轮收尾消息双份落转录、tool_calls 配对重复）
+      const insertAt = preparation.firstKeptIndex
+      insertCompactionMarker(agent.state.messages, preparation, summary, 0, summaryUsage)
+      const tokensAfter = estimateContextTokens(convertToLlmMessages(agent.state.messages)).tokens
+      const bar = agent.state.messages[insertAt]
+      if (bar.role === 'compactionSummary') bar.tokensAfter = tokensAfter
+      session.transcript = agent.state.messages
       this.persist(sessionId)
       this.notify('compaction.completed', {
         sessionId,
@@ -1034,7 +1037,8 @@ export class SessionManager {
         tokensBefore: contextTokens,
         tokensAfter,
         summary,
-        summarizedUntil: preparation.summarizedUntil
+        summarizedUntil: preparation.summarizedUntil,
+        ...(summaryUsage !== undefined && { summaryUsage })
       })
       return { tokensBefore: contextTokens, tokensAfter }
     } catch (error) {
@@ -1640,19 +1644,34 @@ export class SessionManager {
     }
 
     const result: ChatMessage[] = []
+    // D9 保留式呈现位 = 时间序（压缩时刻），非转录切点：压缩条在转录里插在
+    // 切点（影子区/活区的语义边界，保留区 20K 之前），但 UI 上应落在压缩
+    // **发生**的地方（Codex 标记行形态，与渲染层 completed 手术同规则）——
+    // 先暂存，遇到 timestamp 晚于它的首条消息前再落；转录其余部分本就
+    // 时间序追加，此规则恰为"按时间序归位"。末尾 flush 兜底（压缩后无新
+    // 回合的会话）。防御：两条 bar 间无消息时先落旧的保序（正常流不发生
+    // —— 刚压完时间戳守卫拒绝无新内容的再压缩）
+    let pendingBar: Omit<ChatMessage, 'id'> | undefined
+    const flushBar = (): void => {
+      if (pendingBar !== undefined) {
+        result.push({ ...pendingBar, id: `c-${result.length}` })
+        pendingBar = undefined
+      }
+    }
     for (const message of messages) {
       // pi Message 联合类型按 role 收窄
       if (message.role === 'compactionSummary') {
-        // 压缩条（批次 4）：content = 摘要全文（折叠条展开可读），不参与
-        // 回合问答切分 —— id 前缀 c- 与 u-/a- 的位置式手法一致
-        result.push({
-          id: `c-${result.length}`,
+        flushBar()
+        pendingBar = {
           role: 'compaction',
           content: message.summary,
-          compaction: { tokensBefore: message.tokensBefore, tokensAfter: message.tokensAfter },
+          compaction: { tokensBefore: message.tokensBefore, tokensAfter: message.tokensAfter, summaryUsage: message.summaryUsage },
           timestamp: message.timestamp
-        })
-      } else if (message.role === 'user') {
+        }
+        continue
+      }
+      if (pendingBar !== undefined && message.timestamp > pendingBar.timestamp) flushBar()
+      if (message.role === 'user') {
         const text =
           typeof message.content === 'string'
             ? message.content
@@ -1732,6 +1751,7 @@ export class SessionManager {
         })
       }
     }
+    flushBar()
     return result
   }
 }

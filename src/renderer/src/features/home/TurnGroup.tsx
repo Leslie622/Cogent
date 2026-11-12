@@ -21,24 +21,42 @@ import { MessageRow, UsageLine } from './MessageRow'
 import { ApprovalCard } from './ApprovalCard'
 import { CompactionBar, PrunedBar } from './CompactionBar'
 
-/** 回合（一问一答 + 其间全部过程项）；user 缺省 = 列表前导无提问
- *  （正常流不出现，分组形状自然兜底而非防御分支） */
+/** 回合（一问一答 + 其间全部过程项）；user 缺省 = 无提问头组 —— 压缩折叠条
+ *  组（D9 保留式：bar 按时间序原位中插，自成一组并截断当前组；组内只有
+ *  bar 与其配对裁剪副行，其后内容另起无头续组）、历史投影尾部前导的兜底组。
+ *  startedAt = 无 user 头组的墙钟起点（第八轮验收：压缩条截断出的续组继承
+ *  原 user 的 timestamp —— 不继承的话 turnDurationMs 无起点、头条只剩
+ *  「已工作」没秒数） */
 export interface ChatTurn {
   user?: ChatMessage
   items: MessageItem[]
+  startedAt?: number
 }
 
-/** 渲染期分组（D1）：用户消息开新回合，其后到下一用户消息前的项归本回合 */
+/** 渲染期分组（D1；D9 补压缩条锚定）：用户消息开新回合（user 存 turn.user
+ *  槽、不进 items），其后到下一用户消息前的项归本回合；压缩折叠条
+ *  （role 'compaction'）自成一组且**截断当前组**（current 置空，其后内容
+ *  自起无头续组）—— 不截断的话，bar 按时间序插在触发消息与回复之间时，
+ *  流式占位/终态回复/工具卡会落进 bar 组，而 bar 组的渲染分支只认
+ *  compaction/pruned 两类（其余映射 null）＝ 回复被整个吞掉（第三轮验收
+ *  实测"压缩后无回复"）。[user 泡][bar 行][续组=回复] 正是 Codex 标记行形态 */
 export function groupTurns(items: MessageItem[]): ChatTurn[] {
   const turns: ChatTurn[] = []
   let current: ChatTurn | undefined
+  // 最近一次 user 的 timestamp：压缩条截断出的续组/bar 组继承它作墙钟起点
+  let lastUserAt: number | undefined
   for (const item of items) {
     if (item.type === undefined && item.role === 'user') {
+      lastUserAt = item.timestamp
       current = { user: item, items: [] }
       turns.push(current)
+    } else if (item.type === undefined && item.role === 'compaction') {
+      // 截断：current 置空，下一项（非 user）自起无头续组
+      current = undefined
+      turns.push({ items: [item], startedAt: lastUserAt })
     } else {
       if (current === undefined) {
-        current = { items: [] }
+        current = { items: [], startedAt: lastUserAt }
         turns.push(current)
       }
       current.items.push(item)
@@ -101,10 +119,11 @@ function splitTurn(
 /**
  * 回合墙钟时长（D5）：提问 timestamp → 回合末条内容消息 timestamp
  * （含工具执行耗时；各段 durationMs 求和不含，会虚低）。工具卡行没有
- * timestamp，从尾部扫首条内容消息即回合收尾时刻
+ * timestamp，从尾部扫首条内容消息即回合收尾时刻。无 user 头组（D9 压缩条
+ * 截断的续组）用继承的 startedAt 起点 —— 墙钟口径不变："用户等了多久"
  */
 function turnDurationMs(turn: ChatTurn): number | undefined {
-  const start = turn.user?.timestamp
+  const start = turn.user?.timestamp ?? turn.startedAt
   if (start === undefined) return undefined
   for (let i = turn.items.length - 1; i >= 0; i--) {
     const item = turn.items[i]
@@ -231,10 +250,11 @@ function ProcessItem({ item }: { item: MessageItem }) {
 }
 
 function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
-  // 压缩折叠条独立行：它恒是列表头部无用户消息的单独回合组（引擎重建 =
-  // [system] + [压缩条] + [保留区]，保留区以 user 消息开头另起回合）——
-  // 不套「已工作」头条/统计行（那是一个 run 的语义，压缩不是 run）。
-  // 组内可带 L1 prune 副行（completed 手术把 [折叠条, 副行] 一起放头部）
+  // 压缩折叠条独立行：无用户消息的单独回合组（D9 保留式：bar 原位插在
+  // 压缩发生位置，其上是保留的影子区历史、其下保留区以 user 消息另起回合；
+  // 多次压缩多条 bar 各自成组）—— 不套「已工作」头条/统计行（那是一个
+  // run 的语义，压缩不是 run）。组内可带 L1 prune 副行（completed 手术把
+  // [折叠条, 副行] 一起插在切点后）
   const first = turn.items[0]
   if (turn.user === undefined && first.type === undefined && first.role === 'compaction') {
     return (
@@ -277,6 +297,18 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
   // 若正文后又来工具调用（正文其实是中间段），占位被封段 → 回到直播态重新摊开
   const answerStarted = liveAnswer !== undefined && liveAnswer.content !== ''
   const headerMode = phase === 'live' && answerStarted && liveProcess.length > 0
+  // 零内容组的 done 相位不渲染过程件（D9 截断的副产物：压缩条把回合拆成
+  // [user|空组] + [续组]，空组只剩用户泡 —— D8"纯文本恒挂头条"落在它头上
+  // 就是凭空的「已工作」空壳，验收实测双头条）。live 例外：乐观消息刚上屏
+  // 的工作中行还得有；stopped/failed 不走此路 —— 零产出的中止/失败头条
+  // 是有效信息，保留
+  if (turn.items.length === 0 && phase === 'done') {
+    return turn.user !== undefined ? (
+      <MessageScrollerItem messageId={turn.user.id}>
+        <MessageRow message={turn.user} />
+      </MessageScrollerItem>
+    ) : null
+  }
   return (
     <>
       {turn.user !== undefined && (
@@ -286,7 +318,7 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
       )}
       {headerMode ? (
         <>
-          <RunTrace phase="live" startTs={turn.user?.timestamp ?? Date.now()}>
+          <RunTrace phase="live" startTs={turn.user?.timestamp ?? turn.startedAt ?? Date.now()}>
             {liveProcess.map((item) => (
               <MessageScrollerItem key={item.id} messageId={item.id}>
                 <ProcessItem item={item} />
@@ -312,7 +344,7 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
               <MessageRow message={answer} />
             </MessageScrollerItem>
           )}
-          <WorkingLine startTs={turn.user?.timestamp ?? Date.now()} />
+          <WorkingLine startTs={turn.user?.timestamp ?? turn.startedAt ?? Date.now()} />
         </>
       ) : phase === 'done' && process.length === 0 ? (
         // 无过程回合（D8 修订 2026-11-11）：纯文本也恒挂「已工作」头条（ZCode

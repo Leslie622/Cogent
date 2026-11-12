@@ -11,16 +11,30 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
        └─ body
           ├─ app-sidebar   50px 固定图标栏（AppSidebar：路由钮 + 设置下拉）
           └─ content       白卡（rounded-tl --shell-radius + border-l 自描边 + 紧投影）
-             ├─ content-sidebar   240–360px 可拖可折叠（各视图内容在 AppShell 按 view 挂）
+             ├─ content-sidebar   240–360px 可拖可折叠（折成 0），微灰底；普通 flex
+             │                   像素宽块（不进 RRP）+ localStorage 宽/折叠态记忆
+             │                   （各视图内容在 AppShell 按 view 挂）
              └─ content-main
                 ├─ home      HomeMain = [主要区 HomeChat | 标签页区 HomeTabs]
                 │            （标签页区 280–520px 可拖折叠、默认收起，动作全空位）
                 └─ settings  SettingsMain = 按分区挂内容（常规已落地，其余占位）
 ```
 
-- 分栏统一 react-resizable-panels v4 + GlowResizeHandle（1px 线 + 把手 + 拖拽光带）：
-  拖过下限折叠成 0，折叠后把手贴缘即展开抓取点；点钮折叠 = usePanelRef
-  imperative collapse/expand，状态走 onResize 同源同步（AppHeader/HomeChat 两处开关同手法）
+- 分栏分两类引擎（2026-11-12 定）：
+  - **content-sidebar = 普通 flex 像素宽块，不进 RRP**（方案同 Themd）：RRP 百分比
+    引擎靠 JS 追赶校正，窗口缩放先按旧百分比画脏帧内容抖动，且 4.18.1 的
+    `groupResizeBehavior="preserve-pixel-size"` 裸库探针实测无效（三组全部按比例
+    跟动）—— 像素宽由 CSS 布局层逐帧保证，窗口缩放零 JS 参与。拖拽 =
+    components/SidebarResizeHandle 自绘（pointer capture + rAF 直写 DOM，样式/
+    光带/状态机与 GlowResizeHandle 同构；拖过下限先钉在下限做阻力，拖过
+    min/2 才折叠、反向对称恢复 —— 对齐 RRP collapsedThreshold 默认；键盘 ±16、
+    双击回默认）；折叠开关 = hook 的 toggle（宽度记忆不动）。
+    记忆 = hooks/use-content-sidebar-split（localStorage 宽 + 折叠态，挂载直接
+    渲染到位，无 imperative 补挂；只有用户手势落盘，窗口缩放天然不写）
+  - **content-main 内部分屏**（HomeMain 主要区|标签页区）是真百分比语义，仍走
+    react-resizable-panels v4 + GlowResizeHandle：拖过下限折叠成 0，折叠后把手
+    贴缘即展开抓取点；点钮折叠 = usePanelRef imperative collapse/expand，状态走
+    onResize 同源同步（HomeChat 开关同手法）
 - 路由：stores/ui 的 AppView（home/tasks/plugins/settings），页面量少不引 router
 - 跨区域共享态走 zustand：stores/home（首页会话 chat|new，驱动信息区/对话流）、
   stores/settings（设置选中分区）；单组件临时状态 useState 不进 store
@@ -152,7 +166,8 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   + 档位标签白底（bg-background）压在刻度带上遮刻度、选中 foreground 加粗 /
   其余 muted-foreground；填充 width 与拇指位置 280ms ease-out（磁吸手感）。
   center 对齐模式（坑 12）+ 键盘接管（坑 13）。上下文窗口滑杆
-  （ContextWindowSlider）= 它的域适配（200K/400K/1M + formatContext）
+  （ContextWindowSlider）= 它的域适配（100K/200K/400K/1M + formatContext；
+  100K 档 2026-11-12 为压缩验证补入）
 - **对话流**：message-scroller（吸底/滚到底悬浮钮库自带；Provider 开 `autoScroll`
   才会跟随流式增长，Item **不标 `scrollAnchor`** —— 官方语义是"回合起始行"专用，
   标了会在追加时把该行钉到视口顶且流式不跟随，ChatGPT 式吸底两者都不要）；
@@ -228,7 +243,12 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
    两轮宏任务再放行（flexBasis→flexGrow 交接否则会放出生长动画；**勿用 rAF
    门控**：页面不可见时 rAF 停发、门控卡死过渡整体失效）；拖拽中以库权威状态
    `:has([data-separator=active])` 杀过渡（同 use-divider-glow 的观察源）——
-   库逐帧写内联尺寸，不杀会把跟手拖成 200ms 延迟
+   库逐帧写内联尺寸，不杀会把跟手拖成 200ms 延迟；**onLayoutChanged 时面板
+   getSize()/onResize 都滞后一步**（键盘步进实测 300→360 时仍回旧值），要落盘
+   取回调首个 layout 参数（变更后百分比）换算像素，别读面板现状
+   （此坑是 content-sidebar 记忆首版踩的，侧栏现已退出 RRP，坑对 HomeMain
+   及后续 RRP 分屏的持久化仍有效）；**groupResizeBehavior="preserve-pixel-size"
+   在 4.18.1 无效**（裸库探针：窗口缩放按比例跟动，与未设置无异）
 4. InputGroup 纵向布局 items-center：全宽子元素必须 `w-full`（否则缩成内容宽居中）
 5. JSX 属性值禁直引号嵌套（`value="仅在使用"关闭"快捷键"` 炸解析），中文弯引号无碍
 6. 对话索引激活项自算，不用库的 visibility/scrollable 快照（见上）
@@ -289,9 +309,9 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
 
 ## 浏览器验证环境（IAB）坑
 
-- HMR 后页面可能白屏：`tab.reload()` + 补 `window.cogent` 桩（9 个方法：onWindowState/
-  minimizeWindow/toggleMaximizeWindow/closeWindow/onEngineEvent/engineRequest/
-  getCustomProviders/setCustomProviders/listApiKeys）+ 注入 module `<script src="/src/main.tsx?t=...">`
+- HMR 后页面可能白屏：`tab.reload()` + 补 `window.cogent` 桩（方法清单以 env.d.ts
+  桥接口为准逐方法补全，别照抄本文件旧数 —— 2026-11-12 实测缺 getStatus/getSettings
+  即白屏）+ 注入 module `<script src="/src/main.tsx?t=...">`
   重挂；动态 import() 在页面桥不可用
 - 后台标签冻结渲染：CSS 过渡停在起点（读 computed opacity 是假值，读类名或掐
   transition）、scroll 事件不派发（用 dispatchEvent(new Event('scroll')) 合成驱动）、

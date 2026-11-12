@@ -43,7 +43,7 @@ function formatTime(timestamp: number): string {
  * 目录估价加 ≈ 前缀（端点不报账单，单价是汇率/分时快照，如 DeepSeek 分时半价未建模）；
  * 下限分支不加 —— "<" 本身已传达"不精确"，再叠 ≈ 是双重标记。
  */
-function formatCost(usd: number, estimated?: boolean): string {
+export function formatCost(usd: number, estimated?: boolean): string {
   if (usd < 0.0001) return '<$0.0001'
   return `${estimated ? '≈' : ''}$${parseFloat(usd.toFixed(4))}`
 }

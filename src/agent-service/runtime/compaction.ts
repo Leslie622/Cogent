@@ -27,6 +27,12 @@
  * dsh 同构公式 max(ctx×0.5, min(ctx×0.9, ctx−ROOM_FLOOR))（拆小窗输出预算
  * 饿死死锁，见 docs/方案-上下文压缩.md §4 死锁复盘），并支持 ModelDef
  * 的按模型覆盖（触发判定节）。
+ *
+ * 转录表示（D9 验收修正，2026-11-12）：**保留式** —— 压缩不删除被摘要区，
+ * 只在切点原位插入压缩条；影子区（末条压缩条之前的历史）不再发给模型
+ * （convertToLlmMessages 投影裁剪），但历史回查/落盘/重启复原完整保留。
+ * 对齐 Codex「标记行原位、旧消息可滚」的主流形态（GUI 验收实测销毁式
+ * 呈现不可接受）；方案 D7 的追加式远期件由此拉近为保留式变体落地。
  */
 import type { AgentMessage, ThinkingLevel as SessionThinkingLevel } from '@earendil-works/pi-agent-core'
 import type {
@@ -39,7 +45,7 @@ import type {
 } from '@earendil-works/pi-ai'
 import { normalizeContext } from '@earendil-works/pi-ai'
 import { estimateContextTokens, estimateMessageTokens, estimateTextTokens } from '@earendil-works/pi-ai/utils/estimate'
-import type { CompactionParamsOverride } from '../../protocol'
+import type { CompactionParamsOverride, MessageUsage } from '../../protocol'
 
 /**
  * 单条消息 token 估算（类型域补丁）：pi-ai estimateMessageTokens 只认标准
@@ -60,6 +66,9 @@ export interface CompactionSummaryMessage {
   tokensBefore: number
   /** 压缩后上下文估算（同上；老消息无此字段走缺省） */
   tokensAfter?: number
+  /** 摘要调用自身的用量（D9 验收后增补）：摘要不走 run 分段，账不进回合
+   *  统计 —— 落在压缩条上随历史持久（重启后折叠条仍可见） */
+  summaryUsage?: MessageUsage
   timestamp: number
 }
 
@@ -90,24 +99,40 @@ export const COMPACTION_SUMMARY_SUFFIX = `
 </summary>`
 
 /**
- * AgentMessage[] → LLM Message[]：压缩条转 user 消息（前缀包裹，模型读作
- * "此前的历史被压缩成了这份摘要"），标准角色直通。两个消费者：
+ * AgentMessage[] → LLM Message[]（D9 保留式投影）：[全转录 system 原序] +
+ * [末条压缩条 → user 摘要消息（前缀包裹，模型读作"此前的历史被压缩成了
+ * 这份摘要"）] + [末条压缩条之后的非 system 消息]。影子区（末条压缩条之前
+ * 的历史对话）不进请求 —— 保留式转录里它是纯历史，语义已被摘要吸收；
+ * 多条压缩条只认最后一条（更早的及其影子区一并丢弃，previousSummary 在
+ * 压缩时已合并进末条）。无压缩条时返回原引用直通（热路径零拷贝）。
+ * 消费者（全部经此单点，投影一改、请求组装与 token 估算自动一致）：
  * - Agent 的 convertToLlm 选项（每轮请求组装，agent-loop.ts L404 唯一转换口）；
- * - 上下文估算前置（estimateMessageTokens 对无 content 数组的自定义角色会炸，
- *   转换后与引擎 max_tokens 预算看到的载荷同源同形）。
+ * - 上下文估算前置 6 处（session.ts 触发判定/溢出恢复/轮间钩子/tokensAfter）；
+ * - 摘要请求重放（buildSummarizationContext）。
  */
 export function convertToLlmMessages(messages: AgentMessage[]): Message[] {
-  return messages.map((message): Message =>
-    message.role === 'compactionSummary'
-      ? {
-          role: 'user',
-          content: [
-            { type: 'text', text: COMPACTION_SUMMARY_PREFIX + message.summary + COMPACTION_SUMMARY_SUFFIX }
-          ],
-          timestamp: message.timestamp
-        }
-      : message
-  )
+  let lastBarIndex = -1
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === 'compactionSummary') lastBarIndex = i
+  }
+  if (lastBarIndex === -1) return messages as Message[]
+  const bar = messages[lastBarIndex] as CompactionSummaryMessage
+  // system 全局收集而非只取活区：权限通告等状态消息可能落在影子区（原
+  // rebuildTranscript 前置 system 的意图改由投影接管），随摘要丢弃会静默
+  // 失权限语义；领头 system 的工具声明重放同理
+  const result: Message[] = []
+  for (const message of messages) {
+    if (message.role === 'system') result.push(message)
+  }
+  result.push({
+    role: 'user',
+    content: [{ type: 'text', text: COMPACTION_SUMMARY_PREFIX + bar.summary + COMPACTION_SUMMARY_SUFFIX }],
+    timestamp: bar.timestamp
+  })
+  for (let i = lastBarIndex + 1; i < messages.length; i++) {
+    if (messages[i].role !== 'system') result.push(messages[i] as Message)
+  }
+  return result
 }
 
 // ———— 触发判定（完备化 R1：dsh 同构公式 + 特小窗阈值兜底 + 按模型覆盖） ————
@@ -251,21 +276,28 @@ export interface PrunedToolResult {
 }
 
 /**
- * 全转录 L1:逐条 toolResult,文本总量超线才裁,**原位改写**消息对象(dsh 追加
+ * 活区 L1:逐条 toolResult,文本总量超线才裁,**原位改写**消息对象(dsh 追加
  * shadow + surfaceOp 的投影式在 Cogent 线性转录下等价于直接换内容 —— 单写者
  * 无多消费者扣减需求,标记文本自身即审计痕迹)。幂等:裁后的结果 ≤ 阈值自然
- * 跳过。范围 = **全转录含保留区**(dsh pruneSession 裁整个当前 surface 同款
- * —— 只裁被摘要区的话小窗场景 L1 几乎必然不够,「L1 单独够、零摘要请求」
- * 不成立;保留区大结果同样只保头尾是 dsh 生产验证的取舍)。
+ * 跳过。范围 = **活区含保留区**(末条压缩条之后;dsh pruneSession 裁整个当前
+ * surface 同款 —— 只裁被摘要区的话小窗场景 L1 几乎必然不够,「L1 单独够、
+ * 零摘要请求」不成立;保留区大结果同样只保头尾是 dsh 生产验证的取舍)。
+ * 影子区(末条压缩条之前)不裁:D9 保留式下它不进请求,裁它纯浪费且会破坏
+ * 保留的历史原文。
  * 无裁剪返回原数组引用(检查点热路径零拷贝)。
  */
 export function pruneToolResults(messages: AgentMessage[]): {
   messages: AgentMessage[]
   pruned: PrunedToolResult[]
 } {
+  // 活区起点 = 末条压缩条之后(保留式;无压缩条 = 全转录)
+  let liveStart = 0
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === 'compactionSummary') liveStart = i + 1
+  }
   const pruned: PrunedToolResult[] = []
-  const result = messages.map((message): AgentMessage => {
-    if (message.role !== 'toolResult') return message
+  const result = messages.map((message, index): AgentMessage => {
+    if (index < liveStart || message.role !== 'toolResult') return message
     // 快路:UTF-16 长度 ≥ code point 数,快路不过线就免精确计量
     let utf16 = 0
     for (const block of message.content) {
@@ -351,18 +383,30 @@ export function prepareCompaction(
   keepRecentTokens: number,
   tokensBefore: number
 ): CompactionPreparation | undefined {
-  // 末条已是压缩条 = 上次压缩后没有任何新内容
-  if (messages.at(-1)?.role === 'compactionSummary') return undefined
-
   let prevCompactionIndex = -1
   let previousSummary: string | undefined
+  let lastBarTimestamp = 0
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i]
     if (message.role === 'compactionSummary') {
-      // 多条时取最后一条（正常运行至多一条 —— 重建时旧的必落在被摘要区被换掉）
+      // 保留式转录可累积多条压缩条，恒取最后一条（其 summary 已合并前代）
       prevCompactionIndex = i
       previousSummary = message.summary
+      lastBarTimestamp = message.timestamp
     }
+  }
+  // 刚压完快速路径（D9 保留式改写）：压缩条原位插在切点、不在末尾，旧判定
+  // （末条是压缩条）永不命中 —— 不换守卫的话压缩刚结束再触发（手动连点/
+  // 检查点复评）会把保留区重摘要一遍。新判定：末条压缩条之后不存在
+  // timestamp 晚于它的非 system 消息（压缩条 timestamp = 压缩时刻，保留区
+  // 消息恒早于它，压缩后的新回合恒晚于它）
+  if (
+    prevCompactionIndex >= 0 &&
+    !messages.some(
+      (m, i) => i > prevCompactionIndex && m.role !== 'system' && m.timestamp > lastBarTimestamp
+    )
+  ) {
+    return undefined
   }
 
   const firstKeptIndex = findCutPoint(messages, prevCompactionIndex, keepRecentTokens)
@@ -386,57 +430,39 @@ export function prepareCompaction(
 }
 
 /**
- * 重建压缩后转录：[全部 system 原序前置] + [新压缩条] + [保留区非 system]。
- * system 前置的理由：pi 的 systemPrompt getter 重放转录全部 system 消息，
- * 权限通告（[cogent:permission]）在转录里，随摘要丢弃会静默丢失权限语义；
- * 领头 system 消息（工作区+工具声明）是 ensureAgent 恢复时"已在首位不再
- * 补插"的判据，同样必须保留。压缩条 timestamp = now，恒新于保留区消息 ——
- * pi-ai estimateContextTokens 的时效守卫据此把保留区里的旧 usage 判为
- * "不能描述当前前缀"（estimate.ts L80 注释点名 compaction summary 场景），
- * 压缩后估算自动退回纯字符口径，不会拿着旧账虚报。
+ * 原位插入压缩条（D9 保留式，替代批次 4 的销毁式重建）：在保留区起点
+ * （切点，恒为 user 边界 ≥ 1，领头 system 不受影响）插入标记条，被摘要区
+ * **原地保留**为影子区 —— 历史回查/落盘/重启复原完整，发给模型的内容由
+ * convertToLlmMessages 投影裁剪（system 全局收集的权限语义同样由投影接管，
+ * 不再依赖重建时的前置手术）。
+ *
+ * 仍走 splice 原位手法（不换数组引用，S2 验收 400 bug 的纪律保留）：轮间
+ * 钩子触发时 pi loop 手里还持着同一数组的旧引用（当轮 toolResult push、
+ * 流式 partial 替换都落在这个引用上），换引用 = 两条线各写各的，当轮收尾
+ * 消息双份落转录、请求里 tool_calls 配对重复。单点插入比整段 splice 更少
+ * 触碰数组，引用共享语义不变。
+ *
+ * 压缩条 timestamp = now，恒新于影子区与保留区消息 —— pi-ai
+ * estimateContextTokens 的时效守卫据此把保留区里的旧 usage 判为"不能描述
+ * 当前前缀"（estimate.ts L80 注释点名 compaction summary 场景），压缩后
+ * 估算自动退回纯字符口径，不会拿着旧账虚报。
  */
-export function rebuildTranscript(
+export function insertCompactionMarker(
   messages: AgentMessage[],
   preparation: CompactionPreparation,
   summary: string,
-  tokensAfter: number
+  tokensAfter: number,
+  summaryUsage?: MessageUsage
 ): AgentMessage[] {
-  const systems = messages.filter((m) => m.role === 'system')
-  const kept = messages.slice(preparation.firstKeptIndex).filter((m) => m.role !== 'system')
   const bar: CompactionSummaryMessage = {
     role: 'compactionSummary',
     summary,
     tokensBefore: preparation.tokensBefore,
     tokensAfter,
+    ...(summaryUsage !== undefined && { summaryUsage }),
     timestamp: Date.now()
   }
-  return [...systems, bar, ...kept]
-}
-
-/**
- * 原位重建(完备化 S2 验收 bug 修复,2026-11-12):与 rebuildTranscript 同一
- * 结果形态,但**写入回同一数组对象**(splice 头部)而非换新引用。
- *
- * 为什么必须原位:轮间钩子触发时,pi loop 手里还持着**同一数组的旧引用**
- * (loop 的 currentContext 是 prompt 起点快照,当轮的 toolResult push、流式
- * partial 替换都落在这个引用上),而 Agent.processEvents 的 message_end 又
- * push 到 agent.state.messages —— 换引用后两条线各写各的,当轮收尾消息
- * (assistant+toolResult)双份落进转录,请求里 tool_calls 配对重复、400
- * invalid_request_error(验收实测)。原位 splice 让所有引用线共享同一数组
- * 内容,loop 当轮剩余写入自然落在压缩后的形态上;返回 context.messages
- * 用同一引用,下一请求即见新前缀。
- *
- * 拼接序 = systems 前置 + 压缩条 + 保留区,与 rebuildTranscript 逐字节一致
- * (session.transcript 双写处消费同一形态)。
- */
-export function applyCompactionInPlace(
-  messages: AgentMessage[],
-  preparation: CompactionPreparation,
-  summary: string,
-  tokensAfter: number
-): AgentMessage[] {
-  const rebuilt = rebuildTranscript(messages, preparation, summary, tokensAfter)
-  messages.splice(0, messages.length, ...rebuilt)
+  messages.splice(preparation.firstKeptIndex, 0, bar)
   return messages
 }
 

@@ -12,11 +12,15 @@
 import { IconArrowRight, IconFileScissorsFilled, IconFolderFilled } from '@tabler/icons-react'
 import { TraceIcon, TraceLine, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger } from '@/components/ui/trace'
 import { formatTokens } from './ContextIndicator'
+import { formatCost } from './MessageRow'
 import type { PrunedItem } from '@/stores/chat'
 import type { ChatMessage } from '@/env.d'
 
 export function CompactionBar({ message }: { message: ChatMessage }) {
-  const { tokensBefore, tokensAfter } = message.compaction ?? {}
+  const { tokensBefore, tokensAfter, summaryUsage } = message.compaction ?? {}
+  // 摘要成本（D9 验收后增补）：摘要调用不走 run 分段、账不进回合统计 ——
+  // 折叠条小字显式记这一笔；未报 usage / 无定价（cost 0）不显示
+  const summaryCost = summaryUsage?.totalCost
   return (
     <TraceCollapsible>
       <TraceCollapsibleTrigger>
@@ -34,6 +38,11 @@ export function CompactionBar({ message }: { message: ChatMessage }) {
                   <IconArrowRight className="size-3" />
                   {formatTokens(tokensAfter)}
                 </>
+              )}
+              {summaryCost !== undefined && summaryCost > 0 && (
+                <span className="text-muted-foreground">
+                  · 摘要 {formatCost(summaryCost, !summaryUsage?.totalCostFromProvider)}
+                </span>
               )}
             </span>
           )}

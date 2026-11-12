@@ -174,18 +174,72 @@ retry，Cogent D7 明确不做（provider 溢出走 run.failed 显式暴露，�
   （继续生成=预算重满的 session.continue / 立即压缩）。R10 图片卸载：无输入
   路径，协议注释声明 `compaction.offloaded` 形状预留。
 
+## 4.2 保留式呈现（2026-11-12 GUI 验收修正，决策 D9）
+
+S1–S8 完结当天 GUI 手测翻车：压缩后折叠条顶置、被摘要区历史消失 —— 对照
+Codex 截图（旧消息全部保留可滚、`Context automatically compacted` 标记行
+**原位**嵌在消息中间），销毁式呈现不可接受。**保留式**三件套：
+
+- **转录保留 + 原位插入（引擎）**：`insertCompactionMarker` 在切点 splice
+  插入压缩条（替代 rebuildTranscript 物理删除；S2 的原位纪律不变 —— loop
+  仍持同一数组引用）；转录形态 = `[system, 影子区…, bar, 活区…]`，多次
+  压缩多条 bar 累积、各有其位；
+- **投影裁剪（convertToLlmMessages 重写）**：请求 = `[全转录 system 原序]
+  + [末条 bar → 摘要 user] + [活区非 system]`。**历史保留 ≠ 上下文保留**
+  —— 影子区不进请求，语义已被末条摘要吸收（更早的 bar 连同其影子区一并
+  丢弃，previousSummary 在压缩时已合并）。全部 6 处 token 估算调用点都经
+  此单点，投影一改、触发判定/溢出恢复/轮间钩子/tokensAfter 自动一致；
+  system 全局收集接管了原 rebuild 前置 system 的权限通告语义。**对比**：
+  Codex/Claude Code 同为「存储保留、上下文投影」（Claude Code 会话文件
+  只追加、投影时换摘要；Codex rollout 全量落盘）；dsh 走 surfaceOp 位置
+  跨度 + shadowedSeqs 记账（多消费者架构的完整形态）—— Cogent 单写者
+  线性转录用「保留 + 单点投影」拿到同一产品收益，没有记账面；
+- **配套守卫**：①「刚压完」判定换**时间戳**（压缩条不在末尾，旧
+  `at(-1)` 快速路径失效；bar.timestamp = 压缩时刻，保留区消息恒早于它、
+  新回合恒晚于它 —— 不换守卫则手动连点会把保留区反复重摘要）；② L1
+  prune 限活区（影子区不进请求，裁它浪费且毁历史原文）；③ 渲染 completed
+  手术改插入（不再删除旧消息）、bar 唯一 id、pruned 独立呈现补齐（pruned
+  事件即追加副行，completed 到达时按 entries 深比较撤同检查点独立行、随
+  bar 配对重插）、groupTurns 压缩条自起无头组（中插 bar 落进「已工作」
+  折叠体等于看不见）。
+- **呈现位 = 时间序，非切点（第二轮验收修正）**：首版保留式把 bar 插在
+  转录切点（影子区/活区语义边界，保留区 20K 之前）—— UI 上标记行跑到
+  旧消息堆里，与「正在压缩上下文…」状态条的位置脱节（用户验收：留痕应
+  落在状态条消失的地方，Codex 同形态）。修 = **转录切点（语义）与 UI
+  呈现位（时间序）解耦**：渲染 completed 手术按时间序定位（末条
+  timestamp ≤ bar 时刻的内容之后）；引擎 toChatMessages 历史投影同步
+  （压缩条暂存，遇到更晚 timestamp 的消息前归位 —— 转录其余部分本就
+  时间序追加）；run.completed 终态替换**保留**压缩条/副行并按时间序并回
+  （否则 submit 前压缩的 bar 与 L1 副行落在"最后一条用户消息之后"的替换
+  区里、被终态整段替换吞掉 —— 第二轮验收实测「已裁剪」行不显示的根因）。
+  分组配套（第三轮验收修正）：groupTurns 里压缩条自成一组并**截断当前组**
+  （其后内容自起无头续组）—— 只成组不截断的话，bar 插在触发消息与回复
+  之间时，其后落进 bar 组的流式占位/终态回复全被 bar 组渲染分支映射成
+  null ＝「压缩后无回复」（引擎正常，纯渲染层吞内容）。
+
+边界：转录磁盘增长不设上限（远期关注）；不做影子区视觉弱化（Codex 旧消息
+正常呈现，跟随）。完整 surfaceOp 追加协议仍否决（无多消费者记账需求）。
+
+**摘要成本显式记账（验收后增补）**：摘要是一次独立 LLM 调用，token/成本
+不进 run 分段账 —— 回合统计看不见这一笔。落法 = runCompaction 捕获摘要
+响应 usage（pi 对未报 usage 端点补零，按 totalTokens>0 判真报）三路下发：
+completed 事件 `summaryUsage` + 压缩条消息 `summaryUsage`（随转录持久，
+重启后折叠条仍可见）+ 历史投影；折叠条小字「· 摘要 ≈$x」（formatCost
+复用，cost>0 才显，目录估价带 ≈）。**对比五家**：均未把摘要成本单独
+呈现（Codex 折叠条只有标记文案）—— 成本透明度的超集。
+
 ## 5. 在 Cogent 的落点
 
 | 层 | 文件 | 职责 |
 | --- | --- | --- |
-| 纯函数 | `runtime/compaction.ts` | 角色声明 + convertToLlmMessages、compactionThreshold（完备化 R1 合成公式）、shouldCompact（带模型覆盖）、compactionThreshold 声明合并（Model.compaction）、**pruneToolResults（R3：code point 快路/全局头尾/单 marker/幂等）**、findCutPoint（user 边界）、prepareCompaction / rebuildTranscript、**buildSummarizationInstruction + buildSummarizationContext（R4 真前缀构造）**、双摘要提示词 + 文件表 XML、响应安全判定 |
+| 纯函数 | `runtime/compaction.ts` | 角色声明 + **convertToLlmMessages（D9 保留式投影：system 全局收集 + 末条压缩条投影 + 活区；影子区不进请求）**、compactionThreshold（完备化 R1 合成公式）、shouldCompact（带模型覆盖）、compactionThreshold 声明合并（Model.compaction）、**pruneToolResults（R3：code point 快路/全局头尾/单 marker/幂等；D9 起限活区）**、findCutPoint（user 边界）、prepareCompaction（D9 时间戳「刚压完」守卫）/ **insertCompactionMarker（D9 原位插入，替代销毁式重建）**、**buildSummarizationInstruction + buildSummarizationContext（R4 真前缀构造）**、双摘要提示词 + 文件表 XML、响应安全判定 |
 | 接线 | `runtime/session.ts` | **compactWithPrune 检查链（L1→重计量→L2，submit 前 + 轮间钩子两处共用）**；prepareNextTurnWithContext（pi 原生钩子，返回新 context 对齐 loop 工作副本）；compactSession 手动路；runCompaction（真前缀摘要请求 + 落盘 + 双事件 + compacting 护栏）；**overflowRecoverable / recoverOverflow / settleRun（R5 单次闸 + R6③ 续写同环）**；mergeContinuedSegments（续写段合并）；toChatMessages（compaction 投影 + 指令泡跳过 + 无工具 assistant 并回）；Agent.thinkingBudgets 同步（构造 + 切模型） |
 | 协议 | `protocol/types.ts` | `compaction.started/completed/pruned` 事件、`session.compact/continue` 方法、ModelDef.compaction/thinkingBudgets、CustomProviderDef.compat、ChatMessage role 'compaction'、ModelSummary.compactionThresholdRatio |
 | 壳 | `electron/main/ipc/engine.ts` | 白名单加 session.compact / session.continue |
-| renderer | `stores/chat.ts` + `features/home/{CompactionBar,TurnGroup,ContextIndicator,HomeChat}.tsx` | 三事件消费（completed 本地列表手术 + started 压缩中位 + pruned 副行数据）；CompactionBar / **PrunedBar**；TurnGroup 独立行快路（折叠条+副行组）；指示器预警线（引擎真值）+ 回落 + **手动压缩入口**；HomeChat **压缩中状态条 + 截断动作条**（continueGeneration/compactNow 动作） |
+| renderer | `stores/chat.ts` + `features/home/{CompactionBar,TurnGroup,ContextIndicator,HomeChat}.tsx` | 三事件消费（**D9：completed 原位插入手术（旧消息不删、bar 唯一 id）** + started 压缩中位 + **pruned 独立呈现（追加副行，completed 配对重插）**）；CompactionBar / **PrunedBar**；TurnGroup 独立行快路（**D9：groupTurns 压缩条自起无头组，原位中插**）；指示器预警线（引擎真值）+ 回落 + **手动压缩入口**；HomeChat **压缩中状态条 + 截断动作条**（continueGeneration/compactNow 动作）；**unwrapIpcError（D9：剥 Electron 裸前缀）** |
 
-冒烟：`tmp/cogent-smoke/compaction-smoke.mjs`（**22 项**：批次 4 原 8 项 +
-完备化 14 项 —— 20K 窗 60% 触发 / 轮间 L2 / length fail 自愈 / L1 零摘要 /
-prune 落盘 / 摘要真前缀 / 溢出恢复与单次闸 / auto-continue 段合并 / 思考
-预算字段；mock 不回 usage——回了反而锚在假数上永不触发），配方与 mock 关键
-点入 开发.md。
+冒烟：`tmp/cogent-smoke/compaction-smoke.mjs`（**29 项**：批次 4 原 8 项 +
+完备化 14 项 + D9 保留式 3 项翻转/新增 —— check 5 翻转（两条折叠条原位 +
+被摘要区原文保留在历史）/ 5b（重启后请求投影单 checkpoint、影子区不进
+请求）/ 7b（二次连点拒绝，时间戳守卫）；mock 不回 usage——回了反而锚在
+假数上永不触发），配方与 mock 关键点入 开发.md。
