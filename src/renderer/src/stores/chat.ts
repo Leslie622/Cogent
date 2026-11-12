@@ -100,8 +100,9 @@ export type MessageItem = ChatMessage | ToolItem | ApprovalItem | PrunedItem
  * "Error invoking remote method 'engine:request': Error: " 前缀（Electron
  * 行为，非协议内容），协议帧的 message 才是给人读的文案 —— lastErrorBySession
  * 直出渲染前剥掉，否则用户看到的是裸 IPC 报文（验收实测）。
+ * 2026-11-12 导出：单测直测（计划-测试体系 D7，仅加 export 不改行为）。
  */
-function unwrapIpcError(error: unknown): string {
+export function unwrapIpcError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error)
   return raw.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '')
 }
@@ -110,8 +111,9 @@ function unwrapIpcError(error: unknown): string {
  * 段化消息 → 消息流元素展平（终态替换与历史加载共用）：
  * 每段先落它的工具卡（toolCalls 按序），再落消息本体；纯工具段（无正文无思考）
  * 不落消息本体 —— 只留卡，避免空消息占行。
+ * 2026-11-12 导出：单测直测（同上）。
  */
-function flattenSegments(segments: ChatMessage[]): MessageItem[] {
+export function flattenSegments(segments: ChatMessage[]): MessageItem[] {
   const items: MessageItem[] = []
   for (const segment of segments) {
     for (const call of segment.toolCalls ?? []) {
@@ -133,6 +135,53 @@ function flattenSegments(segments: ChatMessage[]): MessageItem[] {
     }
   }
   return items
+}
+
+/**
+ * 终态替换并回：审批痕迹行锚回各自工具卡之前（run.completed 内联逻辑提出，
+ * 2026-11-12，行为不变 —— 单测直测）。kept = 替换区里要保留的痕迹行；
+ * 配不上（理论上缺卡）退尾部兜底；并行同摘要多卡时按裁决序叠在卡组之前。
+ */
+export function flatWithApprovals(flat: MessageItem[], kept: ApprovalItem[]): MessageItem[] {
+  if (kept.length === 0) return flat
+  const anchored = [...flat]
+  for (const trace of kept) {
+    const at = anchored.findIndex(
+      (item) => item.type === 'tool' && item.name === trace.toolName && item.summary === trace.summary
+    )
+    anchored.splice(at >= 0 ? at : anchored.length, 0, trace)
+  }
+  return anchored
+}
+
+/** 并回行的时间序键：工具卡用执行终点（endedAt ?? startedAt），审批痕迹行无
+ *  时间戳（undefined = 比较跳过、位置退化），其余用 timestamp */
+function itemTime(item: MessageItem): number | undefined {
+  if (item.type === 'tool') return item.endedAt ?? item.startedAt
+  if (item.type === 'approval') return undefined
+  return item.timestamp
+}
+
+/**
+ * 终态替换并回：压缩条/裁剪副行按时间序并回替换区（D9 —— 压缩发生在 run
+ * 边界/轮间，completed/pruned 事件插进替换区，run.completed 整段替换不得吞掉；
+ * run.completed 内联逻辑提出，2026-11-12，行为不变 —— 单测直测）。
+ */
+export function flatWithCompaction(flat: MessageItem[], kept: Array<ChatMessage | PrunedItem>): MessageItem[] {
+  if (kept.length === 0) return flat
+  const merged = [...flat]
+  for (const extra of kept) {
+    let at = -1
+    for (let i = 0; i < merged.length; i++) {
+      const t = itemTime(merged[i])
+      if (t !== undefined && t > extra.timestamp) {
+        at = i
+        break
+      }
+    }
+    merged.splice(at >= 0 ? at : merged.length, 0, extra)
+  }
+  return merged
 }
 
 /** sessionId → 消息列表（含流式中的 assistant 消息与工具卡行） */
@@ -772,30 +821,14 @@ export function bindEngineEvents(): () => void {
             }
           }
           // 审批痕迹行是用户裁决痕迹（转录里无对应物）：终态替换保留，但**锚回
-          // 各自工具卡之前**而非一律压到回合尾部 —— 按名+摘要配对（两者均出自
-          // 引擎 TOOL_METAS.summarize）。卡前 = 时序正确（先裁决、后执行，与
-          // 流式期 respondApproval 的插入方向一致，收尾翻转零位移）；压尾曾把
-          // 「已允许」落到回合末尾思考行之下、卡后则读成「先完成再允许」（两次
-          // 验收实录）。配不上（理论上缺卡）退回合尾部兜底
-          const keptApprovals =
-            lastUser >= 0 ? list.slice(lastUser + 1).filter((m) => m.type === 'approval') : []
-          const flatWithApprovals = (flat: MessageItem[]): MessageItem[] => {
-            if (keptApprovals.length === 0) return flat
-            const anchored = [...flat]
-            for (const trace of keptApprovals) {
-              // 首个匹配卡之前插放：并行同摘要多卡时多条痕迹按裁决序叠在卡组
-              // 之前（[T1][T2][w1][w2]，卡间无从区分，就近成组即可）
-              const at = anchored.findIndex(
-                (item) => item.type === 'tool' && item.name === trace.toolName && item.summary === trace.summary
-              )
-              anchored.splice(at >= 0 ? at : anchored.length, 0, trace)
-            }
-            return anchored
-          }
+          // 各自工具卡之前**（详见 flatWithApprovals 注释 —— 逻辑已提出为模块级
+          // 导出函数，行为不变）
+          const keptApprovals: ApprovalItem[] =
+            lastUser >= 0 ? list.slice(lastUser + 1).filter((m): m is ApprovalItem => m.type === 'approval') : []
           // 压缩条/裁剪副行不是 run 的产物（D9：压缩发生在 run 边界/轮间，
           // completed/pruned 事件插进替换区）：终态替换不得吞掉 —— 按时间序
-          // 并回替换区（与 completed 手术同规则；验收实测 L1 副行被整段替换
-          // 吃掉=「已裁剪」行不显示）。审批锚回在其后组合，卡匹配不受影响
+          // 并回替换区（详见 flatWithCompaction 注释）。审批锚回在其后组合，
+          // 卡匹配不受影响
           const keptCompaction = (
             lastUser >= 0
               ? list
@@ -803,34 +836,11 @@ export function bindEngineEvents(): () => void {
                   .filter((m) => m.type === 'pruned' || (m.type === undefined && m.role === 'compaction'))
               : []
           ) as Array<ChatMessage | PrunedItem> // 谓词保证形状，联合收窄用断言（filter 不做类型谓词）
-          const itemTime = (item: MessageItem): number | undefined => {
-            if (item.type === 'tool') return item.endedAt ?? item.startedAt
-            // 审批痕迹行无时间戳：返回 undefined 跳过该行比较（并回位置退化为
-            // 首个可比较项之前/末尾，呈现层无感）
-            if (item.type === 'approval') return undefined
-            return item.timestamp
-          }
-          const flatWithCompaction = (flat: MessageItem[]): MessageItem[] => {
-            if (keptCompaction.length === 0) return flat
-            const merged = [...flat]
-            for (const extra of keptCompaction) {
-              let at = -1
-              for (let i = 0; i < merged.length; i++) {
-                const t = itemTime(merged[i])
-                if (t !== undefined && t > extra.timestamp) {
-                  at = i
-                  break
-                }
-              }
-              merged.splice(at >= 0 ? at : merged.length, 0, extra)
-            }
-            return merged
-          }
           const finalMessages =
             lastUser >= 0
               ? [
                   ...list.slice(0, lastUser + 1),
-                  ...flatWithApprovals(flatWithCompaction(flattenSegments(segments)))
+                  ...flatWithApprovals(flatWithCompaction(flattenSegments(segments), keptCompaction), keptApprovals)
                 ]
               : list
           // 面板兜底清空（常态路径裁决时已收；防御 run 终态与裁决竞态的残留）

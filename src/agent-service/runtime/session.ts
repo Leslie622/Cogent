@@ -594,7 +594,7 @@ export class SessionManager {
   messages(sessionId: string): ChatMessage[] {
     const session = this.requireSession(sessionId)
     const source = session.agent ? session.agent.state.messages : session.transcript
-    const projected = this.toChatMessages(source)
+    const projected = toChatMessages(source)
     // 上下文明细按需现算挂"末条带 usage 的消息"（历史回查路径，重启/切换会话
     // 走这）：agent_end 只把估算挂到事件侧 streaming 对象随 run.completed 飞走，
     // 盘上 transcript 是 pi 形状（其 Usage 无此字段，塞协议字段会浑浊真源）——
@@ -1616,142 +1616,147 @@ export class SessionManager {
     return this.agentIndex.get(agent)
   }
 
-  /**
-   * pi Message[] → ChatMessage[]：取 user/assistant 的纯文本内容 + assistant
-   * 用量三件套 + 工具调用投影。system 消息（prompt 载体）与 toolResult 消息
-   * （配对进 toolCalls）不单独产出 —— 工具结果对 UI 是工具卡的尾部信息，
-   * 不是独立消息（对模型才回灌成消息）。
-   */
-  private toChatMessages(messages: AgentMessage[]): ChatMessage[] {
-    // toolCallId → 执行结果（状态 + 摘要 + 起止）：转录里 toolResult 消息跟在
-    // 发起它的 assistant 消息之后；先扫一遍建索引，投影时 O(1) 配对。
-    // 起止重建自 pi 转录原生字段（timestamp = 结果创建时刻 ≈ 执行终点，
-    // durationMs 反推起点）—— 历史回查与流式打点两条来源同一形状，重启不漂移
-    const results = new Map<
-      string,
-      { isError: boolean; text: string; diff?: string; startedAt?: number; endedAt?: number }
-    >()
-    for (const message of messages) {
-      if (message.role === 'toolResult') {
-        results.set(message.toolCallId, {
-          isError: message.isError,
-          text: summarizeToolResult({ content: message.content }),
-          diff: extractResultDiff({ details: message.details }),
-          endedAt: message.timestamp,
-          startedAt: message.durationMs !== undefined ? message.timestamp - message.durationMs : undefined
+}
+
+/**
+ * pi Message[] → ChatMessage[]：取 user/assistant 的纯文本内容 + assistant
+ * 用量三件套 + 工具调用投影。system 消息（prompt 载体）与 toolResult 消息
+ * （配对进 toolCalls）不单独产出 —— 工具结果对 UI 是工具卡的尾部信息，
+ * 不是独立消息（对模型才回灌成消息）。
+ *
+ * 2026-11-12 提为模块级导出函数（原 session 类私有方法，无实例状态）：
+ * 单测直测（tests：D9 时间序落点/延迟 flush 的引擎侧回归钉），session
+ * 内调用点不变。
+ */
+export function toChatMessages(messages: AgentMessage[]): ChatMessage[] {
+  // toolCallId → 执行结果（状态 + 摘要 + 起止）：转录里 toolResult 消息跟在
+  // 发起它的 assistant 消息之后；先扫一遍建索引，投影时 O(1) 配对。
+  // 起止重建自 pi 转录原生字段（timestamp = 结果创建时刻 ≈ 执行终点，
+  // durationMs 反推起点）—— 历史回查与流式打点两条来源同一形状，重启不漂移
+  const results = new Map<
+    string,
+    { isError: boolean; text: string; diff?: string; startedAt?: number; endedAt?: number }
+  >()
+  for (const message of messages) {
+    if (message.role === 'toolResult') {
+      results.set(message.toolCallId, {
+        isError: message.isError,
+        text: summarizeToolResult({ content: message.content }),
+        diff: extractResultDiff({ details: message.details }),
+        endedAt: message.timestamp,
+        startedAt: message.durationMs !== undefined ? message.timestamp - message.durationMs : undefined
+      })
+    }
+  }
+
+  const result: ChatMessage[] = []
+  // D9 保留式呈现位 = 时间序（压缩时刻），非转录切点：压缩条在转录里插在
+  // 切点（影子区/活区的语义边界，保留区 20K 之前），但 UI 上应落在压缩
+  // **发生**的地方（Codex 标记行形态，与渲染层 completed 手术同规则）——
+  // 先暂存，遇到 timestamp 晚于它的首条消息前再落；转录其余部分本就
+  // 时间序追加，此规则恰为"按时间序归位"。末尾 flush 兜底（压缩后无新
+  // 回合的会话）。防御：两条 bar 间无消息时先落旧的保序（正常流不发生
+  // —— 刚压完时间戳守卫拒绝无新内容的再压缩）
+  let pendingBar: Omit<ChatMessage, 'id'> | undefined
+  const flushBar = (): void => {
+    if (pendingBar !== undefined) {
+      result.push({ ...pendingBar, id: `c-${result.length}` })
+      pendingBar = undefined
+    }
+  }
+  for (const message of messages) {
+    // pi Message 联合类型按 role 收窄
+    if (message.role === 'compactionSummary') {
+      flushBar()
+      pendingBar = {
+        role: 'compaction',
+        content: message.summary,
+        compaction: { tokensBefore: message.tokensBefore, tokensAfter: message.tokensAfter, summaryUsage: message.summaryUsage },
+        timestamp: message.timestamp
+      }
+      continue
+    }
+    if (pendingBar !== undefined && message.timestamp > pendingBar.timestamp) flushBar()
+    if (message.role === 'user') {
+      const text =
+        typeof message.content === 'string'
+          ? message.content
+          : message.content.map((block) => (block.type === 'text' ? block.text : '')).join('')
+      // 续写注入的指令消息（R6③）：不单独成泡 —— 跳过它让截断段与续写段
+      // 在投影里相邻，由下方 assistant 分支合并（保真在转录，聚合在投影）
+      if (text.startsWith(AUTO_CONTINUE_PREFIX)) continue
+      result.push({
+        // 位置式 id（同 assistant 的 a-N 手法）：timestamp 在同一毫秒内可撞
+        // （React key 重复），投影位置在单写者下稳定且跨加载不变
+        id: `u-${result.length}`,
+        role: 'user',
+        content: text,
+        timestamp: message.timestamp
+      })
+    } else if (message.role === 'assistant') {
+      // 思考块拼整段挂 thinking（历史回查与流式结束态共用此映射）；正文仍取 text 块
+      const thinking = message.content
+        .map((block) => (block.type === 'thinking' ? block.thinking : ''))
+        .join('')
+      // 工具调用块 → ToolCallRecord（kind/摘要取静态元数据表；状态/结果摘要
+      // 由 toolResult 配对 —— 历史工具卡与流式期事件路径同一形状）
+      const toolCalls: ToolCallRecord[] = []
+      for (const block of message.content) {
+        if (block.type !== 'toolCall') continue
+        const meta = toolMeta(block.name)
+        const paired = results.get(block.id)
+        toolCalls.push({
+          callId: block.id,
+          name: block.name,
+          kind: meta?.kind ?? 'read',
+          summary: meta !== undefined ? meta.summarize(block.arguments) : `${block.name}(?)`,
+          status: paired?.isError ? 'error' : 'ok',
+          resultSummary: paired?.text,
+          diff: paired?.diff,
+          startedAt: paired?.startedAt,
+          endedAt: paired?.endedAt
         })
       }
-    }
-
-    const result: ChatMessage[] = []
-    // D9 保留式呈现位 = 时间序（压缩时刻），非转录切点：压缩条在转录里插在
-    // 切点（影子区/活区的语义边界，保留区 20K 之前），但 UI 上应落在压缩
-    // **发生**的地方（Codex 标记行形态，与渲染层 completed 手术同规则）——
-    // 先暂存，遇到 timestamp 晚于它的首条消息前再落；转录其余部分本就
-    // 时间序追加，此规则恰为"按时间序归位"。末尾 flush 兜底（压缩后无新
-    // 回合的会话）。防御：两条 bar 间无消息时先落旧的保序（正常流不发生
-    // —— 刚压完时间戳守卫拒绝无新内容的再压缩）
-    let pendingBar: Omit<ChatMessage, 'id'> | undefined
-    const flushBar = (): void => {
-      if (pendingBar !== undefined) {
-        result.push({ ...pendingBar, id: `c-${result.length}` })
-        pendingBar = undefined
-      }
-    }
-    for (const message of messages) {
-      // pi Message 联合类型按 role 收窄
-      if (message.role === 'compactionSummary') {
-        flushBar()
-        pendingBar = {
-          role: 'compaction',
-          content: message.summary,
-          compaction: { tokensBefore: message.tokensBefore, tokensAfter: message.tokensAfter, summaryUsage: message.summaryUsage },
-          timestamp: message.timestamp
-        }
+      const content = message.content
+        .map((block) => (block.type === 'text' ? block.text : ''))
+        .join('')
+      // 相邻 assistant 合并（R6③ 续写的历史投影形态）：跳过 [cogent:continue]
+      // 指令泡后，截断段与续写段在 result 里直接相邻 → 并回前一条（正文无缝
+      // 拼接、用量/耗时相加），与事件路径的段合并同形态，重启前后不漂移。
+      // 门 = 双方都无工具卡：工具轮后的文本轮（转录里有 toolResult 隔开、
+      // 投影里天然相邻）是正常交错形态，不许并
+      const prev = result.at(-1)
+      if (
+        prev !== undefined &&
+        prev.role === 'assistant' &&
+        (prev.toolCalls ?? []).length === 0 &&
+        toolCalls.length === 0
+      ) {
+        prev.content += content
+        if (thinking !== '') prev.thinking = (prev.thinking ?? '') + thinking
+        // 相邻门保证双方都无工具卡,这里只并正文/思考/账目
+        prev.usage = accumulateUsage(prev.usage, projectUsage(message.usage))
+        prev.durationMs = sumOptional(prev.durationMs, message.durationMs)
+        prev.model = message.model
         continue
       }
-      if (pendingBar !== undefined && message.timestamp > pendingBar.timestamp) flushBar()
-      if (message.role === 'user') {
-        const text =
-          typeof message.content === 'string'
-            ? message.content
-            : message.content.map((block) => (block.type === 'text' ? block.text : '')).join('')
-        // 续写注入的指令消息（R6③）：不单独成泡 —— 跳过它让截断段与续写段
-        // 在投影里相邻，由下方 assistant 分支合并（保真在转录，聚合在投影）
-        if (text.startsWith(AUTO_CONTINUE_PREFIX)) continue
-        result.push({
-          // 位置式 id（同 assistant 的 a-N 手法）：timestamp 在同一毫秒内可撞
-          // （React key 重复），投影位置在单写者下稳定且跨加载不变
-          id: `u-${result.length}`,
-          role: 'user',
-          content: text,
-          timestamp: message.timestamp
-        })
-      } else if (message.role === 'assistant') {
-        // 思考块拼整段挂 thinking（历史回查与流式结束态共用此映射）；正文仍取 text 块
-        const thinking = message.content
-          .map((block) => (block.type === 'thinking' ? block.thinking : ''))
-          .join('')
-        // 工具调用块 → ToolCallRecord（kind/摘要取静态元数据表；状态/结果摘要
-        // 由 toolResult 配对 —— 历史工具卡与流式期事件路径同一形状）
-        const toolCalls: ToolCallRecord[] = []
-        for (const block of message.content) {
-          if (block.type !== 'toolCall') continue
-          const meta = toolMeta(block.name)
-          const paired = results.get(block.id)
-          toolCalls.push({
-            callId: block.id,
-            name: block.name,
-            kind: meta?.kind ?? 'read',
-            summary: meta !== undefined ? meta.summarize(block.arguments) : `${block.name}(?)`,
-            status: paired?.isError ? 'error' : 'ok',
-            resultSummary: paired?.text,
-            diff: paired?.diff,
-            startedAt: paired?.startedAt,
-            endedAt: paired?.endedAt
-          })
-        }
-        const content = message.content
-          .map((block) => (block.type === 'text' ? block.text : ''))
-          .join('')
-        // 相邻 assistant 合并（R6③ 续写的历史投影形态）：跳过 [cogent:continue]
-        // 指令泡后，截断段与续写段在 result 里直接相邻 → 并回前一条（正文无缝
-        // 拼接、用量/耗时相加），与事件路径的段合并同形态，重启前后不漂移。
-        // 门 = 双方都无工具卡：工具轮后的文本轮（转录里有 toolResult 隔开、
-        // 投影里天然相邻）是正常交错形态，不许并
-        const prev = result.at(-1)
-        if (
-          prev !== undefined &&
-          prev.role === 'assistant' &&
-          (prev.toolCalls ?? []).length === 0 &&
-          toolCalls.length === 0
-        ) {
-          prev.content += content
-          if (thinking !== '') prev.thinking = (prev.thinking ?? '') + thinking
-          // 相邻门保证双方都无工具卡,这里只并正文/思考/账目
-          prev.usage = accumulateUsage(prev.usage, projectUsage(message.usage))
-          prev.durationMs = sumOptional(prev.durationMs, message.durationMs)
-          prev.model = message.model
-          continue
-        }
-        result.push({
-          id: `a-${result.length}`,
-          role: 'assistant',
-          content,
-          thinking: thinking || undefined,
-          // 用量三件套同投影：盘上 transcript 存 pi 完整消息（usage 是必有字段），
-          // 历史会话与流式结束态同一套数据源，老会话 UI 上也可见统计
-          usage: projectUsage(message.usage),
-          durationMs: message.durationMs,
-          model: message.model,
-          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-          // 真实请求时间戳（pi AssistantMessage.timestamp = 请求开始时刻）；
-          // 此前取 Date.now() 在恢复历史时会漂移成回查时刻
-          timestamp: message.timestamp
-        })
-      }
+      result.push({
+        id: `a-${result.length}`,
+        role: 'assistant',
+        content,
+        thinking: thinking || undefined,
+        // 用量三件套同投影：盘上 transcript 存 pi 完整消息（usage 是必有字段），
+        // 历史会话与流式结束态同一套数据源，老会话 UI 上也可见统计
+        usage: projectUsage(message.usage),
+        durationMs: message.durationMs,
+        model: message.model,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        // 真实请求时间戳（pi AssistantMessage.timestamp = 请求开始时刻）；
+        // 此前取 Date.now() 在恢复历史时会漂移成回查时刻
+        timestamp: message.timestamp
+      })
     }
-    flushBar()
-    return result
   }
+  flushBar()
+  return result
 }
