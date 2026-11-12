@@ -6,79 +6,68 @@
  *          └─ body              主体
  *             ├─ app-sidebar    应用侧边栏：固定 50px 图标栏，与 header 融合
  *             └─ content        内容区白卡（左上圆角 --shell-radius + border-l
- *                ├─ content-sidebar  240–360px 可拖可折叠（折成 0），微灰底
- *                └─ content-main     纯白主体
+ *                ├─ content-sidebar  240–360px 可拖可折叠（折成 0），微灰底。
+ *                │                 普通 flex 像素宽块（不进 RRP，方案同 Themd）：
+ *                │                 窗口缩放零 JS 参与，宽 + 折叠态 localStorage
+ *                │                 记忆（use-content-sidebar-split）
+ *                └─ content-main     纯白主体（flex-1 吃掉窗口缩放的全部增量）
  *
  * chrome 底色（bg-sidebar）铺最外层 —— header 与 app-sidebar 同色融合成 L 形；
- * content 白卡浮在 chrome 上（border-l 贴弧自描边 + 紧投影）。可拖分栏只在
- * content 内部（react-resizable-panels v4）：content-sidebar 拖过下限即折叠成
- * 0（折叠后把手贴卡片左缘，即展开抓取点）；分屏线用 shadcn 默认形态（1px 线 +
- * withHandle 把手）+ 拖拽光带（GlowResizeHandle）——分栏顶端不挨圆角弧线，
- * 光带无需旧布局的顶部蒙版。
- * header 内容（件 2，AppHeader）：折叠开关/菜单/窗口控制；折叠状态在此处从面板
- * onResize 同步（拖拽折叠与点钮折叠同源），经 props 下去。
+ * content 白卡浮在 chrome 上（border-l 贴弧自描边 + 紧投影）。
+ * content 内部的分栏分两类引擎（2026-11-12 定，详见 docs/UI布局.md）：本层的
+ * content-sidebar 是像素语义，普通 flex + 自绘拖拽条（SidebarResizeHandle）+
+ * 像素记忆；content-main 内部的分屏（HomeMain 主要区|标签页区）是真百分比
+ * 语义，仍走 react-resizable-panels v4 + GlowResizeHandle。
+ * header 内容（件 2，AppHeader）：折叠开关/菜单/窗口控制 —— 折叠开关直接用
+ * hook 的 toggle（宽度记忆不动，展开回原宽）。
  * app-sidebar 内容（件 3，AppSidebar）是路由钮：切 AppView，content 两个面板
  * 的占位随路由换 —— 真实内容属各视图后续件。
  */
-import { useState } from 'react'
-import { usePanelRef } from 'react-resizable-panels'
-import { ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
-import { GlowResizeHandle } from '@/components/GlowResizeHandle'
 import { AppHeader } from '@/features/shell/AppHeader'
 import { AppSidebar } from '@/features/shell/AppSidebar'
 import { HomeSidebar } from '@/features/home/HomeSidebar'
 import { HomeMain } from '@/features/home/HomeMain'
 import { SettingsSidebar } from '@/features/settings/SettingsSidebar'
 import { SettingsMain } from '@/features/settings/SettingsMain'
+import { SidebarResizeHandle } from '@/components/SidebarResizeHandle'
+import {
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_MIN,
+  useContentSidebarSplit,
+} from '@/hooks/use-content-sidebar-split'
 import { useUiStore, VIEW_LABELS } from '@/stores/ui'
 
 export function AppShell() {
-  const sidebarPanel = usePanelRef()
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // content-sidebar 分栏：像素宽状态机 + localStorage 记忆，机制全在 hook；
+  // 此处只接线（拖拽直写/提交、折叠开关）
+  const sidebar = useContentSidebarSplit()
   const view = useUiStore((s) => s.view)
-
-  // 折叠开关：命令走面板 imperative API；状态走 onResize —— 拖拽折叠/点钮折叠
-  // 都会触发 onResize，图标不会跟面板实际状态脱节
-  const toggleSidebar = () => {
-    const panel = sidebarPanel.current
-    if (!panel) return
-    if (panel.isCollapsed()) panel.expand()
-    else panel.collapse()
-  }
 
   return (
     <div className="chrome-surface flex h-dvh flex-col text-sidebar-foreground">
-      <AppHeader sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar} />
+      <AppHeader sidebarCollapsed={sidebar.collapsed} onToggleSidebar={sidebar.toggle} />
       <div className="flex min-h-0 flex-1">
         {/* 应用侧栏：上/下两组路由钮（chrome 底色与 header 融合） */}
         <AppSidebar />
         {/* 内容区卡：左描边天然贴弧线走（"线跟着圆角走"），投影收窄压实不泛。
             overflow-hidden：内层灰底子面板是方角，不裁会戳进左上弧线区 */}
         <main className="min-w-0 flex-1 overflow-hidden rounded-tl-(--shell-radius) border-l border-border bg-background shadow-[0_1px_2px_rgba(0,0,0,0.06),0_2px_8px_rgba(0,0,0,0.07)]">
-          <ResizablePanelGroup orientation="horizontal" className="h-full">
-            {/* 内容侧栏：240–360px 夹死，拖过下限折叠成 0、再向外拖恢复；
-                微灰底与纯白主体分界。v4 Panel 两层，className 落内层内容节点。
-                panelRef/onResize 供 header 折叠开关（见上 toggleSidebar） */}
-            <ResizablePanel
-              panelRef={sidebarPanel}
-              onResize={(size) => setSidebarCollapsed(size.inPixels === 0)}
-              collapsible
-              collapsedSize={0}
-              minSize="240px"
-              maxSize="360px"
-              defaultSize="300px"
-              className="bg-content-sidebar"
-              /* 折叠动画期间内容若随面板逐帧压缩（文字截断抖动）很难看；
-                 改为内容保持下限宽度（内层 min-w-60）被本层裁掉 —— 收放时
-                 内容整体滑出/滑入。overflowX 覆写 RRP 内层的 overflow:auto
-                 （style prop 落内层，侧栏自身无横向滚动，无副作用） */
-              style={{ overflowX: 'hidden' }}
+          {/* 拖拽杀过渡（同 components/ui/resizable.tsx 手法）：把手
+              data-separator=active 期间裁剪窗的 width 过渡失效 —— 拖拽逐帧直写，
+              200ms 缓动会把跟手拖成延迟 */}
+          <div className="flex h-full [&:has([data-separator=active])>[data-sidebar-clip]]:transition-none">
+            {/* 裁剪窗：宽度承载折叠/展开过渡（200ms ease-out，RRP 时代同参数）；
+                折叠时内容层保宽被裁（滑出/滑入），不逐帧换行 */}
+            <div
+              ref={sidebar.clipRef}
+              data-sidebar-clip
+              className="h-full w-0 shrink-0 overflow-hidden bg-content-sidebar transition-[width] duration-200 ease-out"
+              style={{ width: sidebar.collapsed ? 0 : sidebar.widthPx }}
             >
-              {/* content-sidebar 内容随 AppView 换：首页（件 4）与设置（件 6）
-                  已落地，其余视图侧栏属后续件。min-w-60 = minSize 240px：
-                  面板收窄到下限以下（折叠动画/折叠态）时内容保形被裁，
-                  而不是被压扁 */}
-              <div className="h-full min-w-60">
+              {/* 内容层：固定像素宽（min-w-60 = 下限 240px 兜底）。content-sidebar
+                  内容随 AppView 换：首页（件 4）与设置（件 6）已落地，其余视图
+                  侧栏属后续件 */}
+              <div ref={sidebar.contentRef} className="h-full min-w-60" style={{ width: sidebar.widthPx }}>
                 {view === 'home' ? (
                   <HomeSidebar />
                 ) : view === 'settings' ? (
@@ -89,13 +78,21 @@ export function AppShell() {
                   </div>
                 )}
               </div>
-            </ResizablePanel>
-            {/* shadcn 默认形态：1px 线 + 中点把手；拖拽光带见 GlowResizeHandle */}
-            <GlowResizeHandle withHandle />
-            <ResizablePanel>
-              {/* content-main 内容随 AppView 换：首页（HomeMain，件 5 —— 内部
-                  再分 [主要区 | 标签页区]）与设置（SettingsMain，件 6 占位）
-                  已落地，其余视图主体属后续件 */}
+            </div>
+            {/* 自绘拖拽条：样式/光带/状态机与 GlowResizeHandle 同构；拖过下限
+                折叠成 0、再向外拖恢复、键盘 ±16、双击回默认 */}
+            <SidebarResizeHandle
+              min={SIDEBAR_WIDTH_MIN}
+              max={SIDEBAR_WIDTH_MAX}
+              readWidth={sidebar.readWidth}
+              writeWidth={sidebar.writeWidth}
+              onCommit={sidebar.commit}
+              onReset={sidebar.reset}
+            />
+            {/* content-main：flex-1 吃剩余宽度，窗口缩放增量全在这。
+                内容随 AppView 换：首页（HomeMain，件 5 —— 内部再分
+                [主要区 | 标签页区]）与设置（SettingsMain，件 6）已落地 */}
+            <div className="min-w-0 flex-1">
               {view === 'home' ? (
                 <HomeMain />
               ) : view === 'settings' ? (
@@ -105,11 +102,10 @@ export function AppShell() {
                   {VIEW_LABELS[view]}
                 </div>
               )}
-            </ResizablePanel>
-          </ResizablePanelGroup>
+            </div>
+          </div>
         </main>
       </div>
     </div>
   )
 }
-
