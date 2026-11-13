@@ -7,7 +7,7 @@
  * 数据源全部真实（演示域 data.ts 已退役）：会话 = chat store（引擎 session.list），
  * 项目 = project store（引擎 project.list）。行点击 = chat.selectSession（高亮看
  * activeSessionId，行与内容不再错位）；发起入口 startNew = chat.createSession
- * （真建引擎会话防串话，见 docs/技术笔记/pi-agent-integration-isolation.md）+
+ * （真建引擎会话防串话，见 docs/技术笔记/会话隔离与受理语义.md）+
  * home.startNewChat（视图态）。
  * 分区标题带折叠箭头（折叠态常显、展开态 hover 显现）；标题行 hover 浮现
  * [更多 ⋯ + 创建类] 双钮（项目=创建项目弹窗、最近=新建聊天）；项目行 hover
@@ -73,7 +73,9 @@ const ROW_HOVER =
   'bg-transparent transition-colors duration-100 hover:bg-accent-foreground/5 data-popup-open:bg-accent-foreground/5 has-[[data-popup-open]]:bg-accent-foreground/5'
 const ROW_ACTIVE = 'bg-accent-foreground/5'
 
-/** 分区标题行：标题 + 折叠箭头（hover 显现，展开=下/收起=右旋转过渡） */
+/** 分区标题行：标题 + 折叠箭头（hover 显现，展开=下/收起=右旋转过渡）。
+ *  actions 可选（置顶分区无操作钮 2026-11-13）：无 actions 时右侧钮簇与
+ *  pr-12 让位预留一并消失，标题可占满整行 */
 function SectionHeader({
   title,
   open,
@@ -83,13 +85,16 @@ function SectionHeader({
   title: string
   open: boolean
   onToggle: () => void
-  actions: ReactNode
+  actions?: ReactNode
 }) {
   return (
     <div className={cn('group relative flex h-7 items-center rounded-md px-2', ROW_HOVER)}>
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-1 pr-12 text-sm text-muted-foreground"
+        className={cn(
+          'flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground',
+          actions && 'pr-12'
+        )}
         aria-expanded={open}
         onClick={onToggle}
       >
@@ -105,14 +110,17 @@ function SectionHeader({
           )}
         />
       </button>
-      <div className={ACTIONS}>{actions}</div>
+      {actions && <div className={ACTIONS}>{actions}</div>}
     </div>
   )
 }
 
-/** 空态行（分区无内容时的弱提示，替代旧演示数据的"永远有内容"） */
+/** 空态行（分区无内容时的弱提示，替代旧演示数据的"永远有内容"）。
+ *  empty-hint 灰（比输入框 placeholder 再浅一档的实色 token，globals.css）：
+ *  纯提示不可交互，要弱于一切正文层级；顺带修掉旧 /80 透明度文字色
+ *  （方针 3 禁） */
 function EmptyHint({ text }: { text: string }) {
-  return <div className="px-2 py-1.5 text-[13px] text-muted-foreground/80">{text}</div>
+  return <div className="px-2 py-1.5 text-[13px] text-empty-hint">{text}</div>
 }
 
 /**
@@ -336,7 +344,7 @@ const ProjectRow = memo(function ProjectRow({
           </button>
           <div className={ACTIONS}>
             {/* 更多：项目级菜单；「移除项目」只删项目不级联删会话（引擎 delete 语义，
-                会话落回"最近"，见 docs/计划-工作区与会话真实化.md 第 4 步）。
+                会话落回"最近"，见 docs/计划/工作区与会话真实化.md 第 4 步）。
                 菜单项来自上方 actions 数据源（与右键菜单同权同项） */}
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -396,7 +404,7 @@ const ProjectRow = memo(function ProjectRow({
               />
             ))
           ) : (
-            <EmptyHint text="项目下还没有聊天" />
+            <EmptyHint text="暂无聊天" />
           )}
         </div>
       )}
@@ -601,57 +609,55 @@ export function HomeSidebar() {
         {/* 置顶分区：会话 + 项目混合（移动语义，各自 pinnedAt 倒序）。
             项目行复用 ProjectRow（完整动作簇：更多菜单/新建聊天/置顶菜单）——
             此前手搓紧凑行丢了右侧按钮（用户发现），复用才是对的：置顶只是
-            换个分区渲染，行本身的能力不该变。子会话展开就地可见 */}
+            换个分区渲染，行本身的能力不该变。子会话展开就地可见。
+            无置顶项时整节不渲染（用户 2026-11-13）：空着还占一行标题 +
+            "暂无置顶"是纯噪音，首个置顶动作落地时分区自然出现 */}
+        {pinnedProjects.length + pinnedChats.length > 0 && (
         <section className="mt-4 flex flex-col gap-0.5">
+          {/* 无 actions：置顶分区无分区级操作（"更多"钮本就没接线，纯占位噪音，
+              用户 2026-11-13 要求去掉）；折叠箭头仍在，行内动作在各自行上 */}
           <SectionHeader
             title="置顶"
             open={pinnedOpen}
             onToggle={() => setPinnedOpen((v) => !v)}
-            actions={
-              <Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多">
-                <IconDots className="size-4" />
-              </Button>
-            }
           />
-          {pinnedOpen &&
-            (pinnedProjects.length + pinnedChats.length > 0 ? (
-              <>
-                {pinnedProjects.map((project) => (
-                  <ProjectRow
-                    key={project.id}
-                    projectId={project.id}
-                    projectName={project.name}
-                    chats={byProject(project.id)}
-                    expanded={expanded.has(project.id)}
-                    activeSessionId={session.kind === 'chat' ? session.chatId : null}
-                    onToggle={toggleProject}
-                    onSelectSession={openSession}
-                    onStartChat={startNew}
-                    onDeleteProject={deleteProject}
-                    onEditProject={editProject}
-                    onArchiveChat={archiveChat}
-                    onTogglePin={toggleProjectPin}
-                    isWaitingApproval={isWaitingApproval}
-                    pinned
-                  />
-                ))}
-                {pinnedChats.map((chat) => (
-                  <ChatRow
-                    key={chat.id}
-                    chat={chat}
-                    active={session.kind === 'chat' && session.chatId === chat.id}
-                    indent={false}
-                    onSelect={openSession}
-                    onArchive={archiveChat}
-                    onTogglePin={toggleChatPin}
-                    waitingApproval={isWaitingApproval(chat.id)}
-                  />
-                ))}
-              </>
-            ) : (
-              <EmptyHint text="暂无置顶" />
-            ))}
+          {pinnedOpen && (
+            <>
+              {pinnedProjects.map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  projectId={project.id}
+                  projectName={project.name}
+                  chats={byProject(project.id)}
+                  expanded={expanded.has(project.id)}
+                  activeSessionId={session.kind === 'chat' ? session.chatId : null}
+                  onToggle={toggleProject}
+                  onSelectSession={openSession}
+                  onStartChat={startNew}
+                  onDeleteProject={deleteProject}
+                  onEditProject={editProject}
+                  onArchiveChat={archiveChat}
+                  onTogglePin={toggleProjectPin}
+                  isWaitingApproval={isWaitingApproval}
+                  pinned
+                />
+              ))}
+              {pinnedChats.map((chat) => (
+                <ChatRow
+                  key={chat.id}
+                  chat={chat}
+                  active={session.kind === 'chat' && session.chatId === chat.id}
+                  indent={false}
+                  onSelect={openSession}
+                  onArchive={archiveChat}
+                  onTogglePin={toggleChatPin}
+                  waitingApproval={isWaitingApproval(chat.id)}
+                />
+              ))}
+            </>
+          )}
         </section>
+        )}
 
         {/* 项目分区：project store 真数据 + 「创建项目」弹窗入口 */}
         <section className="mt-4 flex flex-col gap-0.5">
@@ -698,7 +704,7 @@ export function HomeSidebar() {
                 />
               ))
             ) : (
-              <EmptyHint text="还没有项目" />
+              <EmptyHint text="暂无项目" />
             ))}
         </section>
 
@@ -741,7 +747,7 @@ export function HomeSidebar() {
                 />
               ))
             ) : (
-              <EmptyHint text="暂无聊天" />
+              <EmptyHint text="无聊天" />
             ))}
         </section>
       </div>
