@@ -2,15 +2,15 @@
 
 > 状态：**进行中 —— 唯一活跃主计划**（2026-11-11 立项；**批次 3（工具终章）六步已于同日全部落地**，tools-smoke 39 项全过；**批次 4（上下文压缩）两步
 > 已于 2026-11-12 落地**，compaction-smoke 8 项全过；同日归并
-> 计划-工具系统与审批.md 与 计划-回合过程折叠.md 的全部遗留件，其余计划文档
+> 工具系统与审批.md 与 回合过程折叠.md 的全部遗留件，其余计划文档
 > 均已归档——**日常只看本文档**）。素材库已就位：`reference/pi/`（sparse clone
 > agent / ai / coding-agent 三包，MIT，gitignore + eslint ignore 隔离；更新走
 > `git -C reference/pi pull`，仓库级代理已配）。
 > 前提共识：pi-coding-agent 是**同引擎（pi-agent-core）不同形态**（终端 CLI 单进程
 > vs 我们 Electron GUI 三进程）的官方参考实现，不是竞品。
-> **批次编号说明**：续接 [计划-工具系统与审批.md](计划-工具系统与审批.md) ——
+> **批次编号说明**：续接 [工具系统与审批.md](工具系统与审批.md) ——
 > 批次 1（read/glob/grep + 段化 + 工具卡，2026-11-10）与批次 2（write + 审批拦截 +
-> 完全访问，2026-11-11）**已实现上线**，本文档从批次 3 起；不重编号，保与 路线.md /
+> 完全访问，2026-11-11）**已实现上线**，本文档从批次 3 起；不重编号，保与提交历史 /
 > 提交历史 / 技术笔记的口径一致（别处说"批次 3"恒指 edit/bash）。
 
 ## 0. 偷法四则（每批开工前重读）
@@ -23,10 +23,10 @@
 2. **上游单进程的优势拿不走，模式拿得走**：TUI renderers / 富 details 直渲染 /
    零序列化搬不动；Operations 注入、file-mutation-queue、content与details分离、
    扩展系统这些**模式**可以跨进程搬，无损失；
-3. **一模块一笔记**：每批完成后 [docs/技术笔记/](技术笔记/README.md) 一篇，必须
+3. **一模块一笔记**：每批完成后 [docs/技术笔记/](../技术笔记/README.md) 一篇，必须
    含"上游怎么做 vs 我们怎么做 vs 为什么不同"三段对比（学习项目核心产出）；
 4. **每步可运行 + 用户验收**：步内三关全绿（lint / typecheck / build），冒烟配方
-   进 [开发.md](开发.md)，UI 件用户逐件验收后才算过；
+   沉淀配方（现 docs/UI布局.md），UI 件用户逐件验收后才算过；
 5. **存量也要过堂（实现归实现，好归好）**：已实现 ≠ 已最优，已上线不是免检
    金牌。每个存量模块都要与上游对应物对照一遍，结论四选一并记录：**照搬替换 /
    吸收改造 / 我们更好（写明理由）/ 上游无对应（记录）**——举证责任在我们这边：
@@ -44,7 +44,7 @@
 | 批次 1 工具加固 | `core/tools/read.ts`(365) / `grep.ts`(337) / `find.ts`(359) / `ls.ts`(175) | 既有 read/glob/grep 对照上游补差距：offset/limit 翻页、.gitignore 尊重、grep 参数、ls 可选；图片读取依赖空位 1 挂起 | 3（步骤 3.6） | **✅ 3.6 完成**（gitignore 层叠+嵌套仓边界 / grep context / ls / 文件级搜索存量 bug 修复 / ~ 展开吸收） |
 | edit 工具 | `core/tools/edit.ts`(221) + `edit-diff.ts`(745) | old/new 串替换 + diff 算法（CRLF↔LF 偏移映射对 Windows 关键），工具计划批次 3 本体 | 3 | **✅ 3.3 完成**（D4 diff 进协议双路径；CRLF 映射冒烟验证） |
 | bash 工具 | `core/tools/bash.ts`(476) + `powershell.ts` + `core/bash-executor.ts` + `utils/shell.ts`(杀进程树/detached 跟踪) + `utils/child-process.ts` | shell 执行全家；Windows 有官方 PowerShell 答案 | 3 | **✅ 3.4/3.5 完成**（D2 单工具 PowerShell 路由 / killProcessTree+引擎退出清场 / tool.progress 流式 / 超时杀树 / abort 心跳法无孤儿 / 自主模式第四档 D6） |
-| 上下文压缩 | `core/compaction/compaction.ts`(1104 纯函数) + `utils.ts`(164) | 阈值触发摘要压缩 + 会话重建；上下文指示器"预警线"一直等它 | 4 | **✅ 4.1/4.2 完成**（2026-11-12；D7 双路：submit 前阈值 90% + session.compact 手动；compactionSummary 转录角色 + convertToLlm；切点线性改造只取 user 边界；冒烟 8 项全过；笔记 compaction.md） |
+| 上下文压缩 | `core/compaction/compaction.ts`(1104 纯函数) + `utils.ts`(164) | 阈值触发摘要压缩 + 会话重建；上下文指示器"预警线"一直等它 | 4 | **✅ 4.1/4.2 完成**（2026-11-12；D7 双路：submit 前阈值 90% + session.compact 手动；compactionSummary 转录角色 + convertToLlm；切点线性改造只取 user 边界；冒烟 8 项全过；笔记 技术笔记/上下文压缩.md） |
 | 技能 | `core/skills.ts`(505) + `resource-loader.ts` + `source-info.ts` | SKILL.md 发现（frontmatter 规范 / .gitignore 尊重 / 全局+项目双层）、系统提示词技能段 | 5 | 未开始 |
 | 斜杠命令 | `core/slash-commands.ts`(44) + `core/prompt-templates.ts`(341) | 自定义命令模板（$ARGUMENTS 类）；Cogent 输入框 "/" 菜单 | 5 | 未开始 |
 | MCP | `extensions/mcp/`(~3900) + `core/mcp-servers.ts` | stdio client / 配置 / 工具投影 / resources；上下文明细"MCP 段"空位 | 6 | 未开始 |
@@ -137,7 +137,7 @@
   降级）**依赖路线空位 1（content blocks），挂起不做**——引擎转录天然能存，
   投影与 UI 等空位 1 后接。验收：tools-smoke 扩断言（gitignore 命中 / 翻页 /
   上下文行）+ 既有 12 项不回归。
-- **笔记** ✅：`技术笔记/bash-edit-tools.md`（对比：Claude Code 的 background
+- **笔记** ✅：`技术笔记/bash与edit工具与输出护栏.md`（对比：Claude Code 的 background
   shell / BashOutput、Codex 沙箱内执行、上游 TUI 流式渲染 vs 我们的协议投影）。
 
 ## 4. 批次 4：上下文压缩
@@ -145,14 +145,14 @@
 > **完备化加码（2026-11-12 立项）**：UI 验收实测发现「小窗输出预算饿死」
 > 死锁（20K 窗 + 推理模型，67% 即被思考吃光 room，到不了 90% 触发线）。
 > 五家调研与决策定稿见 [方案-上下文压缩.md](方案-上下文压缩.md)，
-> **执行计划见 [计划-上下文压缩完备化.md](计划-上下文压缩完备化.md)**
+> **执行计划见 [上下文压缩完备化.md](上下文压缩完备化.md)**
 > （十维路线选择 + S1–S8 步骤 + 冒烟扩至 22 项；用户定调：一步到位
 > 不设远期、以 pi 与 DeepSeek-Harness 源码为主要参照，dsh 源码已浅克隆
 > reference/deepseek-harness）。**批次 4 已完结（2026-11-12）**：4.1/4.2
 > 引擎与 UI + 4.3 完备化 S1–S8 全部落地。**
 
 - **步骤 4.1 引擎压缩本体** ✅（2026-11-12）：搬 compaction 纯函数，按线性转录
-  改造（详尽取舍见 技术笔记/compaction.md §4）——压缩记录 = 转录内
+  改造（详尽取舍见 技术笔记/上下文压缩.md §4）——压缩记录 = 转录内
   `compactionSummary` 自定义消息角色（pi 声明合并通道 + Agent `convertToLlm`
   选项转 user 消息），system 消息全保留前置（权限通告在转录里，不能随摘要丢）；
   切点只取 user 边界（回合原子，砍上游 split-turn 二次摘要）；文件表靠摘要文本
@@ -168,7 +168,7 @@
   + 消息流「已压缩」折叠条（TraceCollapsible 家族，独立行快路不套「已工作」
   头条）；completed 事件做本地列表手术（summarizedUntil 之前原位换折叠条，
   不重拉历史——与 prompt() 追加用户消息有竞态）。验收：用户人工验收。
-- **笔记** ✅：`技术笔记/compaction.md`（对比：Claude Code auto-compact 与
+- **笔记** ✅：`技术笔记/上下文压缩.md`（对比：Claude Code auto-compact 与
   /compact、Codex 自动压缩、DeepAgent summarization、上游"压缩后会话 reload"
   语义；不搬清单：overflow 恢复 / retryAssistantCall（批次 8.4 挂账）/
   branch-summarization）。
@@ -194,7 +194,7 @@
   声明 compaction.offloaded 约定）。**完备化计划就此归档**（否决项继续有效）。评审修正四件（R1 特小窗
   公式表述/R3 L1 全转录范围/R7 compat 落 Model 非 createProvider/S1·S7 UI
   归属）已并入完备化计划。冒烟 22/22 + tools-smoke 39/39 + approval 18/18 回归，三关绿。**批次 4 全部完结**。
-  见 [计划-上下文压缩完备化.md](计划-上下文压缩完备化.md) 执行日志。
+  见 [上下文压缩完备化.md](上下文压缩完备化.md) 执行日志。
 - **注**：上游 `branch-summarization.ts`（会话树导航用）不随本批搬——我们转录
   是线性的，树结构属远期池。
 
@@ -242,11 +242,11 @@ manager，不走扩展抽象**（扩展系统属远期池，届时 MCP 可迁移
 5. **export-html**：会话导出单文件 HTML（与运行时控制台落盘互补）；
 6. **cache-stats（可选）**：提示缓存命中率统计（ContextIndicator 悬浮卡已有
    平均值，升级为分会话统计）；
-7. **回合批次 B 收尾**（归并自 计划-回合过程折叠.md）：协议
+7. **回合批次 B 收尾**（归并自 回合过程折叠.md）：协议
    `ChatMessage.thinkingMs?`（只增 optional）+ 引擎测每轮思考跨度（首个
    thinking delta → 首 text delta / 工具封段，历史回查同源）+ Reasoning 头条
    带时长（"深度思考 Xs"）+ 工具卡文案对齐 + UI布局.md 配方沉淀；
-8. **network 工具**（归并自 计划-工具系统与审批.md §6"第三批"）：Cogent 自建
+8. **network 工具**（归并自 工具系统与审批.md §6"第三批"）：Cogent 自建
    fetch（上游 coding-agent 无网络工具可搬），落 `tools/fetch.ts` + kind
    `'network'`（D10）；落地后「自主模式」占位文案去掉 exec only；
 9. **会话级「本次会话总是允许」**（归并自工具计划 §6"第二批再议"）：
@@ -305,6 +305,6 @@ OS 级硬沙箱（边界永远软——工具计划前计划 D6）、批次间�
 
 ## 11. 产出义务（每批完成时）
 
-- 技术笔记一篇（§0 第 3 则），AGENTS.md 地图 / 路线.md 同步；
-- 冒烟配方进 开发.md；协议改动 additive（PROTOCOL_VERSION 不动，见 约定.md）；
+- 技术笔记一篇（§0 第 3 则）+ 对应模块事实页同步；
+- 新场景入库 tests/integration；协议改动 additive（PROTOCOL_VERSION 不动，见 约定.md）；
 - 本文档状态列回填 + 决策表回填（用户拍板后写死，防翻烧饼）。

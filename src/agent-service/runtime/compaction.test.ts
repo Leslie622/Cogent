@@ -1,5 +1,5 @@
 /**
- * compaction.ts 单元测试（docs/计划-测试体系.md S2）—— 纯函数全套：
+ * compaction.ts 单元测试（docs/计划/测试体系.md S2）—— 纯函数全套：
  * 阈值公式 / D9 保留式投影 / L1 裁剪 / 切点与刚压完守卫 / 原位插入 /
  * 摘要指令组装。每条断言对应一个翻过车或验收过的行为（回归钉，D8：
  * 翻过车的 bug 必钉回归测试），与 tests/integration/compaction.test.ts

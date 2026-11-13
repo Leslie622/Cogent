@@ -1,5 +1,5 @@
 /**
- * 第一方存储根（决策 D1，docs/计划-工作区与会话真实化.md §1/§2）：
+ * 第一方存储根（决策 D1，docs/计划/工作区与会话真实化.md §1/§2）：
  * `COGENT_HOME ?? ~/.cogent`，凭据/自定义 provider/会话/项目全在这一个根下。
  *
  * 为什么不用 userData：dev 态 userData 默认是 %APPDATA%\Electron（与一切 dev

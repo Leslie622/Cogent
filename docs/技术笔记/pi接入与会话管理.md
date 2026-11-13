@@ -113,7 +113,7 @@ Cogent 的 `models.list` 直接投影这份目录（`session.ts listModels()`）
 - `src/agent-service/runtime/session.ts`：SessionManager（create/list/delete/messages/
   submit/abort/disposeAll）+ pi 事件转译（translateEvent）+ 模型目录投影（listModels）；
 - `src/agent-service/runtime/credentials.ts`：getApiKey 的数据源，见
-  [credential-storage.md](credential-storage.md)；
+  [凭据存储与模型目录](凭据存储与模型目录.md)；
 - `src/agent-service/index.ts`：method 注册表挂 runtime（handler 零防御，边界校验在 dispatch）；
 - `src/protocol/types.ts`：ChatMessage/ModelSummary/ProviderSummary +
   session.messages / models.list / credentials.* method + run.completed.message 字段；

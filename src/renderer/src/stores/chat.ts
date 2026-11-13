@@ -9,7 +9,7 @@
  * 错变发送；反向则 B 的输入框被 A 的 running 锁死；错误/截断文案也会串会话。
  * 组件侧用 selectRunning / selectStopping / selectLastError / selectTruncated
  * 取活动会话的视图。stopping = 用户点了停止的前置位（回合头条「已停止」与
- * 「出错了」的判别依据，见 docs/计划-回合过程折叠.md D6）。
+ * 「出错了」的判别依据，见 docs/计划/回合过程折叠.md D6）。
  */
 import { create } from 'zustand'
 import type { ChatMessage, PermissionMode, SessionSummary } from '@/env.d'
@@ -100,7 +100,7 @@ export type MessageItem = ChatMessage | ToolItem | ApprovalItem | PrunedItem
  * "Error invoking remote method 'engine:request': Error: " 前缀（Electron
  * 行为，非协议内容），协议帧的 message 才是给人读的文案 —— lastErrorBySession
  * 直出渲染前剥掉，否则用户看到的是裸 IPC 报文（验收实测）。
- * 2026-11-12 导出：单测直测（计划-测试体系 D7，仅加 export 不改行为）。
+ * 2026-11-12 导出：单测直测（docs/计划/测试体系.md D7，仅加 export 不改行为）。
  */
 export function unwrapIpcError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error)

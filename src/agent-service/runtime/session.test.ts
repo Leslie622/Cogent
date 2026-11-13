@@ -1,5 +1,5 @@
 /**
- * toChatMessages 单元测试（docs/计划-测试体系.md S2）—— pi 转录 → UI
+ * toChatMessages 单元测试（docs/计划/测试体系.md S2）—— pi 转录 → UI
  * ChatMessage 投影。重点钉 D9 保留式的**呈现位**：压缩条在转录里插在切点
  * （下标在保留区之前），UI 投影按 timestamp 延迟落位（第三轮 GUI 验收
  * "留痕跳到上面去了"的引擎侧回归钉）；另有 R6③ 相邻段合并与工具配对。

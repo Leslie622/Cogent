@@ -115,7 +115,7 @@ function ContextBar({
  * （不上网络的客户端元数据；自定义模型缺省 128K 偏保守 → 百分比偏高不偏低）。
  * 压缩回落（批次 4）：压缩条（role 'compaction'）比末条 usage 新 → 分子切
  * 压缩后 tokensAfter 估算（≈ 标记），下一条回复落成新 usage 切回实报。
- * MCP 工具/技能段明细待各自模块（主流对照见 技术笔记/token-usage.md §6）。
+ * MCP 工具/技能段明细待各自模块（主流对照见 技术笔记/token用量统计.md §6）。
  */
 export function ContextIndicator({ session }: { session: HomeSession }) {
   const messages =
@@ -252,7 +252,7 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
         {/* 明细区（对照 ZCode /context 三段可算项；MCP 工具/技能待各自模块，
             无"其他"兜底段）。口径 = 总量实报、拆分估算：顶部数字是端点实报，
             三段按估算占比缩放到该总量，加起来能对上。原"≈ 分类明细"头行
-            2026-11-11 按用户要求去掉 —— 估算语义记在 token-usage.md §6.1，
+            2026-11-11 按用户要求去掉 —— 估算语义记在 docs/技术笔记/token用量统计.md §6.1，
             UI 不再重复占一行 */}
         {breakdown && (
           <div className="mt-4 flex flex-col gap-2">

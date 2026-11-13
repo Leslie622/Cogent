@@ -12,6 +12,9 @@
  *
  * 两种形态同跑（默认解析 pwsh 优先 / --ps51 强制 5.1 由原脚本提供，测试里
  * 以双 describe 表达）：各 6 项断言。仅 Windows（其余平台 skip）。
+ *
+ * 本机未装 pwsh 7 时（两台开发机均如此）默认解析也落在 powershell.exe 5.1，
+ * 双 describe 结果一致属预期而非测试退化 —— 排查别往这引。
  */
 import { spawn, execFileSync } from 'node:child_process'
 import { accessSync, constants } from 'node:fs'

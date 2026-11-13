@@ -88,7 +88,7 @@ CLI（Claude Code/Codex）倾向会话总账（用户关心"这个任务花了�
 cost 一律不取自 def（协议 ModelDef 无此字段，用户不可配价）——有基底继承
 目录定价，全新自定义模型保持 0（自定义端点计费对外不可知）。思考映射、
 命名同理继承。对照冒烟：同 id 条目 $0.0004 级 / 全新 id 恒 0
-（配方入 [../开发.md](../开发.md) 冒烟节）。
+（mock 手法见 tests/integration/harness.ts）。
 
 ## 4.2 估价 ≠ 账单：≈ 前缀（2026-11-10 用户对照 DeepSeek 官网定价引出）
 
@@ -124,7 +124,7 @@ pi 的成本有两级口径，`cost.totalFromProvider` 区分：**端点实报**
 - **renderer**：`env.d.ts` 镜像 + `HomeChat` `UsageLine`（11px muted
   tabular-nums，`↑ 41 · ↓ 1.2K · 缓存读 8.2K · $0.0031 · 2.4s`，零值省略）；
 - **冒烟**：mock SSE 末 chunk 带 OpenAI usage → 12 项断言（配方入
-  [../开发.md](../开发.md) 冒烟节）。
+  tests/integration/harness.ts 冒烟节）。
 
 **将来**（空位 1 content blocks 时一并考虑）：会话级聚合账本（对齐 Claude
 Code `/cost`）、`reasoning` 细分展示。

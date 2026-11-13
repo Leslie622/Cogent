@@ -1,5 +1,5 @@
 /**
- * 上下文压缩（批次 4，docs/计划-pi借鉴.md §4）—— 纯函数模块，I/O 与事件
+ * 上下文压缩（批次 4，docs/计划/pi借鉴.md §4）—— 纯函数模块，I/O 与事件
  * 在 session.ts（上游同款分工：compaction.ts 头注 "Pure functions for
  * compaction logic. The session manager handles I/O"）。
  *
@@ -19,13 +19,15 @@
  *   ② 文件操作表不落消息 details 结构化携带 —— 上次摘要的 <read-files>/
  *   <modified-files> XML 已在摘要文本里，UPDATE 提示词的 "PRESERVE exact
  *   file paths" 规则让文本自身成为载体，无需结构化转发；
- *   ③ 溢出恢复（overflow compact-and-retry）不搬 —— D7 定稿只做阈值 +
- *   手动双路，provider 溢出走 run.failed 显式暴露；
+ *   ③ 溢出恢复（overflow compact-and-retry）批次 4 时不搬（D7 定稿只做阈值
+ *   + 手动双路，溢出走 run.failed 显式暴露）—— 完备化 S5（2026-11-12）已搬入：
+ *   删失败轮 + 压缩 + continue 重试一次、单次闸（session.ts 溢出恢复节），
+ *   可恢复溢出不再发 run.failed；
  *   ④ branch-summarization 整件不搬（会话树在远期池）。
  *
  * 触发阈值：批次 4 D7 定稿 90% 百分比 → 完备化批次 R1 升级为
  * dsh 同构公式 max(ctx×0.5, min(ctx×0.9, ctx−ROOM_FLOOR))（拆小窗输出预算
- * 饿死死锁，见 docs/方案-上下文压缩.md §4 死锁复盘），并支持 ModelDef
+ * 饿死死锁，见 docs/计划/方案-上下文压缩.md §4 死锁复盘），并支持 ModelDef
  * 的按模型覆盖（触发判定节）。
  *
  * 转录表示（D9 验收修正，2026-11-12）：**保留式** —— 压缩不删除被摘要区，

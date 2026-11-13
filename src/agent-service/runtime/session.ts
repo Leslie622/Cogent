@@ -1,6 +1,6 @@
 /**
  * 会话运行时 —— pi Agent 的托管层，路线第 2 项 + 存储落地（2026-11-09，
- * docs/计划-工作区与会话真实化.md 第 1 步）的落点。
+ * docs/计划/工作区与会话真实化.md 第 1 步）的落点。
  *
  * 职责：
  * - 每会话一个 pi Agent 实例（transcript 隔离在 Agent.state.messages）；
@@ -9,7 +9,7 @@
  * - 会话/转录持久化：回合边界（create/delete/agent_end）整文档落盘；
  *   启动时只恢复摘要，pi Agent 惰性重建（首次使用才实例化+灌转录）。
  *
- * 持久化决策（对比讨论见 docs/技术笔记/session-storage.md）：
+ * 持久化决策（对比讨论见 docs/技术笔记/会话存储与转录持久化.md）：
  * - 落盘 = 存 pi 完整转录（AgentMessage[]），ChatMessage 只是读时投影 ——
  *   恢复要保真（思考块/将来 toolCall），投影是有损形态不可作存储格式；
  * - 写时机 = 回合边界而非逐 delta：LLM 流式一秒多拍，逐拍写盘是写放大；
@@ -24,7 +24,7 @@
  * - handler 内信任协议类型，不做二次防御（约定.md §1.3，边界校验在 dispatch 入口）。
  */
 import { Agent } from '@earendil-works/pi-agent-core'
-import type { AgentEvent, AgentMessage, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
+import type { AgentEvent, AgentMessage, BeforeToolCallResult, ThinkingLevel } from '@earendil-works/pi-agent-core'
 import { builtinModels } from '@earendil-works/pi-ai/providers/all'
 import { contentText, getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { Api, Model, MutableModels, Usage } from '@earendil-works/pi-ai'
@@ -708,7 +708,9 @@ export class SessionManager {
       agent.thinkingBudgets = target.thinkingBudgets
     }
     if (thinkingLevel) {
-      agent.state.thinkingLevel = thinkingLevel as 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+      // 'off' 合法：pi 原生档（关闭思考），reasoning 侧会转成 undefined → 方言层
+      // 翻成 DeepSeek/anthropic 的 thinking disabled 等（cast 钉 pi 类型防漂移）
+      agent.state.thinkingLevel = thinkingLevel as ThinkingLevel
     }
 
     // 首条消息命名会话（恢复的旧会话标题已命名，不会覆盖）
@@ -728,7 +730,7 @@ export class SessionManager {
       tools: []
     })
     // prompt() 的运行期失败（流错误/中止）由 pi 事件流转译为 run.failed
-    // （handleRunFailure → agent_end，见 pi-agent-integration.md §2.3），不会走到这层；
+    // （handleRunFailure → agent_end，见 docs/技术笔记/pi接入与会话管理.md §2.3），不会走到这层；
     // catch 只兜"受理检查通过后、pi 尚未发出任何事件前"的启动窗口拒绝 —— 外部世界
     // 失败是常态（约定.md 1.1），必须转成 run.failed 给 UI 一个终态。
     // 压缩（D7 自动路）插在 prompt 之前：超阈值先摘要再发 —— 摘要是一次秒级
@@ -1070,7 +1072,7 @@ export class SessionManager {
     this.compacting.clear()
   }
 
-  // ———— 审批（计划-工具系统与审批.md 第 4 步，D4/D5）————
+  // ———— 审批（docs/计划/工具系统与审批.md 第 4 步，D4/D5）————
 
   /**
    * 宿主裁决回流：resolve 挂起中的 beforeToolCall Promise（审批交互升级 D2 扩

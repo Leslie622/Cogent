@@ -1,5 +1,5 @@
 /**
- * approval 域 IPC：审批裁决的宿主专属通道（计划-工具系统与审批.md D3）。
+ * approval 域 IPC：审批裁决的宿主专属通道（docs/计划/工具系统与审批.md D3）。
  *
  * 为什么不走 engine:request 通用代理：架构.md §2 既定意图「宿主侧裁决不经
  * renderer 通用代理」—— 审批是安全边界，通道显式独立（一条通道一个 method，

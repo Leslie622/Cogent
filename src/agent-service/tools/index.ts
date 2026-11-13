@@ -1,5 +1,5 @@
 /**
- * 工具注册表（路线空位 #2 本体，计划-工具系统与审批.md）。
+ * 工具注册表（路线空位 #2 本体，docs/计划/工具系统与审批.md）。
  *
  * pi 的 AgentTool 只有 name/description/parameters/execute —— 没有"风险类别"。
  * 审批矩阵（ToolKind × permissionMode）是 Cogent 的产品语义，所以在引擎侧

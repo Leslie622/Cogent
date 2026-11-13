@@ -1,5 +1,5 @@
 /**
- * chat store 纯逻辑单元测试（docs/计划-测试体系.md S3）：IPC 剥壳 / 段展平 /
+ * chat store 纯逻辑单元测试（docs/计划/测试体系.md S3）：IPC 剥壳 / 段展平 /
  * 终态替换并回（审批锚回 + 压缩条时间序合并，D9 —— run.completed 整段替换
  * 吞 pruned/bar = 「已裁剪」行消失的回归钉）。事件驱动的 store 行为（伪事件
  * 序列经 bindEngineEvents）见 chat-store.test.tsx；本文件只测可纯调的函数。

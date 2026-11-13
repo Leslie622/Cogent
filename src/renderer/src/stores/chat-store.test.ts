@@ -1,5 +1,5 @@
 /**
- * chat store 事件驱动行为测试（docs/计划-测试体系.md S5）：window.cogent
+ * chat store 事件驱动行为测试（docs/计划/测试体系.md S5）：window.cogent
  * 可编程 stub + bindEngineEvents 驱动**真实接线**（不测复制品）—— 事件 →
  * 状态手术的全链路。重点钉 D9 保留式呈现的 store 侧手术：
  * - compaction.pruned standalone 行立即落尾；

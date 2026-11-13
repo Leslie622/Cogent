@@ -1,5 +1,5 @@
 /**
- * 集成测试共享 harness（docs/计划-测试体系.md D4/D5）：tmp 四冒烟脚本
+ * 集成测试共享 harness（docs/计划/测试体系.md D4/D5）：tmp 四冒烟脚本
  * （tools / compaction / approval-upgrade / ps-utf8）的公共底盘 ——
  * mock SSE 帧助手 + 引擎子进程驱动（stdio JSON-RPC）+ check 断言壳。
  * 各场景流与 mock 分流逻辑留在各 test 文件（脚本本就自包含，D6：断言

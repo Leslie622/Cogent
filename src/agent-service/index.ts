@@ -43,7 +43,8 @@ import {
   SessionContinueParams,
   type SessionMessagesParams,
   type SessionSetPermissionParams,
-  type SessionSetPinnedParams
+  type SessionSetPinnedParams,
+  type ThinkingLevelWithOff
 } from '../protocol'
 import { CredentialRegistry } from './runtime/credentials'
 import { SessionManager } from './runtime/session'
@@ -64,7 +65,7 @@ function reply(response: RpcResponse): void {
 }
 
 /**
- * 存储根：第一方数据唯一根（决策 D1，docs/计划-工作区与会话真实化.md §1/§2）。
+ * 存储根：第一方数据唯一根（决策 D1，docs/计划/工作区与会话真实化.md §1/§2）。
  * COGENT_HOME 覆盖口供冒烟测试指临时目录（同 COGENT_NODE_BIN 手法）；
  * 第 2 步把 main 侧凭据 store 也迁到同根（引擎是纯 Node，自算 home 零 Electron）。
  */
@@ -225,10 +226,12 @@ function handleProjectSetPinned(params: unknown) {
 }
 
 /** agent.submit 入口校验：sessionId/text 必填非空；model/provider/thinkingLevel 带了就约束值域。
-    optional 字段逐个独立守卫（TS 控制流只在独立 if 里窄化，复合 || 不窄化） */
+    optional 字段逐个独立守卫（TS 控制流只在独立 if 里窄化，复合 || 不窄化）。
+    thinkingLevel 值域与协议 ThinkingLevelWithOff 对齐（satisfies 钉住，防白名单与
+    枚举漂移）——'off' 是 pi 原生档（关闭思考），漏收它会把滑杆默认档拒之门外 */
 function handleAgentSubmit(params: unknown) {
   const p = params as Partial<{ sessionId: unknown; text: unknown; model: unknown; provider: unknown; thinkingLevel: unknown }>
-  const THINKING_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+  const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const satisfies readonly ThinkingLevelWithOff[]
   if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 || typeof p.text !== 'string' || p.text.length === 0) {
     throw new ProtocolError(RpcErrorCode.InvalidParams, 'agent.submit 需要 { sessionId: string, text: string }')
   }
@@ -523,5 +526,5 @@ process.on('SIGTERM', () => {
   process.exit(0)
 })
 
-// 冒烟自检：无需宿主，直接管道喂数据即可验证协议链路，命令见 docs/开发.md。
+// 冒烟自检：无需宿主，直接管道喂数据即可验证协议链路，跑法见 docs/模块/测试.md。
 void reply // dispatch 内已用；保留导出位避免 noUnusedLocals 误报（与原骨架一致的做法）

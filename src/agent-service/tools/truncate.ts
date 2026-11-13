@@ -1,5 +1,5 @@
 /**
- * 工具输出统一截断器（计划-pi借鉴.md 步骤 3.1）。
+ * 工具输出统一截断器（docs/计划/pi借鉴.md 步骤 3.1）。
  *
  * 搬运自 pi 上游 reference/pi/packages/coding-agent/src/core/tools/truncate.ts
  * （MIT License, Copyright (c) 2025 Mario Zechner）——算法与边界原样保留

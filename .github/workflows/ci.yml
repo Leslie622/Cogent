@@ -1,4 +1,4 @@
-# CI —— 三关 + 测试全绿（docs/计划-测试体系.md D9）
+# CI —— 三关 + 测试全绿（docs/计划/测试体系.md D9）
 #
 # windows-latest 单 job：ps-utf8 集成绑 PowerShell 行为（5.1 尾缀断言在
 # Linux 无从谈起），Electron 构建也是本机开发平台。缓存两件：npm 依赖

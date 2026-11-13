@@ -4,7 +4,7 @@
  *      命令/状态由 HomeMain 经 props 下发，与 AppHeader 同一手法）
  *   ② 对话流：MessageScroller（@shadcn/react）—— 吸底/滚到底部悬浮钮现成；
  *      消息按回合分组渲染（TurnGroup，ZCode 式两态：过程直播 → 完成收进
- *      「已工作」轨迹，见 docs/计划-回合过程折叠.md）；消息源是 useChatStore
+ *      「已工作」轨迹，见 docs/计划/回合过程折叠.md）；消息源是 useChatStore
  *      （引擎事件流驱动，流式占位 id='streaming' 由 store 维护）。
  *      对话正文是"正文类内容"，按 AGENTS.md 方针 5 在内容容器上 select-text 放开选中
  *   ③ 输入框：shadcn AI 组件（components/ui/input-group）—— Enter 发送
@@ -123,7 +123,7 @@ function ChatMessages() {
   const compacting = useChatStore(selectCompacting)
   const lastError = useChatStore(selectLastError)
 
-  // 末回合相位从会话级运行位推导（计划-回合过程折叠 D6）：live 优先，其后
+  // 末回合相位从会话级运行位推导（docs/计划/回合过程折叠.md D6）：live 优先，其后
   // 停止位（abort）→「已停止」、错误位 →「出错了」，正常完成落 done；
   // 历史回合恒 done（flags 是会话级、不随回合持久化，见计划风险表）
   const turns = groupTurns(messages)

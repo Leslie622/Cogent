@@ -1,10 +1,10 @@
-# bash / edit 工具与输出护栏 —— 批次 3（计划-pi借鉴.md §3）
+# bash / edit 工具与输出护栏 —— 批次 3（计划/pi借鉴.md §3）
 
 > 2026-11-11 落地。上游参照 = pi-coding-agent `core/tools/`（MIT）：
 > bash.ts(476) / edit.ts(221) / edit-diff.ts(745) / truncate.ts(302) /
 > output-accumulator.ts(257) / file-mutation-queue.ts / utils/shell.ts /
 > utils/child-process.ts / ls.ts(175) / find.ts(359) / grep.ts(337)。
-> 搬运原则见 计划-pi借鉴.md §0：**算法照搬，接线照 Cogent**。
+> 搬运原则见 计划/pi借鉴.md §0：**算法照搬，接线照 Cogent**。
 
 ## 0. 批次全景（六步全落地，tools-smoke 39 项全过）
 
@@ -147,8 +147,8 @@ unix = 进程组 SIGKILL（spawn detached 建组）→ 失败退化为杀单进�
    exit；代价是 PS 5.1 上原生命令的具体退出码被压平成 0/1（上游同款取舍）。
    pwsh 7 无此问题只吃前缀；行尾反引号（行继续符）会续接尾缀进用户命令，跳过。
 
-验证：`tmp/cogent-smoke/ps-utf8-smoke.mjs`（6 项断言，pwsh 7 与 `--ps51` 双跑
-全过；配方见 开发.md）。教训入 §8 勘误。
+验证：`tests/integration/ps-utf8.test.ts`（2026-11-13 自 tmp/cogent-smoke 正名
+迁入；6 项断言，pwsh 7 与 `--ps51` 双跑全过；跑法见 ../模块/测试.md）。教训入 §8 勘误。
 
 ## 5. 自主模式（D6：第四档权限）
 

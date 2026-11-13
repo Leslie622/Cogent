@@ -6,7 +6,7 @@
  * - 我们的持久域就是两类一形数据：sessions/<id>.json、（第 4 步）projects/<id>.json，
  *   集合 + id 的形状刚好覆盖，接口面最小；
  * - 单文件单文档（一会话一文件）：读写互不牵连、手工可检查可备份 —— 对齐
- *   Claude Code / Codex 的会话文件形态（对比见 docs/技术笔记/session-storage.md）。
+ *   Claude Code / Codex 的会话文件形态（对比见 docs/技术笔记/会话存储与转录持久化.md）。
  *
  * 边界纪律：StorageDriver 是引擎进程内的抽象，实现只依赖 node:fs ——
  * 零 Electron import（目录即边界，同 runtime/）。存储根由构造方注入

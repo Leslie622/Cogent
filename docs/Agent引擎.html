@@ -142,7 +142,7 @@
     <li><a href="#s6">6 维护指南</a></li>
   </ol>
   <div class="stamp">
-    基于 main @ d98cb57<br>整理于 2026-11-08<br>代码变更后按第 6 节同步
+    基于 main @ ea8f83a<br>复核于 2026-11-13<br>代码变更后按第 6 节同步
   </div>
 </nav>
 
@@ -277,12 +277,12 @@
     <tr><td><code>initialize</code></td><td>握手：交换 client / protocolVersion / node 版本；<code>params.credentials</code> 可选注入凭据（宿主把持久化 key 灌进引擎内存表）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>session.list / create / delete</code></td><td>会话 CRUD；create 可带 title / cwd / projectId / permissionMode（「完全访问」物化通道）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>session.messages</code></td><td>拉某会话的完整转录（pi Message[] → ChatMessage[] 纯文本化）</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>agent.submit</code></td><td>提交输入：text + 可选 model / provider / thinkingLevel（provider = 同名模型消歧键：azure 目录也收录 deepseek-v4-pro，id 单键全局查找会撞未配置的那家）；受理（同步校验：会话存在/空闲，失败回错误帧）即返回，进度走事件流</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>agent.submit</code></td><td>提交输入：text + 可选 model / provider / thinkingLevel（provider = 同名模型消歧键：azure 目录也收录 deepseek-v4-pro，id 单键全局查找会撞未配置的那家；thinkingLevel 值域 = off + 六档，off = 关闭思考，pi 方言层翻成 DeepSeek/anthropic 的 thinking disabled 等）；受理（同步校验：会话存在/空闲，失败回错误帧）即返回，进度走事件流</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>agent.abort</code></td><td>中止某会话正在进行的流（直达 pi Agent.abort()）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>credentials.set / remove / list</code></td><td>运行中更新 key / 删除单条 key（2026-11-10，真删而非写空串 —— 空串会造成壳"未配置"与引擎"已配置(空)"的语义分裂）/ 查各 provider 配置状态（只回布尔位）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>models.list</code></td><td>pi 模型目录摘要（UI 下拉数据源）；2026-11-10 起回带 <code>defaultModel</code>（provider+id 双键）—— 宿主不再自持默认模型常量副本（漂移后回填偏好会指向不可用模型）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>providers.custom.sync</code></td><td>自定义 provider + 内置 provider 本地调整（baseUrl 覆盖 / 模型增删 / 目录禁用）的<b>全量替换</b>同步</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>inspect.entries / inspect.entry</code></td><td>运行时控制台（2026-11-10）：拉会话观测条目摘要（时间线数据源）/ 按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词，数据源 = pi hooks 截获，见 <a href="技术笔记/runtime-console.md">笔记</a>）</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>inspect.entries / inspect.entry</code></td><td>运行时控制台（2026-11-10）：拉会话观测条目摘要（时间线数据源）/ 按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词，数据源 = pi hooks 截获，见 <a href="技术笔记/运行时控制台.md">笔记</a>）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>approval.respond</code></td><td>用户对审批请求的裁决回执（2026-11-11 已接线，批次 2.5 扩参）：resolve 挂起中的 beforeToolCall；optional <code>message</code> = 拒绝附言（「告诉模型接下来怎么做」→ block reason → 工具 error 结果回灌模型）、<code>always: 'workspace'</code> = 允许本次 + 落工作区级「始终允许」规则（无绑定根会话 → InvalidParams）；唔配对 requestId（重复裁决/已中止）→ InvalidParams</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>session.setPermission</code></td><td>会话级权限切换（「完全访问」按钮 ask ↔ auto）；引擎判定矩阵每次钩子触发读活值，运行中切换即生效</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>session.compact</code></td><td>手动压缩（2026-11-12 批次 4，D7 双路的手动路）：无论阈值直接压缩（会话回复中拒绝）；无可压缩 → InvalidRequest（手动动作要明确结果）。指示器悬浮卡「立即压缩上下文」是它的 UI 面（完备化 D8）</td><td><span class="st ok">已实现</span></td></tr>
@@ -296,7 +296,7 @@
     <tr><td><code>message.delta</code></td><td>流式文本增量；转译 text_delta / thinking_delta 两路（<code>kind</code> 区分，2026-11-08）；toolcall 无增量事件（工具起止走下方 tool.*）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>run.completed</code></td><td>执行正常结束：最终完整 assistant 消息（UI 用它替换流式累积，免拼 delta；2026-11-09 起带 <code>usage</code> token 用量 / <code>durationMs</code> 模型耗时 / <code>model</code> 模型名三件套）+ stopReason（length = 被 token 上限截断）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>run.failed</code></td><td>执行失败：message 来自 pi 约定的 <code>Agent.state.errorMessage</code>（stream error / 中止后异常都汇于此）。完备化 R5 起可恢复溢出不再发本事件（删失败轮 + 压缩 + continue 重试一次，单次闸；streaming 保活单 run 语义），重试再溢出闸住才发</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>compaction.started / completed</code></td><td>上下文压缩（2026-11-12 批次 4）：started = 摘要生成开始（reason = threshold 自动 / manual 手动）；completed 带 summary 全文 / 前后 token / <code>summarizedUntil</code> 锚（宿主做本地列表手术，原位换折叠条）/ 失败 error。完备化 R4 起摘要请求 = 主请求真前缀（KV cache 复用）</td><td><span class="st ok">已发射</span></td></tr>
+    <tr><td><code>compaction.started / completed</code></td><td>上下文压缩（2026-11-12 批次 4）：started = 摘要生成开始（reason = threshold 自动 / manual 手动）；completed 带 summary 全文 / 前后 token / <code>summarizedUntil</code> 锚（D9 保留式呈现：宿主在锚处原位中插折叠条，被摘要区历史保留不删，重拉历史不因压缩消失）/ 失败 error。完备化 R4 起摘要请求 = 主请求真前缀（KV cache 复用）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>compaction.pruned</code></td><td>L1 工具结果裁剪落账（2026-11-12 完备化 R3）：全转录超限（8192 code point）的 toolResult 原位改写（保头 4096 / 保尾 1024 / middle 换 marker），entries 带字符量对账 —— UI 呈「已裁剪 N 处工具输出」副行（dsh shadow-price 的简化版）。L1 单独够时不发 compaction.started（零摘要请求）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>tool.started / tool.completed</code></td><td>工具调用起止（带 ToolKind + 参数一行摘要；pi 时序 start 先于审批钩子 —— 挂起期宿主见 running 卡，拒绝后 completed(isError) 收口，2026-11-10 起发射；completed 带 optional diff = edit 的展示 diff，批次 3 D4）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>tool.progress</code></td><td>工具执行中的流式进度（bash 输出尾部快照，整段替换非增量，引擎侧 100ms 节流 + 尾部 2000 字符；批次 3 D5，2026-11-11 additive）</td><td><span class="st ok">已发射</span></td></tr>
@@ -441,7 +441,7 @@
     <li><b>建 Agent</b>：默认模型 <code>anthropic/claude-sonnet-4-5</code>、systemPrompt「You are Cogent, a helpful desktop agent.」、
     thinkingLevel off；<code>streamFn</code> 绑 <code>models.streamSimple</code>（auth 解析、provider 分发、重试全部 pi-ai 承担）；
     <code>getApiKey</code> 回调查凭据表（每轮请求前解析，支持运行中换 key）。</li>
-    <li><b>submit</b>：可选换模型（先按 provider/model 精确找，再退化为全目录按 id 找）与思考档（六档）；
+    <li><b>submit</b>：可选换模型（先按 provider/model 精确找，再退化为全目录按 id 找）与思考档（off + 六档，off 为关闭）；
     首条消息自动截 24 字作会话标题（命中后不再覆盖）；发 <code>run.started</code>、开流式缓冲、<code>agent.prompt(text)</code>。</li>
     <li><b>session.messages</b>：pi Message[] → ChatMessage[]。只取 user/assistant 的纯文本；
     system 消息是 prompt 载体不对 UI 暴露；content blocks 压平成文本 + toolCalls 段化投影（2026-11-10；块结构化仍是空位 1）。</li>
@@ -552,7 +552,7 @@
     <code>approval.respond</code>，不经 renderer 通用代理 —— 审批是安全边界，通道独立
     （同「工具结果不经 renderer 转发」同理）；重复裁决 → InvalidParams（双击/竞态显式报错）；</li>
     <li><b>原理与主流对比</b>（Claude Code 规则表 / Codex 沙箱×审批两维 / DeepAgent
-    interrupt）：见 <a href="技术笔记/tools-approval.md">技术笔记 · 工具系统与审批</a>。</li>
+    interrupt）：见 <a href="技术笔记/工具系统与审批.md">技术笔记 · 工具系统与审批</a>。</li>
   </ul>
 
   <!-- ================= 5. 能力接线 ================= -->
@@ -651,7 +651,7 @@
   </div>
   <div class="figcaption">图 5-1 · pi 能力接线图。</div>
 
-  <h3 id="s5-gaps">路线空位对照（docs/路线.md 空位清单）</h3>
+  <h3 id="s5-gaps">能力空位对照</h3>
   <table>
     <tr><th style="width:56px">空位</th><th>内容</th><th>接线后本手册要补什么</th></tr>
     <tr><td>1</td><td>protocol：消息域类型细化（content blocks、消息模型）</td><td>第 2 节 ChatMessage 形状更新；第 3 节转译表加新 block 类型</td></tr>
@@ -660,7 +660,7 @@
     <tr><td>4</td><td><s>thinking / toolcall 事件的 UI 呈现</s></td><td><b>已完成（2026-11-08 thinking / 2026-11-10 toolcall+段化）</b>：§3 转译表已更新；§5 右列已换为真实空位</td></tr>
     <tr><td>5</td><td><s>credentials 演进：per-provider 删除、key 脱敏展示</s></td><td><b>已完成（2026-11-08 脱敏 / 2026-11-10 remove）</b></td></tr>
     <tr><td>6</td><td><s>agent.abort 的 UI 反馈（「已停止」占位）</s></td><td><b>已完成（2026-11-10 回合批次 A：停止位+头条；2026-11-11 工具批次 2：审批挂起 abort 收口）</b>：§3 时序图 abort 注已更新</td></tr>
-    <tr><td>7</td><td><s>上下文压缩（批次 4 + 完备化）</s></td><td><b>已完成（2026-11-12）</b>：第 2 节已补 session.compact/continue 与 compaction.started/completed/pruned 三事件行；完备化增补（dsh 同构触发公式 / prepareNextTurnWithContext 轮间检查点 / L1 prune / 摘要真前缀 / 溢出恢复单次闸 / auto-continue / 思考预算通道）详录见 技术笔记/compaction.md §4.1；UI 四件（压缩中状态条/手动入口/prune 副行/截断动作条）已接线</td></tr>
+    <tr><td>7</td><td><s>上下文压缩（批次 4 + 完备化）</s></td><td><b>已完成（2026-11-12）</b>：第 2 节已补 session.compact/continue 与 compaction.started/completed/pruned 三事件行；完备化增补（dsh 同构触发公式 / prepareNextTurnWithContext 轮间检查点 / L1 prune / 摘要真前缀 / 溢出恢复单次闸 / auto-continue / 思考预算通道）详录见 技术笔记/上下文压缩.md §4.1；UI 四件（压缩中状态条/手动入口/prune 副行/截断动作条）已接线</td></tr>
   </table>
 
   <!-- ================= 6. 维护指南 ================= -->

@@ -58,7 +58,7 @@ marked ^18（remend 的流式修复基础），CJK 走同一 "friendly" 家族�
   体系写样式（border-border/bg-muted/font-mono，自动吃本项目主题）。代价是依赖面大
   （15 个直接依赖）；路线空位 4 调研时已定向它，本笔记补齐论证。
 - **shiki 重引入 vs 卸载史**：2026-11-08 布局收官清扫时卸过 shiki —— 但那是删未使用的
-  code-block 死代码（路线.md 记录在案）。如今：① `@lobehub/icons → @lobehub/ui` 传递依赖
+  code-block 死代码（git 历史记录在案）。如今：① `@lobehub/icons → @lobehub/ui` 传递依赖
   **本来就在树里带了一份 shiki 4.6.0**（npm ls 实证，dedupe 共享）；② @streamdown/code
   按语言懒加载，build 实测每语言独立 async chunk（cpp 838KB、emacs-lisp 793KB……），
   不用的语言不进启动路径。体积顾虑已不成立。

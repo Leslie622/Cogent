@@ -94,7 +94,7 @@ export function isRpcEvent(frame: unknown): frame is RpcEvent {
 
 /**
  * 会话摘要（列表/创建/置顶返回）。
- * 持久化（2026-11-09，docs/计划-工作区与会话真实化.md 第 1 步）：引擎重启后经
+ * 持久化（2026-11-09，docs/计划/工作区与会话真实化.md 第 1 步）：引擎重启后经
  * StorageDriver 复原，summary 整体落盘 —— 新字段全部 optional（只增不破），
  * 旧宿主/旧盘数据缺字段即走缺省行为。
  */
@@ -115,7 +115,7 @@ export interface SessionSummary {
    */
   archivedAt?: number
   /**
-   * 会话级权限模式（工具审批判定矩阵的会话侧输入，计划-工具系统与审批.md D4）：
+   * 会话级权限模式（工具审批判定矩阵的会话侧输入，docs/计划/工具系统与审批.md D4）：
    * ask（缺省）= 写类工具先审批；auto = 全放行（「完全访问」）；plan = 只读。
    * 缺省按 ask 处理（旧盘数据无此字段即落默认行为，只增不破）。
    */
@@ -165,7 +165,7 @@ export interface ContextEstimate {
 }
 
 /**
- * 工具调用投影（工具卡数据形状，计划-工具系统与审批.md §3）：
+ * 工具调用投影（工具卡数据形状，docs/计划/工具系统与审批.md §3）：
  * 流式（tool.started/completed 事件）与历史回查（ChatMessage.toolCalls）共用。
  * status 三态：ok = 执行成功；error = 执行失败（结果 isError）；blocked =
  * 未执行（审批拒绝 / plan 模式 / 中止 —— 模型收到的是 error 结果 + 原因）。
@@ -318,8 +318,13 @@ export interface AgentSubmitParams {
    * 原样下发、引擎双键限定解析；省略 = 引擎按旧序解析（默认 provider 优先）
    */
   provider?: string
-  /** 推理力度（pi ThinkingLevel）；省略时沿用会话当前值 */
-  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  /**
+   * 推理力度（pi ThinkingLevel 原样含 'off' = 关闭思考；方言层会翻成 DeepSeek/
+   * anthropic 的 thinking disabled、google 的 enabled:false 或 openai 的省略字段）。
+   * 曾把 off 误当"不属于档位"漏出枚举，导致滑杆默认档被入口校验拒收 ——
+   * 回归钉见 tests/integration/thinking-off.test.ts。省略时沿用会话当前值
+   */
+  thinkingLevel?: ThinkingLevelWithOff
 }
 export interface AgentSubmitResult {
   /** 已受理；执行结果经事件流推送（run.* / message.* / tool.*） */
@@ -407,7 +412,7 @@ export interface SessionArchiveResult {
 }
 
 /**
- * 会话级权限切换（「完全访问」按钮，计划-工具系统与审批.md D4）：引擎在
+ * 会话级权限切换（「完全访问」按钮，docs/计划/工具系统与审批.md D4）：引擎在
  * beforeToolCall 判定矩阵里消费 permissionMode。返回更新后的完整摘要。
  */
 export interface SessionSetPermissionParams {
@@ -508,12 +513,14 @@ export interface ProjectSetPinnedResult {
 }
 
 /**
- * 思考等级（pi ThinkingLevel 的子集；off 是"关闭思考"，不属于"支持的等级"）。
+ * 思考等级（pi ThinkingLevel 的子集；off 是"关闭思考"，不属于"支持的等级"，
+ * 故 ModelDef.thinkingLevels 选档集不含它 —— off 的可用性走 thinkingLevelMap
+ * 默认规则，不归用户选档管）。
  * 引擎按选中集构建 thinkingLevelMap：选中的等级原值透传，未选中的置 null（显式不支持）。
  */
 export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
-/** 完整档位（含 'off' = 关闭思考）：thinkingLevels 等"支持档枚举"场景用 */
+/** 完整档位（含 'off' = 关闭思考）：支持档枚举（thinkingLevels）与 agent.submit 值域共用 */
 export type ThinkingLevelWithOff = 'off' | ThinkingLevel
 
 /**

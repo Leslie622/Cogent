@@ -7,7 +7,8 @@
 ## 文件组织
 
 - **一个技术模块一个文件**，目录即分类，不放代码（代码落点写在笔记里）;
-- 文件名用模块的英文 kebab-case（`tool-execution.md`），标题用中文;
+- 文件名用模块的英文 kebab-case（`tool-execution.md`），标题用中文（既有中文
+  文件名先例 测试体系.md 保持不动，不强改）;
 - 单文件超过 ~150 行就拆子模块（如 `tool-execution.md` 拆出 `approval.md`），
   子模块文件名用 `主题-子题.md`；
 - 图片/图示放 `assets/` 子目录，按模块加前缀（`assets/tools-flow.svg`）。
@@ -15,7 +16,8 @@
 ## 笔记骨架（每篇必须遵守，保证横向可比）
 
 1. **问题**：这个模块解决什么问题，为什么 Agent 引擎绕不开它；
-2. **pi 的做法**：源码层面怎么实现（引用 `node_modules/@earendil-works/*/dist` 的文件与行号）；
+2. **pi 的做法**：源码层面怎么实现（优先引 `reference/pi/` 源码克隆的文件与
+   行号，包产物 `node_modules/@earendil-works/*/dist` 为辅）；
 3. **对比**：DeepAgent 同主题怎么做的（引代码/回忆均可，注明来源）、其他主流 Agent
    （Claude Code、OpenAI Agents SDK、LangGraph 等，按模块挑相关的）；
 4. **取舍**：各自设计选择的代价，Cogent 采用了哪种、为什么；
@@ -24,24 +26,25 @@
 ## 写作纪律
 
 - 对比要有具体出处（文件、类名、行为描述），不接受"DeepAgent 也支持"这种空话；
-- pi 的行为以源码为准（版本 1.5.0），发现与 README 不符处注明。
+- pi 的行为以源码为准（对照克隆 reference/pi/，锚点 74dcca7d，补拉配方见 ../架构.md），
+  发现与 README 不符处注明。
 
 ## 已有笔记
 
 | 笔记 | 对应路线项 | 状态 |
 | --- | --- | --- |
-| [pi Agent 接入与会话管理](pi-agent-integration.md) | 路线 2（SessionManager + pi Agent） | 已完成（2026-11-06） |
-| [凭据存储与模型目录](credential-storage.md) | 路线 5（safeStorage 凭据存取） | 已完成（2026-11-06） |
-| [自定义 Provider 与模型目录管理](custom-providers.md) | 模型设置扩展（createProvider/setProvider 机制） | 已完成（2026-11-06） |
-| [思考（Reasoning）流式呈现](thinking-reasoning.md) | 路线空位 4（thinking 半边） | 已完成（2026-11-08） |
-| [会话隔离与受理语义](pi-agent-integration-isolation.md) | 串话事故复盘（新聊天接线 + submit 受理校验） | 已完成（2026-11-09） |
-| [会话存储与转录持久化](session-storage.md) | 路线空位 3（StorageDriver + 本地 JSON + 惰性恢复） | 已完成（2026-11-09） |
-| [项目/工作区模型与存储根](project-workspace.md) | 计划第 2–6 步（~/.cogent 根 + 项目域 + 工作区注入） | 已完成（2026-11-09） |
-| [token 用量统计](token-usage.md) | 路线空位 1 的 usage 先行（pi Usage 投影 + 消息级统计行） | 已完成（2026-11-09） |
-| [运行时控制台](runtime-console.md) | inspect 域（pi hooks 观测 + 独立 DevTools 窗口 + 实时时间线） | 已完成（2026-11-10） |
-| [Markdown 渲染](markdown-rendering.md) | 路线空位 4 前半（Streamdown + Shiki + CJK 插件） | 已完成（2026-11-10） |
-| [工具系统与审批](tools-approval.md) | 路线空位 2/4/6（工具循环 + beforeToolCall 审批挂起 + 权限矩阵，批次 1+2 全景） | 已完成（2026-11-11） |
-| [bash / edit 工具与输出护栏](bash-edit-tools.md) | 计划-pi借鉴 批次 3（截断三件套 + 并发写队列 + edit CRLF 映射 + bash 进程树 + 自主模式 + gitignore 加固） | 已完成（2026-11-11） |
-| [上下文压缩](compaction.md) | 计划-pi借鉴 批次 4（阈值/手动双路 + 结构化 checkpoint 摘要 + compactionSummary 转录角色 + 折叠条与指示器回落） | 已完成（2026-11-12） |
-| [测试体系](测试体系.md) | 计划-测试体系.md（Vitest 三层 + 冒烟正名迁移 + CI；三家上游对照与迁移踩坑） | 已完成（2026-11-13） |
-| [内置浏览器与聚合面板](browser-and-panels.md) | 未立项调研（内置浏览器四层模型 / browser-use 插件与面板双面性 / ZCode + ChatGPT + dsh 三家对照，含引擎路线对照） | 调研完成（2026-11-12，无代码落点） |
+| [pi Agent 接入与会话管理](pi接入与会话管理.md) | 路线 2（SessionManager + pi Agent） | 已完成（2026-11-06） |
+| [凭据存储与模型目录](凭据存储与模型目录.md) | 路线 5（safeStorage 凭据存取） | 已完成（2026-11-06） |
+| [自定义 Provider 与模型目录管理](自定义Provider与模型目录.md) | 模型设置扩展（createProvider/setProvider 机制） | 已完成（2026-11-06） |
+| [思考（Reasoning）流式呈现](思考流式呈现.md) | 路线空位 4（thinking 半边） | 已完成（2026-11-08） |
+| [会话隔离与受理语义](会话隔离与受理语义.md) | 串话事故复盘（新聊天接线 + submit 受理校验） | 已完成（2026-11-09） |
+| [会话存储与转录持久化](会话存储与转录持久化.md) | 路线空位 3（StorageDriver + 本地 JSON + 惰性恢复） | 已完成（2026-11-09） |
+| [项目/工作区模型与存储根](项目工作区模型与存储根.md) | 计划第 2–6 步（~/.cogent 根 + 项目域 + 工作区注入） | 已完成（2026-11-09） |
+| [token 用量统计](token用量统计.md) | 路线空位 1 的 usage 先行（pi Usage 投影 + 消息级统计行） | 已完成（2026-11-09） |
+| [运行时控制台](运行时控制台.md) | inspect 域（pi hooks 观测 + 独立 DevTools 窗口 + 实时时间线） | 已完成（2026-11-10） |
+| [Markdown 渲染](Markdown渲染.md) | 路线空位 4 前半（Streamdown + Shiki + CJK 插件） | 已完成（2026-11-10） |
+| [工具系统与审批](工具系统与审批.md) | 路线空位 2/4/6（工具循环 + beforeToolCall 审批挂起 + 权限矩阵，批次 1+2 全景） | 已完成（2026-11-11） |
+| [bash / edit 工具与输出护栏](bash与edit工具与输出护栏.md) | pi借鉴 批次 3（截断三件套 + 并发写队列 + edit CRLF 映射 + bash 进程树 + 自主模式 + gitignore 加固） | 已完成（2026-11-11） |
+| [上下文压缩](上下文压缩.md) | pi借鉴 批次 4（阈值/手动双路 + 结构化 checkpoint 摘要 + compactionSummary 转录角色 + 折叠条与指示器回落） | 已完成（2026-11-12） |
+| [测试体系](测试体系.md) | 计划/测试体系.md（Vitest 三层 + 冒烟正名迁移 + CI；三家上游对照与迁移踩坑） | 已完成（2026-11-13） |
+| [内置浏览器与聚合面板](内置浏览器与聚合面板.md) | 未立项调研（内置浏览器四层模型 / browser-use 插件与面板双面性 / ZCode + ChatGPT + dsh 三家对照，含引擎路线对照） | 调研完成（2026-11-12，无代码落点） |

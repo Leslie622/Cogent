@@ -4,7 +4,7 @@
  * 断言与场景流原样，载体换 Vitest，D6）。
  *
  * mock SSE（18942）+ 引擎驱动 + 断言三合一，临时 COGENT_HOME 隔离。
- * 场景流一条到底（单 it）。场景（对照 docs/计划-审批交互升级.md 第 1 步）：
+ * 场景流一条到底（单 it）。场景（对照 docs/计划/审批交互升级.md 第 1 步）：
  *  S1 拒绝附言：respond(false, message) → 工具 error 含「用户指示」+ 附言回灌二轮
  *  S2 始终允许：respond(true, always) → 落盘 + approvals.json 落规则 → 同根二次写零审批
  *  S3 规则复原：杀引擎重启（同 COGENT_HOME）→ 规则仍在，同根写零审批

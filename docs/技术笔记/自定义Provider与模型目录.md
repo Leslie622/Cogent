@@ -6,7 +6,7 @@
 
 ## 1. 问题
 
-内置模型目录是编译期固定的（41 个 provider，见 [pi-agent-integration.md](pi-agent-integration.md)），
+内置模型目录是编译期固定的（41 个 provider，见 [pi接入与会话管理](pi接入与会话管理.md)），
 但真实用户要接**目录之外**的端点：
 
 - API 中转站 / 公司网关（OpenAI-compatible 协议，自有 baseUrl + key + 模型清单）；
@@ -127,7 +127,7 @@ id 全局查找按注册序命中 azure 那份 → "Provider is not configured: 
 修复 = 协议 `agent.submit` 加 optional `provider`，UI 选择时的 provider
 原样下发、引擎 `getModel(provider, id)` 双键限定；renderer 侧查 provider
 同样要先过 usableModels（全集按 id find 还是会撞未配 key 的那家）。
-对照冒烟配方见 [../开发.md](../开发.md)（ambiguity-smoke：不带 provider
+对照冒烟配方见 tests/integration/harness.ts（ambiguity-smoke：不带 provider
 复现 azure 报错 / 带上则成功）。
 
 ## 追加：userDefined 判定与"显示一律 id"（2026-11-10 用户定调）
@@ -148,16 +148,16 @@ provider（customIds）恒 true；内置 provider 则看 id 是否在 originals 
 false = 目录原生，宁可少锁不误锁）。
 
 冒烟断言（协议级）：目录原生与被覆盖的目录模型 false / 目录外新增与自定义
-供应商条目 true，见 [../开发.md](../开发.md) 冒烟惯例。
+供应商条目 true，mock 手法见 tests/integration/harness.ts。
 
 ## 追加：模型开关两事 —— 实时性排查与禁用行复活（2026-11-10）
 
 **"重启才生效"排查**：用户报告设置页只放开两个模型、聊天下拉仍全量，重启
 应用后正常。逐环核链路（preload → main IPC → 引擎 sync → refreshModels）
 均正确，冒烟钉死引擎实时性：sync(disabledModels) 后 `models.list` 立即只剩
-放开的模型（disabled-smoke，见 [../开发.md](../开发.md)）。根因 = **旧引擎
+放开的模型（disabled-smoke，见 tests/integration/harness.ts）。根因 = **旧引擎
 子进程**：引擎是独立 node 进程，renderer HMR / 热重启都不替换它，用户实例
-跑的是 disabledModels 过滤提交前的旧构建。教训入 开发.md 环境排障。
+跑的是 disabledModels 过滤提交前的旧构建。属环境排障教训。
 
 **禁用行复活（真 bug，重启后必撞）**：目录模型行由 `models.list`（已过滤）
 构建，而引擎不注册被禁模型 → 开关一关行就从设置页消失，**可逆开关变得
