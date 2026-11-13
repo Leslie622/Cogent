@@ -44,7 +44,7 @@ export class InspectStore {
       mkdirSync(this.dir, { recursive: true })
       appendFileSync(this.file(sessionId), `${JSON.stringify(record)}\n`)
     } catch (error) {
-      process.stderr.write(`[agent-service] inspect 落盘失败（${sessionId}）: ${(error as Error).message}\n`)
+      process.stderr.write(`[host] inspect 落盘失败（${sessionId}）: ${(error as Error).message}\n`)
     }
   }
 
@@ -73,13 +73,13 @@ export class InspectStore {
         }
       }
       if (bad > 0) {
-        process.stderr.write(`[agent-service] inspect 损坏行已跳过（${sessionId} ×${bad}）\n`)
+        process.stderr.write(`[host] inspect 损坏行已跳过（${sessionId} ×${bad}）\n`)
       }
       const tail = records.length > MAX_LINES ? records.slice(-MAX_LINES) : records
       if (records.length > TRIM_AT) this.rewrite(sessionId, tail)
       return tail
     } catch (error) {
-      process.stderr.write(`[agent-service] inspect 读取失败（${sessionId}，按无记录处理）: ${(error as Error).message}\n`)
+      process.stderr.write(`[host] inspect 读取失败（${sessionId}，按无记录处理）: ${(error as Error).message}\n`)
       return []
     }
   }
@@ -89,7 +89,7 @@ export class InspectStore {
     try {
       rmSync(this.file(sessionId), { force: true })
     } catch (error) {
-      process.stderr.write(`[agent-service] inspect 清理失败（${sessionId}）: ${(error as Error).message}\n`)
+      process.stderr.write(`[host] inspect 清理失败（${sessionId}）: ${(error as Error).message}\n`)
     }
   }
 
@@ -98,7 +98,7 @@ export class InspectStore {
     try {
       writeFileSync(this.file(sessionId), records.map((r) => `${JSON.stringify(r)}\n`).join(''))
     } catch (error) {
-      process.stderr.write(`[agent-service] inspect 裁剪重写失败（${sessionId}，下次超限再试）: ${(error as Error).message}\n`)
+      process.stderr.write(`[host] inspect 裁剪重写失败（${sessionId}，下次超限再试）: ${(error as Error).message}\n`)
     }
   }
 }

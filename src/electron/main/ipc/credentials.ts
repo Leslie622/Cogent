@@ -6,9 +6,9 @@
 import { ipcMain } from 'electron'
 import { IPC } from '../../../shared/ipc'
 import type { CredentialStore } from '../credentials/store'
-import type { AgentServiceManager } from '../service/manager'
+import type { HostManager } from '../host/manager'
 
-export function registerCredentialsIpc(service: AgentServiceManager, store: CredentialStore): void {
+export function registerCredentialsIpc(host: HostManager, store: CredentialStore): void {
   // 信任边界：providerId/apiKey 形状校验；业务语义（provider 是否存在）由引擎报错
   ipcMain.handle(IPC.credentialsSet, async (_event, raw: unknown) => {
     const payload = raw as Partial<{ providerId: unknown; apiKey: unknown }>
@@ -22,8 +22,8 @@ export function registerCredentialsIpc(service: AgentServiceManager, store: Cred
     }
     store.write(payload.providerId, payload.apiKey)
     // 引擎未运行时（启动失败）仅落盘：下次握手注入；这里不阻塞保存动作本身
-    if (service.getStatus().state === 'running') {
-      await service.request('credentials.set', { providerId: payload.providerId, apiKey: payload.apiKey })
+    if (host.getStatus().state === 'running') {
+      await host.request('credentials.set', { providerId: payload.providerId, apiKey: payload.apiKey })
     }
     return { ok: true as const }
   })
@@ -34,8 +34,8 @@ export function registerCredentialsIpc(service: AgentServiceManager, store: Cred
       throw new Error('credentials:remove 需要 { providerId: string }')
     }
     store.remove(payload.providerId)
-    if (service.getStatus().state === 'running') {
-      await service.request('credentials.remove', { providerId: payload.providerId })
+    if (host.getStatus().state === 'running') {
+      await host.request('credentials.remove', { providerId: payload.providerId })
     }
     return { ok: true as const }
   })

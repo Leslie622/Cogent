@@ -15,7 +15,7 @@
  * `<root>/<collection>/<id>.json` 目录语义（一实体一文件），而规则表是全局
  * 一小份单文档（预计个位数条目），单文件整读整写最贴切 —— 自写 tmp+rename
  * 原子写，手法同 JsonStorageDriver.put（main 侧的 writeFileAtomic 不可
- * import，agent-service 零 Electron 依赖的边界纪律）。
+ * import，host 零 Electron 依赖的边界纪律）。
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -79,7 +79,7 @@ export class ApprovalRegistry {
         // 旁置失败（文件被占锁等）不追加深陷：诊断已留，启动继续
       }
       process.stderr.write(
-        `[agent-service] 审批规则文档损坏已隔离（approvals.json → .corrupt，按空表继续）: ${(error as Error).message}\n`
+        `[host] 审批规则文档损坏已隔离（approvals.json → .corrupt，按空表继续）: ${(error as Error).message}\n`
       )
     }
   }
@@ -114,7 +114,7 @@ export class ApprovalRegistry {
       writeFileSync(tmp, JSON.stringify(doc, null, 2))
       renameSync(tmp, file)
     } catch (error) {
-      process.stderr.write(`[agent-service] 审批规则落盘失败（下次变更重试）: ${(error as Error).message}\n`)
+      process.stderr.write(`[host] 审批规则落盘失败（下次变更重试）: ${(error as Error).message}\n`)
     }
   }
 

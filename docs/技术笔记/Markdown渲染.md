@@ -41,7 +41,7 @@ marked ^18（remend 的流式修复基础），CJK 走同一 "friendly" 家族�
 | 实现 | 渲染栈 | 流式策略 | 出处 |
 | --- | --- | --- | --- |
 | pi CLI | marked.lexer → 自研 ANSI 遍历 | WeakRef token 缓存 + 顶层块缓存 + 修剪半截围栏 | `packages/tui/src/components/markdown.ts`（GitHub） |
-| DeepAgent (LangChain) | **无 UI 层**，引擎只产 text；其开发态 UI 由 LangGraph Studio 消费 | —— | DeepAgent 为纯 Python agent 库 |
+| DeepAgent (LangChain) | **无 UI 层**，引擎只产 text；其开发态 UI 由 LangGraph Studio 消费 | —— | 双语言实现：Python（`libs/deepagents`）+ **TS（npm `deepagents`，langchain-ai/deepagentsjs，2026-11-13 修正——此前误记纯 Python**；作者前项目用的即 TS 版） |
 | Claude Code（闭源） | 终端 ANSI 渲染，代码块带语言色 | 行为观察：流式中围栏即时代码渲染 | 闭源，仅行为观察 |
 | ChatGPT / Claude Web（闭源） | react-markdown 系组件树 | 整条重渲染（体感有节流） | 行为观察 |
 | LobeChat | react-markdown + remark/rehype + **Shiki**（组件在 @lobehub/ui） | rehypeStreamAnimated 等插件 | [lobehub/lobe-ui](https://github.com/lobehub/lobe-ui) `src/Markdown/` |

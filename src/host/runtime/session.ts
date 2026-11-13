@@ -1,39 +1,47 @@
 /**
- * 会话运行时 —— pi Agent 的托管层，路线第 2 项 + 存储落地（2026-11-09，
- * docs/计划/工作区与会话真实化.md 第 1 步）的落点。
+ * 会话运行时 —— pi AgentSession 的托管层（阶段 1.2a，内核替换手术）。
  *
  * 职责：
- * - 每会话一个 pi Agent 实例（transcript 隔离在 Agent.state.messages）；
- * - 用户文本（agent.submit）→ agent.prompt()，pi 事件流转译为协议事件
- *   （notify 回调注入，本文件不直接碰 stdout）；
- * - 会话/转录持久化：回合边界（create/delete/agent_end）整文档落盘；
- *   启动时只恢复摘要，pi Agent 惰性重建（首次使用才实例化+灌转录）。
+ * - 每会话一个 pi AgentSession（经 kernel/pi-session-factory 装配，南缝唯一
+ *   实现）；转录真源 = pi JSONL（message_end 逐条追加落盘），本层只管会话域
+ *   summary（置顶/归档/项目绑定是 Cogent 的私域）；
+ * - 用户文本（agent.submit）→ pi.prompt()，pi 事件流转译为协议事件（notify
+ *   回调注入，本文件不直接碰 stdout）；
+ * - pi AgentSession 全托管运行期恢复：provider 自动重试、溢出压缩重试、阈值
+ *   压缩都发生在 prompt() Promise 生命周期内 —— 旧手搓的 L1/L2 压缩、溢出
+ *   恢复整体让位（与 pi 会话树不兼容：pi 靠 message_end 追加，原位 splice
+ *   会分叉）；Cogent 保留的运行期逻辑只剩 AUTO_CONTINUE 续写（R6③：显式
+ *   user 消息续跑，兼容 pi 树）与审批挂起（链式 beforeToolCall，见 factory）。
  *
- * 持久化决策（对比讨论见 docs/技术笔记/会话存储与转录持久化.md）：
- * - 落盘 = 存 pi 完整转录（AgentMessage[]），ChatMessage 只是读时投影 ——
- *   恢复要保真（思考块/将来 toolCall），投影是有损形态不可作存储格式；
- * - 写时机 = 回合边界而非逐 delta：LLM 流式一秒多拍，逐拍写盘是写放大；
- *   回合内崩溃丢当前回合（进程重启场景本就要重发），已完成回合永不丢；
- * - 落盘失败不崩引擎、不吞 run.completed：外部世界失败是常态（约定.md §1.1），
- *   用户回合已经成功，存储故障只记诊断 + 转录留内存待下次回合重写 ——
- *   这是"尽力落盘"语义；若把 run.completed 也判失败，等于让存储故障
- *   回滚一次成功的模型回复，得不偿失。
+ * 终态纪律（与旧架构的关键差异）：协议 run.completed/run.failed 的发射点在
+ * **agent_settled**（pi 在 _startRun 的 finally 里每轮 prompt 恰发一次）——
+ * 它晚于全部内聚恢复/重试，天然的单一权威终态；旧实现里 agent_end 事件驱
+ * 动终态 + settleRun 抑制竞态的复杂度（溢出/续写窗口的抑制判定）随之消解。
+ *
+ * 惰性纪律：恢复的会话启动只读 summary（v2 盘上文档），pi 内核与观测记录器
+ * 都在首次使用（submit/compact/inspect 读取）时才建 —— 与旧惰性 Agent 同理。
  *
  * 边界纪律：
+ * - 本类实现 kernel/contract.ts 的 CogentKernel（南缝合同，全局架构 D4）：
+ *   会话域服务与内核驱动尚为混体，阶段 1.3 起拆出 PiSdkKernel；
  * - 只依赖 pi-* 与 protocol 与 ../storage，零 Electron import（目录即边界）；
  * - handler 内信任协议类型，不做二次防御（约定.md §1.3，边界校验在 dispatch 入口）。
  */
-import { Agent } from '@earendil-works/pi-agent-core'
-import type { AgentEvent, AgentMessage, BeforeToolCallResult, ThinkingLevel } from '@earendil-works/pi-agent-core'
+import type { Agent, AgentMessage, ThinkingLevel } from '@earendil-works/pi-agent-core'
 import { builtinModels } from '@earendil-works/pi-ai/providers/all'
-import { contentText, getSupportedThinkingLevels } from '@earendil-works/pi-ai'
+import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { Api, Model, MutableModels, Usage } from '@earendil-works/pi-ai'
 // 上下文粗估（2026-11-11 明细区）：与 pi clampMaxTokensToContext 同一实现 ——
 // 引擎每轮算 max_tokens 预算用的就是 estimateContextTokens，明细口径与之同源
 import { estimateContextTokens, estimateMessageTokens, estimateTextTokens } from '@earendil-works/pi-ai/utils/estimate'
-import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { getSystemMessageText } from '@earendil-works/pi-ai/utils/text'
-import { existsSync, readFileSync } from 'node:fs'
+import type {
+  AgentSession,
+  AgentSessionEvent,
+  ModelRuntime,
+  ToolDefinition
+} from '@earendil-works/pi-coding-agent'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { ProtocolError, RpcErrorCode } from '../../protocol'
@@ -47,7 +55,6 @@ import type {
   ModelSummary,
   PermissionMode,
   ProviderOverrideDef,
-  ProtocolEvents,
   SessionSummary,
   ToolCallRecord,
   ToolKind
@@ -57,64 +64,69 @@ import { CustomProviderRegistry } from './custom-providers'
 import { SessionInspector } from './inspector'
 import type { ProjectRegistry } from './project'
 import type { ApprovalRegistry } from './approvals'
-import {
-  buildSummarizationContext,
-  buildSummarizationInstruction,
-  compactionThreshold,
-  convertToLlmMessages,
-  insertCompactionMarker,
-  KEEP_RECENT_TOKENS,
-  prepareCompaction,
-  pruneToolResults,
-  shouldCompact,
-  summarizationFailure,
-  summarizationThinkingLevel,
-  formatFileOperations,
-  type CompactionPreparation
-} from './compaction'
+import type { CogentKernel, KernelNotifier } from '../kernel/contract'
+import { createPiSession, readPiTranscript } from '../kernel/pi-session-factory'
+import { importLegacyTranscript } from '../kernel/legacy-import'
+// 上下文明细的转录整形（明细区数据源）：convertToLlmMessages 处理
+// compactionSummary 等自定义角色后与 pi 预算看到的载荷同源同形
+import { compactionThreshold, convertToLlmMessages } from './compaction'
 import type { InspectStore, StorageDriver } from '../storage'
 import { buildTools, toolMeta } from '../tools'
 
-/** 引擎事件出口的类型别名：runtime 通过它上报事件，不关心传输层 */
-export type Notify = <E extends keyof ProtocolEvents>(
-  method: E,
-  params: ProtocolEvents[E]
-) => void
+/** 引擎事件出口的类型别名：runtime 通过它上报事件，不关心传输层（形状住在南缝合同） */
+export type Notify = KernelNotifier
 
-/** 会话盘上文档形状：摘要 + 完整转录（pi AgentMessage[]，含 system/user/assistant） */
+/**
+ * 会话盘上文档形状（v2，阶段 1.2a 起）：只存会话域 summary —— 转录真源已迁
+ * pi JSONL（<hostRoot>/pi/sessions/…，pi 逐条追加）；置顶/归档/权限模式是
+ * Cogent 的私域，pi 不知情，落在本文件。
+ */
 interface StoredSession {
-  version: 1
+  version: 2
   summary: SessionSummary
-  transcript: AgentMessage[]
 }
 
 /**
  * 启动恢复时的盘上数据收窄（信任边界：磁盘旧数据可能被手改/属旧版本格式）。
- * 只校验本层依赖的三个字段（version/summary.id/transcript 是数组）；转录内层
- * 结构信任 pi 的写入（引擎自己落的盘，形状由 StoredSession 类型保证）。
+ * v1（手搓持久化时代）带完整转录 —— 收进 legacyTranscript 等惰性导入 pi 树
+ * （见 buildPiSession）；v2 只有 summary。只校验本层依赖的字段；转录内层
+ * 结构信任 pi 的写入（引擎自己落的盘）。
  */
-function asStoredSession(doc: unknown, id: string): StoredSession {
+function asStoredSession(doc: unknown, id: string): { summary: SessionSummary; legacyTranscript?: AgentMessage[] } {
   if (typeof doc !== 'object' || doc === null) throw new Error(`会话文档形状不合法（sessions/${id}.json）`)
-  const d = doc as Partial<StoredSession>
-  if (d.version !== SESSION_FILE_VERSION || typeof d.summary?.id !== 'string' || !Array.isArray(d.transcript)) {
-    throw new Error(`会话文档版本/形状不合法（sessions/${id}.json），请手工处理后重启`)
+  const d = doc as { version?: unknown; summary?: SessionSummary; transcript?: unknown }
+  if (d.version !== 2 && d.version !== 1) {
+    throw new Error(`会话文档版本不合法（sessions/${id}.json），请手工处理后重启`)
   }
-  return d as StoredSession
+  if (typeof d.summary?.id !== 'string') {
+    throw new Error(`会话文档形状不合法（sessions/${id}.json），请手工处理后重启`)
+  }
+  if (d.version === 1 && !Array.isArray(d.transcript)) {
+    throw new Error(`会话文档转录形状不合法（sessions/${id}.json），请手工处理后重启`)
+  }
+  return {
+    summary: d.summary,
+    ...(d.version === 1 && { legacyTranscript: d.transcript as AgentMessage[] })
+  }
 }
 
-/** 内存态会话：Agent 惰性 —— 恢复的会话在首次 submit/messages 时才重建实例 */
+/** 内存态会话：pi 内核惰性 —— 恢复的会话在首次 submit/compact 时才装配 */
 interface Session {
   summary: SessionSummary
-  /** 持久转录（真源）；agent 存在时两者一致（agent_end 后同步） */
-  transcript: AgentMessage[]
-  /** pi Agent 实例；undefined = 尚未（重）建 —— 惰性重建的落点 */
-  agent?: Agent
+  /** v1 旧盘的转录（pi 内核装配时一次性导入 pi 树，随后清引用；v2 会话无此字段 */
+  legacyTranscript?: AgentMessage[]
+  /** pi AgentSession；undefined = 尚未建 —— 惰性装配的落点 */
+  pi?: AgentSession
+  /** 装配 in-flight 去重（双 submit 并发各建一个会话树会分叉） */
+  piBuilding?: Promise<AgentSession>
   /**
-   * 运行时控制台记录器；undefined = 尚未使用 —— 惰性（同 Agent）：构造要读
+   * 运行时控制台记录器；undefined = 尚未使用 —— 惰性（同 pi 内核）：构造要读
    * inspect/<id>.jsonl 尾部（含详情，可达 MB 级），启动期全量恢复会话会白吃内存；
    * 首次 submit / inspect 读取时才建，seq/run 从落盘尾部接续
    */
   inspector?: SessionInspector
+  /** 系统提示词缓存（首用现算；会话生命周期内不变 —— AGENTS.md 改动不热更，同旧架构） */
+  systemPrompt?: string
 }
 
 /** AGENTS.md 只读加载的长度上限（字符）——巨型指令文件不吃满上下文 */
@@ -160,7 +172,7 @@ function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
         prompt += `\n\n# ${label}\n${trimmed}`
       } catch (error) {
         // 读失败不挡会话创建：指令文件是增益不是必需品（外部世界失败是常态）
-        process.stderr.write(`[agent-service] AGENTS.md 读取失败（跳过 ${root}）: ${(error as Error).message}\n`)
+        process.stderr.write(`[host] AGENTS.md 读取失败（跳过 ${root}）: ${(error as Error).message}\n`)
       }
     }
   }
@@ -188,35 +200,17 @@ function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
 }
 
 /**
- * 权限模式通告文本（D6，plan 随权限菜单首次真接线）：ask 是缺省行为不声明，
- * 只讲例外。通告不进 buildSystemPrompt（leading 固化后运行中切换改不动），
- * 而是作为独立 system 消息落在 transcript —— pi 的 systemPrompt 是全部
- * system 消息的重放拼接，各方言组装请求时会把中部 system 合并到领头
- * （pi-ai collapseSystemMessages），追加是官方支持的改提示词通道。
- */
-const PERMISSION_NOTICE_PREFIX = '[cogent:permission]'
-
-/**
  * 续写注入消息(R6③,Claude Code 的 append 式续写取向):显式 user 消息让
  * 模型明确「从截断处接着写」—— pi 的无痕 finishTurn{continue} 续跑可能开
  * 新话题。带 [cogent:continue] 前缀:投影层据此跳过成泡并把相邻 assistant
  * 段合并(保真在转录,聚合在投影);LLM 侧原样可见(它是引出续文的正当
- * 提示)。上限 3 次 —— 连环 length 时闸住,升级 UI 动作条交还用户
+ * 提示)。上限 3 次 —— 连环 length 时闸住,升级 UI 动作条交还用户。
+ * pi 内核对贴线 maxTokens 截断不做恢复（recoverableLength 只收输出被夹的
+ * 场景），本机制与之互补不重叠。
  */
 const AUTO_CONTINUE_PREFIX = '[cogent:continue]'
 const AUTO_CONTINUE_MESSAGE = `${AUTO_CONTINUE_PREFIX} Continue your previous response from exactly where it was cut off. Do not repeat what you already wrote, do not apologize or explain — just continue seamlessly.`
 const AUTO_CONTINUE_LIMIT = 3
-
-function permissionNotice(mode: Exclude<PermissionMode, 'ask'>): string {
-  const body =
-    mode === 'plan'
-      ? '# 权限\n你处于 plan（只读）模式：写类工具一律被阻止。只做阅读、分析与方案输出，不修改任何文件。'
-      : mode === 'autonomous'
-        ? '# 权限\n你处于自主模式：文件修改直接执行；shell 命令属于风险操作，执行前需用户逐次确认。'
-        : '# 权限\n用户已授予完全访问：写类工具直接执行，无需用户逐次确认。'
-  return `${PERMISSION_NOTICE_PREFIX}\n${body}`
-}
-
 
 /** git 当前分支：解析 <cwd>/.git/HEAD 的 ref: refs/heads/<branch>；非仓库/异常返回 null */
 function readGitBranch(cwd: string): string | null {
@@ -238,6 +232,9 @@ function readGitBranch(cwd: string): string | null {
  * turn_end 封存成一段 ChatMessage；`segments` 按发生序收集全部段 ——
  * run.completed 的 messages 即它（text 段与工具卡交错保真），message 是
  * 全段聚合（老宿主兼容）。
+ * 生命周期与旧架构不同：streaming 在 submit 受理时置位、**agent_settled**
+ * 终态时清位 —— 覆盖 pi 内聚恢复（provider 重试/溢出压缩重试）与 AUTO_CONTINUE
+ * 续写链的全窗口，也是 submit 忙判定的单一账本（见 submit）。
  */
 interface StreamingState {
   messageId: string
@@ -345,13 +342,14 @@ function accumulateUsage(current: MessageUsage | undefined, add: MessageUsage): 
  * total 直接取 estimateContextTokens().tokens（= 末轮实报 usage + 其后 trailing
  * 估算，即预算式里的"占用"），保证三段和与引擎看到的占用一致。
  *
- * 无对话时（首问前）estimateContextTokens 返回 0/无 usage 锚点，照常算 ——
- * 调用方只在回合结束（有 usage）时才挂到消息上，空转录不会走到这。
+ * 输入源（1.2a 起）：pi.agent.state.messages（会话树投影）或 v1 旧转录 ——
+ * 前者不含 system 消息（system 是提示词状态不进树，session-manager 投影滤除），
+ * systemPrompt/toolDefs 两段自然为 0 估算；与旧口径的偏差属投影对账范围（1.4）。
  */
 function estimateContext(messages: AgentMessage[]): ContextEstimate {
-  // 先过 convertToLlmMessages：批次 4 起转录可能含 compactionSummary 自定义
-  // 角色（无 content 数组），pi-ai estimateMessageTokens 对它不认识会炸；
-  // 转换后与引擎 max_tokens 预算看到的载荷同源同形（预算口径只可能更准）
+  // 先过 convertToLlmMessages：转录可能含 compactionSummary 自定义角色（无
+  // content 数组），pi-ai estimateMessageTokens 对它不认识会炸；转换后与引擎
+  // max_tokens 预算看到的载荷同源同形（预算口径只可能更准）
   const llmMessages = convertToLlmMessages(messages)
   let systemPrompt = 0
   let toolDefs = 0
@@ -374,8 +372,8 @@ function estimateContext(messages: AgentMessage[]): ContextEstimate {
   }
 }
 
-/** 盘上文档格式版本（将来字段演进据此迁移，同 credentials.json 的 version 手法） */
-const SESSION_FILE_VERSION = 1
+/** 盘上文档格式版本（v2 = summary-only；v1 兼容读取，见 asStoredSession） */
+const SESSION_FILE_VERSION = 2
 /** 会话集合名（StorageDriver 顶层目录 ~/.cogent/sessions/） */
 const SESSION_COLLECTION = 'sessions'
 /** 首条消息截断为会话标题的长度上限 */
@@ -385,50 +383,42 @@ const APPROVAL_MESSAGE_MAX_CHARS = 2_000
 const DEFAULT_MODEL = 'claude-sonnet-4-5'
 const DEFAULT_PROVIDER = 'anthropic'
 
-export class SessionManager {
+export class SessionManager implements CogentKernel {
   private sessions = new Map<string, Session>()
-  /**
-   * Agent → sessionId 反查表：pi 事件回调只带 agent 引用，逐事件线性扫 sessions
-   * 是流式热路径（每个 delta 一次 O(N)）——建 Agent 时登记、删除时撤销，O(1) 直取
-   */
-  private agentIndex = new Map<Agent, string>()
   private streaming = new Map<string, StreamingState>()
   /**
-   * 压缩进行中的会话（并发护栏，批次 4）：摘要发生在 prompt 之前 —— pi 尚未
-   * 置 isStreaming，submit 的忙碌检查在压缩窗口内裸奔；窗口期第二个 submit 会
-   * 与首个 run 的压缩/prompt 交错（双压缩 + 双 prompt）。入集/出集在
-   * runCompaction 的同步段/finally，submit 与 compactSession 都先查它
+   * 手动压缩进行中的会话（并发护栏）：pi.compact() 是 async RPC，窗口期
+   * submit/continueSession 需同步拒绝（pi prompt 对压缩窗口的 throw 发生在
+   * 异步段，落不到"受理即拒"的协议形态）。自动压缩（threshold/overflow）由
+   * pi 在 prompt 生命周期内自管，不经此集
    */
   private compacting = new Set<string>()
   /**
-   * 溢出恢复单次闸(完备化 R5,pi _overflowRecoveryAttempted 同款):provider
-   * 报 context overflow → 删失败轮 → L1/L2 → 原请求重试一次;闸住防「压缩
-   * 没压下来 → 再溢出 → 再压缩」的循环。每次用户 submit 重置(新一轮用户
-   * 输入重新获得一次恢复权)
-   */
-  private overflowRetried = new Set<string>()
-  /**
    * length 续写剩余次数(完备化 R6③,按会话):submit/手动续写时重置为 3。
-   * agent_end 与 settleRun 两处同读 —— 前者据此抑制终态(预算未尽时续写
-   * 还会接着跑),后者据此决定是否注入续写消息
+   * agent_settled(抑制终态)与 settleRun(注入续写)两处同读 —— 前者据此抑制
+   * 终态(续写还会接着跑),后者据此决定是否注入续写消息并扣减
    */
   private continuationBudget = new Map<string, number>()
   /**
-   * 挂起中的审批（D4/D5）：approval.request 发出 → beforeToolCall 的 Promise 悬着
-   * 等 approval.respond。value 存 sessionId（会话删除/退出时按会话批量收尾 ——
-   * 不 resolve 则 pi 的 await 永悬、该 run 永不结束）+ 工具类别（respond 的
-   * always='workspace' 落规则时要知道落哪类，审批交互升级 D3）。
+   * 挂起中的审批（D4/D5）：approval.request 发出 → 链式 beforeToolCall 的
+   * Promise 悬着等 approval.respond。value 存 sessionId（会话删除/退出时按会话
+   * 批量收尾 —— 不 resolve 则 pi 的 await 永悬、该 run 永不结束）+ 工具类别
+   * （respond 的 always='workspace' 落规则时要知道落哪类，审批交互升级 D3）。
    */
   private pendingApprovals = new Map<
     string,
-    { sessionId: string; kind: ToolKind; resolve: (result: BeforeToolCallResult) => void }
+    { sessionId: string; kind: ToolKind; resolve: (result: { block: boolean; reason?: string }) => void }
   >()
   private models: MutableModels
   private customProviders: CustomProviderRegistry
-  /** 项目注册表（构造注入；submit/createAgent 时解析 projectId → 项目多根目录） */
+  /** 项目注册表（构造注入；submit/buildPiSession 时解析 projectId → 项目多根目录） */
   private projects: ProjectRegistry
-  /** 审批规则表（构造注入；beforeToolCall ask 判定前查「始终允许此工作区」，D3） */
+  /** 审批规则表（构造注入；审批 ask 判定前查「始终允许此工作区」，D3） */
   private approvals: ApprovalRegistry
+  /** pi 运行时（目录 + 鉴权 + 请求路由；构造注入，index.ts 建于启动期） */
+  private modelRuntime: ModelRuntime
+  /** Cogent Host 根（pi 域 <root>/pi 的父目录，装配 pi 会话树用） */
+  private hostRoot: string
 
   constructor(
     private credentials: CredentialRegistry,
@@ -436,15 +426,21 @@ export class SessionManager {
     private notify: Notify,
     projects: ProjectRegistry,
     approvals: ApprovalRegistry,
-    private inspectStore: InspectStore
+    private inspectStore: InspectStore,
+    modelRuntime: ModelRuntime,
+    hostRoot: string
   ) {
     this.projects = projects
     this.approvals = approvals
-    // pi 内置全部 provider 的模型目录；凭据解析经 Agent.getApiKey 查我们的内存表
+    this.modelRuntime = modelRuntime
+    this.hostRoot = hostRoot
+    // pi 内置全部 provider 的模型目录（UI 下拉 + submit 模型解析仍走它）；
+    // pi 内核的请求路由走 modelRuntime —— custom provider 经 registerNativeProvider
+    // 双注册（见 custom-providers.ts），内置 provider 的 key 经凭据 sink 进 runtime
     this.models = builtinModels()
-    this.customProviders = new CustomProviderRegistry(this.models)
+    this.customProviders = new CustomProviderRegistry(this.models, modelRuntime)
     this.customProviders.snapshotBuiltin()
-    // 启动恢复：只拉摘要（惰性重建，见 Session.agent / Session.inspector 注释）。
+    // 启动恢复：只拉摘要（惰性装配，见 Session.pi / Session.inspector 注释）。
     // 损坏（截断/手改/旧版本形状）逐文件隔离：报错 + 改名 .corrupt 旁置 + 继续
     // 恢复其余会话 —— 单文件损坏若任其炸构造器，引擎进程拒启 = 全部会话陪葬，
     // 这超出了约定.md §1.1「报错而非静默重建」的立法本意（可见性保留：stderr
@@ -452,11 +448,14 @@ export class SessionManager {
     for (const id of this.storage.ids(SESSION_COLLECTION)) {
       try {
         const doc = asStoredSession(this.storage.get(SESSION_COLLECTION, id), id)
-        this.sessions.set(doc.summary.id, { summary: doc.summary, transcript: doc.transcript })
+        this.sessions.set(doc.summary.id, {
+          summary: doc.summary,
+          ...(doc.legacyTranscript !== undefined && { legacyTranscript: doc.legacyTranscript })
+        })
       } catch (error) {
         this.storage.quarantine(SESSION_COLLECTION, id)
         process.stderr.write(
-          `[agent-service] 会话文档损坏已隔离（sessions/${id}.json → .corrupt）: ${(error as Error).message}\n`
+          `[host] 会话文档损坏已隔离（sessions/${id}.json → .corrupt）: ${(error as Error).message}\n`
         )
       }
     }
@@ -506,6 +505,12 @@ export class SessionManager {
     return roots.length > 0 ? roots : [homedir()]
   }
 
+  /** 系统提示词惰性算 + 缓存（submit 的观测快照与 pi 装配共用同一份） */
+  private ensureSystemPrompt(session: Session): string {
+    session.systemPrompt ??= buildSystemPrompt(this.workspaceRoots(session), this.toolRoots(session))
+    return session.systemPrompt
+  }
+
   /** 自定义 provider / 内置 baseUrl 覆盖的全量同步（providers.custom.sync 委托） */
   syncCustomProviders(defs: CustomProviderDef[], overrides: ProviderOverrideDef[]): number {
     return this.customProviders.sync(defs, overrides)
@@ -529,7 +534,7 @@ export class SessionManager {
       // 缺省不带 = ask（协议缺省语义，旧宿主不破）
       ...(params.permissionMode !== undefined && { permissionMode: params.permissionMode })
     }
-    this.sessions.set(summary.id, { summary, transcript: [] })
+    this.sessions.set(summary.id, { summary })
     this.persist(summary.id)
     return summary
   }
@@ -559,7 +564,7 @@ export class SessionManager {
   }
 
   /** 归档/恢复（回收站语义：archived=false = 恢复回活跃列表）。归档不中止进行中
-      回复 —— 转录由事件流照常落盘，只是会话从主列表消失（agent_end 不受影响） */
+      回复 —— 转录由 pi 照常落盘，只是会话从主列表消失（agent_settled 不受影响） */
   archive(sessionId: string, archived: boolean): SessionSummary {
     const session = this.requireSession(sessionId)
     if (archived) session.summary.archivedAt = Date.now()
@@ -571,11 +576,21 @@ export class SessionManager {
   delete(sessionId: string): boolean {
     const session = this.sessions.get(sessionId)
     if (!session) return false
-    session.agent?.abort()
-    // 挂起审批先收尾再拆会话：resolve block 让 pi 的 await 落地、run 正常走完
-    // 收尾路径（agent.abort 后的事件流转译要能找到会话，先 settle 后删）
+    // pi 内核整拆（abort 全部运行中工作 + 拆钩，agent-session dispose 语义）
+    session.pi?.dispose()
+    // 挂起审批先收尾再拆会话：resolve block 让链式 beforeToolCall 的 await 落地、
+    // run 正常走完收尾路径（事件转译要能找到会话，先 settle 后删）
     this.settleApprovals(sessionId, '会话已删除')
-    if (session.agent) this.agentIndex.delete(session.agent)
+    // pi 转录真源随删（JSONL 只被本会话引用；惰性未装配的会话没有 pi 文件）
+    const piFile = session.pi?.sessionManager.getSessionFile()
+    if (piFile !== undefined) {
+      try {
+        rmSync(piFile, { force: true })
+      } catch (error) {
+        // 删文件失败不拦会话删除（外部世界失败是常态）；孤儿 JSONL 留待手清
+        process.stderr.write(`[host] pi 会话文件删除失败（${sessionId}）: ${(error as Error).message}\n`)
+      }
+    }
     this.sessions.delete(sessionId)
     this.streaming.delete(sessionId)
     this.compacting.delete(sessionId)
@@ -586,19 +601,25 @@ export class SessionManager {
   }
 
   /**
-   * 会话消息转录（session.messages 响应）：pi Message[] → ChatMessage[]。
-   * 只读路径不实例化 Agent：Agent 存在时取它的实时 state.messages（运行中含
-   * 进行时消息），否则直接投影持久转录（transcript 是回合边界同步过的真源）——
-   * 为读消息建一个带 hooks/订阅的完整 Agent 是纯浪费
+   * 会话消息转录（session.messages 响应）：pi 消息[] → ChatMessage[]。
+   * 呈现口径恒走 pi JSONL 全量回查（factory readPiTranscript：影子区/多代
+   * 压缩条全保留，D9 保留式；pi 的 agent.state.messages 是**上下文口径**的
+   * 裁剪投影，压缩后影子区消失，不能作历史呈现源）。pi JSONL 不存在时回落
+   * v1 旧转录（未导入的历史会话）。运行中的半截流式消息不在 JSONL
+   * （message_end 才落盘）—— 旧实现读活 state 可见半截，此差异留给 1.4
+   * 投影对账（流式期宿主本就以事件流增量呈现为主）。
    */
   messages(sessionId: string): ChatMessage[] {
     const session = this.requireSession(sessionId)
-    const source = session.agent ? session.agent.state.messages : session.transcript
+    const source: AgentMessage[] =
+      readPiTranscript(this.workspaceRoots(session)[0] ?? homedir(), this.hostRoot, sessionId) ??
+      session.legacyTranscript ??
+      []
     const projected = toChatMessages(source)
     // 上下文明细按需现算挂"末条带 usage 的消息"（历史回查路径，重启/切换会话
-    // 走这）：agent_end 只把估算挂到事件侧 streaming 对象随 run.completed 飞走，
-    // 盘上 transcript 是 pi 形状（其 Usage 无此字段，塞协议字段会浑浊真源）——
-    // 不现算的话明细只在运行当次可见，重启即丢（2026-11-11 用户报障）。
+    // 走这）：agent_settled 只把估算挂到事件侧 streaming 对象随 run.completed
+    // 飞走，不进 pi 转录（pi 形状，塞协议字段会浑浊真源）—— 不现算的话明细
+    // 只在运行当次可见，重启即丢（2026-11-11 用户报障）。
     // estimateContext 是纯转录函数，读时重算幂等、免盘上迁移，旧会话也由此
     // 直接有明细（免"无字段降级"）。挂点 = 从后往前首条带 usage 的 assistant，
     // 与指示器分子的读取序一致；纯工具段末条无正文本体的边角与事件路径同缺
@@ -667,6 +688,21 @@ export class SessionManager {
   }
 
   // ———— Agent 主链路 ————
+  //
+  // 受理与执行的时序（owner 小图，涉及会话状态/异步链路，约定.md 硬规则 5）：
+  //
+  //   submit(同步段)          异步段（driveRun）                    终态（事件）
+  //   ───────────────         ───────────────────────              ────────────
+  //   requireSession          ensurePiSession（惰性+导入）          agent_settled
+  //   根目录复查              setModel/setThinkingLevel             ├ errorMessage→run.failed
+  //   busy 查 streaming/      pi.prompt(text)                      │   （pi 内聚恢复
+  //     compacting            └→ pi 内聚：重试/溢出压缩             │    已全部消化完）
+  //   模型目录解析(同步throw)     /阈值压缩（不外显）               ├ lengthContinuable
+  //   标题/updatedAt/persist  settleRun：AUTO_CONTINUE              │   → 抑制（续写链接管）
+  //   run.started             链（每段又是一个 prompt               └ 否则 → run.completed
+  //   streaming.set           生命周期，逐段 agent_settled）
+  //
+  //   streaming 的生灭窗口 ⊇ pi 的运行窗口（受理→终态），故 busy 判定只查它。
 
   /**
    * 提交用户输入。同步校验（会话存在、会话空闲、模型已知）后立即受理返回，
@@ -676,6 +712,10 @@ export class SessionManager {
    * 为什么校验必须同步 throw（→ dispatch 转错误响应帧）：dispatch 的 try/catch
    * 只包住 handler 的同步段，异步拒绝会变成 unhandledRejection 直接崩掉引擎
    * 进程（全部会话随之丢失）——此前 `void sessions.submit(...)` 正是踩了这一坑。
+   *
+   * busy 判定（单一账本 = streaming map + 手动压缩集）：streaming 窗口覆盖
+   * "受理→agent_settled 终态"全程，比 pi 的 isStreaming 更宽（后者在 pi 内聚
+   * 恢复/续写链的 run 间隙会瞬时为 false，查它会放双 prompt 进同一个链）。
    */
   submit(sessionId: string, text: string, model?: string, thinkingLevel?: string, provider?: string): void {
     const session = this.requireSession(sessionId)
@@ -686,31 +726,20 @@ export class SessionManager {
         throw new ProtocolError(RpcErrorCode.InvalidRequest, `工作区目录不存在或已被移动: ${root}`)
       }
     }
-    const agent = this.ensureAgent(session)
-    // pi 约定同一 Agent 同时只跑一个 prompt（agent.js prompt 入口对 activeRun 抛错）。
-    // 在受理入口显式拒绝成协议错误，而不是放它落进异步段崩进程；压缩窗口同理
-    //（见 compacting 字段注释 —— prompt 前的摘要期 isStreaming 还是 false）
-    if (agent.state.isStreaming || this.compacting.has(sessionId)) {
+    if (this.streaming.has(sessionId) || this.compacting.has(sessionId)) {
       // 文案不带 sessionId（渲染层 lastError 直出给用户看；定位信息走日志）
       throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话正在回复中，请先停止或等待完成')
     }
+    let target: Model<Api> | undefined
     if (model) {
       // provider 双键限定优先：同名模型会被多家目录收录（azure 目录也有
       // deepseek-v4-pro），id 单键全局查找按注册序撞 azure 那份 → "Provider
       // is not configured: azure"。UI 选择时的 provider 原样下发即可消歧；
       // 未带 provider 的老宿主保持旧解析序（默认 provider 优先 → 全局 id）
-      const target = provider !== undefined
+      target = provider !== undefined
         ? this.models.getModel(provider, model)
         : this.models.getModel(DEFAULT_PROVIDER, model) ?? this.models.getModels().find((m) => m.id === model)
       if (!target) throw new Error(`未知模型: ${model}`)
-      agent.state.model = target
-      // 思考预算跟随模型（完备化 R7）：预算是模型属性，切模型换预算
-      agent.thinkingBudgets = target.thinkingBudgets
-    }
-    if (thinkingLevel) {
-      // 'off' 合法：pi 原生档（关闭思考），reasoning 侧会转成 undefined → 方言层
-      // 翻成 DeepSeek/anthropic 的 thinking disabled 等（cast 钉 pi 类型防漂移）
-      agent.state.thinkingLevel = thinkingLevel as ThinkingLevel
     }
 
     // 首条消息命名会话（恢复的旧会话标题已命名，不会覆盖）
@@ -721,7 +750,7 @@ export class SessionManager {
     this.persist(sessionId)
 
     this.notify('run.started', { sessionId })
-    this.ensureInspector(session).runStarted(text, agent.state.systemPrompt, agent.state.thinkingLevel)
+    this.ensureInspector(session).runStarted(text, this.ensureSystemPrompt(session), thinkingLevel ?? 'off')
     this.streaming.set(sessionId, {
       messageId: `m-${crypto.randomUUID()}`,
       segments: [],
@@ -729,22 +758,10 @@ export class SessionManager {
       thinking: '',
       tools: []
     })
-    // prompt() 的运行期失败（流错误/中止）由 pi 事件流转译为 run.failed
-    // （handleRunFailure → agent_end，见 docs/技术笔记/pi接入与会话管理.md §2.3），不会走到这层；
-    // catch 只兜"受理检查通过后、pi 尚未发出任何事件前"的启动窗口拒绝 —— 外部世界
-    // 失败是常态（约定.md 1.1），必须转成 run.failed 给 UI 一个终态。
-    // 压缩（D7 自动路）插在 prompt 之前：超阈值先摘要再发 —— 摘要是一次秒级
-    // LLM 调用，事件流此刻是 run.started 已发、首条 delta 未到的窗口，
-    // compaction.started/completed 事件就落在这里（宿主可呈压缩中状态）。
-    // prompt 落定后进收尾驱动（完备化 R5/R6）：溢出恢复与 length 续写在
-    // settleRun 循环里消化，可续跑的失败/截断在 agent_end 已被抑制（不发
-    // 终态、streaming 保活）—— UI 全程只看到这一个 run
-    this.overflowRetried.delete(sessionId)
     this.continuationBudget.set(sessionId, AUTO_CONTINUE_LIMIT)
-    void this.maybeCompactBeforePrompt(session, agent).then(
-      () => agent.prompt(text),
-      () => undefined
-    ).then(() => this.settleRun(session, agent)).catch((error: unknown) => {
+    // 异步段的三类失败（装配炸 / prompt 前置校验拒 / 续写链异常）都收口到
+    // run.failed —— run.started 已发，宿主在等终态事件，不能让拒绝裸奔
+    void this.driveRun(session, text, target, thinkingLevel).catch((error: unknown) => {
       this.streaming.delete(sessionId)
       this.notify('run.failed', {
         sessionId,
@@ -753,121 +770,48 @@ export class SessionManager {
     })
   }
 
-  // ———— 上下文压缩（批次 4，D7 双路；纯函数见 runtime/compaction.ts） ————
-
-  /**
-   * submit 前的阈值检查(自动路):超线先走 L1→L2 检查链再放行 prompt。压缩
-   * 失败不拦提交(尽力语义:摘要服务抖一下不该吞掉用户消息;真溢出会由
-   * provider 报错走 run.failed 显式暴露)—— 失败只记 stderr。
-   */
-  private async maybeCompactBeforePrompt(session: Session, agent: Agent): Promise<void> {
-    const model = agent.state.model
-    const contextTokens = estimateContextTokens(convertToLlmMessages(agent.state.messages)).tokens
-    if (!shouldCompact(contextTokens, model.contextWindow, model.compaction)) return
-    await this.compactWithPrune(session, agent, contextTokens)
-  }
-
-  /**
-   * 检查点内的 L1→L2 链(完备化 R3):先 L1 裁剪(确定性、零 LLM、缓存断点
-   * 最少)再重计量,仍超线才 L2 摘要 —— L1 单独够时零摘要请求(microcompact/
-   * dsh prune 先行双重验证的路线)。手动路(session.compact)不进此链:用户
-   * 点名要的是语义蒸馏,且被摘要区进摘要本就截 2000 字符,L1 对摘要请求无增益。
-   * 返回 true = 转录被改动(L1 或 L2 任一落账),轮间钩子据此对齐 loop 工作副本;
-   * L2 失败不抛(尽力语义内聚在此,两个检查点共用)。
-   */
-  private async compactWithPrune(
+  /** submit 异步段：装配 pi 内核 → 应用模型/思考档 → prompt → 续写链收尾 */
+  private async driveRun(
     session: Session,
-    agent: Agent,
-    contextTokens: number
-  ): Promise<boolean> {
-    const sessionId = session.summary.id
-    // L1:全转录裁剪(含保留区,dsh pruneSession 同款,取舍见 pruneToolResults 注释)。
-    // **原位写回**(同 runCompaction 的 L2:S2 验收 bug —— 轮间钩子触发时 loop
-    // 还持着同一数组旧引用,换引用 = 双写分叉);pruneToolResults 无裁剪时返回
-    // 原引用,map 出的新数组逐位 splice 回去
-    const { messages, pruned } = pruneToolResults(agent.state.messages)
-    if (pruned.length > 0) {
-      agent.state.messages.splice(0, agent.state.messages.length, ...messages)
-      session.transcript = agent.state.messages
-      this.persist(sessionId)
-      this.notify('compaction.pruned', { sessionId, entries: pruned })
+    text: string,
+    model: Model<Api> | undefined,
+    thinkingLevel: string | undefined
+  ): Promise<void> {
+    const pi = await this.ensurePiSession(session)
+    if (model !== undefined) {
+      // setModel 判等：pi 为每次调用落 model_change 条目（空消息），重复 set
+      // 同一模型会在树里堆空条目 —— 压缩切点的「空条目回退」（findProjected-
+      // CutPoint 末段把切点从 user 边界挪过空条目）会让 startsTurn 误判为
+      // false → 本应整回合摘要的压缩被拆成 split-turn（实测：每回合 setModel
+      // → 全部压缩走 turn-prefix 路径）。只在模型真变时调用
+      // pi.model 是 getter（首回合前可能 undefined —— factory 的默认模型在
+      // 目录查不到时 createAgentSession 不带 model）；显式收窄后判等
+      const current = pi.model
+      if (current === undefined || current.id !== model.id || current.provider !== model.provider) {
+        await pi.setModel(model)
+      }
+      // 思考预算跟随模型（完备化 R7）：预算是模型属性，切模型换预算。
+      // pi 的预算消费在请求选项层（Agent.thinkingBudgets 逐 prompt 带进
+      // streamFn 选项），setModel 不动它，此处直赋（字段公开，官方同款手法）
+      pi.agent.thinkingBudgets = model.thinkingBudgets
     }
-    // 重计量仍超线才 L2;裁剪后 toolResult 变短,估算自然下降,无需记账
-    const afterPrune =
-      pruned.length > 0
-        ? estimateContextTokens(convertToLlmMessages(agent.state.messages)).tokens
-        : contextTokens
-    if (!shouldCompact(afterPrune, agent.state.model.contextWindow, agent.state.model.compaction)) {
-      return pruned.length > 0
+    if (thinkingLevel !== undefined && pi.thinkingLevel !== thinkingLevel) {
+      // 'off' 合法：pi 原生档（关闭思考）；setThinkingLevel 会向模型能力
+      // clamp（非能力档显式拒于 dispatch 入口的值域白名单，到不了这）。
+      // 判等防每回合堆 thinking_level_change 空条目（同 setModel 注释）
+      pi.setThinkingLevel(thinkingLevel as ThinkingLevel)
     }
-    try {
-      await this.runCompaction(session, agent, 'threshold', afterPrune)
-      return true
-    } catch (error) {
-      // runCompaction 内已发 completed(error) 事件;此处只补诊断(自动路静默降级),
-      // L1 已生效的话转录仍算改动(调用方对齐 loop 副本用的是 agent.state.messages)
-      process.stderr.write(`[agent-service] 自动压缩失败（继续按原上下文提交）: ${(error as Error).message}\n`)
-      return pruned.length > 0
-    }
-  }
-
-  // ———— 溢出恢复(完备化 R5,pi 单次闸同款;修正批次 4 D7「不搬」) ————
-
-  /**
-   * 失败是否为可恢复的 context overflow:末位是 error assistant、报文匹配
-   * pi-ai 聚合的 overflow 模式、且单次闸未用。agent_end 与 submit 链两处
-   * 共用同一判定(前者据此抑制 run.failed,后者据此执行恢复)。
-   */
-  private overflowRecoverable(agent: Agent, sessionId: string): boolean {
-    if (this.overflowRetried.has(sessionId)) return false
-    const last = agent.state.messages.at(-1)
-    if (!last || last.role !== 'assistant' || last.stopReason !== 'error' || !last.errorMessage) {
-      return false
-    }
-    return isContextOverflow(last, agent.state.model.contextWindow)
+    await pi.prompt(text)
+    await this.settleRun(session, pi)
   }
 
   /**
-   * prompt 落定后的溢出恢复:删失败轮(pi 失败 assistant 恒在末位,请求期失败
-   * 无内容产出)→ 落盘 → 超线先 L1/L2 → agent.continue() 原请求重试一次。
-   * agent.continue 从末位 user/toolResult 续跑(pi 官方恢复路径),新 run 的
-   * errorMessage 在 runWithLifecycle 起点自动清零,成功后走正常 agent_end。
-   * 闸在入口消费:重试再溢出时 overflowRecoverable 为 false,agent_end 按
-   * 原样发 run.failed(显式暴露,不劣于批次 4 行为)。
-   */
-  private async recoverOverflow(session: Session, agent: Agent): Promise<void> {
-    const sessionId = session.summary.id
-    if (!agent.state.errorMessage || !this.overflowRecoverable(agent, sessionId)) return
-    this.overflowRetried.add(sessionId)
-    // 原位删失败轮(run 已结束,此刻无 loop 引用并发,但统一原位手法防患)
-    agent.state.messages.splice(-1, 1)
-    session.transcript = agent.state.messages
-    this.persist(sessionId)
-    const model = agent.state.model
-    const contextTokens = estimateContextTokens(convertToLlmMessages(agent.state.messages)).tokens
-    if (shouldCompact(contextTokens, model.contextWindow, model.compaction)) {
-      await this.compactWithPrune(session, agent, contextTokens)
-    }
-    try {
-      await agent.continue()
-    } catch (error) {
-      // continue 启动失败(末位消息角色不符等极端):按失败收尾,run 终态不悬空
-      this.streaming.delete(sessionId)
-      this.notify('run.failed', {
-        sessionId,
-        message: error instanceof Error ? error.message : String(error)
-      })
-    }
-  }
-
-  /**
-   * 末条是否为可续写的 length 截断(R6③):纯文本/思考被截(pi 对带工具的
-   * length 消息已原生 fail + 自愈重发,run 不会停在那)且续写预算未尽。
+   * 末条是否为可续写的 length 截断(R6③):纯文本/思考被截且续写预算未尽。
    * **正文非空才续**(完备化验收修复 2026-11-12):正文为空 = 输出预算被
    * 夹到趋零(room 耗尽),续写只会立即再截 —— 实测 20K 窗空回复连烧 11 次
    * 请求毫无产出。此时截断是「真没地方写」,正确出路是压缩腾地(动作条
-   * 「立即压缩」),不是续写。agent_end(抑制终态)与 settleRun(注入续写)
-   * 两处同读,消费方扣减。
+   * 「立即压缩」),不是续写。agent_settled(抑制终态)与 settleRun(注入
+   * 续写)两处同读,消费方扣减。
    */
   private lengthContinuable(agent: Agent, sessionId: string): boolean {
     if ((this.continuationBudget.get(sessionId) ?? 0) <= 0) return false
@@ -882,45 +826,37 @@ export class SessionManager {
   }
 
   /**
-   * prompt 落定后的收尾驱动(完备化 R5/R6):溢出恢复(单次闸)与 length
-   * 续写(≤3 次)在同一循环消化 —— 每轮落定后重查:可恢复溢出 →
-   * recoverOverflow(内部 agent.continue 再跑);可续写截断 → 注入显式
-   * continue 消息再跑。两者都会回到循环头,直到 run 以终态(成功 / 失败 /
-   * 预算尽后的截断)落定 —— agent_end 只在循环不再续跑的那一轮发射终态。
+   * prompt 落定后的续写链(R6③):pi.prompt resolve = 该轮生命周期全部结束
+   * （provider 重试/溢出恢复已在内部消化）；此处只剩 AUTO_CONTINUE —— 可续写
+   * 截断 → 注入显式 continue 消息再跑（新 prompt 生命周期），直到 run 以终态
+   * （成功 / 失败 / 预算尽后的截断）落定。agent_settled 只在链不再续跑的
+   * 那一轮发射终态（见其分支）。
    */
-  private async settleRun(session: Session, agent: Agent): Promise<void> {
+  private async settleRun(session: Session, pi: AgentSession): Promise<void> {
     const sessionId = session.summary.id
     for (;;) {
-      if (agent.state.errorMessage) {
-        if (this.overflowRecoverable(agent, sessionId)) {
-          await this.recoverOverflow(session, agent)
-          continue
-        }
-        return // 不可恢复失败:run.failed 已由 agent_end 发出
-      }
-      if (this.lengthContinuable(agent, sessionId)) {
-        this.continuationBudget.set(sessionId, (this.continuationBudget.get(sessionId) ?? 0) - 1)
-        await agent.prompt(AUTO_CONTINUE_MESSAGE)
-        continue
-      }
-      return
+      // 失败/中止：终态已由 agent_settled 发出（errorMessage 留痕于 pi Agent）
+      if (pi.agent.state.errorMessage) return
+      if (!this.lengthContinuable(pi.agent, sessionId)) return
+      this.continuationBudget.set(sessionId, (this.continuationBudget.get(sessionId) ?? 0) - 1)
+      await pi.prompt(AUTO_CONTINUE_MESSAGE)
     }
   }
 
   /**
    * 手动续写入口(session.continue,截断动作条「继续生成」):对末条 length
-   * 截断注入显式 continue 消息再跑。与自动路同消息同循环,预算重新给满
+   * 截断注入显式 continue 消息再跑。与自动路同消息同链,预算重新给满
    * (用户点按钮 = 明确要继续);自动路的单 run 已收尾,这里是 UI 眼里的
    * 新一段(run.started + 新 streaming),完成后 run.completed 的 stopReason
    * 非 length 会自然熄掉宿主的截断提示。
    */
   async continueSession(sessionId: string): Promise<{ ok: true }> {
     const session = this.requireSession(sessionId)
-    const agent = this.ensureAgent(session)
-    if (agent.state.isStreaming || this.compacting.has(sessionId)) {
+    if (this.streaming.has(sessionId) || this.compacting.has(sessionId)) {
       throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话正在回复中，无法续写')
     }
-    const last = agent.state.messages.at(-1)
+    const pi = await this.ensurePiSession(session)
+    const last = pi.agent.state.messages.at(-1)
     if (last === undefined || last.role !== 'assistant' || last.stopReason !== 'length') {
       throw new ProtocolError(RpcErrorCode.InvalidRequest, '末条回复不是输出截断，无需续写')
     }
@@ -943,112 +879,52 @@ export class SessionManager {
       thinking: '',
       tools: []
     })
-    await agent.prompt(AUTO_CONTINUE_MESSAGE)
-    await this.settleRun(session, agent)
+    try {
+      await pi.prompt(AUTO_CONTINUE_MESSAGE)
+      await this.settleRun(session, pi)
+    } catch (error) {
+      // pi.prompt 前置拒绝（鉴权/压缩窗口竞态等）：run.started 已发，宿主等
+      // 终态 —— 清 streaming 补发 run.failed 后把错误照常交给 dispatch 转错
+      // 误响应帧（手动动作要双通道显式反馈）
+      this.streaming.delete(sessionId)
+      this.notify('run.failed', {
+        sessionId,
+        message: error instanceof Error ? error.message : String(error)
+      })
+      throw error
+    }
     return { ok: true }
   }
 
   /**
-   * 手动压缩入口（session.compact）。与自动路的差异：无可压缩/失败都以协议
-   * 错误显式反馈（手动动作要明确结果），且会话回复中直接拒绝（上游手动路先
-   * abort 再压，我们不打断生成中的回复 —— 让用户等完更可预期）。
+   * 手动压缩入口（session.compact）→ pi AgentSession.compact()。
+   * 无可压缩/刚压过以协议错误显式反馈（手动动作要明确结果；pi 的抛错文案
+   * "Already compacted" / "Nothing to compact" 映射于此），失败原样上抛。
+   * 压缩进度经 compaction_start/end 事件（转译层 → compaction.started/
+   * completed），与旧实现的事件面一致。
    */
   async compactSession(sessionId: string): Promise<{ tokensBefore: number; tokensAfter: number }> {
     const session = this.requireSession(sessionId)
-    const agent = this.ensureAgent(session)
-    if (agent.state.isStreaming || this.compacting.has(sessionId)) {
+    if (this.streaming.has(sessionId) || this.compacting.has(sessionId)) {
       throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话正在回复中，请等待完成后再压缩')
     }
-    const contextTokens = estimateContextTokens(convertToLlmMessages(agent.state.messages)).tokens
-    const outcome = await this.runCompaction(session, agent, 'manual', contextTokens)
-    if (outcome === undefined) {
-      throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话无可压缩内容（刚压缩过或近期内容不足保留窗口）')
-    }
-    return outcome
-  }
-
-  /**
-   * 执行一次压缩（阈值/手动共用）。返回 undefined = prepareCompaction 判定
-   * 无可压缩（手动路转错误、自动路静默跳过）；成功返回前后 token 估算。
-   * 失败 throw（completed(error) 事件已发，调用方决定呈现方式）。
-   */
-  private async runCompaction(
-    session: Session,
-    agent: Agent,
-    reason: 'threshold' | 'manual',
-    contextTokens: number
-  ): Promise<{ tokensBefore: number; tokensAfter: number } | undefined> {
-    const sessionId = session.summary.id
-    // agent.state.model 的声明宽到 Model<any>（pi 内部态通用签名），而
-    // Models.completeSimple 收 Model<Api> —— 运行时是同一对象（模型都出自
-    // models 目录），窄化只平息 no-unsafe-argument 的 any 闸，无真实收窄
-    const model = agent.state.model as Model<Api>
-    // 保留窗口按模型夹紧：20K 对小窗口模型可能大于窗口本身，保一半
-    const keepRecent = Math.min(KEEP_RECENT_TOKENS, Math.floor(model.contextWindow / 2))
-    const preparation: CompactionPreparation | undefined = prepareCompaction(
-      agent.state.messages,
-      keepRecent,
-      contextTokens
-    )
-    if (preparation === undefined) return undefined
-
     this.compacting.add(sessionId)
-    this.notify('compaction.started', { sessionId, reason })
     try {
-      const response = await this.models.completeSimple(
-        model,
-        // 摘要请求 = 主请求的真前缀(R4 指令内联):会话 system 原对象(领头
-        // system 的 toolsAdded 与主请求逐字相同)+ 被摘要区原消息直传 +
-        // 指令作末条 user —— provider KV cache 复用而非失效;小窗深度占用时
-        // 预算守卫自动降级只送被摘要区(否则 max_tokens 被夹死,摘要必截断)
-        buildSummarizationContext(
-          convertToLlmMessages(agent.state.messages.filter((m) => m.role === 'system')),
-          preparation,
-          buildSummarizationInstruction(preparation),
-          model.contextWindow
-        ),
-        {
-          // 摘要请求独立于会话 run：key 从内存表现取（与 Agent 的 getApiKey 同源）
-          apiKey: this.credentials.get(model.provider),
-          ...summarizationThinkingLevel(model.reasoning, agent.state.thinkingLevel)
-        }
-      )
-      const failure = summarizationFailure(response)
-      if (failure !== undefined) throw new Error(failure)
-      const summary = contentText(response.content) + formatFileOperations(preparation.fileOps)
-      // 摘要调用自身的账（D9 验收后增补）：不走 run 分段、不进回合统计 ——
-      // 落压缩条随历史持久，宿主折叠条小字呈现。端点未报 usage 时 pi 补零
-      // （AssistantMessage.usage 必有），按 totalTokens>0 判"真报了"才落账
-      const projectedUsage = projectUsage(response.usage)
-      const summaryUsage = projectedUsage.totalTokens > 0 ? projectedUsage : undefined
-
-      // tokensAfter 要进压缩条本身：先以占位值原位插入（D9 保留式 —— 被摘要区
-      // 不删除，压缩条插在切点），估算投影后的上下文再回填真值 —— 单次插入
-      // 不换数组引用（S2 验收 400 的原位纪律：轮间钩子时 pi loop 还持着同一
-      // 数组旧引用，换引用 = 当轮收尾消息双份落转录、tool_calls 配对重复）
-      const insertAt = preparation.firstKeptIndex
-      insertCompactionMarker(agent.state.messages, preparation, summary, 0, summaryUsage)
-      const tokensAfter = estimateContextTokens(convertToLlmMessages(agent.state.messages)).tokens
-      const bar = agent.state.messages[insertAt]
-      if (bar.role === 'compactionSummary') bar.tokensAfter = tokensAfter
-      session.transcript = agent.state.messages
-      this.persist(sessionId)
-      this.notify('compaction.completed', {
-        sessionId,
-        reason,
-        tokensBefore: contextTokens,
-        tokensAfter,
-        summary,
-        summarizedUntil: preparation.summarizedUntil,
-        ...(summaryUsage !== undefined && { summaryUsage })
-      })
-      return { tokensBefore: contextTokens, tokensAfter }
+      const pi = await this.ensurePiSession(session)
+      const result = await pi.compact()
+      return {
+        tokensBefore: result.tokensBefore,
+        // pi 的后置估算缺省（极端：无 usage 锚点）时诚实回落 before 值 ——
+        // 协议 tokensAfter 必填，宿主指示器按"未降"呈现
+        tokensAfter: result.estimatedTokensAfter ?? result.tokensBefore
+      }
     } catch (error) {
-      this.notify('compaction.completed', {
-        sessionId,
-        reason,
-        error: error instanceof Error ? error.message : String(error)
-      })
+      const message = error instanceof Error ? error.message : String(error)
+      if (/Already compacted|Nothing to compact/.test(message)) {
+        // 映射前的原文留诊断（统一文案对宿主友好，排障要看 pi 的具体守卫）
+        process.stderr.write(`[host] 手动压缩被拒（pi 原文）: ${message}\n`)
+        throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话无可压缩内容（刚压缩过或近期内容不足保留窗口）')
+      }
       throw error
     } finally {
       this.compacting.delete(sessionId)
@@ -1058,16 +934,17 @@ export class SessionManager {
   abort(sessionId: string): boolean {
     const session = this.sessions.get(sessionId)
     if (!session) return false
-    this.ensureAgent(session).abort()
+    // pi.abort 是 async（等 run 收尾）；受理即返回（同步合同）。挂起审批经
+    // signal listener 收尾（见 decideApproval），run 必然落地终态
+    if (session.pi !== undefined) void session.pi.abort()
     return true
   }
 
-  /** 进程退出前统一收尾（引擎随宿主关闭，无需异步等待） */
+  /** 进程退出前统一收尾（引擎随宿主关闭；pi dispose 内聚 abort 全部运行） */
   disposeAll(): void {
-    for (const session of this.sessions.values()) session.agent?.abort()
+    for (const session of this.sessions.values()) session.pi?.dispose()
     for (const sessionId of this.sessions.keys()) this.settleApprovals(sessionId, '引擎退出')
     this.sessions.clear()
-    this.agentIndex.clear()
     this.streaming.clear()
     this.compacting.clear()
   }
@@ -1075,7 +952,7 @@ export class SessionManager {
   // ———— 审批（docs/计划/工具系统与审批.md 第 4 步，D4/D5）————
 
   /**
-   * 宿主裁决回流：resolve 挂起中的 beforeToolCall Promise（审批交互升级 D2 扩
+   * 宿主裁决回流：resolve 挂起中的审批 Promise（审批交互升级 D2 扩
    * message/always）。唔配对 requestId（已裁决过 / abort 已收尾 / 不存在）→
    * InvalidParams —— 双击允许钮、裁决与中止竞态都属于此类，显式报错而非静默成功。
    */
@@ -1113,38 +990,74 @@ export class SessionManager {
   }
 
   /**
-   * 会话级权限切换（权限模式菜单）：beforeToolCall 每次触发时读活值，运行中
-   * 切换即生效；**提示词时效（D6 评审补）** —— 对已建 agent 以**替换式单条**
-   * system 通告落新权限语义（pi 的 systemPrompt 重放全部 system 消息，纯追加
-   * 会随来回切换堆积拼接，故按前缀识别原地替换；ask = 移除 —— 切回后无
-   * 「已授予完全访问」残留）。惰性会话无 agent 则只记 summary（下次 ensureAgent
-   * 建后按 mode 补通告）。运行中（含审批挂起）切换安全：通告在下一轮请求生效，
-   * anthropic/openai 方言组装时中部 system 合并领头，不打断 toolUse/toolResult 配对。
+   * 会话级权限切换（权限模式菜单）：summary 记账 + 落盘；审批判定读活值
+   * （decideApproval 每次现读 summary.permissionMode），运行中切换即生效。
+   * 提示词层通告（D6 的 system 通告消息）在 1.2a 降级欠账：pi 会话树是
+   * append-only，往 agent.state.messages 塞 system 通告不落树（会被投影刷新
+   * 冲掉）—— 归位路径是 systemPromptOverride 读活 mode 动态拼段（1.4 对账）。
+   * 当前面 = 模式强制仍生效（写被拦），仅模型收不到"你在 plan 模式"的告知，
+   * 可能多试几次被拦的写操作。
    */
   setPermission(sessionId: string, mode: PermissionMode): SessionSummary {
     const session = this.requireSession(sessionId)
     session.summary.permissionMode = mode
-    if (session.agent) this.applyPermissionNotice(session.agent, mode)
     this.persist(sessionId)
     return { ...session.summary }
   }
 
-  /** 权限通告的替换式更新：transcript 内至多一条（PERMISSION_NOTICE_PREFIX 识别） */
-  private applyPermissionNotice(agent: Agent, mode: PermissionMode): void {
-    const messages = agent.state.messages
-    const at = messages.findIndex(
-      (m) => m.role === 'system' && typeof m.content === 'string' && m.content.startsWith(PERMISSION_NOTICE_PREFIX)
-    )
-    if (mode === 'ask') {
-      // 回到缺省：移除通告（无通告则不动 —— setter 拷贝顶层，避免无谓新引用）
-      if (at >= 0) agent.state.messages = messages.filter((_, i) => i !== at)
-      return
+  /**
+   * 工具调用裁决（链式 beforeToolCall 的桥端，D4 判定矩阵：ToolKind ×
+   * permissionMode）。mode 读 session.summary 的活引用（运行中切「完全访问」
+   * 即生效）。ask：发审批请求并挂起 —— async 未返回前工具不执行（pi 官方
+   * 阻塞语义）；signal abort 兜底 resolve（否则中止后 Promise 永悬、run 永不
+   * 结束 —— 核心 loop 的 await 钩子无超时）。
+   */
+  private decideApproval(
+    session: Session,
+    toolName: string,
+    args: Record<string, unknown>,
+    signal: AbortSignal | undefined
+  ): Promise<{ block: boolean; reason?: string }> {
+    const meta = toolMeta(toolName)
+    // 未知名字兜底 read：与事件转译同口径（pi 只执行注册过的工具，未知 =
+    // 注册表 bug，stderr 已在转译层留诊断，这里按无害的只读放行）
+    const kind = meta?.kind ?? 'read'
+    if (kind === 'read') return Promise.resolve({ block: false })
+    const mode = session.summary.permissionMode ?? 'ask'
+    if (mode === 'auto') return Promise.resolve({ block: false })
+    if (mode === 'plan') {
+      return Promise.resolve({ block: true, reason: 'plan（只读）模式下写类工具被禁止' })
     }
-    const notice = { role: 'system' as const, content: permissionNotice(mode), timestamp: Date.now() }
-    agent.state.messages =
-      at >= 0
-        ? messages.map((m, i) => (i === at ? notice : m))
-        : [...messages, notice]
+    // 自主模式（D6 定稿）：文件写信任放行（工作区根内，越界仍有工具层
+    // 软边界兜底），exec/network 风险类照旧走询问
+    if (mode === 'autonomous' && (kind === 'write' || kind === 'edit')) return Promise.resolve({ block: false })
+    // ask 判定前先查「始终允许」规则表（审批交互升级 D3）：会话工作区根与
+    // 某条同类别规则任一根命中即放行 —— 规则只能放行"边界内"的写，越界写
+    // 在工具执行层（resolveWithinRoots）恒拒，双保险。无绑定根（workspaceRoots
+    // 为空）天然不命中，无根会话不落规则的 UI 语义在引擎侧自洽
+    if (this.approvals.allows(this.workspaceRoots(session), kind)) return Promise.resolve({ block: false })
+    // ask：发审批请求并挂起（D5：无超时 —— 用户不点就一直等，宿主输入框
+    // 变停止钮可 abort；signal abort 兜底 resolve）
+    const requestId = `appr-${crypto.randomUUID()}`
+    const sessionId = session.summary.id
+    return new Promise((resolve) => {
+      // 先登记再发事件：respondApproval 走这张表找 resolver，时序上不存在
+      // 「事件未到、respond 先行」的窗口（宿主是收到事件才可能裁决）
+      this.pendingApprovals.set(requestId, { sessionId, kind, resolve })
+      this.notify('approval.request', {
+        sessionId,
+        requestId,
+        toolName,
+        kind,
+        summary: meta !== undefined ? meta.summarize(args) : `${toolName}(?)`
+      })
+      signal?.addEventListener('abort', () => {
+        // 已被 respondApproval 消费则不动（用户裁决与中止竞态，先到先得）
+        if (this.pendingApprovals.delete(requestId)) {
+          resolve({ block: true, reason: '已中止' })
+        }
+      })
+    })
   }
 
   /** 某会话的全部挂起审批以 block 收尾（删除/退出兜底；abort 走 signal listener，D5） */
@@ -1153,6 +1066,104 @@ export class SessionManager {
       if (pending.sessionId !== sessionId) continue
       this.pendingApprovals.delete(requestId)
       pending.resolve({ block: true, reason })
+    }
+  }
+
+  // ———— pi 内核装配（惰性） ————
+
+  /**
+   * 惰性装配 pi AgentSession：首次使用（submit/compact/continue）才建并
+   * 导入旧转录。恢复的会话若启动即全量装配，会话多了启动就慢、且不使用的
+   * 会话白占内存（DefaultResourceLoader 读盘 + 扩展装载 + 会话树投影）。
+   * piBuilding 去重：并发首用（双 submit）共享同一次装配 —— 各建一个会话树
+   * 会让 pi 的 appendMessage 双写分叉。
+   */
+  private ensurePiSession(session: Session): Promise<AgentSession> {
+    if (session.pi !== undefined) return Promise.resolve(session.pi)
+    if (session.piBuilding !== undefined) return session.piBuilding
+    const building = this.buildPiSession(session).then((pi) => {
+      session.pi = pi
+      session.piBuilding = undefined
+      return pi
+    })
+    session.piBuilding = building
+    // 失败后清 in-flight 标记（否则装配失败永久卡死该会话的后续首用）
+    building.catch(() => {
+      if (session.piBuilding === building) session.piBuilding = undefined
+    })
+    return building
+  }
+
+  private async buildPiSession(session: Session): Promise<AgentSession> {
+    const sessionId = session.summary.id
+    const boundRoots = this.workspaceRoots(session)
+    const toolRoots = this.toolRoots(session)
+    const tools = buildTools(toolRoots)
+    const { session: pi, piSessionManager, createdNew } = await createPiSession({
+      // pi 的 cwd = 工作区主根（无绑定时主目录兜底，同 toolRoots 语义）：
+      // 项目发现（.gitignore/AGENTS.md）与会话目录编码都锚在它上
+      cwd: boundRoots[0] ?? homedir(),
+      hostRoot: this.hostRoot,
+      sessionId,
+      modelRuntime: this.modelRuntime,
+      systemPrompt: this.ensureSystemPrompt(session),
+      // 自研工具经 customTools 过渡（AgentTool ⊇ ToolDefinition 的执行面，
+      // 少参 execute 结构兼容）：1.3 切 pi 内置时清空
+      customTools: tools.map((t) => t.tool) as ToolDefinition[],
+      approval: {
+        decide: (toolName, _toolCallId, args, signal) =>
+          this.decideApproval(session, toolName, args, signal)
+      },
+      onEvent: (event) => this.translateEvent(session, event),
+      observe: (agent) => this.attachInspector(agent, session)
+    })
+
+    // v1 旧转录一次性导入（只在 pi 树是新建时 —— 已有 JSONL 说明早前导入过，
+    // 重导会整段重复）。compactionSummary → 压缩条（firstKeptEntryId=null 语义
+    // 对齐），其余角色逐条 append；导入后清引用 + 盘上重写 v2（旧文档里的
+    // transcript 字段退役）
+    if (createdNew && session.legacyTranscript !== undefined) {
+      const legacy = session.legacyTranscript
+      if (legacy.length > 0) {
+        const { imported, skipped } = importLegacyTranscript(piSessionManager, legacy)
+        if (skipped > 0) {
+          process.stderr.write(
+            `[host] 旧转录导入跳过 ${skipped} 条（非持久化角色，见 kernel/legacy-import.ts）\n`
+          )
+        }
+        pi.refreshContext()
+        if (imported > 0) {
+          process.stderr.write(`[host] 旧转录已导入 pi 会话树（${imported} 条，会话 ${sessionId}）\n`)
+        }
+      }
+      session.legacyTranscript = undefined
+      this.persist(sessionId)
+    }
+    return pi
+  }
+
+  /**
+   * 观测三钩挂载（factory 的 observe 回调）：**链式包裹**而非直赋 —— sdk.ts
+   * 构造 Agent 时已占用三钩做扩展事件桥（before_provider_request 等），
+   * 直赋会拆掉 pi 的接线。观测先行、原钩子后行、透传其返回值（onPayload
+   * 契约 = 返回 undefined 保留原载荷 / 变换后载荷）。
+   */
+  private attachInspector(agent: Agent, session: Session): void {
+    const inspector = (): SessionInspector => this.ensureInspector(session)
+    const prevPayload = agent.onPayload
+    agent.onPayload = (payload, model) => {
+      inspector().apiRequest(payload, model)
+      return prevPayload?.(payload, model)
+    }
+    const prevResponse = agent.onResponse
+    agent.onResponse = (response, model) => {
+      inspector().apiResponse(response)
+      return prevResponse?.(response, model)
+    }
+    const prevStream = agent.onProviderStreamEvent
+    agent.onProviderStreamEvent = (data, model) => {
+      inspector().apiStreamChunk(data)
+      return prevStream?.(data, model)
     }
   }
 
@@ -1165,165 +1176,19 @@ export class SessionManager {
   }
 
   /**
-   * 惰性重建 pi Agent：首次使用（submit/abort）才实例化并灌持久转录。
-   * 恢复的会话若启动即全量实例化，会话多了启动就慢、且不使用的会话白占内存。
-   * initialState.messages 带完整历史 → 下一轮请求模型可见全部上下文（保真恢复）。
-   * （messages() 不走这里：只读路径直接投影 transcript，不建 Agent —— 见其注释。）
-   * 工具集与 Agent 同批构建（roots 相同；kind/摘要等元数据走 tools/ 的静态表，
-   * 与实例解耦 —— 历史回查投影不依赖活实例）。
-   */
-  private ensureAgent(session: Session): Agent {
-    if (session.agent) return session.agent
-    // 记录器经 thunk 惰性解析：hooks 只在 prompt() 期间触发，那时 submit 已建好
-    // 记录器，载入观测文件的时机正确
-    const agent = this.createAgent(session, () => this.ensureInspector(session))
-    session.agent = agent
-    this.agentIndex.set(agent, session.summary.id)
-    // 模式非 ask 则落权限通告（D6）：新会话物化即 plan/auto 时 transcript 还没有
-    // 通告；恢复会话的通告已在 transcript（agent_end 落盘带上），替换幂等不重复
-    if (session.summary.permissionMode !== undefined && session.summary.permissionMode !== 'ask') {
-      this.applyPermissionNotice(agent, session.summary.permissionMode)
-    }
-    return agent
-  }
-
-  private createAgent(session: Session, getInspector: () => SessionInspector): Agent {
-    const boundRoots = this.workspaceRoots(session)
-    const toolRoots = this.toolRoots(session)
-    const model = this.models.getModel(DEFAULT_PROVIDER, DEFAULT_MODEL)
-    if (!model) throw new Error(`默认模型不可用: ${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`)
-    const tools = buildTools(toolRoots)
-
-    const agent = new Agent({
-      initialState: {
-        systemPrompt: buildSystemPrompt(boundRoots, toolRoots),
-        model,
-        thinkingLevel: 'off',
-        messages: session.transcript,
-        tools: tools.map((t) => t.tool)
-      },
-      // 思考预算（完备化 R7）：ModelDef.thinkingBudgets 经声明合并通道挂在 Model
-      // 上，此处同步到 Agent 选项层（pi 的预算消费在请求选项，Agent.thinkingBudgets
-      // 会被 createLoopConfig 逐 prompt 带进 streamFn 选项）；模型切换时在 submit 同步
-      thinkingBudgets: model.thinkingBudgets,
-      // 压缩条（compactionSummary 自定义角色）→ user 消息的转换口（批次 4）：
-      // pi 官方扩展点，agent-loop 每轮请求组装前唯一转换通道（agent.ts L242
-      // 缺省恒等直通 —— 直通会把未知 role 透给 provider 被拒收，故必须显式给）
-      convertToLlm: convertToLlmMessages,
-      // 审批拦截（D4 判定矩阵：ToolKind × permissionMode）。pi 时序：
-      // tool_execution_start 事件先于此钩子发出（宿主的 running 工具卡先行），
-      // 钩子挂起 = 卡停在执行前；block 后 pi 补发 tool_execution_end(isError)
-      // —— 卡自然翻成 error 态，流式段化与历史回查两条投影路径无需特判。
-      // mode 读 session.summary 的活引用（运行中切「完全访问」即生效）
-      beforeToolCall: async (context, signal) => {
-        const meta = toolMeta(context.toolCall.name)
-        // 未知名字兜底 read：与事件转译同口径（pi 只执行注册过的工具，未知 =
-        // 注册表 bug，stderr 已在转译层留诊断，这里按无害的只读放行）
-        const kind = meta?.kind ?? 'read'
-        if (kind === 'read') return undefined
-        const mode = session.summary.permissionMode ?? 'ask'
-        if (mode === 'auto') return undefined
-        if (mode === 'plan') {
-          return { block: true, reason: 'plan（只读）模式下写类工具被禁止' }
-        }
-        // 自主模式（D6 定稿）：文件写信任放行（工作区根内，越界仍有工具层
-        // 软边界兜底），exec/network 风险类照旧走询问
-        if (mode === 'autonomous' && (kind === 'write' || kind === 'edit')) return undefined
-        // ask 判定前先查「始终允许」规则表（审批交互升级 D3）：会话工作区根与
-        // 某条同类别规则任一根命中即放行 —— 规则只能放行"边界内"的写，越界写
-        // 在工具执行层（resolveWithinRoots）恒拒，双保险。无绑定根（workspaceRoots
-        // 为空）天然不命中，无根会话不落规则的 UI 语义在引擎侧自洽
-        if (this.approvals.allows(this.workspaceRoots(session), kind)) return undefined
-        // ask：发审批请求并挂起（D5：无超时 —— 用户不点就一直等，宿主输入框
-        // 变停止钮可 abort；signal abort 兜底 resolve，否则中止后 Promise 永悬）
-        const requestId = `appr-${crypto.randomUUID()}`
-        const sessionId = session.summary.id
-        return new Promise<BeforeToolCallResult>((resolve) => {
-          // 先登记再发事件：respondApproval 走这张表找 resolver，时序上不存在
-          // 「事件未到、respond 先行」的窗口（宿主是收到事件才可能裁决）
-          this.pendingApprovals.set(requestId, { sessionId, kind, resolve })
-          this.notify('approval.request', {
-            sessionId,
-            requestId,
-            toolName: context.toolCall.name,
-            kind,
-            summary: meta !== undefined ? meta.summarize(context.args) : `${context.toolCall.name}(?)`
-          })
-          signal?.addEventListener('abort', () => {
-            // 已被 respondApproval 消费则不动（用户裁决与中止竞态，先到先得）
-            if (this.pendingApprovals.delete(requestId)) {
-              resolve({ block: true, reason: '已中止' })
-            }
-          })
-        })
-      },
-      // streamFn 走 Models 集合：auth 解析、provider 分发、重试都由 pi-ai 承担
-      streamFn: this.models.streamSimple.bind(this.models),
-      // 每轮请求前从内存表解析 key（agent-loop.js:275；支持运行中换 key）
-      getApiKey: (provider: string) => this.credentials.get(provider),
-      // 运行时控制台的接口层观测（pi 原生 hooks，零魔改）：
-      // - onPayload：发送前一刻的厂商原生请求体（onPayload 契约 = 返回 undefined
-      //   表示保留原载荷，这里纯观测故恒返回 undefined）；
-      // - onResponse：响应头到达（体消费前）；
-      // - onProviderStreamEvent：归一化前的原生 SSE 分片（高频，inspector 只攒引用）。
-      // 记录器自身尽力而为（inspector.ts 头注释），不干扰请求主路径
-      onPayload: (payload, model) => {
-        getInspector().apiRequest(payload, model)
-        return undefined
-      },
-      onResponse: (response) => getInspector().apiResponse(response),
-      onProviderStreamEvent: (data) => getInspector().apiStreamChunk(data)
-    })
-
-    agent.subscribe((event) => this.translateEvent(agent, event))
-
-    // 工具轮间压缩检查点（完备化 R2，pi agent-session 的 _installAgentNextTurnRefresh
-    // 同款手法）：pi Agent 原生钩子在每个带工具调用的轮次收尾、下一 assistant
-    // 请求派发前触发 —— 此处查阈值，超线走 L1→L2 检查链（compactWithPrune），
-    // 回合中途也能腾地（Codex「压缩不打断任务」的时机基础；批次 4 单点检查
-    // 救不了工具链进行中的饿死）。与 submit 前检查互补而非替代：纯文本回合
-    // 不经此路，仍靠 submit 前那道。构造后直赋即生效（createLoopConfig 每次
-    // prompt 动态读属性，pi 官方先例）。返回 context 的关键：loop 的
-    // currentContext 是 prompt 起点快照，返回 { messages: agent.state.messages }
-    // 让下一请求拿到压缩后形态 —— 配合 compactWithPrune 的**原位写回**（同一
-    // 数组对象），loop 当轮持有的旧引用与 agent.state 天然一致，无双写分叉。
-    agent.prepareNextTurnWithContext = async (turn) => {
-      const model = agent.state.model
-      const contextTokens = estimateContextTokens(convertToLlmMessages(agent.state.messages)).tokens
-      if (!shouldCompact(contextTokens, model.contextWindow, model.compaction)) return undefined
-      const changed = await this.compactWithPrune(session, agent, contextTokens)
-      if (!changed) return undefined
-      // 返回**浅拷贝**隔离两条线(验收 400 bug 的第二层根因):钩子返回后,当轮
-      // 与后续轮的流式 partial/收尾消息会 push 进「loop 的 context.messages」,
-      // 同时 Agent.processEvents 的 message_end 会 push 进「agent.state.messages」
-      // —— 两个引用若指向同一数组(共享或原位同物),同一消息必然双写(实测:
-      // 落盘转录出现两条相邻相同的收尾 assistant)。pi 上游无此问题:它的钩子
-      // 返回 session 树投影的独立数组,状态线与请求线天然分离。Cogent 状态线
-      // 是真源(agent_end 全量落盘),故请求线必须拷贝分离:压缩形态已由
-      // compactWithPrune 原位写进共享底层数组,拷贝此刻快照即是压缩后的完整
-      // 前缀;此后状态线继续追加、请求线独立使用,agent_end 落盘干净
-      return { context: { ...turn.context, messages: [...agent.state.messages] } }
-    }
-    return agent
-  }
-
-  /**
-   * 回合边界落盘（create/delete/agent_end 调用）：summary + 完整转录整文档覆盖写。
-   * 尽力语义：失败只记诊断不抛 —— 调用点多在事件转译/回合收尾路径上，
-   * 抛出去等于让存储故障炸掉一次成功回合；转录仍在内存，下次回合边界重写补上。
+   * 会话域落盘（summary 变更点调用）：v2 文档只含 summary —— 转录真源在 pi
+   * JSONL（pi 自己逐条追加），本层不碰。尽力语义：失败只记诊断不抛 ——
+   * 调用点多在受理/收尾路径上，抛出去等于让存储故障炸掉一次成功回合；
+   * summary 仍在内存，下次变更点重写补上。
    */
   private persist(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
-    const doc: StoredSession = {
-      version: SESSION_FILE_VERSION,
-      summary: session.summary,
-      transcript: session.transcript
-    }
+    const doc: StoredSession = { version: SESSION_FILE_VERSION, summary: session.summary }
     try {
       this.storage.put(SESSION_COLLECTION, sessionId, doc as unknown as Record<string, unknown>)
     } catch (error) {
-      process.stderr.write(`[agent-service] 会话落盘失败（${sessionId}，下回合重试）: ${(error as Error).message}\n`)
+      process.stderr.write(`[host] 会话落盘失败（${sessionId}，下次变更重试）: ${(error as Error).message}\n`)
     }
   }
 
@@ -1361,10 +1226,15 @@ export class SessionManager {
     return merged ?? segments
   }
 
-  /** pi 事件 → 协议事件的单向转译（无状态副作用于 pi 对象本身） */
-  private translateEvent(agent: Agent, event: AgentEvent): void {
-    const sessionId = this.findSessionId(agent)
-    if (!sessionId) return
+  /**
+   * pi 事件 → 协议事件的单向转译（onEvent 闭包按会话直连，无实例查表）。
+   * 事件面 = AgentSessionEvent：核心 AgentEvent（message_update、turn_*、
+   * tool_execution_* 等）同源直转；会话层事件里 agent_settled（终态）与
+   * compaction_start/end（压缩）有协议对应，其余（queue_update、auto_retry_*、
+   * session_info_changed 等）暂无协议消费面，落 default（1.4 对账再议）。
+   */
+  private translateEvent(session: Session, event: AgentSessionEvent): void {
+    const sessionId = session.summary.id
 
     switch (event.type) {
       case 'message_update': {
@@ -1385,21 +1255,14 @@ export class SessionManager {
         return
       }
       case 'turn_start': {
-        this.sessions.get(sessionId)?.inspector?.turnStarted()
+        session.inspector?.turnStarted()
         return
       }
       case 'turn_end': {
-        // 记录停止原因与用量：length = 输出被 token 上限截断（agent_end 事件本身
-        // 不带这些信息）；usage/durationMs/model 同样只在 turn_end 的 message 上
-        // 到达 —— agent_end 只剩聚合态转录，此处不摘即永久丢失（协议事件不回头）
+        // 记录停止原因与用量：length = 输出被 token 上限截断；usage/durationMs/
+        // model 同样只在 turn_end 的 message 上到达 —— 终态（agent_settled）只剩
+        // 聚合态转录，此处不摘即永久丢失（协议事件不回头）
         if (event.message.role === 'assistant') {
-          // 覆写轮结束时刻：pi 的 assistant timestamp = 流打开那一刻（pi-ai
-          // 各方言在 stream open 构造 partial 时打的 Date.now()），而 UI 的
-          // 「已工作」墙钟口径是轮结束 —— 不覆写则漏掉整个末轮流式输出段
-          // （实测 live 计时 2.7s、终态只报 1.4s 的分歧根源）。连消息体一起
-          // 改：event.message 即转录真源里的对象，不改历史回查退回轮开始口径；
-          // 轮已收尾 pi 不再读该字段（prompt 序列化不携带）
-          event.message.timestamp = Date.now()
           const streaming = this.streaming.get(sessionId)
           if (streaming) {
             streaming.stopReason = event.message.stopReason
@@ -1409,7 +1272,11 @@ export class SessionManager {
             // 段封存（计划 D6）：本轮 text/thinking + 本轮工具调用 → 一段
             // ChatMessage（段内 usage 是本轮自己的，非全 run 累计 —— 分段后
             // 每段的统计行各自成立）。三缓冲全空的轮不落段（pi 每轮至少有
-            // text 或 toolCall 之一，此分支实际只挡极端 provider 怪癖）
+            // text 或 toolCall 之一，此分支实际只挡极端 provider 怪癖）。
+            // 段时间戳取轮结束墙钟（UI「已工作」口径）：pi 的 assistant
+            // timestamp 是流打开时刻，旧架构靠改写消息对象对齐 —— 现在消息
+            // 由 pi 树持有（message_end 已先落盘，改内存 = 盘内漂移），只改
+            // 展示侧（历史回查路径的 timestamp 是流开口径，两路差异 1.4 对账）
             if (streaming.text !== '' || streaming.thinking !== '' || streaming.tools.length > 0) {
               streaming.segments.push({
                 // id 带 run 级前缀：段序号只在 run 内唯一，同会话多 run 会撞
@@ -1422,7 +1289,7 @@ export class SessionManager {
                 usage: projectUsage(event.message.usage),
                 durationMs: event.message.durationMs,
                 model: event.message.model,
-                timestamp: event.message.timestamp
+                timestamp: Date.now()
               })
             }
             streaming.text = ''
@@ -1430,12 +1297,12 @@ export class SessionManager {
             streaming.tools = []
           }
           // 观测快照取 turn_end 终态消息（usage/stopReason/diagnostics 齐全）
-          this.sessions.get(sessionId)?.inspector?.turnCompleted(event.message)
+          session.inspector?.turnCompleted(event.message)
         }
         return
       }
       case 'tool_execution_start': {
-        this.sessions.get(sessionId)?.inspector?.toolStarted(event.toolName, event.args)
+        session.inspector?.toolStarted(event.toolName, event.args)
         const streaming = this.streaming.get(sessionId)
         if (!streaming) return
         // kind/摘要取静态元数据表（与 buildTools 同源；不依赖会话工具实例 ——
@@ -1444,7 +1311,7 @@ export class SessionManager {
         if (meta === undefined) {
           // pi 只执行注册过的工具，未知名字 = 引擎注册表与循环不一致的 bug：
           // 事件流不炸、stderr 留诊断、呈现按只读兜底（fail-visible，不静默）
-          process.stderr.write(`[agent-service] 未注册的工具名出现在执行事件: ${event.toolName}\n`)
+          process.stderr.write(`[host] 未注册的工具名出现在执行事件: ${event.toolName}\n`)
         }
         const record: ToolCallRecord = {
           callId: event.toolCallId,
@@ -1483,7 +1350,7 @@ export class SessionManager {
         return
       }
       case 'tool_execution_end': {
-        this.sessions.get(sessionId)?.inspector?.toolCompleted(
+        session.inspector?.toolCompleted(
           event.toolName,
           event.result,
           event.isError,
@@ -1511,50 +1378,86 @@ export class SessionManager {
         })
         return
       }
-      case 'agent_end': {
+      case 'compaction_start': {
+        // pi 压缩启动（manual = session.compact；threshold/overflow = pi 自动路，
+        // 后者发生在 run 生命周期内，宿主据此可呈"压缩中"状态）
+        this.notify('compaction.started', { sessionId, reason: event.reason })
+        return
+      }
+      case 'compaction_end': {
+        if (event.errorMessage !== undefined) {
+          this.notify('compaction.completed', {
+            sessionId,
+            reason: event.reason,
+            error: event.errorMessage
+          })
+          return
+        }
+        if (event.result === undefined) {
+          // 类型面允许（pi 溢出恢复二次失败时 result 缺省 + errorMessage 已带，
+          // 走不到这）；aborted 单独到此 —— 诚实报因
+          this.notify('compaction.completed', {
+            sessionId,
+            reason: event.reason,
+            error: event.aborted ? '压缩已中止' : '压缩未产生结果'
+          })
+          return
+        }
+        const result = event.result
+        // summarizedUntil = 保留区首条的时间戳（宿主据此把该时刻及之前的
+        // 消息原位换折叠条）：从 pi 会话树按 firstKeptEntryId 反查
+        const firstKept = session.pi?.sessionManager.getEntry(result.firstKeptEntryId)
+        const summarizedUntil =
+          firstKept !== undefined ? new Date(firstKept.timestamp).getTime() : undefined
+        this.notify('compaction.completed', {
+          sessionId,
+          reason: event.reason,
+          tokensBefore: result.tokensBefore,
+          ...(result.estimatedTokensAfter !== undefined && { tokensAfter: result.estimatedTokensAfter }),
+          summary: result.summary,
+          ...(summarizedUntil !== undefined && { summarizedUntil }),
+          // 摘要请求自身的账（D9）：不走 run 分段、不进回合统计 —— 宿主折叠
+          // 条小字呈现；端点未报 usage 时缺省
+          ...(result.usage !== undefined && { summaryUsage: projectUsage(result.usage) })
+        })
+        return
+      }
+      case 'agent_settled': {
+        // 终态（每轮 prompt 生命周期恰一次，晚于全部内聚恢复/重试 —— 见类头
+        // "终态纪律"）。旧 agent_end 分支的正/负路径全部迁此
         const streaming = this.streaming.get(sessionId)
-        const session = this.sessions.get(sessionId)
-        if (!session) {
+        if (!this.sessions.has(sessionId)) {
           this.streaming.delete(sessionId)
           return
         }
         session.summary.updatedAt = Date.now()
 
-        // pi 约定：失败/中止在 Agent.state.errorMessage 留痕（stream error 也汇于此）
-        if (agent.state.errorMessage) {
-          // 溢出可恢复（完备化 R5）：不发 run.failed、streaming 保活 —— submit
-          // 链的 settleRun 删失败轮/压缩/continue 重试,重试的流式增量与
-          // 终态沿同一 streaming 对象发出,UI 全程只见这一个 run
-          if (this.overflowRecoverable(agent, sessionId)) return
+        // pi 约定：失败/中止在 Agent.state.errorMessage 留痕（stream error /
+        // abort 也汇于此）→ run.failed
+        if (session.pi?.agent.state.errorMessage) {
+          const message = session.pi.agent.state.errorMessage
           this.streaming.delete(sessionId)
-          session.inspector?.runFailed(agent.state.errorMessage)
-          this.notify('run.failed', { sessionId, message: agent.state.errorMessage })
+          session.inspector?.runFailed(message)
+          this.notify('run.failed', { sessionId, message })
           return
         }
-        // length 截断可续写（完备化 R6③）：同样抑制终态、streaming 保活 ——
+        // length 截断可续写（完备化 R6③）：抑制终态、streaming 保活 ——
         // settleRun 注入显式 continue 消息接着跑;预算尽或续写完成时由下一轮
-        // agent_end 正常收尾。抑制意味着本轮转录不落盘:续写中途崩溃会丢
-        // 截断段(下一回合边界重写补上),与"回合边界落盘"语义一致可接受
-        if (this.lengthContinuable(agent, sessionId)) return
+        // agent_settled 正常收尾。抑制意味着本轮转录不重写盘:续写中途崩溃
+        // 丢当前段（pi JSONL 已逐条落盘的除外），与"尽力落盘"语义一致可接受
+        if (session.pi !== undefined && this.lengthContinuable(session.pi.agent, sessionId)) return
         this.streaming.delete(sessionId)
-
-        // 回合成功的最终 assistant 消息进持久转录（pi 消息带真实 timestamp，
-        // 投影/恢复共用此值）；失败/中止回合 pi 已把半截文本留进转录，
-        // 这里同步一次保证盘上盘内一致（pi 语义：半截回复留存、后续请求可见）
-        session.transcript = [...agent.state.messages]
-        this.persist(sessionId)
 
         // 上下文明细估算挂到本回合 usage 上（turn_end 逐轮累加的 usage 已聚合；
         // 明细只描述"此刻转录长什么样"，与轮次无关，算一次即可）。挂 usage 而非
         // 单独字段：renderer 旧数据无此字段自然降级（additive，见
         // MessageUsage.contextEstimate）。聚合与末段各挂一份 —— 指示器分子读的是
         // "末条带 usage 的消息"（分段终态下 = 末段），聚合份供兼容形态与观测
-        // 快照，两处是独立对象不共享。注意这里只覆盖事件路径：估算挂的是协议侧
-        // streaming 对象、随 run.completed 飞走，不进盘上 transcript（pi 形状，
-        // 其 Usage 无此字段）—— 历史回查路径在 messages() 按需现算，两条路
-        // 各自出同源数据（estimateContext 纯转录函数，见其注释）
+        // 快照，两处是独立对象不共享。盘上转录（pi 树）不带明细 —— 历史回查
+        // 路径在 messages() 按需现算，两条路各自出同源数据（estimateContext
+        // 纯转录函数，见其注释）
         if (streaming?.usage) {
-          const estimate = estimateContext(session.transcript)
+          const estimate = estimateContext(session.pi?.agent.state.messages ?? [])
           streaming.usage.contextEstimate = estimate
           const lastSegment = streaming.segments.at(-1)
           if (lastSegment?.usage) lastSegment.usage.contextEstimate = { ...estimate }
@@ -1607,15 +1510,12 @@ export class SessionManager {
         })
         return
       }
-      // agent_start / message_start|end：协议暂无对应事件，转译为空
+      // agent_start、message_start/end、agent_end（pi 版带 willRetry，终态已归
+      // agent_settled）、queue_update、auto_retry_*、session_info_changed 等：
+      // 协议暂无对应事件，转译为空（1.4 对账再议）
       default:
         return
     }
-  }
-
-  /** Agent 实例反查会话 id（事件回调只带 agent 引用；O(1) 查反查表，见 agentIndex） */
-  private findSessionId(agent: Agent): string | undefined {
-    return this.agentIndex.get(agent)
   }
 
 }
@@ -1625,6 +1525,10 @@ export class SessionManager {
  * 用量三件套 + 工具调用投影。system 消息（prompt 载体）与 toolResult 消息
  * （配对进 toolCalls）不单独产出 —— 工具结果对 UI 是工具卡的尾部信息，
  * 不是独立消息（对模型才回灌成消息）。
+ *
+ * 输入源（1.2a 起）：pi 会话树投影（pi.agent.state.messages，压缩条以
+ * compactionSummary 角色存活，session-manager 投影实证）或 v1 旧转录 ——
+ * 两源同为 AgentMessage[]，投影规则不变。
  *
  * 2026-11-12 提为模块级导出函数（原 session 类私有方法，无实例状态）：
  * 单测直测（tests：D9 时间序落点/延迟 flush 的引擎侧回归钉），session
@@ -1673,7 +1577,11 @@ export function toChatMessages(messages: AgentMessage[]): ChatMessage[] {
       pendingBar = {
         role: 'compaction',
         content: message.summary,
-        compaction: { tokensBefore: message.tokensBefore, tokensAfter: message.tokensAfter, summaryUsage: message.summaryUsage },
+        // pi 树只存 tokensBefore（原生 CompactionSummaryMessage 形状）：
+        // tokensAfter/summaryUsage 是压缩时刻的账（compaction_end 事件侧随
+        // run 呈现），树里无存 —— 历史回查的折叠条缺省这两字段，1.4 投影
+        // 对账再议（pi 的 details 通道是补齐位）
+        compaction: { tokensBefore: message.tokensBefore },
         timestamp: message.timestamp
       }
       continue
@@ -1747,8 +1655,8 @@ export function toChatMessages(messages: AgentMessage[]): ChatMessage[] {
         role: 'assistant',
         content,
         thinking: thinking || undefined,
-        // 用量三件套同投影：盘上 transcript 存 pi 完整消息（usage 是必有字段），
-        // 历史会话与流式结束态同一套数据源，老会话 UI 上也可见统计
+        // 用量三件套同投影：pi 转录的 assistant 消息 usage 必有，历史会话与
+        // 流式结束态同一套数据源，老会话 UI 上也可见统计
         usage: projectUsage(message.usage),
         durationMs: message.durationMs,
         model: message.model,

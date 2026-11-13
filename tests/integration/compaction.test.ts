@@ -7,34 +7,35 @@
  * （USERPROFILE/HOME 同步覆写）。场景流一条到底（单 it，中途失败即终止，
  * 与原脚本 exit 语义一致）。
  *
- * 场景流（一个大会话串到底 + 若干小会话）：
+ * 场景流（一个大会话串到底 + 若干小会话；1.2a 起 pi 内核接管压缩，场景随
+ * 之重钉 —— 触发线 reserve 制、摘要指令 pi 文本、L1 裁剪退役）：
  *  S1 阈值自动触发（循环堆大回合到触发线；触发点动态）
- *  S2 触发回合请求体（被摘要原文消失 + 摘要投影 + 保留区 + 新问）
+ *  S2 压缩后请求投影（被摘要原文消失 + 摘要投影 + 保留区 + 新问）
  *  S4 手动无可压缩（小会话）→ InvalidRequest
- *  S5 手动成功 + 迭代合并 + 7b 二次连点拒绝（D9 时间戳守卫）
- *  S3 杀引擎重启（S6 之前的场景序）：历史回查保留式复原（D9）+ 5b 请求投影
- *  S6 场景⑨：20000 窗 ≈60% 触发（余量线绑定区）
- *  S7 场景②：工具轮间 L2（run 不中断、下一请求换轨）
+ *  S5 手动成功 + 迭代合并 + 7b 二次连点拒绝
+ *  S3 杀引擎重启：历史回查保留式复原（D9）+ 5b 请求投影
+ *  S6 场景⑨：20000 窗 reserve 线触发（18% 附近而非 90%）
+ *  S7 场景②：工具轮间压缩（run 不中断、下一请求换轨）
  *  S8 场景⑤：length 停因 toolCall 全 fail → 自愈重发
- *  S9/S10 场景③④：L1 裁剪零摘要请求 + 落盘复原
+ *  S9/S10 场景③④(pi 版)：大结果全量进摘要 + pi JSONL 重启复原
  *  S11 场景⑥：溢出恢复 + 单次闸
  *  S12 场景⑦：auto-continue 续写 + 段合并
  *  S13 思考预算通道（compat 字段名 × 档位预算）
- *  S14 场景(S2 验收 bug 回归)：轮间压缩配对完整性（请求 + 落盘转录）
- *  S15/S16 空续写拒绝 + 摘要预算守卫降级
+ *  S14 场景(S2 验收 bug 回归)：轮间压缩配对完整性（请求 + JSONL 落盘）
+ *  S15/S16 空续写拒绝 + 摘要请求领头形状
  * （check 编号沿用开发.md 配方时代的编号，1–23 + 5b/7b/9–22 各段）
  *
  * mock 关键点（勿改）：
- *  ① contextWindow 给 24000（真实产品量级 —— 小窗口下 keepRecent(窗口/2)
- *     占比过大，"显著缩小"类断言永不成立）；
+ *  ① contextWindow 给 24000（真实产品量级；pi reserve 16384 → 触发线 7616，
+ *     keep 20000 → 需垫超 keep 窗才有被摘要区）；
  *  ② mock 不回 usage（回合请求）：回了估算会锚在假数上永不触发阈值，不回才
  *     退回 pi-ai 纯字符口径（3.5 chars/token，可预测）；摘要请求回 usage 无此虑；
  *  ③ 事件等待带水位（waitEvent 的 __consumed）：压缩与 run 事件交错；
- *  ④ 摘要请求识别（R4 指令内联后）：看末条 user 是否为指令（护栏段固定开头
- *     'acting as a compaction engine'），同为 SSE 流按请求体特征分流。
+ *  ④ 摘要请求识别（pi 指令特征）：末条 user 含 'conversation to summarize'/
+ *     'NEW conversation messages'（pi 首次/迭代提示词的固定文本）。
  */
 import { createServer, type Server } from 'node:http'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import {
@@ -53,12 +54,18 @@ const PORT = 18_941
 const home = makeTempDir('cogent-compaction-home-')
 const ws = makeTempDir('cogent-compaction-ws-')
 
-// ———— 推演参数（与 runtime/compaction.ts 常量的关系，细节见原脚本头注） ————
-// 触发公式 = max(ctx×0.5, min(ctx×0.9, ctx−8192))：24000 窗 → 15808（余量线
-// 绑定）；keepRecent = 12000。每回合 user 30000c / 3.5 ≈ 8571 tok。
-const TURN_CHARS = 30_000
-// 场景⑨：20000 窗 → 阈值 11808（59%）；每回合 6300c ≈ 1800 tok，7 回合触发
-const TURN_CHARS_20K = 6_300
+// ———— 推演参数（pi 内核口径，estimateTokens = chars/4） ————
+// 触发线 = ctx−reserve16384；keep = 20000。mock 64K 窗 → 触发线 47616。
+// 回合 105000c → 26250 tok：单回合 > keep —— 从尾累计跨过 keep 落在 user
+// 条目（切点且 turn start，不落 split-turn），2 回合 ≈ 52500 过触发线。
+// 回合 < keep/2 时跨点会落到首个 user 之前（被摘要区只剩 system，被滤后
+// 为空 → 「无可压缩」）；恰好 keep/2 时跨点落第二个 user（料 = 首回合）
+const TURN_CHARS = 105_000
+// 中回合 40000c → 10000 tok：两回合 20000 恰跨 keep（S5 手动压缩的料）
+const TURN_CHARS_MID = 40_000
+// mock20k（20K 窗 → 触发线 3616；ctx = keep = 20000 → 只有转录超 keep 后
+// 才有整回合可摘要）；5000c → 1250 tok，17 回合 ≈ 21250 过 keep 线
+const TURN_CHARS_20K = 5_000
 // mock 摘要文本的显式标记（断言摘要投影 / 迭代合并靠它，不依赖真实语义）
 const SUMMARY_V1 = 'CHECKPOINT-V1-MARK Goal: verify compaction.'
 const SUMMARY_V2 = 'CHECKPOINT-V2-MARK merged checkpoint.'
@@ -83,10 +90,22 @@ writeFileSync(join(ws, 'probe2.txt'), `PROBE2-RESULT-MARK ${'q'.repeat(8_000)}`)
 
 // ———— mock 端点：按请求体特征分流（回合 / 摘要） ————
 
-/** 文本流响应 —— 关键点②：不带 usage 字段；finish 可指定（'length' = 截断） */
+/** 文本流响应 —— 关键点②：不带 usage 字段（回合）；length 截断的响应例外：
+ *  带满额 output usage —— pi 的 recoverableLength 自愈（isRecoverableLength:
+ *  usage.output < maxTokens）对 mock 补零的 usage 恒命中，会把截断消息 omit
+ *  后删-试，与 Cogent AUTO_CONTINUE 的显式续写语义冲突（真端点输出贴上限
+ *  的 length 同样不走自愈，mock 对齐该形态） */
 const textResponse = (res: { write: (s: string) => void; end: () => void }, text: string, finish = 'stop'): void => {
   res.write(sse(chunk({ content: text })))
-  res.write(sse(chunk({}, finish)))
+  res.write(
+    sse(
+      chunk(
+        {},
+        finish,
+        finish === 'length' ? { usage: { prompt_tokens: 100, completion_tokens: 32_768, total_tokens: 32_868 } } : {}
+      )
+    )
+  )
   res.write('data: [DONE]\n\n')
   res.end()
 }
@@ -134,14 +153,17 @@ const server: Server = createServer((req, res) => {
   req.on('end', () => {
     const payload = JSON.parse(body) as { messages?: Array<{ role?: string; content?: unknown }> }
     // 溢出模拟(S5 场景⑥):末条 user 带 OVERFLOW_ONCE/TWICE 标记 → 前 N 次
-    // 回 OpenAI 风格 400(pi-ai overflow 模式命中)→ 引擎删失败轮 + continue
-    // 重试;ONCE 重试即成功,TWICE 重试再溢出验单次闸。必须在 SSE writeHead 之前分支
+    // 回 OpenAI 风格 400(pi-ai overflow 模式命中)→ 引擎恢复路 compact+retry;
+    // ONCE 重试即成功,TWICE 重试再溢出验单次闸。守卫:摘要请求(<conversation>
+    // 序列化会带着 OVERFLOW 原文)不参与模拟 —— 否则恢复路的摘要请求被 400
+    // 卡死,重试永远失败。必须在 SSE writeHead 之前分支
     const preLast = payload.messages?.at(-1)
+    const preLastText = preLast?.role === 'user' ? messageText(preLast) : ''
     const ovMarker =
-      preLast?.role === 'user'
-        ? messageText(preLast).includes('OVERFLOW_ONCE')
+      preLast?.role === 'user' && !preLastText.includes('<conversation>')
+        ? preLastText.includes('OVERFLOW_ONCE')
           ? 'once'
-          : messageText(preLast).includes('OVERFLOW_TWICE')
+          : preLastText.includes('OVERFLOW_TWICE')
             ? 'twice'
             : null
         : null
@@ -165,14 +187,15 @@ const server: Server = createServer((req, res) => {
       }
     }
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' })
-    // 摘要请求识别(R4 指令内联后):看末条 user 是否为摘要指令(护栏段固定开头)
+    // 摘要请求识别（pi 序列化特征）：pi 的摘要请求把被摘要消息文本化包进
+    // <conversation> 标签（compaction.ts serializeConversation，防续写手法）
+    // —— 首次/迭代/turn-prefix 三种摘要指令共用此包裹，比指令文本更稳
     const lastMsg = payload.messages?.at(-1)
-    if (lastMsg?.role === 'user' && messageText(lastMsg).includes('acting as a compaction engine')) {
+    if (lastMsg?.role === 'user' && messageText(lastMsg).includes('<conversation>')) {
       summaryRequests.push(payload)
-      // 修 A 观察面:首条是否 system(真前缀形态)—— 预算守卫降级时被摘要区
-      // 直传领头,user 会话首问会是第一条
+      // 观察面:摘要请求领头角色(pi 的组装口径,断言 14/22 消费)
       summaryRequests[summaryRequests.length - 1].__smokeLeadingRole = payload.messages?.[0]?.role ?? 'none'
-      // 迭代合并：请求带 <previous-summary> 说明已有旧摘要（UPDATE 提示词）
+      // 迭代合并：请求带 <previous-summary> 说明已有旧摘要（pi UPDATE 提示词同 tag）
       summaryResponse(res, body.includes('<previous-summary>') ? SUMMARY_V2 : SUMMARY_V1)
       return
     }
@@ -219,11 +242,13 @@ const MOCK_PROVIDERS = [
     name: 'Mock',
     baseUrl: `http://127.0.0.1:${PORT}/v1`,
     models: ['mock'],
-    // 关键点①：contextWindow 24000（ModelDef 完整定义；简写 models 只有目录
-    // 兜底 128k，keepRecent 占比过小 + 阈值天文数字，永不触发）。mock20k 供
-    // 场景⑨（新触发公式 60% 验收），重启后场景在末尾使用
+    // 关键点①：contextWindow 64000（pi 口径推演：触发线 = ctx−reserve16384 =
+    // 47616，须高于 keep 20000 才走常规整回合压缩 —— 小于它时触发落在
+    // keep 窗内，pi 只能切当回合做 turn-prefix 摘要，S1 的"被摘要区整回合"
+    // 结构不成立）。mock20k 供小窗场景（触发线 3616，split-turn 是 pi 小窗
+    // 的真行为，场景按事件面钉）
     modelDefs: [
-      { id: 'mock', contextWindow: 24_000 },
+      { id: 'mock', contextWindow: 64_000 },
       { id: 'mock20k', contextWindow: 20_000 }
     ]
   }
@@ -268,7 +293,13 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
         typeof completed.params.summary === 'string' &&
         (completed.params.summary ?? '').includes(SUMMARY_V1) &&
         (completed.params.summarizedUntil ?? 0) > 0,
-      JSON.stringify({ before: completed.params.tokensBefore, after: completed.params.tokensAfter })
+      JSON.stringify({
+        before: completed.params.tokensBefore,
+        after: completed.params.tokensAfter,
+        summary: (completed.params.summary ?? '').slice(0, 80),
+        until: completed.params.summarizedUntil,
+        error: completed.params.error
+      })
     )
     check(
       '23. completed 带摘要用量（摘要调用独立计账，input/totalTokens > 0）',
@@ -276,37 +307,33 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
       JSON.stringify(completed.params.summaryUsage)
     )
 
-    // ———— S2 触发回合请求体：旧文消失 + 摘要投影 + 保留区 + 新问 ————
-    // 触发回合的正式请求 = 最后一个回合请求（S1 循环等到 run.completed 时请求
-    // 必已发出；触发回合 mock 只回 text 无工具，单请求收尾）
+    // ———— S2 压缩后请求投影：旧文消失 + 摘要投影 + 保留区 + 新问 ————
+    // pi 时序（与手搓的关键差异）：threshold 压缩发生在触发回合 run 落定后
+    // （post-run 检查），触发回合自己的请求仍是压缩前形态 —— 压缩后的投影
+    // 要看**下一回合**的请求，这里追加一个探测回合
+    await engine.send('agent.submit', { sessionId: s1, text: 'post-trigger probe', model: 'mock' })
+    await engine.waitEvent('run.completed', (p) => p.sessionId === s1)
     const fired = JSON.stringify(requestBodies.at(-1) ?? {})
-    // 被摘要区 = 触发前最后 2 回合之外的全部（切点恒在倒数第 2 个 user）；
-    // 保留区 = 倒数 2 回合（triggered-2、triggered-1 的 MILESTONE）
     check(
       '3. 被摘要原文不进请求（MILESTONE_1 消失，投影层只送摘要）',
       fired.includes('MILESTONE_1 ') === false,
       fired.slice(0, 160)
     )
     check(
-      '4. 摘要投影 + 保留区 + 新问同请求（convertToLlm 的 checkpoint 前导语）',
-      fired.includes('automatically generated checkpoint') &&
+      '4. 摘要投影 + 触发回合保留 + 新问同请求（pi 投影的 compaction 前导语）',
+      fired.includes('compacted into the following summary') &&
         fired.includes(SUMMARY_V1) &&
-        fired.includes(`MILESTONE_${triggered - 1} `) &&
-        fired.includes(`MILESTONE_${triggered - 2} `) &&
-        fired.includes(`MILESTONE_${triggered} `),
+        fired.includes(`MILESTONE_${triggered} `) &&
+        fired.includes('post-trigger probe'),
       `triggered=${triggered} ${fired.slice(0, 160)}`
     )
-    // 场景⑧(S4 验收):摘要请求本身是主请求的真前缀 —— 领头 = 会话 system
-    // (不再是独立 summarization system)、被摘要区原消息直传(MILESTONE 原文
-    // 在请求里)、末条 = 指令 user
+    // 摘要请求形状：被摘要区原消息直传（MILESTONE 原文在请求里）+ pi 指令收尾
     const sumReq = JSON.stringify(summaryRequests[0] ?? {})
     check(
-      '14. 摘要请求真前缀（会话 system 领头/无 summarization system/原消息直传/指令收尾）',
-      sumReq.includes('You are Cogent') &&
-        !sumReq.includes('context summarization assistant') &&
-        sumReq.includes('MILESTONE_1 ') &&
-        sumReq.includes('acting as a compaction engine'),
-      sumReq.slice(0, 200)
+      '14. 摘要请求原消息直传 + pi 指令收尾',
+      sumReq.includes('MILESTONE_1 ') &&
+        (sumReq.includes('conversation to summarize') || sumReq.includes('NEW conversation messages')),
+      `leading=${summaryRequests[0]?.__smokeLeadingRole ?? 'none'} ${sumReq.slice(0, 160)}`
     )
 
     // ———— S4 手动无可压缩（小会话：近期内容不足保留窗口） ————
@@ -320,139 +347,148 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
       JSON.stringify(compactErr.error ?? compactErr.result)
     )
 
-    // ———— S5 手动成功 + 迭代合并 ————
-    // 重启前的大会话直接手动 compact（同一引擎实例，model=mock 还在内存 →
-    // keepRecent=12000；不垫新回合）：触发回合 user 本身就是大文本（30000c），
-    // 从尾累计 8571+8571=17142 ≥ 12000 落在倒数第 2 个 user → 被摘要区 =
-    // [旧保留区首回合]，非空 → 手动成功且必带 previous-summary
-    const manualResult = await engine.send<{ tokensBefore?: number; tokensAfter?: number }>('session.compact', { sessionId: s1 })
+    // ———— S5 手动成功 + 迭代合并（独立会话） ————
+    // 独立会话垫 3 个中回合（10500 tok ×3 ≈ 31500）：稳在自动触发线 47616
+    // 下（在 s1 上垫会被自动压缩抢跑 —— 保留区 30000 + 新增 ≥20000 必过
+    // 线，数学上无手动窗口），从尾累计跨 keep 落在第二个中回合的 user →
+    // 被摘要 = 首回合 非空 → 首次手动成功（无前代，mock 回 V1）
+    const sM = await newSession({ cwd: ws })
+    for (let k = 1; k <= 3; k++) {
+      await engine.send('agent.submit', { sessionId: sM, text: `MIDTURN_${k} ` + 'm'.repeat(TURN_CHARS_MID), model: 'mock' })
+      await engine.waitEvent('run.completed', (p) => p.sessionId === sM)
+    }
+    const manualResult = await engine.send<{ tokensBefore?: number; tokensAfter?: number }>('session.compact', { sessionId: sM })
     if (manualResult.error !== undefined) {
       throw new Error(`手动 compact 返回错误: ${JSON.stringify(manualResult.error)}`)
     }
-    await engine.waitEvent('compaction.started', (p) => p.sessionId === s1 && p.reason === 'manual')
+    await engine.waitEvent('compaction.started', (p) => p.sessionId === sM && p.reason === 'manual')
     check(
       '7. 手动 compact 成功（started reason=manual + 前后 token 缩小 ≥5000）',
       (manualResult.result?.tokensBefore ?? 0) > (manualResult.result?.tokensAfter ?? 0) &&
         (manualResult.result?.tokensBefore ?? 0) - (manualResult.result?.tokensAfter ?? 0) > 5000,
       JSON.stringify({ result: manualResult.result, error: manualResult.error })
     )
-    const secondSummary = JSON.stringify(summaryRequests[1] ?? {})
+    // 迭代合并：再垫 2 中回合（保留区 ~11500 + 21000 从尾跨 keep 落首个
+    // 新回合 user）→ 第二次手动带 previous-summary（V1）→ mock 回 V2
+    for (let k = 4; k <= 5; k++) {
+      await engine.send('agent.submit', { sessionId: sM, text: `MIDTURN_${k} ` + 'm'.repeat(TURN_CHARS_MID), model: 'mock' })
+      await engine.waitEvent('run.completed', (p) => p.sessionId === sM)
+    }
+    const manualResult2 = await engine.send('session.compact', { sessionId: sM })
+    if (manualResult2.error !== undefined) {
+      throw new Error(`第二次手动 compact 返回错误: ${JSON.stringify(manualResult2.error)}`)
+    }
+    const secondSummary = JSON.stringify(summaryRequests.at(-1) ?? {})
     check(
       '8. 迭代合并（第二次摘要请求带 <previous-summary> + 旧摘要文本）',
       secondSummary.includes('<previous-summary>') && secondSummary.includes(SUMMARY_V1),
       secondSummary.slice(0, 160)
     )
-    // 7b 二次连点拒绝（D9 时间戳守卫验收）：手动压缩刚结束、无新回合 ——
-    // 保留式下压缩条不在末尾，旧 at(-1) 快速路径失效，新守卫（末条 bar 后无
-    // 更新的非 system 消息）应判「无可压缩」，防保留区被反复重摘要
-    const doubleCompact = await engine.send('session.compact', { sessionId: s1 })
+    // 7b 二次连点拒绝：手动压缩刚结束、无新回合 —— pi 的末条守卫
+    // （prepareCompaction：末条 compaction → 无可压缩）防保留区被反复重摘要
+    const doubleCompact = await engine.send('session.compact', { sessionId: sM })
     check(
-      '7b. 二次连点拒绝（刚压完无新回合 → 无可压缩，D9 时间戳守卫）',
+      '7b. 二次连点拒绝（刚压完无新回合 → 无可压缩，末条守卫）',
       doubleCompact.error !== undefined && doubleCompact.error.message.includes('无可压缩'),
       JSON.stringify(doubleCompact.error ?? doubleCompact.result)
     )
 
-    // ———— S3 杀引擎重启：历史回查折叠条复原（二次压缩后的落盘形态） ————
-    // 场景序说明：S3 放在手动压缩之后 —— 重启后引擎内存白纸，agent.state.model
-    // 回缺省模型（200K 窗），keepRecent 随之变大，重启后立刻手动 compact 会被判
-    // 「无可压缩」；放在二次压缩后反而多验一层：迭代摘要（V2）与两代被摘要区
-    // 同在落盘形态里
+    // ———— S3 杀引擎重启：历史回查折叠条复原 ————
     engine.kill()
     await sleep(300)
     engine = startEngine(home)
     await initEngine(engine, { client: 'compaction-smoke', port: PORT, providers: MOCK_PROVIDERS })
     const history = await engine.send('session.messages', { sessionId: s1 })
     const msgs = history.result?.messages ?? []
-    // D9 保留式：历史 = 影子区原文 + 两条折叠条（V1 在 V2 前，各自原位）+ 保留区。
-    // 旧销毁式断言（被摘要区消失、单条折叠条带 V2）整体翻转
+    // D9 保留式：历史 = 影子区原文（被摘要的 MILESTONE 全保留）+ 折叠条
+    // + 保留区。旧销毁式断言（被摘要区消失）整体翻转
     const bars = msgs.filter((m) => m.role === 'compaction')
     const userTexts = msgs.filter((m) => m.role === 'user').map((m) => m.content).join('\n')
     const shadowKept = Array.from({ length: triggered }, (_, i) => `MILESTONE_${i + 1} `).every((mk) => userTexts.includes(mk))
     check(
-      '5. 重启后保留式复原（两条折叠条 V1/V2 原位 + 全部被摘要区原文保留）',
-      bars.length === 2 &&
+      '5. 重启后保留式复原（折叠条 V1 原位 + 全部被摘要区原文保留）',
+      bars.length === 1 &&
         (bars[0]?.content ?? '').includes(SUMMARY_V1) &&
-        (bars[1]?.content ?? '').includes(SUMMARY_V2) &&
-        (bars[1]?.compaction?.tokensBefore ?? 0) > (bars[1]?.compaction?.tokensAfter ?? 0) &&
+        (bars[0]?.compaction?.tokensBefore ?? 0) > 0 &&
         shadowKept,
       JSON.stringify({ roles: msgs.map((m) => m.role), bars: bars.map((b) => b.compaction) })
     )
     // 5b 重启后请求投影：向 s1 再提交一回合 → 请求只含**一条** checkpoint
-    //（末条 bar 的投影；旧 bar V1 与影子区 MILESTONE_1 都不进请求 —— 保留式
-    // 的关键差异：历史保留 ≠ 上下文保留）。若该提交触发第三次压缩，请求换
-    // 成新 checkpoint（mock 对带 previous-summary 的请求仍回 V2 文本），断言不破
+    //（影子区 MILESTONE_1 不进请求 —— 保留式的关键差异：历史保留 ≠ 上下文
+    // 保留）。若该提交触发第二次压缩，请求换成新 checkpoint（mock 对带
+    // previous-summary 的请求回 V2 文本），单条断言不破
     await engine.send('agent.submit', { sessionId: s1, text: 'post-compaction probe', model: 'mock' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s1)
     const probeReq = JSON.stringify(requestBodies.at(-1) ?? {})
-    const checkpointCount = probeReq.split('automatically generated checkpoint').length - 1
+    const checkpointCount = probeReq.split('compacted into the following summary').length - 1
     check(
-      '5b. 重启后请求投影（单 checkpoint=V2/影子区与旧 bar 不进请求）',
-      checkpointCount === 1 && probeReq.includes(SUMMARY_V2) && !probeReq.includes('MILESTONE_1 '),
+      '5b. 重启后请求投影（单 checkpoint/影子区不进请求）',
+      checkpointCount === 1 && !probeReq.includes('MILESTONE_1 '),
       `checkpoints=${checkpointCount} ${probeReq.slice(0, 160)}`
     )
 
-    // ———— S6 场景⑨（S1 完备化验收）：20K 窗新公式 ≈60% 触发 ————
-    // 放在最后：s3 的摘要请求会进 summaryRequests，若插在 s1 两段压缩之间
-    // 会挪动断言 8 读的 [1] 下标。重启后新建会话，7×1800 tok 处触发
+    // ———— S6 场景⑨（pi 版）：20K 窗（ctx = keep）的触发时机 ————
+    // pi 语义：触发线 = 20000−16384 = 3616 早早即响，但被摘要料 = 转录 −
+    // keep(20000) —— 窗口等于 keep 时只有转录**超出** keep 才有整回合可压，
+    // 前期每次触发都以「无可压缩」error 收场。逐回合垫到出现成功压缩：
+    // 占比必然 >80%（与手搓版 keep=min(20K, ctx/2) 的行为差异 —— 1.4 的
+    // CompactionSettings 按模型覆盖对账点）
     const s3 = await newSession({ cwd: ws })
-    let trig20k = 0
-    for (let k = 1; k <= 10; k++) {
+    let successRatio = 0
+    for (let k = 1; k <= 20; k++) {
       await engine.send('agent.submit', {
         sessionId: s3,
         text: `M20K_${k} ` + 'y'.repeat(TURN_CHARS_20K),
         model: 'mock20k'
       })
       await engine.waitEvent('run.completed', (p) => p.sessionId === s3)
-      const hit = engine.events.find(
-        (e) => e.method === 'compaction.started' && e.params.sessionId === s3 && e.params.reason === 'threshold'
+      const done = engine.events.find(
+        (e) =>
+          e.method === 'compaction.completed' &&
+          e.params.sessionId === s3 &&
+          e.params.error === undefined &&
+          !e.__consumed
       )
-      if (hit) {
-        hit.__consumed = true
-        trig20k = k
+      if (done) {
+        done.__consumed = true
+        successRatio = (done.params.tokensBefore ?? 0) / 20_000
         break
       }
     }
-    if (trig20k === 0) {
-      check('9. 20K 窗触发（reason=threshold，占比 55–75%）', false, '10 轮未触发')
-    } else {
-      const done = await engine.waitEvent('compaction.completed', (p) => p.sessionId === s3)
-      const ratio = (done.params.tokensBefore ?? 0) / 20_000
-      check(
-        '9. 20K 窗触发（reason=threshold，占比 55–75% —— 旧 90% 公式需 ≥18000）',
-        done.params.reason === 'threshold' && ratio > 0.55 && ratio < 0.75,
-        `tokensBefore=${done.params.tokensBefore} ratio=${(ratio * 100).toFixed(1)}% trig=${trig20k}`
-      )
-    }
+    check(
+      '9. 20K 窗成功压缩发生在转录超 keep 时（占比 >80%；触发线早期只响 error）',
+      successRatio > 0.8,
+      `ratio=${(successRatio * 100).toFixed(1)}%`
+    )
 
-    // ———— S7 场景②(S2 验收):工具轮间 L2 触发且 run 不中断 ————
-    // 铺 9 个中号回合(5000c ≈ 1429 tok):期末 ≈ 14200,稳在阈值 15808 下;
-    // read probe2.txt 的结果(8000c ≈ 2290 tok,低于 8192 裁剪线 → L1 无动作)
-    // 落账后过线 —— 轮间检查点只能走 L2 摘要,这正是场景②要验证的路径
+    // ———— S7 场景②(S2 验收):工具轮落账触发压缩且 run 不中断 ————
+    // 垫 1 大回合(30000 tok)+ 1 小回合(12000 tok)≈ 42000,稳在触发线 47616
+    // 下;read probe.txt 结果(5157)+ D0 轮开销落账后 ≈ 48000 过线 —— 压缩发
+    // 生在 DO:TOOL 这个 run 的检查点,run 不中断
     const s4 = await newSession({ cwd: ws })
-    for (let k = 1; k <= 9; k++) {
-      await engine.send('agent.submit', { sessionId: s4, text: `S4TURN_${k} ` + 'z'.repeat(5_000), model: 'mock' })
-      await engine.waitEvent('run.completed', (p) => p.sessionId === s4)
-    }
+    await engine.send('agent.submit', { sessionId: s4, text: 'S4TURN_1 ' + 'z'.repeat(TURN_CHARS), model: 'mock' })
+    await engine.waitEvent('run.completed', (p) => p.sessionId === s4)
+    await engine.send('agent.submit', { sessionId: s4, text: 'S4TURN_2 ' + 'z'.repeat(63_000), model: 'mock' })
+    await engine.waitEvent('run.completed', (p) => p.sessionId === s4)
     const earlyCompact = engine.events.find((e) => e.method === 'compaction.started' && e.params.sessionId === s4)
     if (earlyCompact) earlyCompact.__consumed = true
-    await engine.send('agent.submit', { sessionId: s4, text: 'DO:TOOL read probe2.txt', model: 'mock' })
+    await engine.send('agent.submit', { sessionId: s4, text: 'DO:TOOL read probe.txt', model: 'mock' })
     const toolOk = await engine.waitEvent('tool.completed', (p) => p.sessionId === s4 && !p.isError)
     const compactStart = await engine.waitEvent('compaction.started', (p) => p.sessionId === s4 && p.reason === 'threshold')
     await engine.waitEvent('run.completed', (p) => p.sessionId === s4)
     check(
-      '10. 轮间 L2 触发(run 内、tool.completed 之后才 started;warmup 期零压缩)',
+      '10. 工具轮落账触发压缩(run 内、tool.completed 之后才 started;warmup 期零压缩)',
       !earlyCompact && engine.events.indexOf(compactStart) > engine.events.indexOf(toolOk),
       `early=${Boolean(earlyCompact)} tool@${engine.events.indexOf(toolOk)} compact@${engine.events.indexOf(compactStart)}`
     )
-    // 压缩后的下一请求(run 内第二个):loop 工作副本已换轨 —— 摘要投影在、
-    // 被摘要的回合 1 原文消失、工具结果与近期回合在保留区
+    // 压缩后的下一请求:loop 工作副本已换轨 —— 摘要投影在、被摘要的回合 1
+    // 原文消失、近期回合在保留区
     const afterStr = JSON.stringify(requestBodies.at(-1) ?? {})
     check(
-      '10b. run 续跑且请求体换轨(checkpoint 前导语/首回合消失/工具结果与近期回合保留)',
-      afterStr.includes('automatically generated checkpoint') &&
+      '10b. run 续跑且请求体换轨(pi 摘要前导语/首回合消失/近期回合保留)',
+      afterStr.includes('compacted into the following summary') &&
         !afterStr.includes('S4TURN_1 ') &&
-        afterStr.includes('S4TURN_9 ') &&
-        afterStr.includes('PROBE2-RESULT-MARK'),
+        afterStr.includes('S4TURN_2 '),
       afterStr.slice(0, 160)
     )
 
@@ -476,45 +512,29 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
       (redoEv.params.summary ?? '').slice(0, 80)
     )
 
-    // ———— S9 场景③(S3 验收):L1 单独够时零摘要请求 ————
-    // 4 中号回合 + 两次 read probe.txt:第二次结果落账后过线 → 轮间检查点 →
-    // L1 裁两条大结果 → 重计量回阈值下 → L2 不发
+    // ———— S9 场景③(pi 版重钉):大结果落账后的压缩语义 ————
+    // 手搓 L1 裁剪已随内核替换退役（全局架构 D6）。pi 保留式下最新消息
+    // （含大工具结果）恒在保留区，被摘要的是**老历史**—— 摘要请求把被摘
+    // 要区原文化序列化进 <conversation>（老回合原文可见），大结果原文随
+    // 保留区进后续请求。大结果落账把会话推过 keep 线，压缩照常发生
     const s6 = await newSession({ cwd: ws })
-    for (let k = 1; k <= 4; k++) {
-      await engine.send('agent.submit', { sessionId: s6, text: `S6TURN_${k} ` + 'z'.repeat(5_000), model: 'mock' })
+    for (let k = 1; k <= 17; k++) {
+      await engine.send('agent.submit', { sessionId: s6, text: `S6TURN_${k} ` + 'z'.repeat(TURN_CHARS_20K), model: 'mock20k' })
       await engine.waitEvent('run.completed', (p) => p.sessionId === s6)
     }
     const summariesBefore = summaryRequests.length
-    await engine.send('agent.submit', { sessionId: s6, text: 'DO:TOOL read probe.txt', model: 'mock' })
+    await engine.send('agent.submit', { sessionId: s6, text: 'DO:TOOL read probe.txt', model: 'mock20k' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s6)
-    await engine.send('agent.submit', { sessionId: s6, text: 'DO:TOOL read probe.txt again', model: 'mock' })
-    const pruneEv = await engine.waitEvent('compaction.pruned', (p) => p.sessionId === s6)
+    await engine.send('agent.submit', { sessionId: s6, text: 'DO:TOOL read probe.txt again', model: 'mock20k' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s6)
-    const s6Started = engine.events.find((e) => e.method === 'compaction.started' && e.params.sessionId === s6)
-    if (s6Started) s6Started.__consumed = true
-    const entries = pruneEv.params.entries ?? []
+    const s6Summaries = summaryRequests.slice(summariesBefore)
     check(
-      '12. L1 单独够(两条大结果被裁、数值对账;零 compaction.started、零摘要请求)',
-      entries.length === 2 &&
-        entries.every((en) => en.originalChars > 17_000 && en.prunedChars > 4_000 && en.prunedChars < 6_500) &&
-        !s6Started &&
-        summaryRequests.length === summariesBefore,
-      `entries=${JSON.stringify(entries)} started=${Boolean(s6Started)} summaries=${summaryRequests.length - summariesBefore}`
-    )
-    // 裁剪后的下一请求:头尾标记在、middle 标记消失、marker 在(审计痕迹进转录)
-    const prunedReq = JSON.stringify(requestBodies.at(-1) ?? {})
-    check(
-      '12b. 裁剪保形(HEAD/TAIL 进保留区、MID 消失、PRUNE_MARKER 在请求体)',
-      prunedReq.includes('PROBE-HEAD-MARK') &&
-        prunedReq.includes('PROBE-TAIL-MARK') &&
-        !prunedReq.includes('PROBE-MID-MARK') &&
-        prunedReq.includes('tool result middle pruned'),
-      prunedReq.slice(0, 160)
+      '12. 大结果落账后压缩照常(摘要请求序列化含老回合原文;结果留在保留区)',
+      s6Summaries.length > 0 && s6Summaries.some((r) => /S6TURN_\d+ /.test(JSON.stringify(r))),
+      `summaries=${s6Summaries.length}`
     )
 
-    // ———— S10 场景④(S3 验收):prune 落盘,重启复原 ————
-    // 落盘校验用请求体而非投影:未裁的结果头部 200 字符与裁后无异(HEAD 都在),
-    // 只有重发请求看得到 marker 与 MID 的缺席 —— 转录真源是什么,下一请求就带什么
+    // ———— S10 场景④(pi 版):pi JSONL 落盘,重启复原 ————
     engine.kill()
     await sleep(300)
     engine = startEngine(home)
@@ -523,16 +543,25 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
     await engine.waitEvent('run.completed', (p) => p.sessionId === s6)
     const revivedReq = JSON.stringify(requestBodies.at(-1) ?? {})
     check(
-      '13. 重启复原(裁剪形态落盘:MARKER/HEAD 在、MID 不在、S6TURN_1 原文在)',
-      revivedReq.includes('tool result middle pruned') &&
-        revivedReq.includes('PROBE-HEAD-MARK') &&
-        !revivedReq.includes('PROBE-MID-MARK') &&
-        revivedReq.includes('S6TURN_1 '),
+      '13. 重启复原(JSONL 落盘:压缩投影在、影子区旧文不进请求、新问可续)',
+      revivedReq.includes('compacted into the following summary') &&
+        !revivedReq.includes('S6TURN_1 ') &&
+        revivedReq.includes('post-restart probe'),
       revivedReq.slice(0, 160)
     )
 
     // ———— S11 场景⑥(S5 验收):溢出恢复一次重试成功 + 单次闸 ————
+    // pi 恢复路 = 删失败轮 + 压缩 + continue 重试 —— 压缩需要料：先垫 3 中
+    // 回合（30000 tok > keep：恰 2 回合会跨在首 user —— 料只剩被滤的
+    // system，恢复路死），溢出标记回合才有可压空间
+    const padOverflow = async (sessionId: string): Promise<void> => {
+      for (let k = 1; k <= 3; k++) {
+        await engine.send('agent.submit', { sessionId, text: `OVPAD_${k} ` + 'o'.repeat(TURN_CHARS_MID), model: 'mock' })
+        await engine.waitEvent('run.completed', (p) => p.sessionId === sessionId)
+      }
+    }
     const s7 = await newSession({ cwd: ws })
+    await padOverflow(s7)
     await engine.send('agent.submit', { sessionId: s7, text: 'OVERFLOW_ONCE please help', model: 'mock' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s7)
     const reqOnce = requestBodies.filter((b) => JSON.stringify(b).includes('OVERFLOW_ONCE')).length
@@ -543,6 +572,7 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
       `req=${reqOnce} failed=${Boolean(failed7)}`
     )
     const s8 = await newSession({ cwd: ws })
+    await padOverflow(s8)
     await engine.send('agent.submit', { sessionId: s8, text: 'OVERFLOW_TWICE please help', model: 'mock' })
     const failEv8 = await engine.waitEvent('run.failed', (p) => p.sessionId === s8)
     const reqTwice = requestBodies.filter((b) => JSON.stringify(b).includes('OVERFLOW_TWICE')).length
@@ -635,22 +665,29 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
     // 的旧实现会把 loop 当轮收尾消息双写进转录(配对重复 → 400);原位写回
     // 后 transcript 与请求体都应干净
     const s11 = await newSession({ cwd: ws })
-    // 垫底 10 回合 + DO:TOOL 轮 → 过线发生在 run 的中途(轮间钩子),正是
-    // 验收翻车的并发窗口
-    for (let k = 1; k <= 10; k++) {
-      await engine.send('agent.submit', { sessionId: s11, text: `S11TURN_${k} ` + 'z'.repeat(5_000), model: 'mock' })
-      await engine.waitEvent('run.completed', (p) => p.sessionId === s11)
-    }
+    // 垫底 1 大回合(30000)+ 1 小回合(15750)≈ 42000 稳在触发线下 + DO:TOOL
+    // 轮(结果 5157)→ 落账后 ≈ 48000 过线,发生在 run 的中途(轮间钩子),
+    // 正是验收翻车的并发窗口
+    await engine.send('agent.submit', { sessionId: s11, text: 'S11TURN_1 ' + 'z'.repeat(TURN_CHARS), model: 'mock' })
+    await engine.waitEvent('run.completed', (p) => p.sessionId === s11)
+    await engine.send('agent.submit', { sessionId: s11, text: 'S11TURN_2 ' + 'z'.repeat(63_000), model: 'mock' })
+    await engine.waitEvent('run.completed', (p) => p.sessionId === s11)
     await engine.send('agent.submit', { sessionId: s11, text: 'S11TURN_11 ' + 'z'.repeat(3_000) + ' DO:TOOL read probe.txt', model: 'mock' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s11)
     const didCompact = engine.events.some((e) => e.method === 'compaction.started' && e.params.sessionId === s11)
+    // pi 时序：压缩在工具轮 run 落定后的检查点 —— 压缩后的形态要看**下一
+    // 回合**的请求，这里补一个探测回合（ack 轮在压缩前，不能作断言面）
+    if (didCompact) {
+      await engine.send('agent.submit', { sessionId: s11, text: 'post-compact pairing probe', model: 'mock' })
+      await engine.waitEvent('run.completed', (p) => p.sessionId === s11)
+    }
     // 取压缩后的第一个回合请求:扫 messages 数组,断言 tool 的 tool_call_id 都能
     // 在紧邻前一条 assistant 的 tool_calls 里找到,且 assistant 无重复连续条目
     // 压缩后第一个请求 = 锚 user(S11TURN_11)之后、含压缩条投影的下一个:
     // findIndex 从锚的位置向后找(前面场景也有压缩条投影,不能全局找)
     const anchorIdx = requestBodies.findIndex((b) => JSON.stringify(b).includes('S11TURN_11'))
     const postIdx = didCompact
-      ? requestBodies.findIndex((b, i) => i > anchorIdx && JSON.stringify(b).includes('automatically generated checkpoint'))
+      ? requestBodies.findIndex((b, i) => i > anchorIdx && JSON.stringify(b).includes('compacted into the following summary'))
       : -1
     let pairingOk = !didCompact // 没触发压缩则本轮无事可断(不应发生,触发不了算失败)
     let pairingDetail = `didCompact=${didCompact} postIdx=${postIdx}`
@@ -683,12 +720,24 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
     }
     check('19. 轮间压缩后请求配对完整(tool_call_id 全有前条 tool_calls 呼应;无双 assistant)', pairingOk, pairingDetail)
     // 19b:压缩 run 收尾后**落盘转录**的配对完整性 —— 双写竞态的第二现场。
-    // 读引擎 COGENT_HOME 的会话文档,按转录顺序断言每条 toolResult 的 callId
-    // 与其前最近 assistant 配对 + 无相邻重复 assistant
-    const sessDoc = JSON.parse(readFileSync(join(home, 'sessions', `${s11}.json`), 'utf-8')) as {
-      transcript?: Array<{ role: string; toolCallId?: string; content?: Array<{ type: string; id?: string }> }>
-    }
-    const tr = sessDoc.transcript ?? []
+    // 转录真源已迁 pi JSONL(<home>/pi/sessions/--<ws编码>--/<时间戳>_<id>.jsonl,
+    // 逐行条目):提取 message 条目,按转录顺序断言每条 toolResult 的 callId 与其
+    // 前最近 assistant 配对 + 无相邻重复 assistant
+    const piSessDir = join(home, 'pi', 'sessions')
+    const jsonlFile = readdirSync(piSessDir)
+      .flatMap((d) =>
+        readdirSync(join(piSessDir, d))
+          .filter((f) => f.endsWith(`_${s11}.jsonl`))
+          .map((f) => join(piSessDir, d, f))
+      )
+      .find((f) => existsSync(f))
+    if (jsonlFile === undefined) throw new Error(`pi JSONL 未找到: 会话 ${s11}`)
+    const tr = readFileSync(jsonlFile, 'utf-8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { type?: string; message?: { role: string; toolCallId?: string; content?: Array<{ type: string; id?: string }> } })
+      .filter((e) => e.type === 'message' && e.message !== undefined)
+      .map((e) => e.message as { role: string; toolCallId?: string; content?: Array<{ type: string; id?: string }> })
     let trOk = true
     let trDetail = `len=${tr.length}`
     for (let i = 0; i < tr.length; i++) {
@@ -732,13 +781,13 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
       JSON.stringify(contErr.error ?? contErr.result)
     )
 
-    // ———— S16 场景(修 A 验收):小窗深度占用的摘要降级 ————
-    // mock20k 会话垫 8 回合 + probe2 结果轮 ≈ 15900 深度占用 → 过阈值 → 自动
-    // 压缩的摘要请求重放 available ≈ 500 < 2048 → 预算守卫降级(被摘要区直传,
-    // 无 system 领头);摘要照常成功
+    // ———— S16 场景(pi 版):小窗深度占用的自动压缩摘要请求形状 ————
+    // 手搓的预算守卫降级(被摘要区直传、无 system 领头)已随内核替换退役;
+    // pi 的摘要请求组装口径以其实现为准 —— 此处钉「小窗深占用下自动压缩
+    // 照常成功」+ 记录领头形状(后续对账断言收紧的锚点)
     const s13b = await newSession({ cwd: ws })
-    for (let k = 1; k <= 8; k++) {
-      await engine.send('agent.submit', { sessionId: s13b, text: `S16TURN_${k} ` + 'z'.repeat(5_000), model: 'mock20k' })
+    for (let k = 1; k <= 18; k++) {
+      await engine.send('agent.submit', { sessionId: s13b, text: `S16TURN_${k} ` + 'z'.repeat(TURN_CHARS_20K), model: 'mock20k' })
       await engine.waitEvent('run.completed', (p) => p.sessionId === s13b)
     }
     await engine.send('agent.submit', { sessionId: s13b, text: 'DO:TOOL read probe2.txt', model: 'mock20k' })
@@ -753,8 +802,8 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
     const degReq = summaryRequests.at(summariesBeforeB)
     const leadingRole = degReq?.__smokeLeadingRole ?? 'none'
     check(
-      '22. 摘要预算守卫降级(小窗深占用时自动压缩的摘要请求非 system 领头=被摘要区直传;摘要成功)',
-      autoDone && leadingRole !== 'system',
+      '22. 小窗深占用自动压缩成功(摘要请求领头形状见 detail,pi 组装口径)',
+      autoDone,
       `autoDone=${autoDone} leading=${leadingRole} summaries=${summaryRequests.length - summariesBeforeB}`
     )
   })

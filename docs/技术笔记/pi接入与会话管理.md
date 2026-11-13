@@ -1,7 +1,7 @@
-# 笔记：pi Agent 接入与会话管理（agent-service/runtime）
+# 笔记：pi Agent 接入与会话管理（host/runtime）
 
 > 对应路线项：第 2 项（SessionManager + pi Agent 接入）。落点：
-> `src/agent-service/runtime/session.ts`、`src/agent-service/index.ts`、`src/protocol/types.ts`。
+> `src/host/runtime/session.ts`、`src/host/index.ts`、`src/protocol/types.ts`。
 
 ## 1. 问题
 
@@ -110,11 +110,11 @@ Cogent 的 `models.list` 直接投影这份目录（`session.ts listModels()`）
 
 ## 5. 在 Cogent 的落点
 
-- `src/agent-service/runtime/session.ts`：SessionManager（create/list/delete/messages/
+- `src/host/runtime/session.ts`：SessionManager（create/list/delete/messages/
   submit/abort/disposeAll）+ pi 事件转译（translateEvent）+ 模型目录投影（listModels）；
-- `src/agent-service/runtime/credentials.ts`：getApiKey 的数据源，见
+- `src/host/runtime/credentials.ts`：getApiKey 的数据源，见
   [凭据存储与模型目录](凭据存储与模型目录.md)；
-- `src/agent-service/index.ts`：method 注册表挂 runtime（handler 零防御，边界校验在 dispatch）；
+- `src/host/index.ts`：method 注册表挂 runtime（handler 零防御，边界校验在 dispatch）；
 - `src/protocol/types.ts`：ChatMessage/ModelSummary/ProviderSummary +
   session.messages / models.list / credentials.* method + run.completed.message 字段；
 - renderer 消费侧：`src/renderer/src/stores/chat.ts`（事件 → 状态转译集中一处）。

@@ -1,13 +1,13 @@
 /**
  * custom-providers 域 IPC：自定义 provider 定义的读写（全量替换语义）。
  * main 只管定义的持久化与转发；provider 的构建在引擎（createProvider，见
- * agent-service/runtime/custom-providers.ts）。
+ * host/runtime/custom-providers.ts）。
  */
 import { ipcMain } from 'electron'
 import { IPC } from '../../../shared/ipc'
 import type { CustomProviderDef, ProviderOverrideDef } from '../../../protocol'
 import type { CustomProvidersStore } from '../custom-providers/store'
-import type { AgentServiceManager } from '../service/manager'
+import type { HostManager } from '../host/manager'
 
 /** 定义形状校验（信任边界：renderer 不可信）。载荷是任意 JSON，按 unknown 收窄 ——
     用标注类型接不可信载荷会让 TS 检查形同虚设（同 isModelDef 的理由）；
@@ -53,7 +53,7 @@ function isOverride(o: unknown): boolean {
   )
 }
 
-export function registerCustomProvidersIpc(service: AgentServiceManager, store: CustomProvidersStore): void {
+export function registerCustomProvidersIpc(host: HostManager, store: CustomProvidersStore): void {
   ipcMain.handle(IPC.customProvidersGet, () => store.readAll())
 
   ipcMain.handle(IPC.customProvidersSet, async (_event, raw: unknown) => {
@@ -73,10 +73,10 @@ export function registerCustomProvidersIpc(service: AgentServiceManager, store: 
     // 不丢定义）；仅在已 failed/stopped（引擎确定不在）时跳过，落盘的定义由
     // renderer 启动重推（engine store load）补上。推送失败只记警告不报错给
     // renderer —— 落盘已成功，定义不会丢，报"保存失败"反而是谎报
-    const state = service.getStatus().state
+    const state = host.getStatus().state
     if (state === 'starting' || state === 'running') {
       try {
-        await service.request('providers.custom.sync', { providers, overrides })
+        await host.request('providers.custom.sync', { providers, overrides })
       } catch (error) {
         console.warn('[main] custom providers 推送引擎失败（已落盘，下次启动重推）:', error)
       }

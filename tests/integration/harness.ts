@@ -5,7 +5,7 @@
  * 各场景流与 mock 分流逻辑留在各 test 文件（脚本本就自包含，D6：断言
  * 原样、载体换 Vitest，逻辑不动）。
  *
- * 引擎进程跑**构建产物** out/main/service.js（global-setup 守卫新鲜度）：
+ * 引擎进程跑**构建产物** out/main/host.js（global-setup 守卫新鲜度）：
  * 测的是打包后的真协议链路，与单测（直读源码）分层互补。
  */
 import { spawn } from 'node:child_process'
@@ -110,7 +110,7 @@ export interface EngineHandle {
 export function startEngine(home: string): EngineHandle {
   // stdio 三元组字面量 → spawn 推断 ChildProcessByStdio<Writable, Readable, null>，
   // stdin/stdout 恒非空（engine.stderr 走 'inherit' 不用）
-  const engine = spawn(process.execPath, [join(process.cwd(), 'out/main/service.js')], {
+  const engine = spawn(process.execPath, [join(process.cwd(), 'out/main/host.js')], {
     env: { ...process.env, COGENT_HOME: home, USERPROFILE: home, HOME: home },
     stdio: ['pipe', 'pipe', 'inherit']
   })
@@ -149,7 +149,16 @@ export function startEngine(home: string): EngineHandle {
       }),
     waitEvent: (method, predicate = () => true, timeoutMs = 8000) =>
       new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`等待事件超时: ${method}`)), timeoutMs)
+        const timer = setTimeout(() => {
+          const failure = events.filter((e) => e.method === 'run.failed').at(-1)
+          reject(
+            new Error(
+              `等待事件超时: ${method}（尾部事件: ${events.slice(-8).map((e) => e.method).join(' → ') || '无'}` +
+                (failure !== undefined ? `；最近 run.failed: ${JSON.stringify(failure.params).slice(0, 160)}` : '') +
+                '）'
+            )
+          )
+        }, timeoutMs)
         const poll = (): void => {
           const hit = events.find((e) => e.method === method && predicate(e.params) && !e.__consumed)
           if (hit !== undefined) {

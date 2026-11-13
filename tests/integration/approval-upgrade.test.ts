@@ -176,25 +176,30 @@ describe('审批交互升级集成（S1–S6 场景流，原 approval-upgrade-sm
     check('15. plan-me.txt 未落盘', !existsSync(join(ws, 'plan-me.txt')))
     await engine.waitEvent('run.completed', (p) => p.sessionId === s5.result?.id)
 
-    // ———— S6 权限通告与时效 ————
+    // ———— S6 权限通告与时效（1.2a 内核替换后重钉：通告面降级） ————
+    // 手搓 system 通告消息与 pi 会话树（append-only 投影）不兼容，1.2a 起
+    // setPermission 降级为纯 summary 记账 —— 审批判定读活值（强制面不变，
+    // S2/S5 已钉），模型收不到提示词层告知（多试几次被拦的写），归 1.4
+    // systemPromptOverride 动态拼段对账。此处钉降级事实：请求 system 恒无
+    // 通告文本、切换模式不改变请求形状
     const s6 = await engine.send<{ id: string }>('session.create', { cwd: ws, permissionMode: 'auto' })
     if (s6.result?.id === undefined) throw new Error('auto 会话物化失败')
     await engine.send('agent.submit', { sessionId: s6.result.id, text: 'hi', model: 'mock' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s6.result?.id)
     const bodyA = requestBodies[requestBodies.length - 1]
-    check('16a. auto 物化 → 请求 system 含「已授予完全访问」', JSON.stringify(bodyA).includes('已授予完全访问'))
+    check('16a. auto 物化（1.2a 降级：请求 system 不含权限通告）', !JSON.stringify(bodyA).includes('已授予完全访问'))
     await engine.send('session.setPermission', { sessionId: s6.result.id, mode: 'ask' })
     await engine.send('agent.submit', { sessionId: s6.result.id, text: 'again', model: 'mock' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s6.result?.id)
     const bodyB = requestBodies[requestBodies.length - 1]
-    check('16b. 切回 ask → 无「已授予完全访问」残留', !JSON.stringify(bodyB).includes('已授予完全访问'))
+    check('16b. 切回 ask（同降级面：无通告、无残留）', !JSON.stringify(bodyB).includes('已授予完全访问'))
     await engine.send('session.setPermission', { sessionId: s6.result.id, mode: 'plan' })
     await engine.send('agent.submit', { sessionId: s6.result.id, text: 'once more', model: 'mock' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s6.result?.id)
     const bodyC = requestBodies[requestBodies.length - 1]
     check(
-      '16c. 切 plan → system 含「plan（只读）」且无 auto 残留',
-      JSON.stringify(bodyC).includes('plan（只读）') && !JSON.stringify(bodyC).includes('已授予完全访问')
+      '16c. 切 plan（同降级面：无通告；plan 强制拦截见 S5）',
+      !JSON.stringify(bodyC).includes('plan（只读）') && !JSON.stringify(bodyC).includes('已授予完全访问')
     )
   })
 })

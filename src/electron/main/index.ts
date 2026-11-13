@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
-import { AgentServiceManager } from './service/manager'
+import { HostManager } from './host/manager'
+import { resolveEngineNode } from './host/runtime'
 import { CredentialStore } from './credentials/store'
 import { CustomProvidersStore } from './custom-providers/store'
 import { registerIpc } from './ipc'
@@ -11,8 +12,14 @@ import { IPC } from '../../shared/ipc'
 // ChatGPT 侧是干净灰度抗锯齿）。关掉 LCD 走灰度，边缘干净。
 app.commandLine.appendSwitch('disable-lcd-text')
 
+// Chromium 后台组件更新默认访问 Google 域，国内/信创内网下握手被重置，
+// 启动日志刷屏 ssl handshake failed（net_error -101）。本应用不走 Chrome
+// Web Store 分发，组件更新无功能意义 —— 关掉静音（2026-11-13 dev 实测；
+// 若残余 CT 日志等其他 Google 域请求再逐项补）。
+app.commandLine.appendSwitch('disable-component-update')
+
 let mainWindow: BrowserWindow | null = null
-let agentService: AgentServiceManager | null = null
+let host: HostManager | null = null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -101,18 +108,24 @@ void app.whenReady().then(() => {
 
   // 引擎代理：握手时把宿主持久化的 key 灌进引擎内存表（凭据降级时这里是空表，
   // 引擎按"无 key"启动 —— 用户重输 key 后经 credentials:set 即时推送）
-  agentService = new AgentServiceManager({
-    entryPath: join(import.meta.dirname, 'service.js'),
+  const engineNodeBin = resolveEngineNode()
+  host = new HostManager({
+    entryPath: join(import.meta.dirname, 'host.js'),
+    nodeBin: engineNodeBin,
     handshakeCredentials: credentialStore.readAll()
   })
-  registerIpc({ service: agentService, getWindow: () => mainWindow }, credentialStore, customProvidersStore)
+  registerIpc({ host, getWindow: () => mainWindow }, credentialStore, customProvidersStore)
 
   // 壳与引擎解耦：引擎起不来（缺 Node / 版本不符）不阻塞窗口，状态经 app:status
   // 暴露给 UI 呈现（preload.getStatus）。fire-and-forget 是刻意为之（void 标记）。
-  const service = agentService
-  void service.start().then(
-    () => console.log(`[main] agent service ready (node ${service.getStatus().nodeVersion})`),
-    (error: unknown) => console.error('[main] agent service start failed:', error)
+  const startedHost = host
+  void startedHost.start().then(
+    // bin 来源一并打出：三级链是否吃到自带 node，dev 一眼可判（不再靠版本号倒推）
+    () =>
+      console.log(
+        `[main] host ready (node ${startedHost.getStatus().nodeVersion}, bin ${engineNodeBin})`
+      ),
+    (error: unknown) => console.error('[main] host start failed:', error)
   )
 
   createWindow()
@@ -123,6 +136,6 @@ void app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  agentService?.stop()
+  host?.stop()
   if (process.platform !== 'darwin') app.quit()
 })

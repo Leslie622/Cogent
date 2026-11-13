@@ -38,13 +38,16 @@
 | [自定义 Provider 与模型目录管理](自定义Provider与模型目录.md) | 模型设置扩展（createProvider/setProvider 机制） | 已完成（2026-11-06） |
 | [思考（Reasoning）流式呈现](思考流式呈现.md) | 路线空位 4（thinking 半边） | 已完成（2026-11-08） |
 | [会话隔离与受理语义](会话隔离与受理语义.md) | 串话事故复盘（新聊天接线 + submit 受理校验） | 已完成（2026-11-09） |
-| [会话存储与转录持久化](会话存储与转录持久化.md) | 路线空位 3（StorageDriver + 本地 JSON + 惰性恢复） | 已完成（2026-11-09） |
+| [会话存储与转录持久化](会话存储与转录持久化.md) | 路线空位 3（StorageDriver + 双层存储：pi 树 JSONL 转录真源 + Cogent 会话域 summary，惰性装配） | 已完成（1.2a 起双层） |
 | [项目/工作区模型与存储根](项目工作区模型与存储根.md) | 计划第 2–6 步（~/.cogent 根 + 项目域 + 工作区注入） | 已完成（2026-11-09） |
 | [token 用量统计](token用量统计.md) | 路线空位 1 的 usage 先行（pi Usage 投影 + 消息级统计行） | 已完成（2026-11-09） |
 | [运行时控制台](运行时控制台.md) | inspect 域（pi hooks 观测 + 独立 DevTools 窗口 + 实时时间线） | 已完成（2026-11-10） |
 | [Markdown 渲染](Markdown渲染.md) | 路线空位 4 前半（Streamdown + Shiki + CJK 插件） | 已完成（2026-11-10） |
 | [工具系统与审批](工具系统与审批.md) | 路线空位 2/4/6（工具循环 + beforeToolCall 审批挂起 + 权限矩阵，批次 1+2 全景） | 已完成（2026-11-11） |
 | [bash / edit 工具与输出护栏](bash与edit工具与输出护栏.md) | pi借鉴 批次 3（截断三件套 + 并发写队列 + edit CRLF 映射 + bash 进程树 + 自主模式 + gitignore 加固） | 已完成（2026-11-11） |
-| [上下文压缩](上下文压缩.md) | pi借鉴 批次 4（阈值/手动双路 + 结构化 checkpoint 摘要 + compactionSummary 转录角色 + 折叠条与指示器回落） | 已完成（2026-11-12） |
-| [测试体系](测试体系.md) | 计划/测试体系.md（Vitest 三层 + 冒烟正名迁移 + CI；三家上游对照与迁移踩坑） | 已完成（2026-11-13） |
+| [上下文压缩](上下文压缩.md) | pi 内核接管（reserve 触发线 / 固定 keep / split-turn / 溢出恢复）+ Cogent 承接面（事件转译 / 预警线公式 / AUTO_CONTINUE） | 已完成（1.2a 起 pi 内核） |
+| [测试体系](测试体系.md) | 计划/归档/测试体系.md（Vitest 三层 + 冒烟正名迁移 + CI；三家上游对照与迁移踩坑） | 已完成（2026-11-13） |
 | [内置浏览器与聚合面板](内置浏览器与聚合面板.md) | 未立项调研（内置浏览器四层模型 / browser-use 插件与面板双面性 / ZCode + ChatGPT + dsh 三家对照，含引擎路线对照） | 调研完成（2026-11-12，无代码落点） |
+| [自带 Node 运行时分发](node-runtime-distribution.md) | 全局架构阶段 0（fetch-runtime + SHA256 对官方清单 + 三级链定位；Pi-meme / zcode / dsh 对照与踩坑） | 已完成（2026-11-13） |
+| [CogentKernel 合同](kernel-contract.md) | 全局架构 D4 / 阶段 1.1（南缝窄合同显式化：pi AgentSession 方法面对照 + Pi-meme/zcode/dsh 缝形态对比） | 已完成（2026-11-13） |
+| [pi 内核替换](pi内核替换.md) | 全局架构 D6 / 阶段 1.2a（手搓 Agent 层让位 AgentSession：终态纪律 / split-turn 陷阱 / 呈现与上下文双口径 / 装配纪律） | 已完成 |

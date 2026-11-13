@@ -5,8 +5,8 @@
  */
 import { ipcMain } from 'electron'
 import { IPC, type AppStatus } from '../../../shared/ipc'
-import type { AgentServiceManager } from '../service/manager'
+import type { HostManager } from '../host/manager'
 
-export function registerAppIpc(service: AgentServiceManager): void {
-  ipcMain.handle(IPC.appStatus, (): AppStatus => service.getStatus())
+export function registerAppIpc(host: HostManager): void {
+  ipcMain.handle(IPC.appStatus, (): AppStatus => host.getStatus())
 }

@@ -13,6 +13,8 @@ export default tseslint.config(
   // tmp/** = 仓库内冒烟脚本临时产物目录（同 out/ 口径 —— 冒烟惯例从仓库外
   // /tmp 挪进项目内时随行，不入 tsconfig 也不挨 lint）
   // reference/** = pi 上游源码参照（上游自己的 .ts 会在类型感知 lint 下炸）
+  // scripts/** = 构建期工具脚本（fetch-runtime.mjs 等，同 eslint.config.mjs
+  // 口径：纯 JS 不进 tsconfig，projectService 找不到项目即报解析错）
   {
     ignores: [
       'out/**',
@@ -20,6 +22,7 @@ export default tseslint.config(
       'dist/**',
       'node_modules/**',
       'eslint.config.mjs',
+      'scripts/**',
       'tmp/**',
       'reference/**'
     ]

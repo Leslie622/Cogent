@@ -42,7 +42,7 @@ const ALLOWED_METHODS = new Set<string>([
   'inspect.entry'
 ])
 
-export function registerEngineIpc({ service }: IpcDeps): void {
+export function registerEngineIpc({ host }: IpcDeps): void {
   // 信任边界：renderer 不可信 —— method 白名单 + params 形状在此收窄，业务校验在引擎 dispatch
   ipcMain.handle(IPC.engineRequest, async (_event, raw: unknown) => {
     const payload = raw as { method: unknown; params: unknown }
@@ -54,13 +54,13 @@ export function registerEngineIpc({ service }: IpcDeps): void {
       throw new Error(`engine:request 非法调用：params 必须是对象`)
     }
     const method = payload.method as keyof ProtocolMethods
-    return service.request(method, params)
+    return host.request(method, params)
   })
 
   // 引擎事件 → renderer：单向转发，main 不理解事件语义（壳的角色）。
   // 广播到全部窗口（主窗口消费聊天事件，控制台窗口消费 inspect 域）——
   // 各窗口按 method 自行取舍，main 不做按窗口分发
-  service.setEventSink((rpcEvent) => {
+  host.setEventSink((rpcEvent) => {
     // 诊断日志：帧截到 200 字符（run.completed 的 message.content 是整段回复，
     // 全量打印会淹没终端）。message.delta 与 inspect.event 是逐 token/逐条目
     // 高频帧，流式期间每秒数十条，不滤会把终端刷爆且 JSON.stringify 白烧主进程

@@ -7,6 +7,14 @@
  * 的 models.json 胶水换成"设置页表单 → 协议全量同步"：
  * 引擎只收 defs，无持久化（宿主持久化，握手/同步注入——见 docs/架构.md 凭据旅程）。
  *
+ * 双注册（阶段 1.2a）：Cogent 有两套模型消费面 —— UI 目录/submit 解析走
+ * MutableModels（this.models），pi AgentSession 的请求路由走 ModelRuntime
+ * （streamSimple 按 provider id 查它自己的表）。custom/* 是 runtime 不认识的
+ * id，故 buildCustomProvider 的同一 Provider 实例既 setProvider（目录）也
+ * registerNativeProvider（runtime，model-runtime.js:642）—— 单一构造源零
+ * 重复映射，两套目录永不分叉。内置 provider 的 baseUrl 覆盖不需要 runtime
+ * 侧动作：覆盖值写在 Model.baseUrl 上随请求透传。
+ *
  * 覆盖语义（全量替换）：每次 sync 以传入列表为准，本轮没出现的 custom id 被
  * deleteProvider 移除；内置 provider 的本地调整（ProviderOverrideDef：baseUrl
  * 覆盖 + 模型增删 + 模型禁用）同样全量替换——撤掉调整 = 重新 setProvider 原实例。
@@ -16,6 +24,7 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
 import type { Api, Model, MutableModels, Provider, ThinkingBudgets } from '@earendil-works/pi-ai'
+import type { ModelRuntime } from '@earendil-works/pi-coding-agent'
 import type { CustomProviderDef, ModelDef, ProviderCompatDef, ProviderOverrideDef } from '../../protocol'
 
 /**
@@ -102,7 +111,11 @@ export class CustomProviderRegistry {
   private customIds = new Set<string>()
   private overriddenIds = new Set<string>()
 
-  constructor(private models: MutableModels) {}
+  constructor(
+    private models: MutableModels,
+    /** pi 内核的请求路由面（custom/* 双注册，见文件头注释） */
+    private modelRuntime: ModelRuntime
+  ) {}
 
   /** 记录内置 provider 原始实例（SessionManager 构造完 builtinModels 后调用一次） */
   snapshotBuiltin(): void {
@@ -134,14 +147,18 @@ export class CustomProviderRegistry {
   sync(defs: CustomProviderDef[], overrides: ProviderOverrideDef[]): number {
     const active = defs.filter((def) => def.disabled !== true)
 
-    // 自定义 provider：id 带 custom/ 前缀（与内置 id 空间隔离）
+    // 自定义 provider：id 带 custom/ 前缀（与内置 id 空间隔离）；同一实例
+    // 双注册（目录 + pi runtime，见文件头注释）
     for (const def of active) {
-      this.models.setProvider(this.buildCustomProvider(def))
+      const provider = this.buildCustomProvider(def)
+      this.models.setProvider(provider)
+      this.modelRuntime.registerNativeProvider(provider)
       this.customIds.add(def.id)
     }
     for (const existingId of this.customIds) {
       if (!active.some((def) => def.id === existingId)) {
         this.models.deleteProvider(existingId)
+        this.modelRuntime.unregisterProvider(existingId)
         this.customIds.delete(existingId)
       }
     }

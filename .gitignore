@@ -13,3 +13,6 @@ reference/
 
 # vitest 覆盖率报告（npm run coverage 产物）
 coverage/
+
+# 自带 Node 运行时（构建期 fetch-runtime.mjs 下载，二进制不入库）
+resources/runtime/

@@ -61,7 +61,7 @@ function safeStringify(value: unknown): string {
     const text = JSON.stringify(value, null, 2)
     return text.length > MAX_BLOCK_CHARS ? `${text.slice(0, MAX_BLOCK_CHARS)}\n…[已截断，原始 ${text.length} 字符]` : text
   } catch (error) {
-    process.stderr.write(`[agent-service] inspector 载荷不可序列化: ${(error as Error).message}\n`)
+    process.stderr.write(`[host] inspector 载荷不可序列化: ${(error as Error).message}\n`)
     return '(不可序列化)'
   }
 }

@@ -5,7 +5,7 @@
  * 复刻 bash.ts 的调用路径本机真跑（不走引擎 —— 针对性回归命令包装层）：
  * spawn(PowerShell, [-NoProfile -NonInteractive -ExecutionPolicy Bypass
  * -Command <包装后命令>])，stdout/stderr 合流按 UTF-8 解码。包装规则照搬
- * src/agent-service/tools/bash.ts（该文件改包装时本测试必须同步）：
+ * src/host/tools/bash.ts（该文件改包装时本测试必须同步）：
  *  - UTF8_OUTPUT_PREFIX 恒前置（中文控制台程序 GBK → 码页 65001）；
  *  - WINDOWS_POWERSHELL_EXIT_SUFFIX 仅 powershell.exe（PS 5.1）且命令不以
  *    反引号结尾时尾缀（#8842 stderr 错误记录误报修正）。

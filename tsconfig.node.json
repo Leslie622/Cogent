@@ -21,7 +21,7 @@
     "tests/integration/**/*",
     "electron.vite.config.ts",
     "src/electron/**/*",
-    "src/agent-service/**/*",
+    "src/host/**/*",
     "src/protocol/**/*",
     "src/shared/**/*"
   ]

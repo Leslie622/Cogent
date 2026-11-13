@@ -56,11 +56,11 @@ const toolResultMsg = (
   timestamp: at
 })
 
+/** 压缩条（pi 原生形状：summary / tokensBefore / timestamp） */
 const barMsg = (summary: string, at: number): AgentMessage => ({
   role: 'compactionSummary',
   summary,
   tokensBefore: 100,
-  tokensAfter: 10,
   timestamp: at
 })
 
@@ -203,7 +203,7 @@ describe('toChatMessages 压缩条时间序落位（D9 呈现位回归钉）', (
       'assistant:a3'
     ])
     const bar = out[4]
-    expect(bar.compaction).toEqual({ tokensBefore: 100, tokensAfter: 10, summaryUsage: undefined })
+    expect(bar.compaction).toEqual({ tokensBefore: 100 })
   })
 
   it('末尾 flush：压缩后无新回合的会话，bar 兜底落尾', () => {

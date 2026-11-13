@@ -1,10 +1,10 @@
-# bash / edit 工具与输出护栏 —— 批次 3（计划/pi借鉴.md §3）
+# bash / edit 工具与输出护栏 —— 批次 3（计划/归档/pi借鉴.md §3）
 
 > 2026-11-11 落地。上游参照 = pi-coding-agent `core/tools/`（MIT）：
 > bash.ts(476) / edit.ts(221) / edit-diff.ts(745) / truncate.ts(302) /
 > output-accumulator.ts(257) / file-mutation-queue.ts / utils/shell.ts /
 > utils/child-process.ts / ls.ts(175) / find.ts(359) / grep.ts(337)。
-> 搬运原则见 计划/pi借鉴.md §0：**算法照搬，接线照 Cogent**。
+> 搬运原则见 计划/归档/pi借鉴.md §0：**算法照搬，接线照 Cogent**。
 
 ## 0. 批次全景（六步全落地，tools-smoke 39 项全过）
 

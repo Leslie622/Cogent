@@ -1,6 +1,6 @@
 # 笔记：自定义 Provider 与模型目录管理（custom-providers）
 
-> 落点：`src/agent-service/runtime/custom-providers.ts`、
+> 落点：`src/host/runtime/custom-providers.ts`、
 > `src/electron/main/custom-providers/store.ts`、设置页 ModelsSection。
 > 对应 pi 机制：`createProvider` + `MutableModels.setProvider`。
 
@@ -92,11 +92,11 @@ form 保存时两条路各走各的。
 
 ## 5. 在 Cogent 的落点
 
-- `src/agent-service/runtime/custom-providers.ts`：CustomProviderRegistry
+- `src/host/runtime/custom-providers.ts`：CustomProviderRegistry
   （snapshotBuiltin/sync/buildCustomProvider/buildOverrideProvider）；
-- `src/agent-service/runtime/session.ts`：SessionManager 持有 registry，
+- `src/host/runtime/session.ts`：SessionManager 持有 registry，
   `syncCustomProviders()` 委托；
-- `src/agent-service/index.ts`：`providers.custom.sync` handler（入口逐项形状收窄）；
+- `src/host/index.ts`：`providers.custom.sync` handler（入口逐项形状收窄）；
 - `src/electron/main/custom-providers/store.ts`：明文 JSON 持久化
   （userData/custom-providers.json，损坏报错不重建）；
 - `src/electron/main/ipc/custom-providers.ts`：get/set（set 时引擎 running 即推 sync）；

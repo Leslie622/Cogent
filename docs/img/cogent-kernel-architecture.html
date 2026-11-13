@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cogent 多内核 Agent 客户端 · 目标架构</title>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <title>Cogent 多内核 Agent 客户端 · 目标架构（定稿）</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -15,7 +15,7 @@
       --color-accent:  #bf4520;
       --color-link:    #2e5aa8;
       --font-sans:     'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
-      --font-serif:    'Instrument Serif', 'Noto Serif', 'Microsoft YaHei', serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif SC', 'Microsoft YaHei', serif;
       --font-mono:     'Geist Mono', ui-monospace, monospace;
     }
     body {
@@ -31,11 +31,9 @@
     .frame { max-width: 1360px; width: 100%; }
     .diagram-container { width: 100%; overflow-x: auto; }
     .eyebrow {
-      font-family: var(--font-mono);
-      font-size: 0.66rem;
+      font-family: var(--font-sans);
+      font-size: 0.84rem;
       font-weight: 500;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
       color: var(--color-muted);
       margin-bottom: 0.5rem;
     }
@@ -57,13 +55,13 @@
 </head>
 <body>
   <div class="frame">
-    <p class="eyebrow">Architecture · Diagram Design</p>
+    <p class="eyebrow">架构定稿 · 2026-11-13 · 三层两缝</p>
     <h1>Cogent 多内核 Agent 客户端 · 目标架构</h1>
 
     <div class="diagram-container">
-      <svg viewBox="0 0 1280 840" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="cogent-arch-title cogent-arch-desc">
+      <svg viewBox="0 0 1280 816" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="cogent-arch-title cogent-arch-desc">
         <title id="cogent-arch-title">Cogent 多内核 Agent 客户端目标架构</title>
-        <desc id="cogent-arch-desc">三层两缝架构：Electron 22 壳内的主 UI、内嵌页面与远程对话端经 HostApi 北向协议进入 Host 进程；Host 内服务层、能力总线把技能、MCP 与插件编排进 KernelRunner 南向合同下的多个内核，底部自带运行时包与工具沙箱承载离线执行，对外 MCP Server 让外部智能体反向操作本地 Agent。</desc>
+        <desc id="cogent-arch-desc">定稿三层两缝架构：Electron 31 壳内主 UI、webview 第三方页面与调试页经 HostApi 北缝的 stdio 与 HTTP/WS 双面进入 Host 进程；服务层与能力总线四座把技能、MCP 与钩子装配进 KernelRunner 南缝下的多个内核，默认内核为 pi-coding-agent；底部自带 Node 22 运行时与安全边界承载执行，对外 MCP Server 让外部智能体反向操作本地 Agent。</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
           <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
@@ -74,194 +72,172 @@
 
         <!-- ============ ZONES (bg → zones → arrows → nodes) ============ -->
 
-        <!-- Zone: Electron shell -->
+        <!-- Zone: Electron 31 shell -->
         <rect x="208" y="40" width="792" height="156" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
-        <rect x="232" y="44" width="196" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="330" y="53" fill="#5a6580" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.14em">ELECTRON 22.3.27 SHELL</text>
+        <rect x="232" y="44" width="236" height="16" rx="2" fill="#f5f5f5"/>
+        <text x="350" y="56" fill="#5a6580" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">Electron 31 壳 · Chromium 125</text>
 
         <!-- Zone: Host process -->
-        <rect x="208" y="288" width="1032" height="392" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
-        <rect x="232" y="292" width="188" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="326" y="301" fill="#5a6580" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.14em">HOST PROCESS · NODE 22</text>
+        <rect x="208" y="284" width="1032" height="388" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="232" y="288" width="236" height="16" rx="2" fill="#f5f5f5"/>
+        <text x="350" y="300" fill="#5a6580" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">Host 进程 · 自带 Node ≥22.19</text>
 
-        <!-- Zone: KernelRunner (contract boundary, accent dashed) -->
-        <rect x="248" y="456" width="752" height="124" rx="8" fill="rgba(191,69,32,0.05)" stroke="rgba(191,69,32,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
-        <rect x="272" y="460" width="224" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="384" y="469" fill="#5a6580" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.14em">KERNELRUNNER · 所有内核都要守的同一套接口</text>
+        <!-- Zone: KernelRunner (nested contract boundary, accent dashed) -->
+        <rect x="248" y="460" width="752" height="124" rx="8" fill="rgba(191,69,32,0.05)" stroke="rgba(191,69,32,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+        <rect x="272" y="464" width="296" height="16" rx="2" fill="#f5f5f5"/>
+        <text x="420" y="476" fill="#5a6580" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">KernelRunner · 所有内核共守的合同</text>
+
+        <!-- Zone: outbound MCP port -->
+        <rect x="1040" y="312" width="176" height="256" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="1060" y="316" width="136" height="16" rx="2" fill="#f5f5f5"/>
+        <text x="1128" y="328" fill="#5a6580" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">对外出口 · 阶段 5</text>
 
         <!-- HostApi north seam band (accent focal 1) -->
         <rect x="208" y="216" width="1032" height="48" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.2"/>
 
+        <!-- Ecosystem-in label -->
+        <text x="40" y="306" fill="#5a6580" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">生态进口</text>
+
         <!-- ============ ARROWS (before nodes) ============ -->
 
-        <!-- 主UI → IPC 桥 -->
+        <!-- 主 UI → IPC 桥 -->
         <path d="M352 124 V 140" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
-        <!-- 第三方页面 → IPC 桥 -->
+        <!-- 内嵌第三方页面 → IPC 桥 -->
         <path d="M628 124 V 140" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 调试 UI → IPC 桥 -->
+        <path d="M880 124 V 140" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
         <!-- IPC 桥 → HostApi band -->
-        <path d="M496 184 V 208" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
-        <!-- 远程对话端 → HostApi band (ws, dashed) -->
-        <path d="M184 240 H 200" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <path d="M604 184 V 208" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
         <!-- HostApi → 服务层 (headline, accent) -->
-        <path d="M632 264 V 304" fill="none" stroke="#bf4520" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
-        <rect x="648" y="272" width="64" height="16" rx="2" fill="#f5f5f5"/>
-        <text x="680" y="284" fill="#5a6580" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">HTTP/WS</text>
+        <path d="M632 264 V 312" fill="none" stroke="#bf4520" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <rect x="648" y="274" width="72" height="16" rx="2" fill="#f5f5f5"/>
+        <text x="684" y="286" fill="#5a6580" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">stdio · WS</text>
         <!-- 服务层 → 能力总线 -->
-        <path d="M632 360 V 376" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M632 364 V 384" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
         <!-- 能力总线 → KernelRunner -->
-        <path d="M632 432 V 448" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
-        <rect x="648" y="436" width="68" height="16" rx="2" fill="#f5f5f5"/>
-        <text x="682" y="448" fill="#5a6580" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">分发给内核</text>
-        <!-- SKILL.md → 能力总线 (elbow down) -->
-        <path d="M184 338 H 208 Q 216,338 216,346 V 384 Q 216,392 224,392 H 240" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
-        <!-- MCP 生态 → 能力总线 (straight) -->
-        <path d="M184 412 H 240" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
-        <!-- 插件 manifest → 能力总线 (elbow up) -->
-        <path d="M184 490 H 216 Q 224,490 224,482 V 432 Q 224,424 232,424 H 240" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
-        <!-- 能力总线 → MCP Server (link) -->
-        <path d="M1000 404 H 1032" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
-        <!-- 外部智能体 → MCP Server (link, dashed async) -->
-        <path d="M1128 712 V 664" fill="none" stroke="#2e5aa8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow-link)"/>
-        <!-- 工具沙箱 → 自带运行时包 (命令执行, dashed) -->
-        <path d="M632 630 H 592" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
-        <rect x="540" y="608" width="44" height="16" rx="2" fill="#f5f5f5"/>
-        <text x="562" y="620" fill="#5a6580" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">跑命令</text>
+        <path d="M632 436 V 456" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="648" y="438" width="76" height="16" rx="2" fill="#f5f5f5"/>
+        <text x="686" y="450" fill="#5a6580" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">装配进内核</text>
+        <!-- SKILL.md → 能力总线（elbow，水平入左缘，端口 y404） -->
+        <path d="M184 342 H 212 Q 220,342 220,350 V 396 Q 220,404 228,404 H 248" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- MCP 生态 → 能力总线（直线，入左缘，端口 y418） -->
+        <path d="M184 418 H 240" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 插件 manifest → 能力总线（elbow，垂直入下缘，端口 x268） -->
+        <path d="M184 494 H 260 Q 268,494 268,486 V 436" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <!-- 能力总线 → 对外 MCP Server (link) -->
+        <path d="M1000 412 H 1032" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <!-- 外部智能体 → MCP Server (link, dashed, upward) -->
+        <path d="M1128 700 V 576" fill="none" stroke="#2e5aa8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow-link)"/>
 
         <!-- ============ NODES ============ -->
 
         <!-- 主 UI -->
-        <rect x="232" y="72" width="240" height="52" rx="6" fill="#f5f5f5"/>
         <rect x="232" y="72" width="240" height="52" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
-        <rect x="240" y="78" width="24" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
-        <text x="252" y="87" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">UI</text>
-        <text x="352" y="106" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">主 UI</text>
+        <text x="352" y="96" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">主 UI</text>
+        <text x="352" y="114" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">React 界面 · 窄接口</text>
 
         <!-- 内嵌第三方页面 -->
-        <rect x="496" y="72" width="264" height="52" rx="6" fill="#f5f5f5"/>
         <rect x="496" y="72" width="264" height="52" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
-        <rect x="504" y="78" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
-        <text x="530" y="87" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">WEBVIEW</text>
-        <text x="628" y="106" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">内嵌第三方页面</text>
+        <text x="628" y="96" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">内嵌第三方页面</text>
+        <text x="628" y="114" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">webview 沙箱 · 票据注入</text>
 
-        <!-- IPC 桥 · 权限闸 (input treatment) -->
-        <rect x="232" y="148" width="528" height="36" rx="6" fill="rgba(79,93,117,0.10)"/>
-        <rect x="232" y="148" width="528" height="36" rx="6" fill="none" stroke="#5a6580" stroke-width="1"/>
-        <text x="496" y="170" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">IPC 桥 · 权限闸</text>
+        <!-- 调试 UI -->
+        <rect x="784" y="72" width="192" height="52" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="880" y="96" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">调试 UI</text>
+        <text x="880" y="114" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">运行时控制台</text>
+
+        <!-- IPC 桥 · 权限闸 -->
+        <rect x="232" y="148" width="744" height="36" rx="6" fill="rgba(79,93,117,0.10)" stroke="#5a6580" stroke-width="1"/>
+        <text x="604" y="170" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">IPC 桥 · 权限闸（Electron IPC 白名单）</text>
 
         <!-- HostApi band text -->
-        <text x="724" y="238" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">HostApi · 界面与引擎之间的唯一通道</text>
-        <text x="724" y="254" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">HTTP / WS · SCOPED TOKEN</text>
-
-        <!-- 远程对话端 (external) -->
-        <rect x="40" y="216" width="144" height="48" rx="6" fill="rgba(45,49,66,0.03)"/>
-        <rect x="40" y="216" width="144" height="48" rx="6" fill="none" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
-        <text x="112" y="238" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">远程对话端</text>
-        <text x="112" y="254" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">WS · IM</text>
-
-        <!-- 生态进口 eyebrow -->
-        <text x="40" y="304" fill="#5a6580" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">ECOSYSTEM IN</text>
+        <text x="724" y="236" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">HostApi · 界面与引擎之间的唯一通道</text>
+        <text x="724" y="252" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">面 A · stdio JSON-RPC（主干）｜ 面 B · HTTP/WS 127.0.0.1（按需）· scoped token</text>
 
         <!-- SKILL.md 技能 (external) -->
-        <rect x="40" y="312" width="144" height="52" rx="6" fill="rgba(45,49,66,0.03)"/>
-        <rect x="40" y="312" width="144" height="52" rx="6" fill="none" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
-        <text x="112" y="336" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">SKILL.md 技能</text>
-        <text x="112" y="352" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">claude·zcode·pi</text>
+        <rect x="40" y="316" width="144" height="52" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="112" y="340" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">SKILL.md 技能</text>
+        <text x="112" y="358" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">claude · zcode · pi</text>
 
         <!-- MCP 服务器生态 (external) -->
-        <rect x="40" y="386" width="144" height="52" rx="6" fill="rgba(45,49,66,0.03)"/>
-        <rect x="40" y="386" width="144" height="52" rx="6" fill="none" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
-        <text x="112" y="410" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">MCP 服务器生态</text>
-        <text x="112" y="426" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">ANY VENDOR</text>
+        <rect x="40" y="392" width="144" height="52" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="112" y="416" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">MCP 服务器生态</text>
+        <text x="112" y="434" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">任意厂商</text>
 
-        <!-- 插件 manifest (external) -->
-        <rect x="40" y="464" width="144" height="52" rx="6" fill="rgba(45,49,66,0.03)"/>
-        <rect x="40" y="464" width="144" height="52" rx="6" fill="none" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
-        <text x="112" y="488" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">插件 manifest</text>
-        <text x="112" y="504" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">DECLARATIVE</text>
+        <!-- 插件 manifest (external, optional) -->
+        <rect x="40" y="468" width="144" height="52" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="112" y="492" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">插件 manifest</text>
+        <text x="112" y="510" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">远期 · 声明式</text>
 
         <!-- Host 服务层 -->
-        <rect x="248" y="312" width="752" height="48" rx="6" fill="#f5f5f5"/>
-        <rect x="248" y="312" width="752" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
-        <rect x="256" y="318" width="48" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
-        <text x="280" y="327" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">SERVICE</text>
-        <text x="624" y="342" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">Host 服务层 · 会话 / 项目 / 设置 / 权限 / 插件治理</text>
+        <rect x="248" y="316" width="752" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="624" y="345" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">Host 服务层 · 会话 / 项目 / 设置 / 凭据 / 审批 / 观测 / 插件治理</text>
 
         <!-- 能力总线 -->
-        <rect x="248" y="384" width="752" height="48" rx="6" fill="#f5f5f5"/>
-        <rect x="248" y="384" width="752" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
-        <rect x="256" y="390" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
-        <text x="272" y="399" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">BUS</text>
-        <text x="624" y="414" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">能力总线（四座）· 工具 / MCP · 技能 · 钩子 · 子会话</text>
+        <rect x="248" y="388" width="752" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="624" y="409" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">能力总线（四座）· 工具+MCP / 技能 / 钩子 / 子会话</text>
+        <text x="624" y="426" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">全部装配为 pi 官方扩展形状 · 不自研插件运行时</text>
 
-        <!-- pi-coding-agent (default kernel) -->
-        <rect x="272" y="492" width="224" height="48" rx="6" fill="#f5f5f5"/>
-        <rect x="272" y="492" width="224" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
-        <rect x="280" y="498" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
-        <text x="306" y="507" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">DEFAULT</text>
-        <text x="384" y="526" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">pi-coding-agent</text>
+        <!-- PiSdkKernel (default kernel) -->
+        <rect x="272" y="496" width="176" height="52" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="360" y="520" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">PiSdkKernel</text>
+        <text x="360" y="538" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">默认 · 进程内 SDK</text>
 
-        <!-- agent-service (sealed, optional) -->
-        <rect x="520" y="492" width="224" height="48" rx="6" fill="rgba(45,49,66,0.02)"/>
-        <rect x="520" y="492" width="224" height="48" rx="6" fill="none" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
-        <rect x="528" y="498" width="44" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
-        <text x="550" y="507" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">SEALED</text>
-        <text x="632" y="526" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">agent-service</text>
+        <!-- PiRpcKernel (reserved) -->
+        <rect x="464" y="496" width="168" height="52" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="548" y="520" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">PiRpcKernel</text>
+        <text x="548" y="538" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">预留 · rpc 子进程</text>
 
-        <!-- DeepAgent (future, optional) -->
-        <rect x="768" y="492" width="208" height="48" rx="6" fill="rgba(45,49,66,0.02)"/>
-        <rect x="768" y="492" width="208" height="48" rx="6" fill="none" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
-        <rect x="776" y="498" width="44" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
-        <text x="798" y="507" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">FUTURE</text>
-        <text x="872" y="526" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">DeepAgent</text>
+        <!-- agent-service (sealed) -->
+        <rect x="648" y="496" width="168" height="52" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="732" y="520" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">agent-service</text>
+        <text x="732" y="538" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">手搓内核 · 已封存</text>
 
-        <!-- 自带运行时包 (store) -->
-        <rect x="248" y="604" width="336" height="52" rx="6" fill="rgba(45,49,66,0.05)"/>
-        <rect x="248" y="604" width="336" height="52" rx="6" fill="none" stroke="#4f5d75" stroke-width="1"/>
-        <rect x="256" y="610" width="48" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.40)" stroke-width="0.8"/>
-        <text x="280" y="619" fill="rgba(79,93,117,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">RUNTIME</text>
-        <text x="416" y="634" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">自带运行时包</text>
-        <text x="416" y="649" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">NODE 22 · PYTHON · GIT</text>
+        <!-- DeepAgent-TS (future) -->
+        <rect x="832" y="496" width="144" height="52" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="904" y="520" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">DeepAgent-TS</text>
+        <text x="904" y="538" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">远期 · 合同校验</text>
 
-        <!-- 工具沙箱 (store) -->
-        <rect x="632" y="604" width="368" height="52" rx="6" fill="rgba(45,49,66,0.05)"/>
-        <rect x="632" y="604" width="368" height="52" rx="6" fill="none" stroke="#4f5d75" stroke-width="1"/>
-        <rect x="640" y="610" width="52" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.40)" stroke-width="0.8"/>
-        <text x="666" y="619" fill="rgba(79,93,117,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">SANDBOX</text>
-        <text x="816" y="634" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">工具沙箱</text>
-        <text x="816" y="649" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">APPCONTAINER · BWRAP</text>
+        <!-- KernelRunner 底注 -->
+        <text x="624" y="572" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">pi AgentSession：循环 / 工具 / 会话树 / 压缩 / 供应商 —— 全部内置直用</text>
+
+        <!-- 自带运行时 (store) -->
+        <rect x="248" y="604" width="336" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="416" y="626" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">自带运行时</text>
+        <text x="416" y="644" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">Node 22 · SHA256 · git/python 用系统</text>
+
+        <!-- 安全边界 (store) -->
+        <rect x="632" y="604" width="344" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="804" y="626" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">安全边界</text>
+        <text x="804" y="644" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">权限模式 + 审批 · OS 沙箱远期</text>
 
         <!-- 对外 MCP Server -->
-        <rect x="1040" y="312" width="176" height="344" rx="6" fill="#f5f5f5"/>
-        <rect x="1040" y="312" width="176" height="344" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
-        <rect x="1048" y="318" width="56" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
-        <text x="1076" y="327" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">MCP PORT</text>
-        <text x="1128" y="464" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">对外 MCP Server</text>
-        <text x="1128" y="480" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">HOST NETWORK</text>
-        <line x1="1064" y1="504" x2="1192" y2="504" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
-        <text x="1128" y="528" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">SESSIONS</text>
-        <text x="1128" y="548" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">TOOLS</text>
+        <text x="1128" y="424" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">对外 MCP Server</text>
+        <text x="1128" y="444" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">本机网络</text>
+        <line x1="1064" y1="464" x2="1192" y2="464" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="1128" y="490" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">会话 · 工具</text>
+        <text x="1128" y="510" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">Bearer · 写默认关</text>
 
         <!-- 外部智能体 (external) -->
-        <rect x="1040" y="712" width="176" height="48" rx="6" fill="rgba(45,49,66,0.03)"/>
-        <rect x="1040" y="712" width="176" height="48" rx="6" fill="none" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
-        <text x="1128" y="734" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">外部智能体</text>
-        <text x="1128" y="750" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">ZCODE · CLAUDE · CLOUD</text>
+        <rect x="1040" y="700" width="176" height="48" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="1128" y="721" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">外部智能体</text>
+        <text x="1128" y="739" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">ZCode · Claude · 云端</text>
 
         <!-- ============ LEGEND (bottom strip) ============ -->
         <line x1="40" y1="776" x2="1240" y2="776" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
-        <text x="40" y="800" fill="#4f5d75" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">LEGEND</text>
-        <rect x="128" y="790" width="16" height="10" rx="2" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
-        <text x="152" y="800" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">接口约定</text>
-        <line x1="256" y1="795" x2="296" y2="795" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
-        <text x="308" y="800" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">内部流</text>
-        <line x1="404" y1="795" x2="444" y2="795" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
-        <text x="456" y="800" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">外部调用</text>
-        <line x1="552" y1="795" x2="592" y2="795" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3"/>
-        <text x="604" y="800" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">可选 / 停用</text>
+        <text x="40" y="800" fill="#4f5d75" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">图例</text>
+        <rect x="112" y="790" width="16" height="10" rx="2" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+        <text x="136" y="800" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">接口约定</text>
+        <line x1="240" y1="795" x2="280" y2="795" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="292" y="800" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">内部流</text>
+        <text x="388" y="800" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">外部调用</text>
+        <line x1="388" y1="795" x2="428" y2="795" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <line x1="516" y1="795" x2="556" y2="795" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="568" y="800" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">可选 / 预留 / 封存</text>
         <rect x="716" y="790" width="16" height="10" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
         <text x="740" y="800" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">外部系统</text>
-        <rect x="848" y="790" width="16" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
-        <text x="872" y="800" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">运行时存储</text>
+        <rect x="856" y="790" width="16" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="880" y="800" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif">运行时存储</text>
       </svg>
     </div>
   </div>

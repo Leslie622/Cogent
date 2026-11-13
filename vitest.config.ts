@@ -1,8 +1,8 @@
 // Vitest 单配置三 project（docs/计划-测试体系.md D4）：
-// - node  ：引擎侧单元（agent-service / shared），node 环境，秒级；
+// - node  ：引擎侧单元（host / shared），node 环境，秒级；
 // - web   ：渲染层单元 + 组件，jsdom（组件渲染需要 DOM；纯逻辑测试顺带同环境，
 //           免再拆一份配置）；setup-web 挂 jest-dom 匹配器；
-// - integration：tmp 冒烟正名迁移（mock SSE + 真构建产物 out/main/service.js），
+// - integration：tmp 冒烟正名迁移（mock SSE + 真构建产物 out/main/host.js），
 //           各文件自带子进程与固定端口（18940–18942）→ 串行跑；全流程分钟级，
 //           timeout 放宽；global-setup 守卫构建产物新鲜度（D5：`npm test`
 //           一条命令即全绿，无需记得先 build）。
@@ -24,7 +24,7 @@ export default defineConfig({
         test: {
           name: 'node',
           environment: 'node',
-          include: ['src/agent-service/**/*.test.ts', 'src/shared/**/*.test.ts', 'src/electron/**/*.test.ts']
+          include: ['src/host/**/*.test.ts', 'src/shared/**/*.test.ts', 'src/electron/**/*.test.ts']
         }
       },
       {

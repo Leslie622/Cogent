@@ -17,7 +17,7 @@ npm run typecheck  # 严格类型检查
 
 | 层 | 技术 |
 | --- | --- |
-| 桌面壳 | Electron 45（ESM，内置 Node 24） |
-| Agent 引擎 | 独立 Node 进程 + [`@earendil-works/pi-*`](https://github.com/earendil-works/pi)（stdio JSON-RPC） |
+| 桌面壳 | Electron 31（ESM；Chromium 125 ≥ Tailwind v4 基线 111） |
+| Agent 引擎 | 独立 Node 进程（自带官方 node22，`resources/runtime/`）+ [`@earendil-works/pi-*`](https://github.com/earendil-works/pi)（stdio JSON-RPC） |
 | 前端 | React 19 + Tailwind CSS v4 + shadcn/ui |
 | 构建 | electron-vite 6 + Vite 8，TypeScript 严格模式 |

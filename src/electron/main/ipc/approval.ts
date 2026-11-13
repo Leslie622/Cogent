@@ -13,7 +13,7 @@ import { ipcMain } from 'electron'
 import { IPC } from '../../../shared/ipc'
 import type { IpcDeps } from './index'
 
-export function registerApprovalIpc({ service }: IpcDeps): void {
+export function registerApprovalIpc({ host }: IpcDeps): void {
   // 信任边界：renderer 不可信 —— 载荷形状在此收窄（业务校验在引擎 dispatch）。
   // optional 的 message（拒绝附言）/ always（落工作区级规则）带了就约束形状，
   // 语义矛盾（always + approved=false）在引擎入口拦 —— 这里只管传输形状
@@ -28,7 +28,7 @@ export function registerApprovalIpc({ service }: IpcDeps): void {
     if (payload.always !== undefined && payload.always !== 'workspace') {
       throw new Error("approval:respond 非法调用：always 只支持 'workspace'")
     }
-    return service.request('approval.respond', {
+    return host.request('approval.respond', {
       requestId: payload.requestId,
       approved: payload.approved,
       ...(payload.message !== undefined && { message: payload.message }),

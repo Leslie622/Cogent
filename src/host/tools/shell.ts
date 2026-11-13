@@ -95,7 +95,7 @@ export function getPlatformShellConfig(): ShellConfig {
 
 /**
  * detached 子进程登记表：引擎退出时对全部登记 pid 杀树收尾
- * （宿主进程死了没人替我们杀 —— 收尾钩子在 agent-service/index.ts 接）
+ * （宿主进程死了没人替我们杀 —— 收尾钩子在 host/index.ts 接）
  */
 const trackedDetachedChildPids = new Set<number>()
 

@@ -31,7 +31,7 @@ export interface RpcResponse {
   error?: RpcError
 }
 
-/** 事件（notification）：service → 宿主的单向推送，无 id、无应答 */
+/** 事件（notification）：host → 宿主的单向推送，无 id、无应答 */
 export interface RpcEvent {
   jsonrpc: '2.0'
   method: string
@@ -758,7 +758,7 @@ export interface ProtocolMethods {
   'inspect.entry': { params: InspectEntryParams; result: InspectEntryDetail }
 }
 
-// ———— 事件映射（service → 宿主；骨架期先定形状，随实现细化） ————
+// ———— 事件映射（host → 宿主；骨架期先定形状，随实现细化） ————
 
 export interface ProtocolEvents {
   'run.started': { sessionId: string }
@@ -826,16 +826,16 @@ export interface ProtocolEvents {
    */
   'inspect.event': { sessionId: string; entry: InspectEntrySummary }
   /**
-   * 上下文压缩开始（批次 4 additive，D7 双路）：reason = threshold（submit
-   * 前阈值触发）/ manual（session.compact）。摘要生成是一次 LLM 调用（秒级），
-   * 宿主可借此呈现压缩中状态；自动路发生在 run.started 之后、首条 delta
-   * 之前 —— 事件顺序即引擎执行顺序。
+   * 上下文压缩开始（批次 4 additive，D7 双路；1.2a 起 pi 内核接管）：reason =
+   * threshold（引擎自动阈值）/ manual（session.compact）/ overflow（引擎溢出
+   * 恢复路压缩，发生在 run 生命周期内）。摘要生成是一次 LLM 调用（秒级），
+   * 宿主可借此呈现压缩中状态。
    */
-  'compaction.started': { sessionId: string; reason: 'threshold' | 'manual' }
+  'compaction.started': { sessionId: string; reason: 'threshold' | 'manual' | 'overflow' }
   /**
    * 上下文压缩结束（成功/失败共用，看 error 字段）。
    * - summary = checkpoint 摘要全文（宿主折叠条展开可读）；
-   * - summarizedUntil = 被摘要区末条消息 timestamp —— 宿主据此把本地消息
+   * - summarizedUntil = 保留区首条消息 timestamp —— 宿主据此把本地消息
    *   列表里该时刻及之前的条目原位换成折叠条（历史回查路径天然同形态）；
    * - tokensBefore/After = 前后上下文估算（指示器回落依据）。
    * 失败时 tokens/summary 缺省、error 带原因；自动路失败不拦后续 prompt
@@ -843,7 +843,7 @@ export interface ProtocolEvents {
    */
   'compaction.completed': {
     sessionId: string
-    reason: 'threshold' | 'manual'
+    reason: 'threshold' | 'manual' | 'overflow'
     tokensBefore?: number
     tokensAfter?: number
     summary?: string
@@ -857,13 +857,8 @@ export interface ProtocolEvents {
   /**
    * L1 工具结果裁剪（完备化 R3 additive）：检查点内 L2 摘要前的确定性降载 ——
    * 全转录超限（8192 code point）的 toolResult 原位改写为保头 4096 / 保尾
-   * 1024 + middle 替换 marker，零 LLM 成本。entries 每处一条（含字符量对账，
-   * dsh shadow-price 事件的 Cogent 简化版 —— 单写者无需按事件扣减，UI 呈
-   * 「已裁剪 N 处工具输出」副行用）。原位改写不动条数，宿主已有的消息列表
-   * 无需手术；下一次历史回查自然读到裁剪后的结果文本。
-   * R10 图片卸载预留：Cogent 当前无图片输入路径，无对象可卸；将来落地时
-   * 在压缩域追加 `compaction.offloaded`（形状同本事件：entries 带
-   * messageId + 估算省下的 token），不经本事件扩展。
+   * 1024 + middle 替换 marker，零 LLM 成本。1.2a 起压缩整体由 pi 内核接管，
+   * 引擎不再发射本事件（合同保留供老宿主；pi 的等价能力是压缩时全转录进摘要）。
    */
   'compaction.pruned': {
     sessionId: string

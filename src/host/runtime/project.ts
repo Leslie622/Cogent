@@ -68,7 +68,7 @@ export class ProjectRegistry {
       } catch (error) {
         this.storage.quarantine(PROJECT_COLLECTION, id)
         process.stderr.write(
-          `[agent-service] 项目文档损坏已隔离（projects/${id}.json → .corrupt）: ${(error as Error).message}\n`
+          `[host] 项目文档损坏已隔离（projects/${id}.json → .corrupt）: ${(error as Error).message}\n`
         )
       }
     }
@@ -140,7 +140,7 @@ export class ProjectRegistry {
     try {
       this.storage.put(PROJECT_COLLECTION, projectId, { version: PROJECT_FILE_VERSION, summary })
     } catch (error) {
-      process.stderr.write(`[agent-service] 项目落盘失败（${projectId}，下回合重试）: ${(error as Error).message}\n`)
+      process.stderr.write(`[host] 项目落盘失败（${projectId}，下回合重试）: ${(error as Error).message}\n`)
     }
   }
 }

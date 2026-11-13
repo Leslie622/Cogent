@@ -2,15 +2,15 @@
  * Agent 服务代理 —— main 进程接入引擎的唯一入口。
  *
  * main 在这里的角色是"壳 + 代理"：只做进程生命周期管理与字节搬运，
- * 不理解任何业务语义（业务在 agent-service）。将来换传输方式（如本地 socket）
+ * 不理解任何业务语义（业务在 host）。将来换传输方式（如本地 socket）
  * 只动这个文件。
  *
  * 决策：
- * - 引擎默认跑在 Electron 自带的 Node 上（process.execPath + ELECTRON_RUN_AS_NODE=1，
- *   等价纯 Node，版本随 Electron 发版可控），不依赖用户系统 PATH 里的 node ——
- *   用户可能没装、版本不受控。要独立版本时再构建期放官方 node.exe 到 resources
- *   并让它成为 COGENT_NODE_BIN 的默认值；COGENT_NODE_BIN 始终是覆盖口（开发调试、
- *   旧 Electron 项目复用引擎时指向任意 Node ≥ 22.19，见 docs/架构.md「集成」）；
+ * - 引擎跑在哪个 Node 上由 runtime.ts 三级链在 spawn 前定死（COGENT_NODE_BIN 覆盖 >
+ *   resources/runtime 自带官方 node22 > Electron 自带兜底），本类经 options.nodeBin
+ *   消费结果 —— 不读环境、不摸文件，保持零 electron import 的可测试性；
+ * - ELECTRON_RUN_AS_NODE=1 只在兜底到 execPath 时补设（那其实是 electron.exe），
+ *   官方 node 二进制不认识这个变量，设了也无害，但不设保持语义干净；
  * - Node 版本守卫借握手完成：服务在 initialize 响应里上报 process.version，
  *   无需额外 spawn 一次 `node -v`；
  * - 引擎崩溃不拖垮壳：状态置 failed、在途请求全部拒绝，UI 呈现，重启策略后续加。
@@ -30,7 +30,7 @@ import type { AppStatus } from '../../../shared/ipc'
 const MIN_NODE: readonly [number, number, number] = [22, 19, 0]
 /**
  * 握手超时：给足 Windows 冷启动余量（2026-11-11 验收实录：偶发启动握手
- * 超时、手动重试即好 —— 冷启动时 Defender 实时扫描 service.js 大捆绑包
+ * 超时、手动重试即好 —— 冷启动时 Defender 实时扫描 host.js 大捆绑包
  * 可拖慢 Node 起进程数秒，5s 不够；二次启动文件已热所以必成。真正的
  * 引擎崩溃重启策略按本文件头注「后续加」，此处只放宽窗口不加重试）
  */
@@ -41,9 +41,11 @@ interface Pending {
   reject: (reason: Error) => void
 }
 
-export interface AgentServiceOptions {
-  /** 服务入口（构建产物 out/main/service.js） */
+export interface HostOptions {
+  /** 服务入口（构建产物 out/main/host.js） */
   entryPath: string
+  /** 引擎宿主 Node 二进制（runtime.ts resolveEngineNode 的结果；见文件头「决策」） */
+  nodeBin: string
   /**
    * 握手时注入引擎的凭据（宿主持久化存储 → 引擎内存表）。
    * optional：冒烟脚本/老宿主可不带。
@@ -51,8 +53,8 @@ export interface AgentServiceOptions {
   handshakeCredentials?: Record<string, { apiKey: string }>
 }
 
-export class AgentServiceManager {
-  private opts: AgentServiceOptions
+export class HostManager {
+  private opts: HostOptions
   private child: ChildProcess | null = null
   private pending = new Map<number, Pending>()
   private nextId = 1
@@ -62,7 +64,7 @@ export class AgentServiceManager {
   /** 引擎事件出口：registerIpc 时注入（main 收到事件即转发给 renderer） */
   private eventSink: ((event: RpcEvent) => void) | null = null
 
-  constructor(options: AgentServiceOptions) {
+  constructor(options: HostOptions) {
     this.opts = options
   }
 
@@ -95,11 +97,11 @@ export class AgentServiceManager {
     this.status = { state: 'starting', nodeVersion: null, error: null }
 
     // 信任边界：引擎是外部进程。spawn 失败、秒退、挂起都是常态错误。
-    // 默认用 Electron 自带 Node：execPath 就是本应用的 electron.exe，配上
-    // ELECTRON_RUN_AS_NODE=1 后行为与纯 Node 一致（无 Chromium、无窗口 API）。
-    const nodeBin = process.env.COGENT_NODE_BIN || process.execPath
-    const child = spawn(nodeBin, [this.opts.entryPath], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    // nodeBin 来自 runtime.ts 三级链；仅当兜底到 execPath（= electron.exe）时
+    // 补设 ELECTRON_RUN_AS_NODE=1，行为才与纯 Node 一致（无 Chromium、无窗口 API）。
+    const asElectronNode = this.opts.nodeBin === process.execPath
+    const child = spawn(this.opts.nodeBin, [this.opts.entryPath], {
+      env: { ...process.env, ...(asElectronNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true
     })
@@ -113,7 +115,7 @@ export class AgentServiceManager {
     // stdio 配置为 pipe，Node 类型重载已把流标记为非空，无需断言
     createInterface({ input: child.stdout }).on('line', (line) => this.onLine(line))
     createInterface({ input: child.stderr }).on('line', (line) => {
-      console.error('[agent-service]', line)
+      console.error('[host]', line)
     })
 
     const handshake = withTimeout(
@@ -162,7 +164,7 @@ export class AgentServiceManager {
     const stdin = this.child?.stdin
     if (!stdin) {
       // 内部不变量：未启动就发请求是编程错误，fail-fast（docs/约定.md 防御边界政策）
-      throw new Error(`agent service not running (state=${this.status.state})`)
+      throw new Error(`host not running (state=${this.status.state})`)
     }
     const id = this.nextId++
     const frame: RpcRequest = { jsonrpc: '2.0', id, method, params }
@@ -185,7 +187,7 @@ export class AgentServiceManager {
     if (this.closed) return
     this.closed = true
     for (const pending of this.pending.values()) {
-      pending.reject(new Error(error ? `agent service closed: ${error}` : 'agent service closed'))
+      pending.reject(new Error(error ? `host closed: ${error}` : 'host closed'))
     }
     this.pending.clear()
     this.status = {
@@ -202,7 +204,7 @@ export class AgentServiceManager {
       frame = JSON.parse(line)
     } catch {
       // 信任边界：跨进程的另一端可能是旧构建/其他实现，畸形帧记日志即可，不中断
-      console.error('[main] agent-service sent invalid JSON line')
+      console.error('[main] host sent invalid JSON line')
       return
     }
 
@@ -220,7 +222,7 @@ export class AgentServiceManager {
       else pending.resolve(response.result)
       return
     }
-    console.error('[main] agent-service sent response with unknown id, dropped')
+    console.error('[main] host sent response with unknown id, dropped')
   }
 }
 
