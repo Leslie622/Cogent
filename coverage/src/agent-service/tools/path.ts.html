@@ -1,0 +1,297 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/agent-service/tools/path.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../prettify.css" />
+    <link rel="stylesheet" href="../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="../../../theme.js"></script>
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        
+        <label class="theme-select quiet">
+            Theme
+            <select id="themeSelect" autocomplete="off">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="legacy">Legacy</option>
+            </select>
+        </label>
+
+        <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/agent-service/tools</a> path.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>0/18</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/15</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/5</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>0/16</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * 工具路径解析 —— 相对路径的基解析 + 写类工具的工作区软边界。
+ *
+ * 边界口径（D2 修订，2026-11-10 用户驳回原“全工具限界”设计）：
+ * - **只读工具不限界**（对齐 Claude Code：Read/Glob/Grep 默认全盘允许）——
+ *   相对路径相对“基根”解析（绑定主根，无绑定 = 用户主目录），绝对路径任意；
+ * - **写/exec 类工具软边界**（批次 2 消费）：resolve 后必须落在工作区根
+ *   （无根会话 = 主目录）内，越界以工具 error 结果返回（模型可见原因，
+ *   会自我纠正），不静默拒绝也不崩进程 —— OS 级硬沙箱不做（前计划 D6）。
+ *
+ * 判定口径：path.resolve 归一后做**小写化前缀比对**（Windows 大小写不敏感；
+ * macOS 默认同样不敏感；Linux 区分大小写但小写化只是放宽不是漏放）。
+ * 前缀比对必须补分隔符，否则 `C:\work` 会误放行 `C:\work-secret`。
+ */
+import { homedir } from 'node:os'
+import { isAbsolute, resolve, sep } from 'node:path'
+&nbsp;
+/** 越界错误文案前缀（写类工具返回给模型；提示有效根让它自我纠正） */
+export function <span class="fstat-no" title="function not covered" >outsideRootsMessage(r</span>oots: string[]): string {
+<span class="cstat-no" title="statement not covered" >  return `写入路径超出工作区边界。可写根目录：${roots.join('、')}`</span>
+}
+&nbsp;
+/**
+ * `~` 前缀展开为主目录（上游 path-utils 吸收项，批次 3.6 顺手对照）：模型
+ * 与用户都惯写 `~/.xxx`，展开后走既有解析。仅 `~` 与 `~/` 开头展开
+ * （`~user` 形态 Windows 无对应物，不碰）。
+ */
+function <span class="fstat-no" title="function not covered" >expandTilde(i</span>nput: string): string {
+<span class="cstat-no" title="statement not covered" >  if (input === '~' || input.startsWith('~/') || input.startsWith('~\\')) {</span>
+<span class="cstat-no" title="statement not covered" >    return homedir() + input.slice(1)</span>
+  }
+<span class="cstat-no" title="statement not covered" >  return input</span>
+}
+&nbsp;
+/**
+ * 相对路径 → 基根下的绝对路径（只读工具用，不设界）。
+ * 绝对路径原样归一；`~` 展开为主目录。基根 = 工作区绑定根（首个为主根），
+ * 无绑定时调用方传用户主目录 —— 保证"任何会话都有工具"的主流口径
+ * （桌面应用的 launch cwd）。
+ */
+export function <span class="fstat-no" title="function not covered" >resolveAgainstBase(i</span>nput: string, baseRoots: string[]): string {
+  const expanded = <span class="cstat-no" title="statement not covered" >expandTilde(input)</span>
+<span class="cstat-no" title="statement not covered" >  return isAbsolute(expanded) ? resolve(expanded) : resolve(baseRoots[0], expanded)</span>
+}
+&nbsp;
+/**
+ * 把模型给的路径解析为**限界根内**的绝对路径（写/exec 类工具用）。
+ * 返回 null = 越界 —— 调用方以工具 error 结果返回，不 throw
+ * （throw 在 pi 里同为 error 结果，但走文本更可控）。
+ */
+export function <span class="fstat-no" title="function not covered" >resolveWithinRoots(i</span>nput: string, roots: string[]): string | null {
+<span class="cstat-no" title="statement not covered" >  if (roots.length === 0) <span class="cstat-no" title="statement not covered" >return null</span></span>
+  // 相对路径相对首个根解析（主根，系统提示词已声明该规则）
+  const expanded = <span class="cstat-no" title="statement not covered" >expandTilde(input)</span>
+  const absolute = <span class="cstat-no" title="statement not covered" >isAbsolute(expanded) ? resolve(expanded) : resolve(roots[0], expanded)</span>
+  const normalizedRoots = <span class="cstat-no" title="statement not covered" >roots.<span class="fstat-no" title="function not covered" >map((r</span>) =&gt; <span class="cstat-no" title="statement not covered" >resolve(r))</span></span>
+<span class="cstat-no" title="statement not covered" >  for (const root of normalizedRoots) {</span>
+    const a = <span class="cstat-no" title="statement not covered" >absolute.toLowerCase()</span>
+    const b = <span class="cstat-no" title="statement not covered" >root.toLowerCase()</span>
+    // 等长 = 路径即根本身（读目录会由各工具自行报"不是文件"，边界上属于根内）；
+    // resolve 已归一分隔符，前缀比对只需补一个 sep 防 `C:\work` 误放行 `C:\work-x`
+<span class="cstat-no" title="statement not covered" >    if (a === b || a.startsWith(b + sep)) {</span>
+<span class="cstat-no" title="statement not covered" >      return absolute</span>
+    }
+  }
+<span class="cstat-no" title="statement not covered" >  return null</span>
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-11-12T16:55:40.296Z
+            </div>
+        <script src="../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../sorter.js"></script>
+        <script src="../../../block-navigation.js"></script>
+    </body>
+</html>
+    
