@@ -19,13 +19,14 @@ export function SettingsGroup({ label, children }: { label: string; children: Re
   )
 }
 
-/** 设置行：左 = 标题（14px medium）+ 描述（13px 灰，可换行带链接），右 = 控件 */
+/** 设置行：左 = 标题（14px medium，可带内联徽标 → ReactNode）+ 描述（13px 灰，
+    可换行带链接），右 = 控件 */
 export function SettingsRow({
   title,
   desc,
   children,
 }: {
-  title: string
+  title: ReactNode
   desc?: ReactNode
   children: ReactNode
 }) {

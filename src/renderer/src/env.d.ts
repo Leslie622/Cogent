@@ -98,6 +98,8 @@ export type EngineMethod =
   | 'models.list'
   | 'inspect.entries'
   | 'inspect.entry'
+  | 'mcp.list'
+  | 'mcp.sync'
 
 /**
  * 会话级偏好文件形状（与 shared/ipc.ts SettingsFile 镜像；preload 侧同源导出）。
@@ -167,6 +169,8 @@ export interface EngineMethodParams {
   'models.list': Record<string, never>
   'inspect.entries': { sessionId: string }
   'inspect.entry': { sessionId: string; seq: number }
+  'mcp.list': Record<string, never>
+  'mcp.sync': { servers: McpServerDef[] }
 }
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
@@ -193,6 +197,34 @@ export interface EngineMethodResult {
   'models.list': { models: ModelSummary[]; defaultModel?: { provider: string; id: string } }
   'inspect.entries': { entries: InspectEntrySummary[] }
   'inspect.entry': InspectEntryDetail
+  'mcp.list': { servers: McpServerSummary[]; errors: string[] }
+  'mcp.sync': { synced: number }
+}
+
+/** MCP 工具暴露档（与 protocol McpExposure 镜像）：Cogent 只用 direct，其余档
+    供手改配置的忠实显示 */
+export type McpExposure = 'direct' | 'deferred' | 'codemode' | 'hidden'
+
+/** MCP server 定义（与 protocol McpServerDef 镜像；stdio/http 判别联合） */
+export type McpServerDef = { name: string } & (
+  | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string>; cwd?: string }
+  | { type: 'http'; url: string; headers?: Record<string, string> }
+) & {
+    description?: string
+    enabled?: boolean
+    exposure?: McpExposure
+    timeout?: number
+  }
+
+/** MCP server 摘要（mcp.list 行；def = 编辑表单回填源） */
+export interface McpServerSummary {
+  name: string
+  type: 'stdio' | 'http'
+  detail: string
+  description?: string
+  enabled: boolean
+  exposure: McpExposure
+  def: McpServerDef
 }
 
 /**

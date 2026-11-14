@@ -153,6 +153,13 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   模型行容器 = divide-y + rounded-lg border（行 h-12 px-4，徽标紧跟名称不贴右、
   动作簇 w-13 ml-auto hover 显形防跳动）。选中回落派生（selected 缺失 → 首个内置），
   详情组件按 id 挂 key 重置草稿态
+- **设置 · 连接（MCP 服务器卡片，2026-11-15）**：SettingsParts 拼装的单列分区
+  （max-w-3xl 常规页骨架）—— 页头描述行明示「新会话生效」；行 = 名称 + type/
+  exposure 双徽标（BADGE 配方）+ 描述（detail + description）+ 右侧
+  Switch/编辑/删除（icon-xs 灰钮）；卡片尾「添加服务器」ghost 行；新增/编辑走
+  Dialog 表单（stdio：命令 + 参数/环境变量多行文本一行一条；http：URL + 请求头；
+  暴露档 Select）—— name/type 编辑态锁定；全量 mcp.sync 提交，引擎校验错回显
+ destructive 红条；文件级诊断（errors）单独「配置诊断」组卡
 - **品牌图标 ProviderLogo**（components/，模型菜单等按 providerId 复用）：
   @lobehub/icons 按名导入（sideEffects:false 摇树）—— 单色标（Anthropic/OpenAI/
   Grok/ZAI）走 currentColor 随文字色，彩色用 `.Color` 变体（Gemini/DeepSeek/

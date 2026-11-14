@@ -46,8 +46,23 @@ describe('McpConfigStore', () => {
     const { servers, errors } = store.list()
     expect(errors).toEqual([])
     expect(servers).toEqual([
-      { name: 'fs', type: 'stdio', detail: 'npx -y @modelcontextprotocol/server-filesystem .', enabled: true, exposure: 'direct' },
-      { name: 'docs', type: 'http', detail: 'https://example.com/mcp', enabled: false, exposure: 'codemode' }
+      {
+        name: 'fs',
+        type: 'stdio',
+        detail: 'npx -y @modelcontextprotocol/server-filesystem .',
+        enabled: true,
+        exposure: 'direct',
+        // def = 编辑表单回填源：盘上原值（enabled 缺省 true 不落 def 字段）
+        def: { name: 'fs', type: 'stdio', command: 'npx', args: stdioDef.args, exposure: 'direct' }
+      },
+      {
+        name: 'docs',
+        type: 'http',
+        detail: 'https://example.com/mcp',
+        enabled: false,
+        exposure: 'codemode',
+        def: { name: 'docs', type: 'http', url: 'https://example.com/mcp', enabled: false }
+      }
     ])
   })
 

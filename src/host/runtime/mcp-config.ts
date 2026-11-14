@@ -168,7 +168,8 @@ export class McpConfigStore {
     return servers
   }
 
-  /** user 级摘要（mcp.list 响应；项目级 override 是 cwd 相关的高级面，不进本视图） */
+  /** user 级摘要（mcp.list 响应；项目级 override 是 cwd 相关的高级面，不进本视图）。
+      def = 盘上条目折回的协议定义（设置页编辑表单回填源，值保留用户原样） */
   list(): McpListResult {
     const errors: string[] = []
     const servers = this.loadUser(errors)
@@ -178,7 +179,30 @@ export class McpConfigStore {
       detail: 'url' in config ? config.url : [config.command, ...(config.args ?? [])].join(' '),
       ...(config.description !== undefined && { description: config.description }),
       enabled: config.enabled !== false,
-      exposure: config.exposure ?? 'codemode'
+      exposure: config.exposure ?? 'codemode',
+      def: 'url' in config
+        ? {
+            name,
+            type: 'http',
+            url: config.url,
+            ...(config.headers !== undefined && { headers: config.headers }),
+            ...(config.description !== undefined && { description: config.description }),
+            ...(config.enabled !== undefined && { enabled: config.enabled }),
+            ...(config.exposure !== undefined && { exposure: config.exposure }),
+            ...(config.timeout !== undefined && { timeout: config.timeout })
+          }
+        : {
+            name,
+            type: 'stdio',
+            command: config.command,
+            ...(config.args !== undefined && { args: config.args }),
+            ...(config.env !== undefined && { env: config.env }),
+            ...(config.cwd !== undefined && { cwd: config.cwd }),
+            ...(config.description !== undefined && { description: config.description }),
+            ...(config.enabled !== undefined && { enabled: config.enabled }),
+            ...(config.exposure !== undefined && { exposure: config.exposure }),
+            ...(config.timeout !== undefined && { timeout: config.timeout })
+          }
     }))
     return { servers: summaries, errors }
   }

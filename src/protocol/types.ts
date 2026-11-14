@@ -711,7 +711,7 @@ export type McpServerDef = { name: string } & (
     timeout?: number
   }
 
-/** mcp.list 的 server 摘要（设置页卡片行） */
+/** mcp.list 的 server 摘要（设置页卡片行 + 编辑表单数据源） */
 export interface McpServerSummary {
   name: string
   type: 'stdio' | 'http'
@@ -720,6 +720,11 @@ export interface McpServerSummary {
   description?: string
   enabled: boolean
   exposure: McpExposure
+  /**
+   * 完整定义（4a-2：编辑表单的回填源）。摘要字段是显示口径（含缺省化），
+   * 编辑要以用户写入的原值为基 —— def 即盘上条目折回的协议形状。
+   */
+  def: McpServerDef
 }
 
 export interface McpListResult {

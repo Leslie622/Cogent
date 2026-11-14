@@ -16,6 +16,8 @@ import type { IpcDeps } from './index'
  * 注意 providers.custom.sync 不在白名单：自定义 provider 的写路径只有
  * custom-providers:set 一条（壳落盘 + 推引擎），若 renderer 还能经本通道直推
  * 引擎内存态，会出现"盘上不变、引擎重启回滚"的状态分叉。
+ * mcp.list/sync 则走本通道：MCP 配置真源就是引擎的 ~/.cogent/mcp.json
+ *（引擎独占写者，无壳侧双写），与 providers 的差异恰在持久层归属。
  */
 const ALLOWED_METHODS = new Set<string>([
   'session.list',
@@ -39,7 +41,9 @@ const ALLOWED_METHODS = new Set<string>([
   'credentials.list',
   'models.list',
   'inspect.entries',
-  'inspect.entry'
+  'inspect.entry',
+  'mcp.list',
+  'mcp.sync'
 ])
 
 export function registerEngineIpc({ host }: IpcDeps): void {

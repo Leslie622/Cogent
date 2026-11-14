@@ -12,7 +12,12 @@
   user 级定义，write 档）—— 注册表在 host-main，HTTP 门档位同表；
 - 装配：`kernel/pi-session-factory.ts` —— `extensionFactories` 加入
   `createMcpExtension({ loadConfig, logPath, updateConfig })`；
-- 审批投影：`runtime/tool-meta.ts` —— `mcp__*` 前缀 → exec 档。
+- 审批投影：`runtime/tool-meta.ts` —— `mcp__*` 前缀 → exec 档；
+- UI：设置页「连接」分区（`renderer/features/settings/McpSection.tsx`）——
+  renderer 经 `engine:request` 通用代理直达两个方法（白名单在
+  `main/ipc/engine.ts`；MCP 配置真源在引擎，无壳侧双写，与 providers 的
+  专属通道恰成对照）。列表行启停/编辑/删除 + Dialog 表单（stdio/http 分栏），
+  全量 mcp.sync 提交，引擎校验错回显。
 
 ## 数据与生命周期
 
@@ -65,4 +70,7 @@ mcp__<server>__<tool> ──经 pi 工具管线──▶ beforeToolCall 审批�
 验收：`tests/integration/mcp.test.ts` —— mock stdio echo server 经 `mcp.sync`
 配置后：direct 工具声明进一轮请求、审批链对 `mcp__mock__echo` 弹 exec 档、
 echo 结果回灌二轮闭合、`mcp.sync` 置 disabled 后新会话工具消失；
-`mcp-config.test.ts` 单测钉 store 行为（校验/合并/补丁/损坏诊断）。
+`mcp-config.test.ts` 单测钉 store 行为（校验/合并/补丁/损坏诊断）；
+手动（4a-2）：设置页添加真实 server（如 `npx -y
+@modelcontextprotocol/server-filesystem <目录>`）→ 新会话让模型列目录 →
+工具卡正常呈现、审批弹面板；禁用后新会话工具消失。
