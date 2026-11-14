@@ -15,6 +15,8 @@ export default tseslint.config(
   // reference/** = pi 上游源码参照（上游自己的 .ts 会在类型感知 lint 下炸）
   // scripts/** = 构建期工具脚本（fetch-runtime.mjs 等，同 eslint.config.mjs
   // 口径：纯 JS 不进 tsconfig，projectService 找不到项目即报解析错）
+  // tests/integration/*.mjs = 测试夹具脚本（mock-mcp-server.mjs：被测引擎
+  // 子进程加载的纯 JS，同上不进 tsconfig）
   {
     ignores: [
       'out/**',
@@ -24,7 +26,8 @@ export default tseslint.config(
       'eslint.config.mjs',
       'scripts/**',
       'tmp/**',
-      'reference/**'
+      'reference/**',
+      'tests/integration/*.mjs'
     ]
   },
   ...tseslint.configs.recommendedTypeChecked,

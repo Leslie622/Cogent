@@ -52,3 +52,4 @@
 | [自带 Node 运行时分发](node-runtime-distribution.md) | fetch-runtime + SHA256 对官方清单 + 三级链定位；Pi-meme / zcode / dsh 对照 |
 | [HostApi HTTP 通道](hostapi-http.md) | 单一注册表多传输门（handleFrame 双门共用）+ 恒 200 语义分层 + loopback fail-closed；pi rpc / zcode server-core / Pi-meme 游标事件流 / im2.0 对照 |
 | [webview 页面接入](hostapi-guest-page.md) | 凭证传递与 SDK 暴露面：一次性票据 + preload 内存 token + 直连 HTTP/WS；zcode lease+MessagePort / Pi-meme cookie / im2.0 教训对照 |
+| [MCP 座](mcp-seat.md) | Host 管配置 + pi 管连接；实施期两坑（SDK 须自调 bindExtensions 才有 session_start / tools 显式列表过滤 direct MCP 工具）与 annotations 不可得验证 |

@@ -672,6 +672,73 @@ export interface ProvidersCustomSyncResult {
   synced: number
 }
 
+// ———— MCP 座（阶段 4a：Host 管理的 MCP 客户端配置）————
+
+/**
+ * MCP 工具的暴露档（pi McpExposure 的协议镜像，零运行时依赖手写）：
+ * direct = 工具直接声明给模型（Cogent 默认档）；deferred/codemode 依赖
+ * tool_search/codemode 工具（Cogent 未装载，仅供手改配置的忠实显示）；
+ * hidden = 注册但不可达。
+ */
+export type McpExposure = 'direct' | 'deferred' | 'codemode' | 'hidden'
+
+/**
+ * MCP server 定义（mcp.sync 的载荷项）：pi-mcp `mcpServers` 通用形状的
+ * 协议展开 —— stdio/http 判别联合 + name 显式字段（盘上文件以 name 为键，
+ * 协议里展开成数组项便于逐项校验）。存盘时由引擎折回通用形状
+ * （与生态互拷，见 docs/计划/MCP座实现.md §2）。
+ */
+export type McpServerDef = { name: string } & (
+  | {
+      type: 'stdio'
+      command: string
+      args?: string[]
+      env?: Record<string, string>
+      cwd?: string
+    }
+  | {
+      type: 'http'
+      url: string
+      headers?: Record<string, string>
+    }
+) & {
+    description?: string
+    /** 缺省 true */
+    enabled?: boolean
+    /** 缺省 direct（UI 表单恒显式下发；盘上手改缺省按 pi 的 codemode 显示） */
+    exposure?: McpExposure
+    /** 每请求超时秒数（缺省 60） */
+    timeout?: number
+  }
+
+/** mcp.list 的 server 摘要（设置页卡片行） */
+export interface McpServerSummary {
+  name: string
+  type: 'stdio' | 'http'
+  /** 一行展示：stdio = command + args；http = url */
+  detail: string
+  description?: string
+  enabled: boolean
+  exposure: McpExposure
+}
+
+export interface McpListResult {
+  servers: McpServerSummary[]
+  /**
+   * 配置文件诊断（损坏 JSON / 非法条目 / 项目级越权条目）：不炸列表，
+   * 逐条列出供 UI 呈现 —— 配置文件是外部输入（约定.md §1.1 持久化读取）
+   */
+  errors: string[]
+}
+
+/** 全量同步 user 级定义（替换语义，与 providers.custom.sync 同构） */
+export interface McpSyncParams {
+  servers: McpServerDef[]
+}
+export interface McpSyncResult {
+  synced: number
+}
+
 export interface InspectEntriesParams {
   sessionId: string
 }
@@ -789,6 +856,10 @@ export interface ProtocolMethods {
   'credentials.list': { params: Record<string, never>; result: CredentialsListResult }
   'models.list': { params: Record<string, never>; result: ModelsListResult }
   'providers.custom.sync': { params: ProvidersCustomSyncParams; result: ProvidersCustomSyncResult }
+  /** MCP 座：user 级 server 摘要 + 配置诊断（阶段 4a） */
+  'mcp.list': { params: Record<string, never>; result: McpListResult }
+  /** MCP 座：全量写 user 级定义（项目级 override 文件不经协议写，只能手改） */
+  'mcp.sync': { params: McpSyncParams; result: McpSyncResult }
   /** 控制台：拉会话的观测条目摘要（时间线数据源；ring 上限内全量，超出只留最近） */
   'inspect.entries': { params: InspectEntriesParams; result: InspectEntriesResult }
   /** 控制台：按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词…） */

@@ -59,10 +59,16 @@ import type {
 import type { CredentialRegistry } from './credentials'
 import { CustomProviderRegistry } from './custom-providers'
 import { SessionInspector } from './inspector'
+import { McpConfigStore } from './mcp-config'
 import type { ProjectRegistry } from './project'
 import type { ApprovalRegistry } from './approvals'
 import type { CogentKernel, KernelNotifier } from '../kernel/contract'
-import { type CompactionBarSource, createPiSession, readPiTranscript } from '../kernel/pi-session-factory'
+import {
+  type CompactionBarSource,
+  createPiSession,
+  PI_AGENT_DIR_NAME,
+  readPiTranscript
+} from '../kernel/pi-session-factory'
 import { importLegacyTranscript } from '../kernel/legacy-import'
 // 上下文明细的转录整形（明细区数据源）：convertToLlmMessages 处理
 // compactionSummary 等自定义角色后与 pi 预算看到的载荷同源同形
@@ -450,6 +456,8 @@ export class SessionManager implements CogentKernel {
   private projects: ProjectRegistry
   /** 审批规则表（构造注入；审批 ask 判定前查「始终允许此工作区」，D3） */
   private approvals: ApprovalRegistry
+  /** MCP 客户端配置 store（构造注入；pi 会话装配时取快照，阶段 4a） */
+  private mcpConfig: McpConfigStore
   /** pi 运行时（目录 + 鉴权 + 请求路由；构造注入，index.ts 建于启动期） */
   private modelRuntime: ModelRuntime
   /** Cogent Host 根（pi 域 <root>/pi 的父目录，装配 pi 会话树用） */
@@ -461,12 +469,14 @@ export class SessionManager implements CogentKernel {
     private notify: Notify,
     projects: ProjectRegistry,
     approvals: ApprovalRegistry,
+    mcpConfig: McpConfigStore,
     private inspectStore: InspectStore,
     modelRuntime: ModelRuntime,
     hostRoot: string
   ) {
     this.projects = projects
     this.approvals = approvals
+    this.mcpConfig = mcpConfig
     this.modelRuntime = modelRuntime
     this.hostRoot = hostRoot
     // pi 内置全部 provider 的模型目录（UI 下拉 + submit 模型解析仍走它）；
@@ -1193,6 +1203,13 @@ export class SessionManager implements CogentKernel {
   private async buildPiSession(session: Session): Promise<AgentSession> {
     const sessionId = session.summary.id
     const boundRoots = this.workspaceRoots(session)
+    // MCP 快照（Pi-meme 快照语义）：pi 内核装配时定格 user+project 合并结果，
+    // 之后改配置不影响本会话（新会话生效）。诊断（项目级越权条目等）不拦装配
+    // —— 坏条目已在快照里剔除，MCP 是增益面，stderr 留痕即可
+    const mcpSnapshot = this.mcpConfig.snapshot(boundRoots[0] ?? homedir())
+    if (mcpSnapshot.errors.length > 0) {
+      process.stderr.write(`[host] MCP 配置诊断（会话 ${sessionId}）: ${mcpSnapshot.errors.join('；')}\n`)
+    }
     const { session: pi, piSessionManager, createdNew } = await createPiSession({
       // pi 的 cwd = 工作区主根（无绑定时主目录兜底，同 toolRoots 语义）：
       // 项目发现（.gitignore/AGENTS.md）与会话目录编码都锚在它上；
@@ -1209,7 +1226,13 @@ export class SessionManager implements CogentKernel {
           this.decideApproval(session, toolName, args, signal)
       },
       onEvent: (event) => this.translateEvent(session, event),
-      observe: (agent) => this.attachInspector(agent, session)
+      observe: (agent) => this.attachInspector(agent, session),
+      // MCP 座（4a）：server 日志落 pi 域（与 fd/rg 同目录族），写回通道见 store
+      mcp: {
+        snapshot: mcpSnapshot,
+        logPath: join(this.hostRoot, PI_AGENT_DIR_NAME, 'mcp.log'),
+        updateConfig: (entry, patch) => this.mcpConfig.applyPatch(entry, patch)
+      }
     })
 
     // v1 旧转录一次性导入（只在 pi 树是新建时 —— 已有 JSONL 说明早前导入过，

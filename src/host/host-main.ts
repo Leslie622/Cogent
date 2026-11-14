@@ -39,6 +39,10 @@ import {
   type CustomProviderDef,
   type InitializeParams,
   type InitializeResult,
+  type McpExposure,
+  type McpServerDef,
+  type McpSyncParams,
+  type McpSyncResult,
   type PermissionMode,
   type ProtocolEvents,
   type ProviderOverrideDef,
@@ -58,6 +62,7 @@ import { CredentialRegistry } from './runtime/credentials'
 import { SessionManager } from './runtime/session'
 import { ProjectRegistry } from './runtime/project'
 import { ApprovalRegistry } from './runtime/approvals'
+import { McpConfigStore } from './runtime/mcp-config'
 import { InspectStore, JsonStorageDriver } from './storage'
 import { startHttpRpc } from './http/server'
 import { createCapabilityStore, createRootSecret } from './http/auth'
@@ -109,12 +114,15 @@ async function main(): Promise<void> {
   const projects = new ProjectRegistry(storage)
   // 审批规则表（~/.cogent/approvals.json 单文件，构造即恢复；「始终允许此工作区」）
   const approvals = new ApprovalRegistry(STORAGE_ROOT)
+  // MCP 客户端配置（~/.cogent/mcp.json 用户级定义 + 项目级 override 合并，阶段 4a）
+  const mcpConfig = new McpConfigStore(STORAGE_ROOT)
   const sessions = new SessionManager(
     credentials,
     storage,
     (method, params) => notify(method, params),
     projects,
     approvals,
+    mcpConfig,
     inspectStore,
     modelRuntime,
     STORAGE_ROOT
@@ -517,6 +525,50 @@ async function main(): Promise<void> {
     return { synced: sessions.syncCustomProviders(defs, overrides) }
   }
 
+  /** mcp.sync 入口校验：每项按 stdio/http 判别联合逐字段收窄（stdio 帧载荷是
+      外部 JSON，协议类型只是声明）。名字字符规则/命名空间撞名在 store 的
+      pi-mcp 校验器里跑（单一权威，边界只管形状）。 */
+  function handleMcpSync(params: unknown): McpSyncResult {
+    const p = params as Partial<McpSyncParams>
+    const EXPOSURES = ['direct', 'deferred', 'codemode', 'hidden'] as const satisfies readonly McpExposure[]
+    const isStringRecord = (value: unknown): value is Record<string, string> =>
+      typeof value === 'object' && value !== null && !Array.isArray(value) &&
+      Object.values(value).every((s) => typeof s === 'string')
+    const isDef = (d: unknown): d is McpServerDef => {
+      if (typeof d !== 'object' || d === null) return false
+      const m = d as Record<string, unknown>
+      if (typeof m.name !== 'string' || m.name.length === 0) return false
+      // 判别字段先收窄，两类各自必填一组（command / url）
+      if (m.type === 'stdio') {
+        if (typeof m.command !== 'string' || m.command.length === 0) return false
+      } else if (m.type === 'http') {
+        if (typeof m.url !== 'string' || m.url.length === 0) return false
+      } else {
+        return false
+      }
+      if (m.args !== undefined && (!Array.isArray(m.args) || !m.args.every((a) => typeof a === 'string'))) return false
+      if (m.env !== undefined && !isStringRecord(m.env)) return false
+      if (m.cwd !== undefined && typeof m.cwd !== 'string') return false
+      if (m.headers !== undefined && !isStringRecord(m.headers)) return false
+      if (m.description !== undefined && typeof m.description !== 'string') return false
+      if (m.enabled !== undefined && typeof m.enabled !== 'boolean') return false
+      if (m.exposure !== undefined && (typeof m.exposure !== 'string' || !(EXPOSURES as readonly string[]).includes(m.exposure))) {
+        return false
+      }
+      if (m.timeout !== undefined && (typeof m.timeout !== 'number' || !Number.isFinite(m.timeout) || m.timeout <= 0)) {
+        return false
+      }
+      return true
+    }
+    if (!Array.isArray(p.servers) || !p.servers.every(isDef)) {
+      throw new ProtocolError(
+        RpcErrorCode.InvalidParams,
+        'mcp.sync 需要 servers: McpServerDef[]（stdio 需 command、http 需 url；字段值域见协议）'
+      )
+    }
+    return { synced: mcpConfig.sync(p.servers) }
+  }
+
   /**
    * 方法注册表：method 名 → handler。
    * handler 内部信任协议类型（边界校验已在入口完成），业务异常直接 throw，
@@ -550,6 +602,9 @@ async function main(): Promise<void> {
     ['credentials.list', handleCredentialsList],
     ['models.list', () => sessions.listModels()],
     ['providers.custom.sync', handleProvidersCustomSync],
+    // MCP 座（4a）：配置摘要/诊断只读；全量写 user 级定义（项目级不经协议写）
+    ['mcp.list', () => mcpConfig.list()],
+    ['mcp.sync', handleMcpSync],
     ['inspect.entries', handleInspectEntries],
     ['inspect.entry', handleInspectEntry],
     // 票据签发（D3）：main 经 stdio 发起（血缘全权）；HTTP 门侧由档位表

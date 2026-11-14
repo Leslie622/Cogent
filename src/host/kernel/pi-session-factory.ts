@@ -24,17 +24,21 @@
 import { join, resolve } from 'node:path'
 import {
   createAgentSession,
+  createMcpExtension,
   DefaultResourceLoader,
   SessionManager as PiSessionManager,
   SettingsManager,
   type AgentSession,
   type AgentSessionEvent,
+  type LoadedMcpConfig,
+  type McpServerEntry,
   type ModelRuntime
 } from '@earendil-works/pi-coding-agent'
 import type { Agent, AgentMessage, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import type { Usage } from '@earendil-works/pi-ai'
 import { adaptCompactionToWindow } from '../runtime/compaction'
-import { COGENT_TOOL_NAMES } from '../runtime/tool-meta'
+import type { McpSettingsPatch } from '../runtime/mcp-config'
+import { COGENT_TOOL_NAMES, MCP_TOOL_ALLOWLIST } from '../runtime/tool-meta'
 
 /**
  * 投影源里的压缩条：pi 的 CompactionSummaryMessage 不带 usage
@@ -128,6 +132,17 @@ export interface PiSessionOptions {
   onEvent: (event: AgentSessionEvent) => void
   /** 观测钩装配（inspector 的惰性解析由调用方闭包）—— 链式包裹，见函数体注释 */
   observe: (agent: Agent) => void
+  /**
+   * MCP 座（阶段 4a）：装配时定格的合并快照（快照语义 —— 会话创建时定格，
+   * 之后改配置不影响在跑会话）+ server 日志路径 + `/mcp` 设置写回通道
+   * （headless 不可达，保留 createMcpExtension 契约完整）。
+   * 缺省 = 不装 MCP 扩展（零配置会话不付连接管理成本）。
+   */
+  mcp?: {
+    snapshot: LoadedMcpConfig
+    logPath: string
+    updateConfig: (entry: McpServerEntry, patch: McpSettingsPatch) => void
+  }
 }
 
 /** 装配一个 Cogent 会话的 pi 内核。createdNew = 新建会话树（false = 恢复已有 JSONL） */
@@ -160,6 +175,8 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     return window === undefined ? resolved : adaptCompactionToWindow(resolved, window)
   }
 
+  // MCP 扩展装配材料（缺省 = 不装）：const 捕获让闭包内的窄化稳定
+  const mcp = opts.mcp
   const resourceLoader = new DefaultResourceLoader({
     cwd: opts.cwd,
     agentDir,
@@ -168,6 +185,20 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     // 权限模式通告：每轮按活 mode 设 cogent_permission section
     // （四档全设正向文案）。pi 对 sections 的 diff 保证树内只留净变更史
     extensionFactories: [
+      // MCP 座（4a）：pi 官方工厂 + Host 配置注入（D7 不造轮子）。loadConfig
+      // 返回装配期快照（Pi-meme 快照语义）；MCP 工具经 pi 工具管线注册
+      // （"Every call runs through pi's tool pipeline" —— mcp/index.ts:20-21），
+      // 因此下方链式包裹的 beforeToolCall 审批对 mcp__* 同样生效，零新增链路。
+      // 连接后台跑；direct 工具的 server 首请求最多等 startupWaitMs（默认 10s）。
+      ...(mcp !== undefined
+        ? [
+            createMcpExtension({
+              loadConfig: () => mcp.snapshot,
+              logPath: mcp.logPath,
+              updateConfig: mcp.updateConfig
+            })
+          ]
+        : []),
       (pi) => {
         pi.on('before_agent_start', (event) => {
           const text = opts.permissionSection?.()
@@ -191,9 +222,21 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     thinkingLevel: 'off',
     // 工具集：pi 内置 8 选 7，shell 项按平台（win=powershell，见
     // tool-meta.ts 的 COGENT_TOOL_NAMES）。显式 allowlist 替换 pi 默认
-    // （read/bash/edit/write）—— Cogent 的只读三件（grep/find/ls）也进集
-    tools: COGENT_TOOL_NAMES
+    // （read/bash/edit/write）—— Cogent 的只读三件（grep/find/ls）也进集；
+    // MCP 工具另按 MCP_TOOL_ALLOWLIST 放行（tools 列表会过滤扩展工具，
+    // 不列名则 direct 档 mcp__ 工具注册但不声明给模型，见 tool-meta 注释）
+    tools: [...COGENT_TOOL_NAMES, ...MCP_TOOL_ALLOWLIST]
   })
+
+  // 扩展生命周期绑定（SDK 消费者必做的一步，Pi-meme session.ts:917 同款）：
+  // CLI 各 mode（print/interactive/rpc-mode）在 createAgentSession 后调
+  // bindExtensions —— 它向扩展发 session_start（MCP 扩展在此装载配置并
+  // 启动连接）并应用 UI/命令绑定。不调它则挂 session_start 的扩展全部
+  // 不初始化（4a-1 实测：MCP 工具零装载且无任何诊断）。mode 'rpc' = 无
+  // TUI 宿主；uiContext 缺省 = 扩展的 ui.notify 等走 headless 空实现。
+  // 已知边界：pi 的 dispose() 不发 session_shutdown —— MCP 连接/子进程
+  // 活到 Host 进程退出（与 pi print-mode 同语义，session 删除不回收）。
+  await session.bindExtensions({ mode: 'rpc' })
 
   // 审批链（D8）：包住 pi 的 beforeToolCall（构造时已被 AgentSession 装成扩展
   // 分发器，agent-session.ts:714）。裁决放行时委托原链 —— 未来任何挂 tool_call

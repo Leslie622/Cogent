@@ -42,6 +42,20 @@ export const COGENT_TOOL_NAMES: string[] = [
   'ls'
 ]
 
+/**
+ * MCP 工具的 allowlist 追加项（阶段 4a）：pi 的 `tools` 显式列表会过滤
+ * 扩展注册的工具 —— 未列名的 direct MCP 工具注册但不激活（agent-session.js
+ * `_isActivatable`：allowlist 不匹配的 mcp__ 名只有非 direct 档才可激活）。
+ * `mcp__*` 通配放行全部 server 工具；资源三件（pi extensions/mcp/resources
+ * 按带资源 server 的 exposure 注册）单独列名 —— 它们不带 mcp__ 前缀。
+ */
+export const MCP_TOOL_ALLOWLIST: string[] = [
+  'mcp__*',
+  'list_mcp_resources',
+  'list_mcp_resource_templates',
+  'read_mcp_resource'
+]
+
 /** JSON.stringify 的摘要素写：参数对象 → `k1, k2=v2` 一行（值截断防长路径刷屏） */
 export function summarizeArgs(name: string, args: unknown): string {
   if (typeof args !== 'object' || args === null) return `${name}()`
@@ -65,12 +79,27 @@ const TOOL_METAS: Record<string, { kind: ToolKind; summarize: (args: unknown) =>
   edit: { kind: 'edit', summarize: (a) => summarizeArgs('edit', a) },
   bash: { kind: 'exec', summarize: (a) => summarizeArgs('bash', a) },
   powershell: { kind: 'exec', summarize: (a) => summarizeArgs('powershell', a) },
+  // MCP 资源三件（pi extensions/mcp/resources.ts，带资源的 server 连上时按其
+  // exposure 注册）：只读拉取 server 资源，read 档放行
+  list_mcp_resources: { kind: 'read', summarize: (a) => summarizeArgs('list_mcp_resources', a) },
+  list_mcp_resource_templates: { kind: 'read', summarize: (a) => summarizeArgs('list_mcp_resource_templates', a) },
+  read_mcp_resource: { kind: 'read', summarize: (a) => summarizeArgs('read_mcp_resource', a) },
   // 历史名（v1 旧转录）：glob，kind 同只读
   glob: { kind: 'read', summarize: (a) => summarizeArgs('glob', a) }
 }
 
-/** 工具名 → 元数据；未知名字（盘上旧转录的历史名）返回 undefined，调用方按只读兜底 */
+/** 工具名 → 元数据；未知名字（盘上旧转录的历史名）返回 undefined，调用方按只读兜底。
+    MCP 工具（mcp__<server>__<tool>，阶段 4a）不在静态表 —— 名字运行时才知道，
+    前缀判别后投影 exec 档（D8 审批链：默认 ask，autonomous 下仍逐次询问 ——
+    未经用户配置的第三方工具保守起步，见 docs/计划/MCP座实现.md §3.3）。
+    annotations 分级（readOnlyHint→低风险，zcode 手法）实施时验证结果：pi 的
+    beforeToolCall 载荷（pi-agent-core types.ts BeforeToolCallContext）只有
+    assistantMessage/toolCall/args/context，不带工具定义 —— 拿不到 annotations，
+    首版统一 exec 档，降级映射列后续（工具注册表查询钩子）。 */
 export function toolMeta(name: string): { kind: ToolKind; summarize: (args: unknown) => string } | undefined {
+  if (name.startsWith('mcp__')) {
+    return { kind: 'exec', summarize: (a) => summarizeArgs(name, a) }
+  }
   return TOOL_METAS[name]
 }
 
