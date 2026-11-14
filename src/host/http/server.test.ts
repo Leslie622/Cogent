@@ -5,6 +5,7 @@
  * auth.test.ts 已钉，此处只验接线）。
  */
 import { afterEach, describe, expect, it } from 'vitest'
+import { WebSocket } from 'ws'
 import { createCapabilityStore, createRootSecret, signToken } from './auth'
 import { startHttpRpc, type FrameHandler, type HttpRpcServer } from './server'
 import type { RpcResponse } from '../../protocol'
@@ -216,5 +217,90 @@ describe('传输语义（2a 存量）', () => {
       body: '{}'
     }).catch((e: Error) => e)
     expect(res instanceof Error || res.status >= 500).toBe(true)
+  })
+})
+
+// ———— WS 门（2c）：upgrade 鉴权 / 双向帧 / 事件广播 / drain close ————
+
+const sockets: WebSocket[] = []
+
+afterEach(() => {
+  for (const ws of sockets.splice(0)) ws.close()
+})
+
+function wsOpen(url: string): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url)
+    sockets.push(ws)
+    ws.on('open', () => resolve(ws))
+    ws.on('error', (err: Error) => reject(err))
+  })
+}
+
+function wsNextMessage(ws: WebSocket): Promise<string> {
+  // ws 文本帧 data 恒为 Buffer（node ws 默认不分片）
+  return new Promise((resolve) => ws.once('message', (data) => resolve((data as Buffer).toString())))
+}
+
+describe('WS 门（2c）', () => {
+  it('握手鉴权：无 token / 伪造 token 的 upgrade 被拒（HTTP 401）', async () => {
+    const { base } = await start()
+    const noToken = await wsOpen(`${base}/ws`).then(
+      () => { throw new Error('should not open') },
+      (e: Error) => e.message
+    )
+    expect(noToken).toContain('401')
+    const forged = await wsOpen(`${base}/ws?token=forged`).then(
+      () => { throw new Error('should not open') },
+      (e: Error) => e.message
+    )
+    expect(forged).toContain('401')
+  })
+
+  it('非 /ws 路径的 upgrade 请求被丢弃', async () => {
+    const { base, token } = await start()
+    const rejected = await wsOpen(`${base}/not-ws?token=${token('readonly')}`).then(
+      () => { throw new Error('should not open') },
+      (e: Error) => e.message
+    )
+    expect(rejected).toBeTruthy()
+  })
+
+  it('上行请求帧走同一 handleFrame，响应帧沿同连接回', async () => {
+    const { base, token } = await start()
+    const ws = await wsOpen(`${base}/ws?token=${token('readonly')}`)
+    const reply = wsNextMessage(ws)
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'session.list', params: {} }))
+    expect(JSON.parse(await reply)).toEqual({ jsonrpc: '2.0', id: 5, result: { echo: 'session.list' } })
+  })
+
+  it('档位强制与 /rpc 同口径：readonly 经 WS 调写方法回 -32003 帧（防换门绕过）', async () => {
+    const { base, token } = await start()
+    const ws = await wsOpen(`${base}/ws?token=${token('readonly')}`)
+    const reply = wsNextMessage(ws)
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'session.create', params: {} }))
+    const frame = JSON.parse(await reply) as RpcResponse
+    expect(frame.id).toBe(6)
+    expect(frame.error?.code).toBe(-32_003)
+  })
+
+  it('broadcastEvent：事件帧推给所有在线连接', async () => {
+    const { base, server, token } = await start()
+    const ws1 = await wsOpen(`${base}/ws?token=${token('readonly')}`)
+    const ws2 = await wsOpen(`${base}/ws?token=${token('write')}`)
+    const p1 = wsNextMessage(ws1)
+    const p2 = wsNextMessage(ws2)
+    server.broadcastEvent({ jsonrpc: '2.0', method: 'run.started', params: { sessionId: 's1' } })
+    const expected = { jsonrpc: '2.0', method: 'run.started', params: { sessionId: 's1' } }
+    expect(JSON.parse(await p1)).toEqual(expected)
+    expect(JSON.parse(await p2)).toEqual(expected)
+  })
+
+  it('close 先排空：在线连接收到 close(1001) 而非硬断', async () => {
+    const { base, server, token } = await start()
+    const ws = await wsOpen(`${base}/ws?token=${token('readonly')}`)
+    const closed = new Promise<number>((resolve) => ws.on('close', (code) => resolve(code)))
+    await server.close()
+    expect(await closed).toBe(1001)
   })
 })

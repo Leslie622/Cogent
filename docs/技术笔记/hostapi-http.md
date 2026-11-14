@@ -1,9 +1,10 @@
 # HostApi HTTP 通道 —— 同一注册表挂上第二扇门
 
-> 阶段 2a（2026-11-15）：`POST /rpc` 骨架；阶段 2b：票据鉴权（D3）。
-> 代码落点：`src/host/http/server.ts`（传输层）、`src/host/http/auth.ts`
-> （票据 store + rootSecret + token 签验）、`src/host/host-main.ts` 的
-> `handleFrame()`（共用分发入口）与 `capability.issue` handler。
+> 阶段 2 全程（2026-11-15）：2a `POST /rpc` 骨架 → 2b 票据鉴权（D3）→
+> 2b-2 main 集成 → 2c WS 事件流 + 远程模式。代码落点：`src/host/http/server.ts`
+> （传输层）、`src/host/http/auth.ts`（票据 store + rootSecret + token
+> 签验）、`src/host/host-main.ts` 的 `handleFrame()`（共用分发入口）、
+> `capability.issue` handler 与 notify 双写。
 > 模块现状见 [../模块/HTTP通道.md](../模块/HTTP通道.md)。
 
 ## 1. 问题
@@ -61,24 +62,52 @@ pi 的 rpc 帧本身就是可序列化 JSON，换管道不改帧。
   无状态 HMAC 做不到"消费即焚"，必须 store（zcode hostCapability 同构
   + scope 维度）；长期 token 数量不定、生命周期 = Host 进程，用 HMAC
   签名零存储，重启自然全失效 —— 两种生命周期两种机制，不混用。
+- **WS 用 ws 官方 noServer 模式，不用 @hono/node-ws**（2c）：zcode 的
+  `createNodeWebSocket({ app })` 来自 @hono/node-ws，但其 peer 锁
+  @hono/node-server@^1（本项目用 2.x，npm view 证实最新版仍锁 1.x）。
+  @hono/node-ws 的价值是把 upgrade 织进 Hono 路由（多 WS 端点 + 中间件
+  链），Cogent 单端点用不上 —— `server.on('upgrade')` + `handleUpgrade`
+  是 ws 文档的标准路径，鉴权直接调与 HTTP 中间件同一个 `verifyToken`
+  （同口径的实质是同一函数，不是抄两份）。
+- **档位判定单点 `scopeAllows`**（2c 施工中堵住的洞）：初版 WS message
+  直连 handleFrame，绕开了 /rpc 的 METHOD_MIN_SCOPE —— readonly token
+  可以经 WS 调写方法。修法是把档位判定提成纯函数供两门共用；WS 无 HTTP
+  状态码，越档回 JSON-RPC server-error 帧（-32003，-32000~-32099 标准
+  区间）。教训：**"同一注册表"只保证分发唯一，不自动保证鉴权唯一 ——
+  每新增一扇门都要过一遍门级守卫清单（鉴权/档位/体积上限）**。
+- **WS 关闭 drain**：HTTP `server.close()` 不会收敛已 upgrade 的连接
+  （zcode WEBSOCKET_DRAIN_TIMEOUT 同款坑）—— 先 `close(1001)` 给正常
+  客户端排空窗口（250ms）再 terminate 兜底，`HttpRpcServer.close()`
+  按此实现并被单测钉住（客户端收到 1001 而非硬断）。
+- **query token 的标准依据**：浏览器 `WebSocket()` 构造器只收 url +
+  protocols，无自定义头能力（[MDN WebSockets API](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)），
+  token 走 query 或 `Sec-WebSocket-Protocol` 子协议字段是公认 workaround
+  （[MDN Sec-WebSocket-Protocol](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Sec-WebSocket-Protocol)）；
+  zcode 生产同款（Bearer+query 双轨 + timingSafeEqual）。Cogent 选 query
+  双轨，子协议方案留作替代（D2 已记）。
+- **断线补偿不预建**：Pi-meme 的游标事件流（EventCursor + resyncRequired，
+  `reference/Pi-meme/packages/contracts/src/app-host.ts:119-147`）是成熟
+  形态，但 Cogent 阶段 2 的消费者是脚本/调试 UI，重连拉快照
+  （session.messages）已够 —— 游标机制等真实远程 UI 实用化（事件量大到
+  快照不够）再立项，避免为不存在的负载建机制。
 
 ## 5. 在 Cogent 的落点
 
-- `src/host/http/server.ts`：`startHttpRpc(handleFrame, { port, rootSecret,
-  store })`；鉴权中间件（除 `/auth/exchange` 外必须 token）+ `METHOD_MIN_SCOPE`
-  方法档位表（28 方法 → readonly/write/admin 最低档，`capability.issue`
-  = admin）在 `/rpc` handler 内 403 强制；`FrameHandler` 类型（`RpcResponse
-  | null`，null 表示非请求帧，stdio 丢弃 / HTTP 转 400）；
+- `src/host/http/server.ts`：`startHttpRpc(handleFrame, { port, hostname?,
+  rootSecret, store })` 返回 `{ port, broadcastEvent, close }`；HTTP 鉴权
+  中间件（Bearer+query 双轨）+ `scopeAllows` 档位单点（/rpc 403、/ws
+  -32003 帧）+ WS upgrade（verifyToken 同口径）+ drain close；
 - `src/host/http/auth.ts`：`createCapabilityStore`（TTL 30s 消费即焚，
   时钟/随机源可注入）、`createRootSecret`、`signToken`/`verifyToken`
   （v1.payload.HMAC，timingSafeEqual 恒时比较）；
-- `src/host/host-main.ts`：`capability.issue` handler（scope 显式校验
-  fail-fast）；`COGENT_HTTP_RPC=1` + `COGENT_HTTP_PORT`（畸形值拒启），
-  实际地址打 stderr；
-- 测试三层：`auth.test.ts`（10 用例：即焚/重放/TTL/篡改/跨 secret）、
-  `server.test.ts`（14 用例：401/403/双轨/exchange/传输语义）、
-  `tests/integration/http-auth.test.ts`（真 Host 构建产物全链 S1–S9，
-  含 Host 重启后旧 token 失效的跨代断言）；
-- curl 冒烟实录（2b）：exchange 两档 → Bearer 读 `session.list`（200）→
-  readonly 越档 `session.create`（403）→ write 真建会话（200 拿 id）→
-  无 token（401）→ 票据重放（401）。
+- `src/host/host-main.ts`：`capability.issue` handler；notify 双写
+  （stdout + `broadcastEvent?.(frame)`）；`COGENT_HTTP_RPC` / `PORT` /
+  `HOST`（非 loopback 打警告行）；
+- 测试三层：`auth.test.ts`（10 用例）、`server.test.ts`（20 用例：HTTP
+  鉴权/传输 + WS 握手拒连/双向帧/-32003 防绕过/广播/1001 drain）、
+  `tests/integration/http-auth.test.ts`（真 Host 构建产物 S1–S11：票据
+  全链 + 跨代失效 + WS 请求 + mock LLM 真事件流端到端）；
+- 冒烟实录（2b/2c）：exchange 两档 → Bearer 读（200）→ readonly 越档
+  （HTTP 403 / WS -32003）→ write 真建会话（200）→ 无 token / 重放
+  （401）；远程模式 `COGENT_HTTP_HOST=0.0.0.0` → NON-LOOPBACK 警告行 +
+  全链仍通。

@@ -132,10 +132,11 @@ async function main(): Promise<void> {
     else await modelRuntime.removeRuntimeApiKey(providerId)
   }
 
-  /** 事件发送：service → 宿主（notification 帧） */
+  /** 事件发送：service → 宿主（stdio notification 帧）+ WS 消费者（2c 起双写） */
   function notify<E extends keyof ProtocolEvents>(method: E, params: ProtocolEvents[E]): void {
     const frame: RpcEvent = { jsonrpc: '2.0', method, params }
     process.stdout.write(JSON.stringify(frame) + '\n')
+    broadcastEvent?.(frame)
   }
 
   /** 响应发送 */
@@ -150,6 +151,9 @@ async function main(): Promise<void> {
   // HTTP 门实际端口（开门后回填；handleInitialize 闭包读到它时必已赋值 ——
   // HTTP 启动的 await 在主循环注册前完成，而 initialize 帧只能来自主循环）
   let httpPort: number | undefined
+  // WS 事件广播器（2c）：开门后回填。事件帧出口从 stdio 单出口变双出口
+  //（stdout → main 不变 + WS → 在线消费者），同一帧同一时刻双写
+  let broadcastEvent: ((frame: RpcEvent) => void) | null = null
 
   /**
    * 握手：宿主确认链路可用，服务上报运行时信息（宿主据此做 Node 版本守卫）。
@@ -606,10 +610,9 @@ async function main(): Promise<void> {
     }
   }
 
-  // ———— HTTP 门（2a 骨架 + 2b 鉴权）：同一注册表，开门即要 token（D3）———
-  // 默认不开（D2：loopback 且按需）。rootSecret 启动新生成、不出进程。
-  // 实际监听地址打到 stderr —— 冒烟脚本与未来的 main 都从这里拿端口
-  // （main 集成批次再换成协议握手字段）。
+  // ———— HTTP 门（2a 骨架 + 2b 鉴权 + 2c WS/远程模式）：同一注册表 ————
+  // 默认不开（D2：loopback 且按需），开门即要 token。rootSecret 启动新生成、
+  // 不出进程。实际监听地址打到 stderr（冒烟脚本与 main 双通道之一）。
   if (process.env.COGENT_HTTP_RPC === '1') {
     const portEnv = process.env.COGENT_HTTP_PORT
     const port = portEnv === undefined ? 0 : Number(portEnv)
@@ -617,13 +620,25 @@ async function main(): Promise<void> {
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
       throw new Error(`COGENT_HTTP_PORT 非法: ${portEnv}`)
     }
+    // 远程模式（2c）：COGENT_HTTP_HOST 显式设置才放开监听（默认 loopback
+    // fail-closed）。恒鉴权仍在 —— 非 loopback 下每一请求都过 token（zcode
+    // 对非 loopback 直接 throw 是因为它有匿名档，本项目无匿名档）
+    const hostname = process.env.COGENT_HTTP_HOST ?? '127.0.0.1'
     const http = await startHttpRpc(handleFrame, {
       port,
+      hostname,
       rootSecret: createRootSecret(),
       store: capabilityStore
     })
     httpPort = http.port
-    process.stderr.write(`[host] http rpc listening on 127.0.0.1:${http.port}\n`)
+    broadcastEvent = http.broadcastEvent
+    if (hostname !== '127.0.0.1' && hostname !== '::1' && hostname !== 'localhost') {
+      process.stderr.write(
+        `[host] http rpc NON-LOOPBACK listening on ${hostname}:${http.port} —— 远程模式，全部请求需有效 token\n`
+      )
+    } else {
+      process.stderr.write(`[host] http rpc listening on ${hostname}:${http.port}\n`)
+    }
   }
 
   // ———— 主循环：一行一帧 ————

@@ -1,28 +1,38 @@
 /**
- * HTTP 门（阶段 2a 落骨架、2b 落鉴权 D3）：POST /rpc 收 JSON-RPC 帧文本回
- * 响应帧；POST /auth/exchange 一次性票据换长期 token。
+ * HTTP 门（2a 骨架 / 2b 鉴权 / 2c WS + 远程模式）：
+ * - POST /rpc：JSON-RPC 帧文本进、响应帧出（curl/脚本）；
+ * - POST /auth/exchange：一次性票据换长期 token；
+ * - GET /ws（upgrade）：双向帧 —— 上行请求帧走同一 handleFrame，下行事件
+ *   帧经 broadcastEvent 推送（消费者只保持一条 WS，D2「WS 为主」）。
  *
- * 架构位置：传输层薄壳 —— 方法注册表在 host-main（handlers Map），本模块经
- * FrameHandler 回调复用同一份，保证 stdio 与 HTTP 两个门走完全相同的
- * 解析/守卫/分发路径（注册表单一）。
+ * 架构位置：传输层薄壳 —— 方法注册表在 host-main（handlers Map），三个门
+ * 共调同一 handleFrame；档位强制（scopeAllows）也是 /rpc 与 /ws 共用一份，
+ * 保证守卫与分发路径唯一（换门不换规则）。
  *
- * 鉴权（2b 起）：开门即鉴权（比 zcode「未配 token 就匿名」更紧一档 ——
- * COGENT_HTTP_RPC=1 的语义就是 scoped token 通道）。双轨取 token：
- * Authorization: Bearer 头（curl/脚本）或 ?token= query（浏览器 WebSocket
- * 不能自定义头，2c 的 WS 握手同口径复用，zcode 同款）；档位强制在 /rpc
- * handler 内做（中间件只管「是不是有效 token」，401/403 分层）。
+ * WS 实现：ws 包官方 noServer 模式（server.on('upgrade') + handleUpgrade）。
+ * zcode 用 @hono/node-ws，但其 peer 锁 @hono/node-server@^1（我们是 2.x）；
+ * 本项目 WS 端点只有一个、不需要 Hono 路由集成，标准 upgrade 路径更直接。
+ * 鉴权与 HTTP 同口径：verifyToken 同一函数；浏览器 WebSocket 不能自定义
+ * Authorization 头（MDN WebSockets API），query token 是标准 workaround。
  *
  * 信任边界（约定.md §1.1「外部世界」行）：请求体与 token 都是不可信输入 ——
- * 畸形帧由 handleFrame 统一转错误帧（与 stdio 同一守卫）；token 验签在
- * auth.ts（恒时比较）；本层只加传输层自己的守卫：单帧体积上限。
+ * 畸形帧由 handleFrame 统一转错误帧；token 验签恒时比较（auth.ts）；本层
+ * 只加传输层守卫：单帧体积上限。
  *
- * 监听地址写死 127.0.0.1（fail-closed，D2）：非 loopback 监听 = 远程模式，
- * 是 2c 的显式决策，这里物理排除。
+ * 监听地址默认 127.0.0.1（fail-closed）；远程模式 = 调用方显式传 hostname
+ * （host-main 经 COGENT_HTTP_HOST env），恒鉴权仍在 —— zcode 非 loopback
+ * throw 的前提是它有匿名档，Cogent 无匿名档，显式配置即显式决策。
  */
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
-import type { RpcResponse, TokenScope } from '../../protocol'
+import type { IncomingMessage } from 'node:http'
+import type { Duplex } from 'node:stream'
+import { WebSocket, WebSocketServer, type RawData } from 'ws'
+import type { RpcEvent, RpcResponse, TokenScope } from '../../protocol'
 import { SCOPE_RANK, signToken, verifyToken, type CapabilityStore } from './auth'
+
+/** ws 文本帧的 data 侧（node ws 默认不分片、非 binary，恒为 Buffer） */
+const frameText = (data: RawData): string => (data as Buffer).toString('utf8')
 
 /**
  * 单帧处理入口 = host-main 的 handleFrame（dispatch 同款）。
@@ -33,6 +43,12 @@ export type FrameHandler = (raw: string) => Promise<RpcResponse | null>
 
 /** 单帧体积上限：协议里最大方法（会话消息/转录）远小于此值 */
 const MAX_BODY_BYTES = 1_000_000
+
+/** WS 关闭排空窗口（zcode server-core 同款语义：先 close(1001) 再 terminate 兜底） */
+const WS_DRAIN_MS = 250
+
+/** 越档错误的 JSON-RPC code：server-error 区间（-32000~-32099）内自选 */
+const SCOPE_FORBIDDEN_CODE = -32_003
 
 /**
  * 方法档位表（D3 三档）：调用该方法所需的最低 scope。
@@ -68,14 +84,22 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   'credentials.set': 'write',
   'credentials.remove': 'write',
   'providers.custom.sync': 'write',
-  // 签发入口：只有 admin（或 stdio 血缘，不过此表）能再签票据 —— 防
-  // readonly/write 持有者经 HTTP 自签提权
+  // 签发入口：只有 admin（或 stdio 血缘，不走此表）能再签票据 —— 防
+  // readonly/write 持有者经任意传输门自签提权
   'capability.issue': 'admin'
+}
+
+/** 档位判定（/rpc 与 /ws 共用）：method 非字符串或不在表内 = 放行交 handleFrame */
+function scopeAllows(scope: TokenScope, method: unknown): boolean {
+  if (typeof method !== 'string' || !(method in METHOD_MIN_SCOPE)) return true
+  return SCOPE_RANK[scope] >= SCOPE_RANK[METHOD_MIN_SCOPE[method]]
 }
 
 export interface HttpRpcOptions {
   /** 省略/0 = 随机端口；实际值经返回值与 stderr 日志上报 */
   port?: number
+  /** 监听地址；缺省 127.0.0.1（fail-closed）。远程模式由调用方显式传入 */
+  hostname?: string
   /** 长期 token 的 HMAC 材料（auth.ts createRootSecret；不出 Host 进程） */
   rootSecret: string
   /** 一次性票据 store（auth.ts createCapabilityStore） */
@@ -85,6 +109,8 @@ export interface HttpRpcOptions {
 export interface HttpRpcServer {
   /** 实际监听端口（传入 0 = 随机分配时的真实值，冒烟脚本从 stderr 日志读） */
   port: number
+  /** 事件广播：把 RpcEvent 帧推给所有在线 WS 连接（属性式签名，允许解构直传 notify） */
+  broadcastEvent: (frame: RpcEvent) => void
   close(): Promise<void>
 }
 
@@ -93,7 +119,8 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
   // Variables 泛型：鉴权中间件写入、/rpc handler 读取的请求级 scope
   const app = new Hono<{ Variables: { scope: TokenScope } }>()
 
-  // /auth/exchange 的凭证就是票据本身，不走 Bearer（否则鸡生蛋）
+  // /auth/exchange 的凭证就是票据本身，不走 Bearer（否则鸡生蛋）；WS 握手是
+  // 原生 HTTP upgrade、不经 Hono fetch，鉴权在 upgrade 事件里同口径另挂
   app.use('*', async (c, next) => {
     if (c.req.path === '/auth/exchange') return next()
     const authorization = c.req.header('authorization')
@@ -120,19 +147,14 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
       return c.json({ error: `frame exceeds ${MAX_BODY_BYTES} bytes` }, 413)
     }
     const raw = await c.req.text()
-    // 档位强制：中间件已保 scope 存在；方法名查表，越档 403（传输层拒绝，
-    // 与帧内 -32601 等应用层错误分开）
     let method: unknown
     try {
       method = (JSON.parse(raw) as { method?: unknown }).method
     } catch {
       method = undefined // 畸形 JSON 放行给 handleFrame，回 ParseError 帧
     }
-    if (typeof method === 'string' && method in METHOD_MIN_SCOPE) {
-      const minScope = METHOD_MIN_SCOPE[method]
-      if (SCOPE_RANK[c.get('scope')] < SCOPE_RANK[minScope]) {
-        return c.json({ error: `method ${method} requires ${minScope} scope` }, 403)
-      }
+    if (!scopeAllows(c.get('scope'), method)) {
+      return c.json({ error: `method ${String(method)} requires ${METHOD_MIN_SCOPE[String(method)]} scope` }, 403)
     }
     const response = await handleFrame(raw)
     // null = 非请求帧：stdio 侧是丢弃，HTTP 必须回话，用 400 区分传输层拒绝
@@ -142,15 +164,85 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
     return c.json(response, 200)
   })
 
+  // ———— WS 门：ws 官方 noServer 模式，单端点不走 Hono 路由 ————
+  const wss = new WebSocketServer({ noServer: true })
+  const clients = new Set<WebSocket>()
+
   return new Promise((resolve) => {
     const server = serve(
-      { fetch: app.fetch, port: options.port ?? 0, hostname: '127.0.0.1' },
+      { fetch: app.fetch, port: options.port ?? 0, hostname: options.hostname ?? '127.0.0.1' },
       (info) => {
         resolve({
           port: info.port,
-          close: () => new Promise((res) => server.close(() => res()))
+          broadcastEvent: (frame) => {
+            const line = JSON.stringify(frame)
+            for (const client of clients) {
+              if (client.readyState === WebSocket.OPEN) client.send(line)
+            }
+          },
+          close: async () => {
+            // HTTP server.close() 不会收敛已 upgrade 的 WS（zcode 同款坑）：
+            // 先 close(1001) 给正常客户端排空窗口，再 terminate 兜底
+            for (const client of clients) client.close(1001, 'server shutting down')
+            await new Promise<void>((r) => setTimeout(r, WS_DRAIN_MS))
+            for (const client of clients) client.terminate()
+            await new Promise<void>((res) => server.close(() => res()))
+          }
         })
       }
     )
+    // ServerType 是 http/https 联合，on('upgrade') 重载解析不出参数类型 ——
+    // 按 node:http 文档签名显式注参（upgrade 事件三参形状固定）
+    server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+      const url = new URL(request.url ?? '/', 'http://localhost')
+      if (url.pathname !== '/ws') {
+        socket.destroy()
+        return
+      }
+      // 鉴权同口径（D2）：与 HTTP 中间件同一 verifyToken；query token 是
+      // 浏览器 WS 的标准传递位（MDN：WebSocket 构造器无自定义头能力）
+      const scope = verifyToken(options.rootSecret, url.searchParams.get('token')?.trim())
+      if (!scope) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
+        socket.destroy()
+        return
+      }
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        clients.add(ws)
+        ws.on('message', (data) => {
+          const raw = frameText(data)
+          let method: unknown
+          let id: unknown = null
+          try {
+            const parsed = JSON.parse(raw) as { method?: unknown; id?: unknown }
+            method = parsed.method
+            id = parsed.id ?? null
+          } catch {
+            method = undefined // 畸形帧放行给 handleFrame，回 ParseError 帧
+          }
+          // 档位强制与 /rpc 同一份判定；WS 无 HTTP 状态码，越档回
+          // JSON-RPC server-error 帧（-32003）
+          if (!scopeAllows(scope, method)) {
+            ws.send(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id,
+                error: {
+                  code: SCOPE_FORBIDDEN_CODE,
+                  message: `method ${String(method)} requires ${METHOD_MIN_SCOPE[String(method)]} scope`
+                }
+              })
+            )
+            return
+          }
+          void handleFrame(raw).then((response) => {
+            if (response) ws.send(JSON.stringify(response))
+          })
+        })
+        // error 后 ws 必发 close，双挂 delete 幂等（防御边界外的清理动作）
+        ws.on('close', () => clients.delete(ws))
+        ws.on('error', () => clients.delete(ws))
+      })
+    })
   })
 }
