@@ -41,6 +41,7 @@
     <div class="chat">
       <div class="toolbar">
         <select class="session-select" id="session-select"><option value="">（会话加载中）</option></select>
+        <select class="session-select" id="model-select" title="模型（仅列已配 key 的 provider）"><option value="">（默认模型）</option></select>
         <button id="refresh">刷新会话</button>
         <button id="new-session">新会话</button>
       </div>
@@ -96,9 +97,41 @@
       $select.value = currentSessionId || ''
     }
 
+    // 模型下拉：只列已配 key 的 provider 的模型（credentials.list × models.list）；
+    // 默认选项 = 引擎默认模型；一个可用都没有时提示去主界面配 key
+    let selectedModel = null
+    async function loadModels() {
+      const [{ models, defaultModel }, { providers }] = await Promise.all([
+        sdk.request('models.list', {}),
+        sdk.request('credentials.list', {})
+      ])
+      const withKey = new Set(providers.filter((p) => p.keyConfigured).map((p) => p.id))
+      const usable = models.filter((m) => withKey.has(m.provider))
+      const $model = document.getElementById('model-select')
+      $model.innerHTML = ''
+      if (usable.length === 0) {
+        $model.innerHTML = '<option value="">（无可用模型 —— 先在主界面配置 key）</option>'
+        return
+      }
+      if (defaultModel) {
+        const opt = document.createElement('option')
+        opt.value = ''
+        opt.textContent = '默认（' + defaultModel.provider + '/' + defaultModel.id + '）'
+        $model.appendChild(opt)
+      }
+      for (const m of usable) {
+        const opt = document.createElement('option')
+        opt.value = m.id
+        opt.textContent = m.provider + '/' + m.id
+        $model.appendChild(opt)
+      }
+      $model.onchange = () => { selectedModel = $model.value || null }
+    }
+
     sdk.ready().then(async (scope) => {
       $status.textContent = '已连接（scope: ' + scope + '）'
       await refreshSessions()
+      loadModels().catch((e) => appendMessage('error', '模型列表加载失败: ' + (e.message || e)))
       // 事件流订阅：流式增量 + 终态 + 全量日志
       sdk.onEvent('message.delta', (p) => {
         if (p.sessionId !== currentSessionId || p.kind !== 'text') return
@@ -143,7 +176,8 @@
       input.value = ''
       appendMessage('user', text)
       try {
-        await sdk.request('agent.submit', { sessionId: currentSessionId, text })
+        // model 省略 = 引擎/会话默认；下拉选了具体模型则覆盖（provider 内 id）
+        await sdk.request('agent.submit', { sessionId: currentSessionId, text, ...(selectedModel ? { model: selectedModel } : {}) })
       } catch (err) {
         appendMessage('error', String(err.message || err))
       }
