@@ -12,9 +12,10 @@
  * - 无头运行：stdin 进请求，stdout 出响应/事件，stderr 只出诊断日志；
  * - 它不知道"窗口"的存在，任何 Node 宿主都能拉起它。
  *
- * 防御边界（本项目防御政策的示范位）：stdin 是本进程唯一的不可信输入，
- * 校验只发生在 dispatch 入口（JSON 解析 + isRpcRequest + 参数显式收窄）；
- * handler 内部信任协议类型，不做二次防御。
+ * 防御边界（本项目防御政策的示范位）：不可信输入 = stdin 帧 + HTTP 门
+ * 请求体（阶段 2a 起），校验只发生在 handleFrame 入口（JSON 解析 +
+ * isRpcRequest + 参数显式收窄），两个传输门共用同一守卫与注册表（D2：
+ * 注册表单一，门只管帧进帧出）；handler 内部信任协议类型，不做二次防御。
  *
  * 启动期（async main）：ModelRuntime.create 是异步（目录装载），pi AgentSession
  * 的请求路由/鉴权都挂在它上 —— 必须先建再装配会话运行时，main() 收拢全部
@@ -57,6 +58,7 @@ import { SessionManager } from './runtime/session'
 import { ProjectRegistry } from './runtime/project'
 import { ApprovalRegistry } from './runtime/approvals'
 import { InspectStore, JsonStorageDriver } from './storage'
+import { startHttpRpc } from './http/server'
 
 /**
  * 存储根：第一方数据唯一根（决策 D1，docs/计划/工作区与会话真实化.md §1/§2）。
@@ -532,42 +534,58 @@ async function main(): Promise<void> {
     ['inspect.entry', handleInspectEntry]
   ])
 
-  /** 单帧处理：请求 → 响应；事件/畸形帧按协议丢弃并记诊断日志。 */
-  async function dispatch(raw: string): Promise<void> {
+  /**
+   * 单帧处理：请求 → 响应帧；事件/畸形帧返回 null（由调用方决定丢弃方式：
+   * stdio 丢弃 + 已记诊断日志，HTTP 门转 400）。两个传输门共用这一入口，
+   * 保证守卫与分发路径唯一（D2 注册表单一）。
+   */
+  async function handleFrame(raw: string): Promise<RpcResponse | null> {
     let frame: unknown
     try {
       frame = JSON.parse(raw)
     } catch {
-      // 信任边界：宿主发来的行不是合法 JSON（旧版本客户端 / 实现错误）
-      reply({ jsonrpc: '2.0', id: null, error: { code: RpcErrorCode.ParseError, message: 'invalid JSON frame' } })
-      return
+      // 信任边界：对端发来的不是合法 JSON（旧版本客户端 / 实现错误）
+      return { jsonrpc: '2.0', id: null, error: { code: RpcErrorCode.ParseError, message: 'invalid JSON frame' } }
     }
 
     if (isRpcEvent(frame)) {
       // 当前协议里 宿主→服务 方向只有请求；收到事件帧说明对方实现越界。
       process.stderr.write(`[host] dropped unexpected event frame: ${frame.method}\n`)
-      return
+      return null
     }
     if (!isRpcRequest(frame)) {
       process.stderr.write(`[host] dropped malformed frame: ${raw.slice(0, 120)}\n`)
-      return
+      return null
     }
 
     const handler = handlers.get(frame.method)
     if (!handler) {
-      reply({
+      return {
         jsonrpc: '2.0',
         id: frame.id,
         error: { code: RpcErrorCode.MethodNotFound, message: `unknown method: ${frame.method}` }
-      })
-      return
+      }
     }
 
     try {
-      reply({ jsonrpc: '2.0', id: frame.id, result: await handler(frame.params ?? {}) })
+      return { jsonrpc: '2.0', id: frame.id, result: await handler(frame.params ?? {}) }
     } catch (error) {
-      reply({ jsonrpc: '2.0', id: frame.id, error: toRpcError(error) })
+      return { jsonrpc: '2.0', id: frame.id, error: toRpcError(error) }
     }
+  }
+
+  // ———— HTTP 门（阶段 2a）：同一注册表，帧文本进、响应帧出 ————
+  // 默认不开（D2：loopback 且按需）。实际监听地址打到 stderr —— 冒烟脚本
+  // 与未来的 main 都从这里拿端口（main 集成批次再换成协议握手字段）。
+  if (process.env.COGENT_HTTP_RPC === '1') {
+    const portEnv = process.env.COGENT_HTTP_PORT
+    const port = portEnv === undefined ? 0 : Number(portEnv)
+    // env 是外部输入，入口处显式校验（畸形值拒启好过 serve 内部报晦涩错）
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      throw new Error(`COGENT_HTTP_PORT 非法: ${portEnv}`)
+    }
+    const http = await startHttpRpc(handleFrame, { port })
+    process.stderr.write(`[host] http rpc listening on 127.0.0.1:${http.port}\n`)
   }
 
   // ———— 主循环：一行一帧 ————
@@ -575,7 +593,9 @@ async function main(): Promise<void> {
   const stdin = createInterface({ input: process.stdin })
   stdin.on('line', (line) => {
     const trimmed = line.trim()
-    if (trimmed) void dispatch(trimmed)
+    if (trimmed) void handleFrame(trimmed).then((response) => {
+      if (response) reply(response)
+    })
   })
   // 宿主关闭管道（退出/被杀）时服务随行退出。无引擎级退出清场：pi 的
   // bash/powershell 自管单命令进程树（abort/超时杀），但无全局登记表 ——

@@ -50,3 +50,4 @@
 | [测试体系](测试体系.md) | Vitest 三层 + 冒烟 + CI；三家上游对照 |
 | [内置浏览器与聚合面板](内置浏览器与聚合面板.md) | 调研（内置浏览器四层模型 / 插件与面板双面性 / 三家对照，无代码落点） |
 | [自带 Node 运行时分发](node-runtime-distribution.md) | fetch-runtime + SHA256 对官方清单 + 三级链定位；Pi-meme / zcode / dsh 对照 |
+| [HostApi HTTP 通道](hostapi-http.md) | 单一注册表多传输门（handleFrame 双门共用）+ 恒 200 语义分层 + loopback fail-closed；pi rpc / zcode server-core / Pi-meme 游标事件流 / im2.0 对照 |
