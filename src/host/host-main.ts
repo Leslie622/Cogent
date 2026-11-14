@@ -147,6 +147,10 @@ async function main(): Promise<void> {
   // Host 进程内存态，重启全失效（token 生命周期 = Host 进程生命周期）
   const capabilityStore = createCapabilityStore()
 
+  // HTTP 门实际端口（开门后回填；handleInitialize 闭包读到它时必已赋值 ——
+  // HTTP 启动的 await 在主循环注册前完成，而 initialize 帧只能来自主循环）
+  let httpPort: number | undefined
+
   /**
    * 握手：宿主确认链路可用，服务上报运行时信息（宿主据此做 Node 版本守卫）。
    */
@@ -167,7 +171,13 @@ async function main(): Promise<void> {
         Object.entries(p.credentials).map(([providerId, c]) => applyRuntimeKey(providerId, c.apiKey))
       )
     }
-    return { service: 'cogent-agent', protocolVersion: PROTOCOL_VERSION, node: process.version }
+    return {
+      service: 'cogent-agent',
+      protocolVersion: PROTOCOL_VERSION,
+      node: process.version,
+      // HTTP 门开着才带（装配序保证：HTTP 启动 await 完成先于主循环收帧）
+      ...(httpPort !== undefined ? { httpPort } : {})
+    }
   }
 
   /** credentials.set 入口校验：providerId/apiKey 均为非空 string */
@@ -612,6 +622,7 @@ async function main(): Promise<void> {
       rootSecret: createRootSecret(),
       store: capabilityStore
     })
+    httpPort = http.port
     process.stderr.write(`[host] http rpc listening on 127.0.0.1:${http.port}\n`)
   }
 

@@ -27,9 +27,14 @@ function listeningBase(target: EngineHandle, timeoutMs = 15_000): Promise<string
 beforeAll(async () => {
   home = makeTempDir('cogent-http-auth-')
   engine = startEngine(home, { COGENT_HTTP_RPC: '1' })
-  const init = await engine.send('initialize', { client: 'http-auth-it', protocolVersion: 1 })
+  const init = await engine.send<{ service?: string; httpPort?: number }>('initialize', {
+    client: 'http-auth-it',
+    protocolVersion: 1
+  })
   expect(init.result?.service, 'stdio 握手先行（HTTP 门与 stdio 同进程共存）').toBe('cogent-agent')
   base = await listeningBase(engine)
+  // 2b-2：端口上报双通道（协议字段 vs stderr 日志）必须一致
+  expect(init.result?.httpPort).toBe(Number(base.split(':').pop()))
 })
 
 afterAll(() => {

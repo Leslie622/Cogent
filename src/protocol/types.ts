@@ -305,6 +305,8 @@ export interface InitializeResult {
   protocolVersion: number
   /** 服务运行时的 Node 版本，宿主据此做版本守卫 */
   node: string
+  /** HTTP 门实际监听端口（阶段 2b-2 起；未开门的老宿主/不开门时缺省） */
+  httpPort?: number
 }
 
 export interface AgentSubmitParams {

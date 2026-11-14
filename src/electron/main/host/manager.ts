@@ -20,9 +20,11 @@ import { createInterface } from 'node:readline'
 import {
   PROTOCOL_VERSION,
   isRpcEvent,
+  type CapabilityIssueResult,
   type ProtocolMethods,
   type RpcEvent,
-  type RpcRequest
+  type RpcRequest,
+  type TokenScope
 } from '../../../protocol'
 import type { AppStatus } from '../../../shared/ipc'
 
@@ -61,6 +63,8 @@ export class HostManager {
   private status: AppStatus = { state: 'stopped', nodeVersion: null, error: null }
   private manualStop = false
   private closed = true
+  /** HTTP 门端口（initialize 响应带回；引擎停了端口随之失效，close 时清） */
+  private httpPort: number | undefined
   /** 引擎事件出口：registerIpc 时注入（main 收到事件即转发给 renderer） */
   private eventSink: ((event: RpcEvent) => void) | null = null
 
@@ -84,6 +88,20 @@ export class HostManager {
 
   getStatus(): AppStatus {
     return this.status
+  }
+
+  /** HTTP 门端口（未开门/引擎停止时 undefined；消费者侧由阶段 3 webview 接） */
+  getHttpPort(): number | undefined {
+    return this.httpPort
+  }
+
+  /**
+   * HTTP 门票据签发（D3）：main 是血缘全权的签发起点（消费者正当性由 main
+   * 判定），票据交给消费者去 /auth/exchange 兑换 scoped token —— token 不经
+   * main 中转，main 也不持有 rootSecret（Host 进程内闭环）。
+   */
+  issueCapability(scope: TokenScope): Promise<CapabilityIssueResult> {
+    return this.request('capability.issue', { scope })
   }
 
   /**
@@ -150,6 +168,7 @@ export class HostManager {
     }
 
     this.status = { state: 'running', nodeVersion: info.node, error: null }
+    this.httpPort = info.httpPort
   }
 
   /**
@@ -186,6 +205,7 @@ export class HostManager {
   private close(error: string | null): void {
     if (this.closed) return
     this.closed = true
+    this.httpPort = undefined
     for (const pending of this.pending.values()) {
       pending.reject(new Error(error ? `host closed: ${error}` : 'host closed'))
     }

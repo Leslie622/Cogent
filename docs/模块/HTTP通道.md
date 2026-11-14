@@ -57,8 +57,9 @@ HTTP:  消费者 ──POST /auth/exchange {ticket}──▶ 长期 token（v1.<
 ## 边界
 
 - 无 WS、无事件推送（2c）；远程模式（放开监听）未开；
-- main 尚未消费（端口走 stderr 日志；2b-2 的 `initialize` 响应带
-  `httpPort` + HostManager 侧接线）；
+- main 侧已接线：`initialize` 响应带 `httpPort`（与 stderr 双通道一致，
+  集成测试钉死），`HostManager.getHttpPort()` / `issueCapability(scope)`
+  可签发票据 —— renderer/webview 消费者留阶段 3；
 - `?token=` query 双轨已就位（为 2c 浏览器 WS 握手预留，D2 同口径）。
 
 验收：`COGENT_HTTP_RPC=1` 拉起 Host 后 —— stdio `capability.issue` 签发 →
