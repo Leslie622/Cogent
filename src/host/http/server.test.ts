@@ -69,6 +69,27 @@ describe('鉴权（2b：开门即要 token）', () => {
     expect((await fetch(base + '/nope', { method: 'POST', body: '{}' })).status).toBe(401)
   })
 
+  it('CORS：跨源预检与实际响应都带放行头（webview 页面直连的前提）', async () => {
+    const { base, token } = await start()
+    const preflight = await fetch(base + '/rpc', {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'http://localhost:5173',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type'
+      }
+    })
+    expect(preflight.status).toBe(204)
+    expect(preflight.headers.get('access-control-allow-origin')).toBeTruthy()
+    const res = await fetch(base + '/rpc', {
+      method: 'POST',
+      headers: { origin: 'http://localhost:5173', authorization: `Bearer ${token('readonly')}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.list', params: {} })
+    })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('access-control-allow-origin')).toBeTruthy()
+  })
+
   it('档位强制：readonly token 调写方法 403、读方法 200', async () => {
     const { base, token } = await start()
     const readonly = { authorization: `Bearer ${token('readonly')}` }

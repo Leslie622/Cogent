@@ -21,7 +21,8 @@ const GUEST_CREDENTIALS_CHANNEL = 'cogent:guest:credentials'
 
 const sdk = createGuestSdk({
   getCredentials: () => ipcRenderer.invoke(GUEST_CREDENTIALS_CHANNEL),
-  fetchImpl: fetch,
+  // fetch 必须绑定 globalThis：解绑调用（this 不是 window）抛 Illegal invocation
+  fetchImpl: fetch.bind(globalThis),
   WebSocketImpl: WebSocket
 })
 

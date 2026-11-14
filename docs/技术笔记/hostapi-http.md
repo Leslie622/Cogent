@@ -90,6 +90,15 @@ pi 的 rpc 帧本身就是可序列化 JSON，换管道不改帧。
   形态，但 Cogent 阶段 2 的消费者是脚本/调试 UI，重连拉快照
   （session.messages）已够 —— 游标机制等真实远程 UI 实用化（事件量大到
   快照不够）再立项，避免为不存在的负载建机制。
+- **CORS 全放行 vs 同源反代**（3a 页面接入时落地）：Pi-meme 的页面消费走
+  frontend-server 同源反代（`packages/host/src/frontend-server.ts:58-110`，
+  天然无 CORS）；Cogent 页面**直连** 127.0.0.1 门，跨源是常态 —— hono/cors
+  放行（`origin: *`）。安全性推理：CORS 只是浏览器同源策略的形式，放行后
+  任意网页可向本机门发请求，但恒鉴权 token 是真边界（恶意页无 token →
+  401，票据在 main↔preload 链路内它拿不到）；WS 不受 CORS 约束、upgrade
+  鉴权同理。首验实录：preload 里 `fetch` 解绑调用抛 Illegal invocation
+  （需 `fetch.bind(globalThis)`）与 CORS 头缺失两坑相继暴露 —— 集成测试
+  的 node fetch 不执行浏览器同源策略，这两类问题只有真 webview 验收能抓。
 
 ## 5. 在 Cogent 的落点
 

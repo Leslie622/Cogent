@@ -58,6 +58,11 @@ HTTP:  消费者 ──POST /auth/exchange {ticket}──▶ 长期 token（v1.<
 传递位。关闭走 drain 语义（先 `close(1001)` 排空 250ms 再 terminate 兜底，
 zcode 同款 —— HTTP server.close() 不收敛已 upgrade 的连接）。
 
+**CORS 全放行**（hono/cors）：页面消费者（webview/浏览器）与 `127.0.0.1`
+永远跨源，无放行头浏览器直接拦（Pi-meme 用同源反代绕开，Cogent 页面直连
+就必须回头）。真边界仍是恒鉴权 token —— 恶意网页能发请求但无 token
+一律 401（票据也拿不到）；WS 不受 CORS 约束，upgrade 鉴权同理。
+
 ## 边界
 
 - 事件广播无按会话过滤（所有在线连接收全部事件；session 绑定档留阶段 3

@@ -25,6 +25,7 @@
  */
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { WebSocket, WebSocketServer, type RawData } from 'ws'
@@ -118,6 +119,12 @@ export interface HttpRpcServer {
 export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions): Promise<HttpRpcServer> {
   // Variables 泛型：鉴权中间件写入、/rpc handler 读取的请求级 scope
   const app = new Hono<{ Variables: { scope: TokenScope } }>()
+
+  // CORS 全放行：消费者是 webview/浏览器页（origin 与 127.0.0.1 永远不同源，
+  // 无 CORS 头浏览器直接拦 —— Pi-meme 用同源反代绕开，Cogent 页面直连就必须
+  // 回头）。安全性不受影响：CORS 只是浏览器同源策略的形式，真边界是恒鉴权
+  // token —— 恶意网页能发请求但无 token 一律 401（票据也拿不到）。
+  app.use('*', cors())
 
   // /auth/exchange 的凭证就是票据本身，不走 Bearer（否则鸡生蛋）；WS 握手是
   // 原生 HTTP upgrade、不经 Hono fetch，鉴权在 upgrade 事件里同口径另挂

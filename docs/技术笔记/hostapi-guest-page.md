@@ -41,6 +41,11 @@ Cogent（壳）的职责，参照对象是 zcode / Pi-meme / im2.0。
 - **src 白名单起步就锁死**（3a 仅同源 demo.html）：硬化钩子先于页面接入
   存在，扩展真实第三方页面时只改白名单与 origin 策略（自定义协议 origin
   = zcode 形状，候选），不重开边界。
+- **preload 的 fetch 两个坑（首验实录）**：① `fetch` 以引用传给 SDK 后
+  `this` 不再是 window → `Illegal invocation`，必须 `fetch.bind(globalThis)`；
+  ② isolated world 以页面 origin 发请求，`127.0.0.1` 永远跨源 → Host 必须回
+  CORS 头（否则浏览器拦响应）。两者都只有真 webview 验收能暴露 —— node
+  侧测试的 fetch 不执行浏览器同源策略，也不检查 this 绑定。
 - **scope 全 guest 统一 write**（3a）：比 admin 低（拿不到签发权）、比
   readonly 高（demo 要发起对话）；session 绑定档等真实页面生态出现再落。
 
