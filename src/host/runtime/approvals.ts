@@ -7,9 +7,10 @@
  *   Cogent 只存目录名，无参数泄漏面；
  * - 存 `~/.cogent/approvals.json`（引擎侧全局单文件，**不进项目目录**）——
  *   杜绝 repo 内误提交事故面；Qoder「始终允许本项目」同款工作区级持久；
- * - 判定优先序（D3）：软边界（工具执行层 resolveWithinRoots，越界恒拒）>
- *   本规则表放行 > mode 矩阵 —— 规则只能放行"边界内"的写，越界写在工具层
- *   兜底拒绝，与 Claude Code「deny > allow 严格序」铁律同构。
+ * - 判定优先序（D3）：软边界（1.3 起在审批层，session.ts decideApproval
+ *   先查 write-boundary，越界恒拒）> 本规则表放行 > mode 矩阵 —— 规则只能
+ *   放行"边界内"的写，越界写恒被拒，与 Claude Code「deny > allow 严格序」
+ *   铁律同构。
  *
  * 为什么不走 StorageDriver / driver collection：collection 是
  * `<root>/<collection>/<id>.json` 目录语义（一实体一文件），而规则表是全局

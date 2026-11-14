@@ -43,8 +43,8 @@
 | [token 用量统计](token用量统计.md) | 路线空位 1 的 usage 先行（pi Usage 投影 + 消息级统计行） | 已完成（2026-11-09） |
 | [运行时控制台](运行时控制台.md) | inspect 域（pi hooks 观测 + 独立 DevTools 窗口 + 实时时间线） | 已完成（2026-11-10） |
 | [Markdown 渲染](Markdown渲染.md) | 路线空位 4 前半（Streamdown + Shiki + CJK 插件） | 已完成（2026-11-10） |
-| [工具系统与审批](工具系统与审批.md) | 路线空位 2/4/6（工具循环 + beforeToolCall 审批挂起 + 权限矩阵，批次 1+2 全景） | 已完成（2026-11-11） |
-| [bash / edit 工具与输出护栏](bash与edit工具与输出护栏.md) | pi借鉴 批次 3（截断三件套 + 并发写队列 + edit CRLF 映射 + bash 进程树 + 自主模式 + gitignore 加固） | 已完成（2026-11-11） |
+| [工具系统与审批](工具系统与审批.md) | 工具循环 + beforeToolCall 审批挂起 + 权限矩阵（手搓批次全景）+ 1.3 工具切 pi 内置对照（fd/rg、win powershell、写边界上移、undici/node 版本坑） | 已完成（1.3 更新） |
+| [bash / edit 工具与输出护栏](bash与edit工具与输出护栏.md) | pi借鉴 批次 3（截断三件套 + 并发写队列 + edit CRLF 映射 + bash 进程树 + 自主模式 + gitignore 加固）；手搓件已随 1.3 删除，学习沉淀保留 | 已完成（2026-11-11；代码退役） |
 | [上下文压缩](上下文压缩.md) | pi 内核接管（reserve 触发线 / 固定 keep / split-turn / 溢出恢复）+ Cogent 承接面（事件转译 / 预警线公式 / AUTO_CONTINUE） | 已完成（1.2a 起 pi 内核） |
 | [测试体系](测试体系.md) | 计划/归档/测试体系.md（Vitest 三层 + 冒烟正名迁移 + CI；三家上游对照与迁移踩坑） | 已完成（2026-11-13） |
 | [内置浏览器与聚合面板](内置浏览器与聚合面板.md) | 未立项调研（内置浏览器四层模型 / browser-use 插件与面板双面性 / ZCode + ChatGPT + dsh 三家对照，含引擎路线对照） | 调研完成（2026-11-12，无代码落点） |

@@ -9,10 +9,11 @@
  * 测的是打包后的真协议链路，与单测（直读源码）分层互补。
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect } from 'vitest'
+import { bundledNodeBin, resolveEngineNodeBin } from '../../src/electron/main/host/runtime'
 
 // ———— 协议帧形状（引擎侧 truth，测试只读关心的字段） ————
 
@@ -108,10 +109,30 @@ export interface EngineHandle {
  * 沉淀的手法）。重启 = kill 后再 startEngine（新 handle、新 events、新 id 序）。
  */
 export function startEngine(home: string): EngineHandle {
+  // 引擎 Node 对齐生产三级链（electron/main/host/runtime.ts）：COGENT_NODE_BIN →
+  // 自带 runtime node（≥22.19，pi engines 门槛）→ process.execPath 兜底。
+  // 不能恒用 execPath：开发机系统 node 可能低于 22.19（实测 22.14 无 zlib
+  // zstd，pi 嵌套 undici 8.x 模块初始化即 TypeError，引擎起不来）
+  const bundled = bundledNodeBin(join(process.cwd(), 'resources'), process.platform, process.arch)
+  const engineNode = resolveEngineNodeBin(
+    process.env,
+    bundled !== null && existsSync(bundled) ? bundled : null,
+    process.execPath
+  )
   // stdio 三元组字面量 → spawn 推断 ChildProcessByStdio<Writable, Readable, null>，
   // stdin/stdout 恒非空（engine.stderr 走 'inherit' 不用）
-  const engine = spawn(process.execPath, [join(process.cwd(), 'out/main/host.js')], {
-    env: { ...process.env, COGENT_HOME: home, USERPROFILE: home, HOME: home },
+  const engine = spawn(engineNode, [join(process.cwd(), 'out/main/host.js')], {
+    env: {
+      ...process.env,
+      COGENT_HOME: home,
+      USERPROFILE: home,
+      HOME: home,
+      // pi 域（fd/rg 管理目录）指跨运行共享的稳定缓存（Host 侧 ??= 尊重已设值）：
+      // grep/find 首用会按需下载 fd/rg（约 2-5MB，PATH 上没有才下），逐次临时
+      // home 会每轮集成跑都重新下载。该目录只落这两个二进制 —— 凭据/模型
+      // 目录在 Host 内是内存态/显式传参，不经这里
+      PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR ?? join(tmpdir(), 'cogent-test-pi-domain')
+    },
     stdio: ['pipe', 'pipe', 'inherit']
   })
   const events: EngineEventFrame[] = []

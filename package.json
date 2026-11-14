@@ -12,9 +12,9 @@
     "start": "electron-vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --composite false -p tsconfig.node.json && tsc --noEmit --composite false -p tsconfig.web.json",
-    "test": "vitest run",
-    "test:watch": "vitest --project node --project web",
-    "coverage": "vitest run --coverage",
+    "test": "node scripts/run-tests.mjs run",
+    "test:watch": "node scripts/run-tests.mjs --project node --project web --watch",
+    "coverage": "node scripts/run-tests.mjs run --coverage",
     "fetch:runtime": "node scripts/fetch-runtime.mjs"
   },
   "dependencies": {

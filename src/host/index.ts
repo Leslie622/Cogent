@@ -57,7 +57,7 @@ import { SessionManager } from './runtime/session'
 import { ProjectRegistry } from './runtime/project'
 import { ApprovalRegistry } from './runtime/approvals'
 import { InspectStore, JsonStorageDriver } from './storage'
-import { killTrackedDetachedChildren } from './tools/shell'
+import { PI_AGENT_DIR_NAME } from './kernel/pi-session-factory'
 
 /**
  * 存储根：第一方数据唯一根（决策 D1，docs/计划/工作区与会话真实化.md §1/§2）。
@@ -65,6 +65,12 @@ import { killTrackedDetachedChildren } from './tools/shell'
  * 第 2 步把 main 侧凭据 store 也迁到同根（引擎是纯 Node，自算 home 零 Electron）。
  */
 const STORAGE_ROOT = process.env.COGENT_HOME || join(homedir(), '.cogent')
+
+// pi 域 env 归位（阶段 1.3）：pi 内部走 getAgentDir() 的直读点（grep/find 的
+// fd/rg 管理目录 getBinDir、models.json 兜底路径等）默认指 ~/.pi/agent ——
+// 统一重定向到 <root>/pi，Host 保持 ~/.cogent 唯一写者（全局架构 D1），也
+// 不污染/不偷读用户自装 pi CLI 的域。必须在 ModelRuntime.create 前生效
+process.env.PI_CODING_AGENT_DIR ??= join(STORAGE_ROOT, PI_AGENT_DIR_NAME)
 
 // 方言模块预热：pi-ai 的 API 方言是**首次请求时**才动态 import（lazyApi），
 // 冷启动一次要拉起整个厂商 SDK（openai-completions 连带 26MB 的 openai 包，
@@ -566,15 +572,14 @@ async function main(): Promise<void> {
     const trimmed = line.trim()
     if (trimmed) void dispatch(trimmed)
   })
-  // 宿主关闭管道（退出/被杀）时服务随行退出。退出前杀掉 bash 工具拉起的
-  // detached 子进程树 —— 引擎死了没人替我们杀，留着就是孤儿（宿主侧 Electron
-  // 的教训在引擎侧同样成立，见 tools/shell.ts）
+  // 宿主关闭管道（退出/被杀）时服务随行退出。退出清场（杀 detached 子进程
+  // 树）已随 1.3 工具切 pi 内置退役：pi 的 bash 自己管树（abort/超时杀），
+  // 无全局登记表可查 —— 引擎退出时在跑的命令在 unix 上留孤儿是 pi 上游
+  // 语义（工具系统.md 已记）
   stdin.on('close', () => {
-    killTrackedDetachedChildren()
     process.exit(0)
   })
   process.on('SIGTERM', () => {
-    killTrackedDetachedChildren()
     process.exit(0)
   })
 }

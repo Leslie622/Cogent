@@ -30,10 +30,10 @@ import {
   SettingsManager,
   type AgentSession,
   type AgentSessionEvent,
-  type ModelRuntime,
-  type ToolDefinition
+  type ModelRuntime
 } from '@earendil-works/pi-coding-agent'
 import type { Agent, AgentMessage, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
+import { COGENT_TOOL_NAMES } from '../runtime/tool-meta'
 
 /**
  * 会话目录编码（pi session-manager.ts:590 getDefaultSessionDirPath 同款，
@@ -103,8 +103,6 @@ export interface PiSessionOptions {
   modelRuntime: ModelRuntime
   /** Cogent 自拼系统提示词（buildSystemPrompt 的产物，会话生命周期内不变） */
   systemPrompt: string
-  /** 自研工具过渡（1.3 切 pi 内置后此参数清空） */
-  customTools: ToolDefinition[]
   approval: ApprovalBridge
   /** AgentSessionEvent 出口（session.ts 的转译入口；不关心的会话层事件自然落 default） */
   onEvent: (event: AgentSessionEvent) => void
@@ -145,10 +143,10 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     resourceLoader,
     ...(model !== undefined && { model }),
     thinkingLevel: 'off',
-    customTools: opts.customTools,
-    // 自研工具经 customTools 过渡（1.2a）：内置工具集显式关闭，行为面与
-    // 现状对齐（1.3 才切换内置 read/bash/edit/write…）
-    noTools: 'builtin'
+    // 工具集（1.3 起）：pi 内置 8 选 7，shell 项按平台（win=powershell，见
+    // tool-meta.ts 的 COGENT_TOOL_NAMES）。显式 allowlist 替换 pi 默认
+    // （read/bash/edit/write）—— Cogent 的只读三件（grep/find/ls）也进集
+    tools: COGENT_TOOL_NAMES
   })
 
   // 审批链（D8）：包住 pi 的 beforeToolCall（构造时已被 AgentSession 装成扩展

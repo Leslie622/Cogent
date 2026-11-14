@@ -38,8 +38,7 @@ import { getSystemMessageText } from '@earendil-works/pi-ai/utils/text'
 import type {
   AgentSession,
   AgentSessionEvent,
-  ModelRuntime,
-  ToolDefinition
+  ModelRuntime
 } from '@earendil-works/pi-coding-agent'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -71,7 +70,8 @@ import { importLegacyTranscript } from '../kernel/legacy-import'
 // compactionSummary 等自定义角色后与 pi 预算看到的载荷同源同形
 import { compactionThreshold, convertToLlmMessages } from './compaction'
 import type { InspectStore, StorageDriver } from '../storage'
-import { buildTools, toolMeta } from '../tools'
+import { SHELL_TOOL_NAME, toolMeta } from './tool-meta'
+import { outsideRootsMessage, resolveWithinRoots } from './write-boundary'
 
 /** 引擎事件出口的类型别名：runtime 通过它上报事件，不关心传输层（形状住在南缝合同） */
 export type Notify = KernelNotifier
@@ -177,10 +177,10 @@ function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
     }
   }
 
-  // 工具段（D2 修订：任何会话都有只读工具，无绑定会话以主目录为基；write
-  // 批次 2 加入）。讲清有什么、路径规则（读相对基根/绝对不限 —— 对齐 Claude
-  // Code 只读默认全盘允许；写限工作区根内 + 先审批）。不解释参数（工具 schema
-  // 自描述，模型读 description 比提示词转述更准）
+  // 工具段（D2 修订：任何会话都有只读工具，无绑定会话以主目录为基）。讲清
+  // 有什么、路径规则（读相对基根/绝对不限；写限工作区根内 + 先审批 —— 边界
+  // 在审批层 enforce，越界写得到带可写根提示的错误结果）。不解释参数（工具
+  // schema 自描述，模型读 description 比提示词转述更准）
   const bound = boundRoots.length > 0
   const base =
     bound
@@ -188,12 +188,12 @@ function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
       : `相对路径相对用户主目录（${toolRoots[0]}）解析`
   prompt +=
     '\n\n# 工具\n' +
-    '你可以调用工具：read（读单个文件，带行号）、glob（按通配模式找文件）、' +
+    '你可以调用工具：read（读单个文件，大文件用 offset/limit 分段读）、find（按通配模式找文件）、' +
     'grep（按正则全文搜索，可带上下文行）、ls（列目录一层内容）、' +
     'write（整文件写入，须在可写根内，执行前可能需要用户批准）、' +
     'edit（对已有文件做精确文本替换，边界同 write，执行前可能需要用户批准）、' +
-    `bash（执行 shell 命令${process.platform === 'win32' ? '，Windows 上为 PowerShell 语法' : ''}，工作目录${bound ? '为工作区主根' : '为用户主目录'}，执行前可能需要用户批准）。` +
-    '先用 ls/glob/grep 定位、再用 read 读内容；修改已有文件优先 edit（带上下文精确匹配），' +
+    `${SHELL_TOOL_NAME}（执行 shell 命令，工作目录${bound ? '为工作区主根' : '为用户主目录'}，执行前可能需要用户批准）。` +
+    '先用 ls/find/grep 定位、再用 read 读内容；修改已有文件优先 edit（带上下文精确匹配），' +
     '整文件新建或重写才用 write。\n' +
     `${base}；读取的绝对路径不限位置，写入只能在${bound ? '工作区根目录内' : '用户主目录内'}。`
   return prompt
@@ -1007,10 +1007,13 @@ export class SessionManager implements CogentKernel {
 
   /**
    * 工具调用裁决（链式 beforeToolCall 的桥端，D4 判定矩阵：ToolKind ×
-   * permissionMode）。mode 读 session.summary 的活引用（运行中切「完全访问」
-   * 即生效）。ask：发审批请求并挂起 —— async 未返回前工具不执行（pi 官方
-   * 阻塞语义）；signal abort 兜底 resolve（否则中止后 Promise 永悬、run 永不
-   * 结束 —— 核心 loop 的 await 钩子无超时）。
+   * permissionMode）。判定优先序（阶段 1.3 起全部在本层）：**软边界 >
+   * 工作区规则表放行 > mode 矩阵** —— pi 内置 write/edit 不限路径，越界
+   * 恒拒（含 auto/autonomous：可写根提示进模型可见的错误结果，可自我纠正）。
+   * mode 读 session.summary 的活引用（运行中切「完全访问」即生效）。ask：
+   * 发审批请求并挂起 —— async 未返回前工具不执行（pi 官方阻塞语义）；
+   * signal abort 兜底 resolve（否则中止后 Promise 永悬、run 永不结束 ——
+   * 核心 loop 的 await 钩子无超时）。
    */
   private decideApproval(
     session: Session,
@@ -1023,18 +1026,27 @@ export class SessionManager implements CogentKernel {
     // 注册表 bug，stderr 已在转译层留诊断，这里按无害的只读放行）
     const kind = meta?.kind ?? 'read'
     if (kind === 'read') return Promise.resolve({ block: false })
+    // 写类软边界（1.3 自工具执行层上移）：pi write/edit 的 path 越界恒拒，
+    // 先于规则表与 mode —— 「始终允许」与 autonomous 的信任范围 = 根内写
+    if (kind === 'write' || kind === 'edit') {
+      const roots = this.toolRoots(session)
+      const path = args.path
+      if (typeof path === 'string' && resolveWithinRoots(path, roots) === null) {
+        return Promise.resolve({ block: true, reason: outsideRootsMessage(roots) })
+      }
+    }
     const mode = session.summary.permissionMode ?? 'ask'
     if (mode === 'auto') return Promise.resolve({ block: false })
     if (mode === 'plan') {
       return Promise.resolve({ block: true, reason: 'plan（只读）模式下写类工具被禁止' })
     }
-    // 自主模式（D6 定稿）：文件写信任放行（工作区根内，越界仍有工具层
-    // 软边界兜底），exec/network 风险类照旧走询问
+    // 自主模式（D6 定稿）：文件写信任放行（根内 —— 越界已被上方软边界拦下），
+    // exec/network 风险类照旧走询问
     if (mode === 'autonomous' && (kind === 'write' || kind === 'edit')) return Promise.resolve({ block: false })
     // ask 判定前先查「始终允许」规则表（审批交互升级 D3）：会话工作区根与
-    // 某条同类别规则任一根命中即放行 —— 规则只能放行"边界内"的写，越界写
-    // 在工具执行层（resolveWithinRoots）恒拒，双保险。无绑定根（workspaceRoots
-    // 为空）天然不命中，无根会话不落规则的 UI 语义在引擎侧自洽
+    // 某条同类别规则任一根命中即放行 —— 规则只能放行"边界内"的写（越界写
+    // 已被上方软边界恒拒）。无绑定根（workspaceRoots 为空）天然不命中，
+    // 无根会话不落规则的 UI 语义在引擎侧自洽
     if (this.approvals.allows(this.workspaceRoots(session), kind)) return Promise.resolve({ block: false })
     // ask：发审批请求并挂起（D5：无超时 —— 用户不点就一直等，宿主输入框
     // 变停止钮可 abort；signal abort 兜底 resolve）
@@ -1097,19 +1109,15 @@ export class SessionManager implements CogentKernel {
   private async buildPiSession(session: Session): Promise<AgentSession> {
     const sessionId = session.summary.id
     const boundRoots = this.workspaceRoots(session)
-    const toolRoots = this.toolRoots(session)
-    const tools = buildTools(toolRoots)
     const { session: pi, piSessionManager, createdNew } = await createPiSession({
       // pi 的 cwd = 工作区主根（无绑定时主目录兜底，同 toolRoots 语义）：
-      // 项目发现（.gitignore/AGENTS.md）与会话目录编码都锚在它上
+      // 项目发现（.gitignore/AGENTS.md）与会话目录编码都锚在它上；
+      // 工具集 = pi 内置（tool-meta 的 COGENT_TOOL_NAMES，shell 按平台）
       cwd: boundRoots[0] ?? homedir(),
       hostRoot: this.hostRoot,
       sessionId,
       modelRuntime: this.modelRuntime,
       systemPrompt: this.ensureSystemPrompt(session),
-      // 自研工具经 customTools 过渡（AgentTool ⊇ ToolDefinition 的执行面，
-      // 少参 execute 结构兼容）：1.3 切 pi 内置时清空
-      customTools: tools.map((t) => t.tool) as ToolDefinition[],
       approval: {
         decide: (toolName, _toolCallId, args, signal) =>
           this.decideApproval(session, toolName, args, signal)
