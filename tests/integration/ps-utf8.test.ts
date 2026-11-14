@@ -1,14 +1,10 @@
 /**
- * PowerShell UTF-8 冒烟（阶段 1.3 改写：断言对象从自研 bash.ts 的命令包装
- * 换成 **pi 内置 powershell 工具** 的端到端行为）。
+ * PowerShell UTF-8 冒烟 —— 断言对象 = **pi 内置 powershell 工具**的端到端
+ * 行为：直接驱动 createPowerShellTool.execute，UTF-8 前置 / #8842 尾缀等
+ * 包装住在 pi 的 powershell.ts。冒烟钉的是「本机 PowerShell 形态下 pi
+ * 工具可用且中文/退出码语义正确」。
  *
- * 历史：原 tmp/cogent-smoke/ps-utf8-smoke.mjs → 2026-11-11 正名迁移（镜像自研
- * 包装常量）→ 1.3 工具切 pi 内置后自研包装删除（D6），本测试改为直接驱动
- * createPowerShellTool.execute —— UTF-8 前置 / #8842 尾缀等包装如今住在
- * pi 的 powershell.ts（Cogent 的旧实现本就是同源照抄），冒烟钉的是
- * 「本机 PowerShell 形态下 pi 工具可用且中文/退出码语义正确」。
- *
- * 双形态同跑（与旧版同思路）：默认解析（pi 的 getPowerShellConfig：pwsh
+ * 双形态同跑：默认解析（pi 的 getPowerShellConfig：pwsh
  * 优先 → 5.1 兜底）/ 强制 5.1（从 PATH 摘掉 pwsh 目录 —— pi 无 env 覆盖口，
  * PATH 是唯一外部开关）。仅 Windows（其余平台 skip）。
  *

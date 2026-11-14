@@ -188,7 +188,7 @@ export interface ToolCallRecord {
    *  消息 timestamp —— 转录持久化的单一来源，重启回查数字不漂移） */
   endedAt?: number
   /** edit 工具的展示 diff（带行号的 +-/ 上下文 diff，引擎从工具 details 提取；
-   *  2026-11-11 批次 3 D4 定稿进协议 —— 工具卡 diff 呈现的数据源。缺省 = 非
+   *  D4 定稿进协议 —— 工具卡 diff 呈现的数据源。缺省 = 非
    *  edit 工具或旧转录，UI 自然不渲染 diff 块） */
   diff?: string
 }
@@ -206,7 +206,7 @@ export interface ToolCallRecord {
 export interface ChatMessage {
   id: string
   /**
-   * role 'compaction'（2026-11-11 批次 4 additive）= 上下文压缩折叠条：
+   * role 'compaction'（additive）= 上下文压缩折叠条：
    * content 为 checkpoint 摘要全文（点击展开可读），不参与回合的问答切分。
    * 老宿主按 role switch 渲染时落 default 分支自然忽略，不破。
    */
@@ -274,12 +274,12 @@ export interface ModelSummary {
   compactionThresholdRatio?: number
 }
 
-/** 工具的风险类别：审批策略按此分级（edit 属写类，2026-11-11 批次 3 加入） */
+/** 工具的风险类别：审批策略按此分级（edit 属写类） */
 export type ToolKind = 'read' | 'write' | 'edit' | 'exec' | 'network'
 
 /**
  * 会话级权限模式：auto=全自动；ask=写类操作需确认；plan=只读规划；
- * autonomous=自主模式（2026-11-11 批次 3 D6 定稿随 bash 落地启用：文件写
+ * autonomous=自主模式（D6 定稿：文件写
  * write/edit 信任放行，exec/network 风险类逐次询问 —— 之前无 exec/network
  * 工具时它只能是 ask 同义词，故一直置灰占位）
  */
@@ -343,12 +343,24 @@ export interface ApprovalRespondParams {
    * 'workspace' = 允许本次 + 落工作区级「始终允许」规则（D3；隐含 approved=true，
    * 与 approved=false 同发是矛盾载荷，入口校验拒绝）。规则存引擎侧全局
    * approvals.json，只记 roots 不记命令/内容（无泄漏面，对照 Claude Code
-   * settings.local.json 事故，调研见计划 §1.5）。
+   * settings.local.json 事故，调研见 技术笔记/工具系统与审批.md）。
    */
   always?: 'workspace'
+  /**
+   * 「允许，并切换为 X」（zcode 同款）：允许本次 + 会话
+   * 切到该模式 + **记为项目默认**（同一项目的新会话沿用）。只收两档放宽模式
+   * （auto/autonomous）—— 切回收紧档走权限菜单（显式动作，不藏在审批里）。
+   * 隐含 approved=true，与 approved=false 同发是矛盾载荷，入口校验拒绝。
+   */
+  switchMode?: 'auto' | 'autonomous'
 }
 export interface ApprovalRespondResult {
   ok: true
+  /**
+   * switchMode 场景带回切换后的会话摘要（宿主同步列表里的模式标记；
+   * 非切换场景缺省）。
+   */
+  summary?: SessionSummary
 }
 
 export interface CredentialsSetParams {
@@ -424,7 +436,7 @@ export interface SessionSetPermissionResult {
 }
 
 /**
- * 手动压缩（批次 4 D7 双路的手动路；未来 /compact 命令的引擎通道）：
+ * 手动压缩（D7；未来 /compact 命令的引擎通道）：
  * 无论阈值直接压缩。会话回复中拒绝（上游手动路会先 abort 再压，我们选择
  * 拒绝 —— 显式让用户等，比静默打断正在生成的回复更可预期）。无可压缩
  * （刚压过/过短）返回错误而非空成功 —— 手动动作要明确反馈。
@@ -440,7 +452,7 @@ export interface SessionCompactResult {
 }
 
 /**
- * 手动续写（完备化 R6③，截断动作条「继续生成」的引擎通道）：对末条
+ * 手动续写（截断动作条「继续生成」的引擎通道）：对末条
  * stopReason=length 的回复注入显式 continue 指令再跑（与自动路同消息同
  * 循环，续写预算重新给满）。会话回复中拒绝；末条非截断拒绝（明确结果）。
  * 事件面 = 新一段 run.started → message.delta… → run.completed。
@@ -466,6 +478,11 @@ export interface ProjectSummary {
   createdAt: number
   /** 置顶时间（毫秒）；缺省 = 未置顶（置顶分区按此倒序，移动语义：置顶后不在项目分区重复） */
   pinnedAt?: number
+  /**
+   * 项目级默认权限模式（审批面板「允许，并切换为」落位，zcode 同款语义：
+   * 同一项目的新会话沿用）。缺省 = 未设置（新会话回落全局设置/ask）。
+   */
+  defaultPermissionMode?: PermissionMode
 }
 
 export interface ProjectCreateParams {
@@ -542,13 +559,14 @@ export interface ModelDef {
   /** 支持的思考等级子集；缺省 = 跟随端点默认（不下发映射）。仅 reasoning 时有意义 */
   thinkingLevels?: ThinkingLevel[]
   /**
-   * 压缩参数覆盖（完备化批次 R1）：字段全可选，缺省走引擎默认
-   * （thresholdRatio 0.9 / roomFloorTokens 8192）。小窗口模型可调低让触发
-   * 更早。设置 UI 收在「高级」折叠（S7，与 compat 同面板同受众）。
+   * 压缩参数覆盖 —— 盘上兼容字段：压缩内核 = pi（触发线 pi reserve 制，
+   * 引擎按窗口自适应，见 runtime/compaction.ts piTriggerRatio），本覆盖
+   * pi 不读、引擎不消费，仅为旧盘上数据保留。调压缩行为的正道：pi
+   * settings（compaction.reserveTokens/keepRecentTokens）。
    */
   compaction?: CompactionParamsOverride
   /**
-   * 思考预算（完备化 R7，token 按档位）：推理模型的思考硬钳制，防小窗
+   * 思考预算（token 按档位）：推理模型的思考硬钳制，防小窗
    * 输出预算被思考吃光（死锁复盘的第四环）。字段全可选，缺省跟 pi 内建
    * 预算表。设置 UI 收在「高级」折叠。
    */
@@ -556,19 +574,19 @@ export interface ModelDef {
 }
 
 /**
- * 压缩触发参数的用户覆盖（ModelDef.compaction 的形状）。解析序照 pi
- * settings-manager 的三级形态：模型覆盖 →（全局设置，S7 随高级面板补）→
- * 内建默认。生效公式见 runtime/compaction.ts compactionThreshold。
+ * 压缩触发参数的用户覆盖（ModelDef.compaction 的形状）—— 盘上兼容字段：
+ * pi 不读（触发线 = ctx − reserve，reserve 按窗口自适应）；仅为旧盘上
+ * 数据兼容保留。生效公式见 runtime/compaction.ts piTriggerRatio。
  */
 export interface CompactionParamsOverride {
-  /** 占比触发线 (0,1]；默认 0.9（与 dsh 0.8 / Codex 90% 封顶同量级） */
+  /** 占比触发线 (0,1] */
   thresholdRatio?: number
-  /** 绝对余量下限（token）；默认 8192（dsh headroom 64K 的桌面版） */
+  /** 绝对余量下限（token） */
   roomFloorTokens?: number
 }
 
 /**
- * 思考预算（token，按档位；完备化 R7）：自托管 openai 系端点（vLLM/Qwen/
+ * 思考预算（token，按档位）：自托管 openai 系端点（vLLM/Qwen/
  * DashScope/SGLang/llama.cpp）的硬钳制 —— 引擎按当前思考档取预算并夹到
  * 输出余量（pi clampThinkingBudgetToAnswerRoom，答案保底 1024）。pi
  * ThinkingBudgets 的协议镜像；xhigh/max 档 pi 侧归 high（clampReasoning）。
@@ -582,7 +600,7 @@ export interface ThinkingBudgetsOverride {
 }
 
 /**
- * provider 级兼容覆盖（完备化 R7）：面向懂端点用户的高级面（设置页「高级」
+ * provider 级兼容覆盖：面向懂端点用户的高级面（设置页「高级」
  * 折叠），字段与 pi OpenAICompletionsCompat 同名直通 —— 未设置时 pi 按
  * baseUrl 自动探测。仅 openai 系方言消费（anthropic 走官方 budget_tokens，
  * 不经此面）。
@@ -624,7 +642,7 @@ export interface CustomProviderDef {
   /** 整 provider 禁用：保留定义不注册（再启用即恢复），区别于 deleteProvider 的彻底移除 */
   disabled?: boolean
   /**
-   * 端点兼容覆盖（完备化 R7，高级面）：字段与 pi OpenAICompletionsCompat
+   * 端点兼容覆盖（高级面）：字段与 pi OpenAICompletionsCompat
    * 同名直通，作用于本 provider 全部模型（pi 上游 models.json 的
    * ProviderConfig.compat 同位）。仅 openai 系方言消费；未设置时 pi 按
    * baseUrl 自动探测
@@ -781,7 +799,26 @@ export interface ProtocolEvents {
      */
     stopReason?: string
   }
-  'run.failed': { sessionId: string; message: string }
+  'run.failed': {
+    sessionId: string
+    message: string
+    /**
+     * 分段终态（additive）：失败/中止前已完成轮次的投影 ——
+     * abort 场景此前只有 message，已完成轮的 usage 不落宿主消息流，上下文
+     * 指示器在停止后停在旧值（数据其实在 pi 树，重启回查才回来）。有已
+     * 封存轮次时携带，宿主做与 run.completed 同款的终态替换；无则缺省
+     * （首请求即失败等场景，宿主维持既有失败收尾）。
+     */
+    messages?: ChatMessage[]
+  }
+  /**
+   * 轮终实报落地（additive）：工具循环的每个 turn_end 发一份
+   * 本轮端点实报 usage —— 上下文指示器在 run 进行中实时跟随（此前 usage
+   * 只随 run.completed 落账，run 内多轮工具时指示器全程冻结在 run 前的值，
+   * 中途触发的压缩看起来"远未到线"）。run 终态后以 segments 内的 usage
+   * 为准；compaction.completed 时宿主应弃置 live 值（切压缩后估算）。
+   */
+  'context.updated': { sessionId: string; usage: MessageUsage }
   /**
    * 流式增量（同一条 assistant 消息内按 kind 分流）：
    * - 'text'（缺省，兼容不带 kind 的旧引擎）：正文增量；
@@ -805,7 +842,7 @@ export interface ProtocolEvents {
    */
   'tool.completed': { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string }
   /**
-   * 工具执行中的流式进度（D5 定稿，2026-11-11 批次 3 additive）：长时工具
+   * 工具执行中的流式进度（D5 定稿，additive）：长时工具
    *（当前 = bash）的尾部输出快照，引擎侧 100ms 节流。text = 滚动快照全文
    *（非增量 delta —— 快照语义让 UI 无需自己累积/截断，直接整段替换渲染）。
    * 宿主按 callId 配对到 tool.started 建的工具卡。
@@ -818,6 +855,12 @@ export interface ProtocolEvents {
     toolName: string
     kind: ToolKind
     summary: string
+    /**
+     * 写类目标在工作区根之外（ask 越界写照常弹面板、用户允许即执行 ——
+     * 人是最终裁决者；宿主据此隐藏「始终允许此工作区」：规则是根内信任
+     * 记忆，永不覆盖越界）。缺省 = false。
+     */
+    outsideRoots?: boolean
   }
   /**
    * 观测条目实时推送（控制台时间线增量）：每产生一条观测记录即推一条摘要，
@@ -826,7 +869,7 @@ export interface ProtocolEvents {
    */
   'inspect.event': { sessionId: string; entry: InspectEntrySummary }
   /**
-   * 上下文压缩开始（批次 4 additive，D7 双路；1.2a 起 pi 内核接管）：reason =
+   * 上下文压缩开始（D7；pi 内核接管）：reason =
    * threshold（引擎自动阈值）/ manual（session.compact）/ overflow（引擎溢出
    * 恢复路压缩，发生在 run 生命周期内）。摘要生成是一次 LLM 调用（秒级），
    * 宿主可借此呈现压缩中状态。
@@ -855,9 +898,9 @@ export interface ProtocolEvents {
     error?: string
   }
   /**
-   * L1 工具结果裁剪（完备化 R3 additive）：检查点内 L2 摘要前的确定性降载 ——
+   * L1 工具结果裁剪（additive）：检查点内 L2 摘要前的确定性降载 ——
    * 全转录超限（8192 code point）的 toolResult 原位改写为保头 4096 / 保尾
-   * 1024 + middle 替换 marker，零 LLM 成本。1.2a 起压缩整体由 pi 内核接管，
+   * 1024 + middle 替换 marker，零 LLM 成本。压缩由 pi 内核接管，
    * 引擎不再发射本事件（合同保留供老宿主；pi 的等价能力是压缩时全转录进摘要）。
    */
   'compaction.pruned': {

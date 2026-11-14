@@ -1,5 +1,5 @@
 /**
- * 集成测试共享 harness（docs/计划/测试体系.md D4/D5）：tmp 四冒烟脚本
+ * 集成测试共享 harness（docs/模块/测试.md）：四冒烟脚本
  * （tools / compaction / approval-upgrade / ps-utf8）的公共底盘 ——
  * mock SSE 帧助手 + 引擎子进程驱动（stdio JSON-RPC）+ check 断言壳。
  * 各场景流与 mock 分流逻辑留在各 test 文件（脚本本就自包含，D6：断言
@@ -223,7 +223,7 @@ export async function initEngine(
 // ———— 断言壳：冒烟的 check(label, ok, detail) 原样语义 ————
 
 /**
- * label 进 expect 的 message：失败输出直接对上原冒烟编号（开发.md 配方
+ * label 进 expect 的 message：失败输出直接对上既有冒烟编号（配方
  * 时代的编号沿用），detail 原样附尾。
  */
 export function check(label: string, ok: unknown, detail = ''): void {

@@ -1,5 +1,5 @@
 /**
- * 测试引导（阶段 1.3 增）：vitest 进程内会加载 pi 包（node 工程的单元测试
+ * 测试引导：vitest 进程内会加载 pi 包（node 工程的单元测试
  * import 引擎源码），pi engines 要求 node ≥22.19 —— 系统全局 node 更老时
  * （实测 nvm4w 22.14 无 zlib zstd，pi 嵌套 undici 8.x 模块初始化即
  * TypeError，套件在 import 期崩）切到自带 runtime node 再跑 vitest。

@@ -3,7 +3,7 @@
  * 左侧）：架构位置 = ChatComposer 工具行的常驻只读仪表；职责边界 = 从 chat
  * store 聚合会话 usage 得占用量、从 engine store 取活动模型的 contextWindow
  * 做分母，纯展示（横条 + 百分比 + 点击悬浮卡），不发起任何写操作；分类明细
- * 与压缩预警线已随批次 4 落地（完备化 R1 起刻度 = 引擎随目录下发的有效触发
+ * 与压缩预警线（刻度 = 引擎随目录下发的有效触发
  * 占比，小窗模型前移），压缩回落 =
  * 分子切压缩条 tokensAfter（估算口径带 ≈，见下方 useMemo 注释）。
  * formatTokens 在此导出：HomeChat 的 UsageLine（消息用量行）同需 token 紧凑
@@ -37,7 +37,7 @@ const EMPTY_MESSAGES: MessageItem[] = []
 const DOT_TONES = ['bg-foreground', 'bg-foreground/50', 'bg-foreground/25']
 
 /**
- * 自动压缩触发线的回落值（完备化 R1 后真值随模型目录下发：ModelSummary
+ * 自动压缩触发线的回落值（真值随模型目录下发：ModelSummary
  * .compactionThresholdRatio，引擎按 model.compaction 覆盖与窗口解出）——
  * 仅老目录无字段时兜底 0.9。小窗模型触发线显著前移（20K 窗 ≈59%），
  * 常量镜像已废。
@@ -74,7 +74,7 @@ function EstimateRow({
 }
 
 /** 横条本体：斜纹轨道（用户参照稿图1；透明度只落在背景，合 UI 方针 3）+ 实色填充 +
- *  可选预警线（批次 4：90% 自动压缩线，越过即下一条消息前触发压缩） */
+ *  可选预警线（越过即下一条消息前触发压缩） */
 function ContextBar({
   pct,
   tone,
@@ -110,16 +110,24 @@ function ContextBar({
  * 上下文窗口指示器（输入卡工具行，模型下拉左侧）+ 点击悬浮卡（用户参照稿图2
  * 骨架：标题/进度条/缓存命中率）。口径：占用 = 末条带 usage 的 assistant 消息
  * input+cacheRead+cacheWrite+output —— pi 每轮全量重发上下文，三项和即该轮
- * 实发量，加 output 为"下一轮将重发"；与 Claude Code status 同源（末轮端点
- * 实报而非实时计数，流式中保持上一轮值）。分母 = 活动模型 contextWindow
+ * 实发量，加 output 为"下一轮将重发"；分母 = 活动模型 contextWindow
  * （不上网络的客户端元数据；自定义模型缺省 128K 偏保守 → 百分比偏高不偏低）。
- * 压缩回落（批次 4）：压缩条（role 'compaction'）比末条 usage 新 → 分子切
+ * 实时性：run 进行中每轮 turn_end 的实报经 context.updated 落
+ * live 值，指示器逐轮跟随（此前流式中冻结在上一 run 的值 —— run 内多轮
+ * 工具触发的压缩看起来"远未到线"）；终态回落落盘口径。
+ * 压缩回落：压缩条（role 'compaction'）比末条 usage 新 → 分子切
  * 压缩后 tokensAfter 估算（≈ 标记），下一条回复落成新 usage 切回实报。
  * MCP 工具/技能段明细待各自模块（主流对照见 技术笔记/token用量统计.md §6）。
  */
 export function ContextIndicator({ session }: { session: HomeSession }) {
   const messages =
     useChatStore((s) => (session.kind === 'chat' ? s.messagesBySession[session.chatId] : undefined)) ?? EMPTY_MESSAGES
+  // 轮终实报：run 进行中每轮 turn_end 落一份 —— 指示器实时跟随
+  // （此前流式中冻结在上一 run 的值，run 内多轮工具触发的压缩看起来"远未
+  // 到线"）。终态/压缩时引擎事件链清键，回落落盘口径
+  const contextLive = useChatStore((s) =>
+    session.kind === 'chat' ? s.contextLiveBySession[session.chatId] : undefined
+  )
   // 分母模型与 ModelMenu 同源（findActiveModel 双键）：同名模型跨 provider 收录时
   // id 单键命中错家 —— 未配 key 的收录家、或都配了 key 时目录在前的那家（后者
   // 上下文窗口大小还可能与自定义网关的那份不同，分母就错了）
@@ -127,10 +135,10 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
     findActiveModel(s.models, s.keyConfigured, s.activeModelId, s.activeProviderId)
   )
   const contextWindow = activeModel?.contextWindow ?? 0
-  // 有效压缩触发占比（完备化 R1）：引擎随目录下发，预警线/变色带/说明行三处
+  // 有效压缩触发占比：引擎随目录下发，预警线/变色带/说明行三处
   // 共用；老目录无字段回落 0.9
   const compactThreshold = activeModel?.compactionThresholdRatio ?? COMPACT_THRESHOLD_FALLBACK
-  // 压缩进行中（完备化 D8）：手动入口的禁用位（会话级护栏，引擎侧另有一道）
+  // 压缩进行中：手动入口的禁用位（会话级护栏，引擎侧另有一道）
   const compacting = useChatStore(selectCompacting)
 
   const { used, cacheHit, estimate, approximate } = useMemo(() => {
@@ -153,7 +161,7 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
       cacheRead += u.cacheRead
       cacheDen += u.input + u.cacheRead
     }
-    // 压缩回落（批次 4）：压缩条比末条 usage 新 = usage 还是压缩前的旧账（引擎侧
+    // 压缩回落：压缩条比末条 usage 新 = usage 还是压缩前的旧账（引擎侧
     // 同款守卫，pi-ai estimate 按时间戳判 usage 失效）→ 分子切压缩后估算
     // tokensAfter（估算口径，approximate 标记），明细三段随之作废不显示；
     // 下一答落成新 usage 后自然切回实报
@@ -169,18 +177,24 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
     }
     const overridden =
       compactionAfter !== undefined && compactionAt > usageAt ? compactionAfter : undefined
+    // 分子优先序：live（run 内最新轮实报，事件序即时间序；压缩时
+    // 已清键）> 压缩回落 tokensAfter 估算（≈）> 末条落盘 usage。
+    // live 与 overridden 不同时出现——压缩清 live 后、续轮回包前只有后者，
+    // 续轮 context.updated 一到 live 复位为真实实报
+    const used =
+      contextLive !== undefined
+        ? contextLive.input + contextLive.cacheRead + contextLive.cacheWrite + contextLive.output
+        : overridden ?? (usage ? usage.input + usage.cacheRead + usage.cacheWrite + usage.output : 0)
     return {
-      used:
-        overridden ??
-        (usage ? usage.input + usage.cacheRead + usage.cacheWrite + usage.output : 0),
-      approximate: overridden !== undefined,
+      used,
+      approximate: contextLive === undefined && overridden !== undefined,
       // 端点不报缓存的模型 cacheRead 恒 0，"0%" 是误导 → 不显示（零值省略同 UsageLine）
       cacheHit: cacheRead > 0 && cacheDen > 0 ? cacheRead / cacheDen : undefined,
       // 明细三段（引擎粗估，随末轮 usage 落盘流转）；旧会话/引擎未算/压缩回落时
       // undefined，明细区整块不渲染（不硬造占位行）
       estimate: overridden !== undefined ? undefined : usage?.contextEstimate
     }
-  }, [messages])
+  }, [messages, contextLive])
 
   const pct = contextWindow > 0 ? Math.min(used / contextWindow, 1) : 0
   // 两位小数：低占用时整数百分比信息量不足（6% 与 6.25% 是两回事）；>0 却四舍
@@ -269,14 +283,14 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
             </span>
           </div>
         )}
-        {/* 压缩说明行（批次 4）：解释横条刻度的含义 —— 越线后下一条消息前自动
+        {/* 压缩说明行：解释横条刻度的含义 —— 越线后下一条消息前自动
             压缩，回落动画即压缩产物（分子切 tokensAfter 估算）。百分比 = 有效
-            触发线（完备化 R1 随模型下发，小窗前移），四舍五入整显 */}
+            触发线（随模型下发，小窗前移），四舍五入整显 */}
         <div className="mt-3 flex items-center gap-1.5 border-t pt-3 text-xs text-muted-foreground">
           <span className="h-1.5 w-px bg-foreground/40" aria-hidden="true" />
           越过 {Math.round(compactThreshold * 100)}% 自动压缩上下文
         </div>
-        {/* 手动压缩入口（完备化 D8）：session.compact 已通协议（批次 4），此处补
+        {/* 手动压缩入口：session.compact 已通协议，此处补
             UI 面 —— 无可压缩（刚压过/内容不足）引擎报错落 chat store 错误条；
             压缩中按钮禁用（会话级护栏引擎侧也有） */}
         <Button

@@ -1,6 +1,6 @@
 /**
  * CogentKernel —— 南缝窄合同：Host 服务层与内核实现之间的唯一界面
- *（全局架构 D4，阶段 1.1 显式化）。
+ *（全局架构 D4）。
  *
  * 为什么要有这份合同（D4 复杂度账）：它早已隐式存在于 runtime/session.ts
  *（把 pi Agent 包成协议方法的那段），本文件只是把它写下来。形状 =
@@ -16,9 +16,8 @@
  *   （pi 消息对象、流式累积态）不越缝；
  * - 参照 dsh 教训：不做 waterfall 全量合同、不做 replay 确定性承诺 ——
  *   窄到够用，防复杂度黑洞（150+ 包爆炸是反面教材）；
- * - 阶段 1.1 唯一实现 = runtime/session.ts 的 SessionManager（会话域服务
- *   与内核尚为混体）；1.2 起拆出 PiSdkKernel，steer / setModel 独立化等
- *   目标面届时在此扩展 —— 现合同 = 现状面冻结，零行为变化。
+ * - 唯一实现 = kernel/pi-session-factory.ts 装配的 pi AgentSession；
+ *   runtime/session.ts 的 SessionManager 是消费本合同的会话域服务。
  */
 import type { ChatMessage, PermissionMode, ProtocolEvents, SessionSummary } from '../../protocol'
 
@@ -50,8 +49,8 @@ export interface CogentKernel {
   /** 会话转录投影（历史回查；含按需现算的上下文明细） */
   messages(sessionId: string): ChatMessage[]
   /**
-   * 会话级权限切换：内核面 = 权限通告写 transcript（下一轮请求生效），
-   * 域面 = summary.permissionMode 落盘 —— 混体方法（1.2 拆分时归位内核侧）
+   * 会话级权限切换：内核面 = 下一轮请求的系统提示词 cogent_permission 节
+   * （before_agent_start 现读活 mode），域面 = summary.permissionMode 落盘
    */
   setPermission(sessionId: string, mode: PermissionMode): SessionSummary
   /** 审批裁决回流：内核内挂起的 beforeToolCall 据此 resolve（配对失败 throw） */

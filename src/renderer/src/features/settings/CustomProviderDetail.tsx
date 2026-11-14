@@ -1,7 +1,7 @@
 /**
  * 自定义供应商详情卡（2026-11-10 从 ModelsSection.tsx 拆出）：ModelsSection
  * master-detail 右栏的自定义分支。字段组成：名称（头部行内编辑）/ Base URL /
- * API 格式 / API Key / 模型列表 / 高级（端点兼容，完备化 R7）；模型行复用
+ * API 格式 / API Key / 模型列表 / 高级（端点兼容）；模型行复用
  * ProviderModelRow（与内置详情共享），增改走 ModelDialog。
  */
 import { useMemo, useState } from 'react'
@@ -36,7 +36,7 @@ import {
 } from './ProviderModelRow'
 import { FIELD_GAP, FIELD_LABEL } from './models-recipes'
 
-/** 思考预算字段名的可选项（完备化 R7）：自托管 openai 系方言的三种认法 +
+/** 思考预算字段名的可选项：自托管 openai 系方言的三种认法 +
     不下发（缺省）。字段名原样透传引擎 → pi 方言层落请求体 */
 const BUDGET_FIELD_OPTIONS: ReadonlyArray<{ label: string; value: 'thinking_budget' | 'thinking_budget_tokens' | 'thinking_token_budget' | undefined }> = [
   { label: '不下发', value: undefined },
@@ -154,7 +154,7 @@ export function CustomProviderDetail({
         <FormatSelect value={def.apiFormat} onChange={(apiFormat) => patch({ apiFormat })} />
       </div>
 
-      {/* 高级折叠（完备化 R7）：端点兼容覆盖 —— 懂端点用户的面，默认收起。
+      {/* 高级折叠：端点兼容覆盖 —— 懂端点用户的面，默认收起。
           思考预算字段名 = 自托管 openai 系端点（vLLM/Qwen/DashScope/SGLang/
           llama.cpp）对方言字段名的认法，选对后模型级思考预算才会随请求下发；
           anthropic 方言走官方 budget_tokens 不经此面 */}

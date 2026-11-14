@@ -1,5 +1,5 @@
 /**
- * 「已压缩」折叠条（批次 4 步骤 4.2）—— 消息流里压缩发生位置的常驻标记行：
+ * 「已压缩」折叠条 —— 消息流里压缩发生位置的常驻标记行：
  * 引擎把被摘要区换成一条 compactionSummary 转录消息，本件是它的 renderer
  * 呈现（历史回查投影与 compaction.completed 事件手术两条来源同一形状）。
  *
@@ -56,7 +56,7 @@ export function CompactionBar({ message }: { message: ChatMessage }) {
 }
 
 /**
- * L1 prune 副行（完备化 R3/D8）：「已裁剪 N 处工具输出」—— 与折叠条同区的
+ * L1 prune 副行：「已裁剪 N 处工具输出」—— 与折叠条同区的
  * 置灰单行（TraceLine 家族一致）；展开列每处的字符量对账（N → M，格式化走
  * formatTokens 同款紧凑口径，字符非 token，行首注明）。历史回查不产此行
  * （转录真源是改写后的 toolResult，marker 自带痕迹），仅事件路径落

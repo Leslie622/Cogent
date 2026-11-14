@@ -1,5 +1,5 @@
 /**
- * 工具名策略 + 静态元数据表（阶段 1.3，工具切 pi 内置后的 Cogent 侧投影）。
+ * 工具名策略 + 静态元数据表（Cogent 侧投影）。
  *
  * pi 的 AgentTool 不带"风险类别"（内置 8 工具均未设 annotations，D8 勘误：
  * ToolAnnotations 作审批分级输入的上游前提不成立）——ToolKind 是 Cogent 的
@@ -7,11 +7,21 @@
  * 唯一 kind 源。静态表而非活工具实例的原因：历史回查投影（toChatMessages）
  * 在未装配内核的惰性会话上也要用（那时没有工具实例可查）。
  *
- * 命名映射（Cogent 自研名 → pi 内置名）：glob → find；bash 在 Windows 由
- * powershell 替代（D6/要点④：无 Git Bash 的 win 机不再依赖系统 bash）。
- * glob 名保留为历史条目 —— 1.3 之前落盘的转录里有它的 toolCall 块。
+ * 命名映射：v1 旧转录的 glob → pi find；bash 在 Windows 由
+ * powershell 替代（D6：无 Git Bash 的 win 机不再依赖系统 bash）。
+ * glob 名保留为历史条目 —— v1 旧转录里有它的 toolCall 块。
  */
 import { platform } from 'node:os'
+import {
+  createBashTool,
+  createEditTool,
+  createFindTool,
+  createGrepTool,
+  createLsTool,
+  createPowerShellTool,
+  createReadTool,
+  createWriteTool
+} from '@earendil-works/pi-coding-agent'
 import type { ToolKind } from '../../protocol'
 
 /** 当前平台的 shell 工具名（allowlist 与元数据表共用） */
@@ -55,11 +65,25 @@ const TOOL_METAS: Record<string, { kind: ToolKind; summarize: (args: unknown) =>
   edit: { kind: 'edit', summarize: (a) => summarizeArgs('edit', a) },
   bash: { kind: 'exec', summarize: (a) => summarizeArgs('bash', a) },
   powershell: { kind: 'exec', summarize: (a) => summarizeArgs('powershell', a) },
-  // 历史名（1.3 前转录）：自研 glob，kind 同只读
+  // 历史名（v1 旧转录）：glob，kind 同只读
   glob: { kind: 'read', summarize: (a) => summarizeArgs('glob', a) }
 }
 
 /** 工具名 → 元数据；未知名字（盘上旧转录的历史名）返回 undefined，调用方按只读兜底 */
 export function toolMeta(name: string): { kind: ToolKind; summarize: (args: unknown) => string } | undefined {
   return TOOL_METAS[name]
+}
+
+/**
+ * 重建会话工具集的模型侧声明（name/description/parameters）—— 供上下文明细
+ * 的 toolDefs 段估算：pi 的工具 schema 不进会话树，估算时按同一构造
+ * 函数现建（确定性：同版本同 schema），与请求里 toolsAdded 的形状同源。
+ * 声明对象不嵌 cwd（cwd 只进执行闭包），无需传根。
+ */
+export function toolDeclarations(): Array<{ name: string; description: string; parameters: unknown }> {
+  const tools =
+    platform() === 'win32'
+      ? [createReadTool(''), createPowerShellTool(''), createEditTool(''), createWriteTool(''), createGrepTool(''), createFindTool(''), createLsTool('')]
+      : [createReadTool(''), createBashTool(''), createEditTool(''), createWriteTool(''), createGrepTool(''), createFindTool(''), createLsTool('')]
+  return tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }))
 }

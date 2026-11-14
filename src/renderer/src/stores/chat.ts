@@ -12,9 +12,10 @@
  * 「出错了」的判别依据，见 docs/计划/回合过程折叠.md D6）。
  */
 import { create } from 'zustand'
-import type { ChatMessage, PermissionMode, SessionSummary } from '@/env.d'
+import type { ChatMessage, MessageUsage, PermissionMode, SessionSummary } from '@/env.d'
 import { useHomeStore } from '@/stores/home'
 import { useEngineStore } from '@/stores/engine'
+import { useProjectStore } from '@/stores/project'
 
 /**
  * 工具调用项（消息流里的独立行，工具卡数据源）：
@@ -76,10 +77,13 @@ export interface PendingApproval {
   toolKind: string
   /** 参数一行摘要（引擎生成，与工具卡标题同源） */
   summary: string
+  /** 写类目标在工作区根之外（引擎标记）：面板据此隐藏「始终允许此工作区」
+      （规则 = 根内信任记忆，永不覆盖越界；允许并切换为不受影响） */
+  outsideRoots?: boolean
 }
 
 /**
- * L1 prune 副行（完备化 R3/D8）：一次检查点裁了 N 处工具输出 → 一行
+ * L1 prune 副行：一次检查点裁了 N 处工具输出 → 一行
  * 「已裁剪 N 处工具输出」；转录里对应物是改写后的 toolResult（marker 即
  * 痕迹），本行是纯呈现物 —— 历史回查投影不产此行（引擎投影的 toolResult
  * 摘要自带 marker），仅事件路径落。
@@ -92,7 +96,7 @@ export interface PrunedItem {
 }
 
 /** 消息列表元素：内容消息（ChatMessage）或工具调用行（ToolItem）或审批卡行
-    （ApprovalItem）或裁剪副行（PrunedItem，完备化 R3/D8） */
+    （ApprovalItem）或裁剪副行（PrunedItem） */
 export type MessageItem = ChatMessage | ToolItem | ApprovalItem | PrunedItem
 
 /**
@@ -100,7 +104,7 @@ export type MessageItem = ChatMessage | ToolItem | ApprovalItem | PrunedItem
  * "Error invoking remote method 'engine:request': Error: " 前缀（Electron
  * 行为，非协议内容），协议帧的 message 才是给人读的文案 —— lastErrorBySession
  * 直出渲染前剥掉，否则用户看到的是裸 IPC 报文（验收实测）。
- * 2026-11-12 导出：单测直测（docs/计划/测试体系.md D7，仅加 export 不改行为）。
+ * 导出供单测直测（仅加 export 不改行为）。
  */
 export function unwrapIpcError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error)
@@ -184,6 +188,38 @@ export function flatWithCompaction(flat: MessageItem[], kept: Array<ChatMessage 
   return merged
 }
 
+/**
+ * run 终态整段替换（run.completed / run.failed(messages) 共用）：
+ * 定位本次 run 的边界（列表里最后一条用户消息），其后的流式占位/封段/工具卡
+ * 全部换成引擎分段终态 —— 审批痕迹行锚回各自工具卡之前（用户裁决痕迹，
+ * 转录里无对应物），压缩条/裁剪副行按时间序并回（D9：不是 run 的产物，
+ * 替换不得吞掉；审批锚回在其后组合，卡匹配不受影响）。
+ */
+function replaceRunTerminal(list: MessageItem[], segments: ChatMessage[]): MessageItem[] {
+  let lastUser = -1
+  for (let i = list.length - 1; i >= 0; i--) {
+    // 先落局部再判别：元素访问（list[i]）不参与窄化，点号链才行
+    const item = list[i]
+    if (item.type === undefined && item.role === 'user') {
+      lastUser = i
+      break
+    }
+  }
+  const keptApprovals: ApprovalItem[] =
+    lastUser >= 0 ? list.slice(lastUser + 1).filter((m): m is ApprovalItem => m.type === 'approval') : []
+  const keptCompaction = (
+    lastUser >= 0
+      ? list.slice(lastUser + 1).filter((m) => m.type === 'pruned' || (m.type === undefined && m.role === 'compaction'))
+      : []
+  ) as Array<ChatMessage | PrunedItem> // 谓词保证形状，联合收窄用断言（filter 不做类型谓词）
+  return lastUser >= 0
+    ? [
+        ...list.slice(0, lastUser + 1),
+        ...flatWithApprovals(flatWithCompaction(flattenSegments(segments), keptCompaction), keptApprovals)
+      ]
+    : list
+}
+
 /** sessionId → 消息列表（含流式中的 assistant 消息与工具卡行） */
 type MessagesBySession = Partial<Record<string, MessageItem[]>>
 
@@ -210,9 +246,13 @@ export interface ChatState {
   /** sessionId → 压缩进行中（完备化 D8，compaction.started→completed 窗口）：
       消息流内状态条呈「正在压缩上下文」（Codex 两态形态的前态） */
   compactingBySession: Partial<Record<string, boolean>>
-  /** sessionId → 最近一次 L1 prune（完备化 R3）：pruned 副行文案与折叠条同区
+  /** sessionId → 最近一次 L1 prune：pruned 副行文案与折叠条同区
       呈现；completed 大手术会重排列表，副行在 completed 后落（时序见事件分支） */
   prunedBySession: Partial<Record<string, Array<{ toolCallId: string; originalChars: number; prunedChars: number }>>>
+  /** sessionId → run 进行中的轮终实报（context.updated）：指示器
+      实时分子 —— run 终态（completed/failed）时随 segments 落账并清除，
+      compaction.completed 时弃置（压缩前的旧值会让位于 tokensAfter 估算） */
+  contextLiveBySession: Partial<Record<string, MessageUsage>>
   /** 初载失败的原因（引擎不可用等；App 横幅呈现）。null = 正常 */
   loadError: string | null
 
@@ -231,13 +271,15 @@ export interface ChatState {
   abort: () => Promise<void>
   /** 审批裁决（专属 IPC 通道）：先收面板/落痕迹行（乐观），引擎侧竞态失败不回滚；
       options.message = 拒绝附言（「告诉模型接下来怎么做」），options.always =
-      'workspace' 落工作区级始终允许规则（审批交互升级 D2） */
+      'workspace' 落工作区级始终允许规则（审批交互升级 D2），options.switchMode
+      = 「允许，并切换为」（切会话模式 + 记项目默认，F6 定稿；result.summary
+      回写会话列表的模式标记） */
   respondApproval: (
     requestId: string,
     approved: boolean,
-    options?: { message?: string; always?: 'workspace' }
+    options?: { message?: string; always?: 'workspace'; switchMode?: 'auto' | 'autonomous' }
   ) => Promise<void>
-  /** 手动续写（完备化 R6③，截断动作条）：注入引擎侧续写指令再跑 —— 无用户
+  /** 手动续写（截断动作条）：注入引擎侧续写指令再跑 —— 无用户
       泡（指令消息在引擎投影层并入相邻段），乐观置运行态，事件流照常驱动 */
   continueGeneration: () => Promise<void>
   /** 手动压缩（截断动作条的腾地方向）：session.compact，折叠条/回落由既有
@@ -271,6 +313,30 @@ export function selectCompacting(state: ChatState): boolean {
   return state.activeSessionId !== null && state.compactingBySession[state.activeSessionId] === true
 }
 
+/**
+ * 项目级默认权限模式（F6「允许，并切换为」落位）：projectId 直配，否则 cwd
+ * 前缀落进某项目 cwds（与引擎 projectByIdOrCwd 同口径）。路径归一 = 小写 +
+ * 斜杠统一（renderer 无 node:path；比对语义与引擎 resolve+sep 等价 —— 都只
+ * 防 `work` 误配 `work-x`）。未设置/无归属返回 undefined（链上回落全局默认）
+ */
+export function projectDefaultMode(projectId?: string, cwd?: string): PermissionMode | undefined {
+  const projects = useProjectStore.getState().projects
+  if (projects.length === 0) return undefined
+  const hit =
+    projectId !== undefined
+      ? projects.find((p) => p.id === projectId)
+      : cwd === undefined
+        ? undefined
+        : projects.find((p) => {
+            const normalized = cwd.replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase()
+            return p.cwds.some((root) => {
+              const r = root.replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase()
+              return normalized === r || normalized.startsWith(`${r}/`)
+            })
+          })
+  return hit?.defaultPermissionMode
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
@@ -282,6 +348,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   truncatedBySession: {},
   compactingBySession: {},
   prunedBySession: {},
+  contextLiveBySession: {},
   loadError: null,
 
   // 初载不自动建会话：归档是回收站语义，"活跃列表空"有两种含义 —— 首装，或
@@ -319,14 +386,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   createSession: async (params) => {
-    // 权限模式随物化落定（审批交互升级第 3 步）：显式 params > 新聊天暂存位 >
-    // 设置页「默认权限」（engine store；ask 缺省语义与协议/引擎一致）
+    // 权限模式随物化落定（审批交互升级第 3 步 + F6 项目默认）：显式 params >
+    // 新聊天暂存位 > **项目默认**（「允许，并切换为」落位，zcode 同款：同一
+    // 项目的新会话沿用）> 设置页「默认权限」（engine store；ask 缺省语义与
+    // 协议/引擎一致）。项目匹配与引擎 projectIdOf 同口径：projectId 直配，
+    // 否则 cwd 前缀落进某项目 cwds
     const home = useHomeStore.getState().session
     // 链尾 engine store 字段非 optional，链必有值 → 直接落（等值覆盖 params 的
     // 同名字段，语义 = 显式选择优先已由 ?? 链前段保证）
     const permissionMode =
       params?.permissionMode ??
       (home.kind === 'new' ? home.permissionMode : undefined) ??
+      projectDefaultMode(params?.projectId, params?.cwd) ??
       useEngineStore.getState().defaultPermissionMode
     const summary = await window.cogent.engineRequest('session.create', {
       ...params,
@@ -418,16 +489,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   submit: async (text, model, thinkingLevel, provider) => {
-    // 无活动会话时按需物化：空列表着陆页（首装/全部归档后重启）直接发送。
-    // 此前 activeSessionId 为 null 静默 return = 丢消息。projectId 取新聊天
-    // 视图态 —— 会话与项目的绑定只在 session.create 时可定（同 ProjectPicker
-    // 的串归属边界），chat 视图态不会有"活动会话为空"（archive/delete 已换落）
+    // 会话物化条件：**新聊天视图态优先于 activeSessionId**。
+    // startNewChat 只翻视图态不清 activeSessionId —— 只看 id 会把"新聊天"里的
+    // 首条消息落进残留的旧会话（权限暂存位随之被绕过：新聊天切自主，发消息后
+    // 菜单跳回旧会话的 ask）。kind:'new' 强制物化（createSession 消费视图态的
+    // projectId 与 permissionMode）；chat 态下 activeSessionId 为 null（空列表
+    // 着陆页直发，此前是静默 return 丢消息）才兜底建。
     const home = useHomeStore.getState().session
     const sessionId =
-      get().activeSessionId ??
-      (await get().createSession(
-        home.kind === 'new' && home.projectId !== undefined ? { projectId: home.projectId } : undefined
-      ))
+      home.kind === 'new'
+        ? await get().createSession(home.projectId !== undefined ? { projectId: home.projectId } : undefined)
+        : (get().activeSessionId ?? (await get().createSession(undefined)))
     // 乐观上屏用户消息；assistant 回复由引擎事件流驱动
     const userMessage: ChatMessage = {
       id: `u-${crypto.randomUUID()}`,
@@ -557,8 +629,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { pendingApprovalsBySession, messagesBySession }
     })
     // renderer→引擎边界（合法设防位）：引擎拒识 requestId（中止竞态收口在前 /
-    // 重复点击）时抛 InvalidParams —— 痕迹行不回滚，终局以 run 终态事件为准
-    await window.cogent.respondApproval(requestId, approved, options).catch(() => {})
+    // 重复点击）时抛 InvalidParams —— 痕迹行不回滚，终局以 run 终态事件为准。
+    // switchMode 场景引擎带回切换后的会话摘要 → 同步列表里的模式标记
+    const result = await window.cogent.respondApproval(requestId, approved, options).catch(() => undefined)
+    if (result?.summary !== undefined) {
+      const summary = result.summary
+      useChatStore.setState((state) => ({
+        sessions: state.sessions.map((s) => (s.id === summary.id ? summary : s))
+      }))
+    }
   }
 }))
 
@@ -673,7 +752,7 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'approval.request': {
-        const { sessionId, requestId, toolName, kind, summary } = event.params
+        const { sessionId, requestId, toolName, kind, summary, outsideRoots } = event.params
         useChatStore.setState((state) => {
           // D1：pending 不进消息流 —— 会话级状态，确认面板（ApprovalPanel）
           // 是唯一呈现位；数组追加（并行写工具会并发多个请求）
@@ -681,7 +760,10 @@ export function bindEngineEvents(): () => void {
           return {
             pendingApprovalsBySession: {
               ...state.pendingApprovalsBySession,
-              [sessionId]: [...list, { requestId, toolName, toolKind: kind, summary }]
+              [sessionId]: [
+                ...list,
+                { requestId, toolName, toolKind: kind, summary, ...(outsideRoots === true && { outsideRoots: true }) }
+              ]
             }
           }
         })
@@ -697,7 +779,7 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'compaction.pruned': {
-        // L1 裁剪落账（完备化 R3/D8，D9 起独立呈现）：副行**立即追加**到列表
+        // L1 裁剪落账：副行**立即追加**到列表
         // 尾（当前流内的过程行）—— L1 单独够（无后续 completed）时它就是本次
         // 裁剪的全部呈现；同一检查点若跟进 L2（completed），completed 手术会
         // 撤下独立行、随折叠条配对重插，不双份。entries 同时记 prunedBySession
@@ -724,10 +806,15 @@ export function bindEngineEvents(): () => void {
         // 历史回查投影天然一致；事件载荷已含折叠条全部数据（summary/前后
         // token/锚点/摘要用量），手术零往返，无"重拉历史"竞态
         const { sessionId, error, tokensBefore, tokensAfter, summary, summarizedUntil, summaryUsage } = event.params
-        // 无论成败清「压缩中」位（失败也结束窗口）
-        useChatStore.setState((state) => ({
-          compactingBySession: { ...state.compactingBySession, [sessionId]: undefined }
-        }))
+        // 无论成败清「压缩中」位（失败也结束窗口）；同时弃置轮终 live 值 ——
+        // 它是压缩前的旧账，指示器分子切压缩后 tokensAfter 估算（≈ 口径）
+        useChatStore.setState((state) => {
+          const { [sessionId]: _live, ...liveRest } = state.contextLiveBySession
+          return {
+            compactingBySession: { ...state.compactingBySession, [sessionId]: undefined },
+            contextLiveBySession: liveRest
+          }
+        })
         if (error !== undefined || summarizedUntil === undefined) return // 失败路：自动已降级继续、手动走方法错误帧
         useChatStore.setState((state) => {
           const local = state.messagesBySession[sessionId]
@@ -780,7 +867,7 @@ export function bindEngineEvents(): () => void {
             compaction: { tokensBefore: tokensBefore ?? 0, tokensAfter, summaryUsage },
             timestamp
           }
-          // L1 prune 副行（完备化 R3/D8）：随折叠条同区配对呈现「已裁剪 N 处
+          // L1 prune 副行：随折叠条同区配对呈现「已裁剪 N 处
           // 工具输出」，取后即清（下次裁剪再来）
           const head: MessageItem[] = [bar]
           if (pruned !== undefined && pruned.length > 0) {
@@ -802,49 +889,27 @@ export function bindEngineEvents(): () => void {
         })
         return
       }
+      case 'context.updated': {
+        // 轮终实报：指示器 run 内实时分子 —— 事件序即时间序，
+        // 后轮覆盖前轮；run 终态/压缩时清除（见各分支）
+        const { sessionId, usage } = event.params
+        useChatStore.setState((state) => ({
+          contextLiveBySession: { ...state.contextLiveBySession, [sessionId]: usage }
+        }))
+        return
+      }
       case 'run.completed': {
         const { sessionId, message, messages, stopReason } = event.params
         useChatStore.setState((state) => {
           const list = state.messagesBySession[sessionId]
           if (list === undefined) return state
-          // 终态整段替换：定位本次 run 的边界（列表里最后一条用户消息），
-          // 其后的流式占位/封段/工具卡全部换成引擎分段终态（messages 优先，
-          // 老引擎无 messages 时退回聚合 message 单段 —— 同一展平路径）
+          // 终态整段替换（messages 优先，老引擎退回聚合 message 单段）
           const segments = messages ?? (message !== undefined ? [message] : [])
-          let lastUser = -1
-          for (let i = list.length - 1; i >= 0; i--) {
-            // 先落局部再判别：元素访问（list[i]）不参与窄化，点号链才行
-            const item = list[i]
-            if (item.type === undefined && item.role === 'user') {
-              lastUser = i
-              break
-            }
-          }
-          // 审批痕迹行是用户裁决痕迹（转录里无对应物）：终态替换保留，但**锚回
-          // 各自工具卡之前**（详见 flatWithApprovals 注释 —— 逻辑已提出为模块级
-          // 导出函数，行为不变）
-          const keptApprovals: ApprovalItem[] =
-            lastUser >= 0 ? list.slice(lastUser + 1).filter((m): m is ApprovalItem => m.type === 'approval') : []
-          // 压缩条/裁剪副行不是 run 的产物（D9：压缩发生在 run 边界/轮间，
-          // completed/pruned 事件插进替换区）：终态替换不得吞掉 —— 按时间序
-          // 并回替换区（详见 flatWithCompaction 注释）。审批锚回在其后组合，
-          // 卡匹配不受影响
-          const keptCompaction = (
-            lastUser >= 0
-              ? list
-                  .slice(lastUser + 1)
-                  .filter((m) => m.type === 'pruned' || (m.type === undefined && m.role === 'compaction'))
-              : []
-          ) as Array<ChatMessage | PrunedItem> // 谓词保证形状，联合收窄用断言（filter 不做类型谓词）
-          const finalMessages =
-            lastUser >= 0
-              ? [
-                  ...list.slice(0, lastUser + 1),
-                  ...flatWithApprovals(flatWithCompaction(flattenSegments(segments), keptCompaction), keptApprovals)
-                ]
-              : list
+          const finalMessages = replaceRunTerminal(list, segments)
           // 面板兜底清空（常态路径裁决时已收；防御 run 终态与裁决竞态的残留）
           const { [sessionId]: _cleared, ...pendingRest } = state.pendingApprovalsBySession
+          // 轮终 live 值随终态清除（segments 内 usage 为准）
+          const { [sessionId]: _live, ...liveRest } = state.contextLiveBySession
           return {
             runningBySession: { ...state.runningBySession, [sessionId]: false },
             // abort raced 完成（完成先到）：停止位一并消费
@@ -852,6 +917,7 @@ export function bindEngineEvents(): () => void {
             truncatedBySession: { ...state.truncatedBySession, [sessionId]: stopReason === 'length' },
             messagesBySession: { ...state.messagesBySession, [sessionId]: finalMessages },
             pendingApprovalsBySession: pendingRest,
+            contextLiveBySession: liveRest,
             // 首条消息后标题已在引擎侧生成；updatedAt 顺带推进（排序口径）
             sessions: state.sessions.map((session) =>
               session.id === sessionId ? { ...session, updatedAt: Date.now() } : session
@@ -862,30 +928,63 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'run.failed': {
-        const { sessionId, message } = event.params
+        const { sessionId, message, messages } = event.params
         useChatStore.setState((state) => {
           // 停止位前置判别（D6）：用户点的停止 → 「已停止」不是错误（半截正文
           // 封存保留、错误条清掉，回合头条表达状态）；真失败 → 错误条照旧
           const wasStopped = state.stoppingBySession[sessionId] === true
+          // live 值随终态清除：有 messages 时 usage 已落 segments；无时也不留
+          // 旧值蒙指示器（终态后分子回落末条落盘 usage）
+          const { [sessionId]: _live, ...liveRest } = state.contextLiveBySession
           const base = {
             runningBySession: { ...state.runningBySession, [sessionId]: false },
             stoppingBySession: { ...state.stoppingBySession, [sessionId]: false },
             truncatedBySession: { ...state.truncatedBySession, [sessionId]: false },
+            contextLiveBySession: liveRest,
             lastErrorBySession: wasStopped
               ? { ...state.lastErrorBySession, [sessionId]: undefined }
               : { ...state.lastErrorBySession, [sessionId]: message }
           }
           const list = state.messagesBySession[sessionId]
           if (list === undefined) return base
+          // 分段终态：引擎带已封存轮次（abort 前完成的轮，含
+          // usage）→ 与 completed 同款终态替换；中止时被截断的半截正文不在
+          // segments 里（那轮 turn_end 未发生）——从流式占位捞出改 id 续在
+          // 终态之后（保留既有「已停止封存半截」的验收行为）
+          if (messages !== undefined && messages.length > 0) {
+            const partial =
+              wasStopped
+                ? list.find((m): m is ChatMessage => m.type === undefined && m.id === 'streaming')
+                : undefined
+            const segments =
+              partial !== undefined && (partial.content !== '' || partial.thinking !== undefined)
+                ? [...messages, { ...partial, id: `live-${crypto.randomUUID()}` }]
+                : messages
+            const replaced = replaceRunTerminal(list, segments)
+            // 挂起中的审批（会话级面板态）收面板 + 落 cancelled 痕迹行（引擎侧
+            // signal 已 resolve block）—— 不留永久等待面板/痕迹缺口
+            return {
+              ...base,
+              messagesBySession: {
+                ...state.messagesBySession,
+                [sessionId]: [
+                  ...replaced,
+                  ...(state.pendingApprovalsBySession[sessionId] ?? []).map(
+                    (p): ApprovalItem => ({ ...p, id: p.requestId, type: 'approval', status: 'cancelled' })
+                  )
+                ]
+              },
+              pendingApprovalsBySession: { ...state.pendingApprovalsBySession, [sessionId]: [] }
+            }
+          }
           return {
             ...base,
             messagesBySession: {
               ...state.messagesBySession,
-              // 失败收尾：中止 = 半截占位改名封存（同 tool.started 的封段接力，
-              // 已出文本留在消息流）；真失败 = 占位移除（既有口径）。
-              // 挂在 run 里的工具卡若还 running（打断在工具处）标 blocked；挂起中
-              // 的审批（会话级面板态）收面板 + 落 cancelled 痕迹行（引擎侧
-              // signal 已 resolve block）—— 不留永久等待面板/痕迹缺口
+              // 失败收尾（引擎无分段 —— 首请求即失败等）：中止 = 半截占位改名
+              // 封存（同 tool.started 的封段接力，已出文本留在消息流）；真失败
+              // = 占位移除（既有口径）。挂在 run 里的工具卡若还 running（打断
+              // 在工具处）标 blocked
               [sessionId]: [
                 ...list
                   .map((m) =>
@@ -894,11 +993,7 @@ export function bindEngineEvents(): () => void {
                       : m
                   )
                   .filter((m) => m.id !== 'streaming')
-                  .map((m) =>
-                    m.type === 'tool' && m.status === 'running'
-                      ? { ...m, status: 'blocked' as const }
-                      : m
-                  ),
+                  .map((m) => (m.type === 'tool' && m.status === 'running' ? { ...m, status: 'blocked' as const } : m)),
                 ...(state.pendingApprovalsBySession[sessionId] ?? []).map(
                   (p): ApprovalItem => ({ ...p, id: p.requestId, type: 'approval', status: 'cancelled' })
                 )

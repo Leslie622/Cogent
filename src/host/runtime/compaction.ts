@@ -1,16 +1,15 @@
 /**
- * 上下文压缩域的残留两面（阶段 1.2a 瘦身后）—— 手搓压缩内核
- * （L1 裁剪 / 切点算法 / 摘要提示词 / 原位插入）已整体让位 pi 内置压缩
- * （全局架构 D6：pi 会话树靠 message_end 追加，原位 splice 会分叉；pi 的
- * reserve/keep 窗口与溢出恢复覆盖全部触发场景）。本文件只剩两个消费面：
+ * 上下文压缩域的两个消费面 —— 压缩内核 = pi AgentSession 内置
+ * （全局架构 D6：reserve/keep 窗口、溢出恢复、摘要请求全在 prompt()
+ * 生命周期内自管），Cogent 侧不再有压缩驱动。本文件只剩：
  *
  * - convertToLlmMessages：上下文明细估算的转录整形（session.ts estimateContext
  *   的输入）。pi 的真实请求组装走 sdk 的 convertToLlmWithBlockImages，两者
  *   同为"压缩条 → user 摘要消息"口径，估算与预算近似同源（明细本就是粗估）。
  *   compactionSummary 角色由 pi coding-agent 原生声明（core/messages.ts 的
  *   CustomAgentMessages 合并），本文件不再自行声明；
- * - compactionThreshold 族：models.list 目录随发的有效阈值（UI 指示器预警线，
- *   完备化 R1 的 dsh 同构公式）。
+ * - piTriggerRatio：models.list 目录随发的触发占比（UI 指示器预警线）
+ *   —— pi reserve 制的真值口径。
  */
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { Api, Message } from '@earendil-works/pi-ai'
@@ -19,7 +18,7 @@ import type { CompactionParamsOverride } from '../../protocol'
 // ———— 转录整形（D9 保留式投影） ————
 
 /**
- * 压缩条投影前导语（dsh CHECKPOINT_PREAMBLE 同款措辞，完备化 R4）：把摘要
+ * 压缩条投影前导语（dsh CHECKPOINT_PREAMBLE 同款措辞）：把摘要
  * 框定为「既定背景」而非「压缩事件」—— 模型直接续任务，不复述也不承认
  * 检查点。pi 官方前缀（"history before this point was compacted…"）会诱导
  * 模型把压缩本身当话题，dsh 措辞消除这层噪音。标签用 Cogent 一贯的
@@ -66,19 +65,28 @@ export function convertToLlmMessages(messages: AgentMessage[]): Message[] {
   return result
 }
 
-// ———— 触发阈值（完备化 R1：dsh 同构公式 + 特小窗阈值兜底 + 按模型覆盖） ————
+// ———— 触发线（pi reserve 制的口径镜像） ————
 
-/** 占比触发线（缺省；dsh 0.8 / Codex 90% 封顶同量级，pi 靠 reserve 兜） */
-export const COMPACTION_THRESHOLD = 0.9
-/** 输出预算余量下限（token）：小窗下占比线会让输出预算饿死，换余量线 */
-export const ROOM_FLOOR_TOKENS = 8_192
-/** 特小窗兜底：占比线与余量线都低于半窗时，退到半窗（0 = 每回合必触发） */
-const SMALL_WINDOW_THRESHOLD_FLOOR = 0.5
+/** pi 压缩 reserve 缺省（settings-defaults.ts；与 SettingsManager 解析一致） */
+export const PI_DEFAULT_RESERVE_TOKENS = 16_384
 
 /**
- * Model.compaction 附加字段（完备化 R1，声明合并 —— 上游 Model 无此维度）：
- * 用户在 ModelDef 上按模型覆盖触发参数；pi 不读它（pi 用自己的
- * CompactionSettings），Cogent 目录下发预警线时消费。
+ * pi 真实触发线占比：`1 − reserve/ctx`，reserve 经窗口自适应
+ * （adaptCompactionToWindow 同款：min(16384, ctx/4)）—— models.list 随目录
+ * 下发（ModelSummary.compactionThresholdRatio），指示器预警线/变色带据此
+ * 画**引擎真值**（画线偏离真值 = 用户看到"未到线就压了"）。窗口缺数据
+ * （≤0）返回 NaN，下发处 Number.isFinite 守卫。
+ */
+export function piTriggerRatio(contextWindow: number): number {
+  if (contextWindow <= 0) return Number.NaN
+  const reserve = Math.min(PI_DEFAULT_RESERVE_TOKENS, Math.floor(contextWindow / 4))
+  return (contextWindow - reserve) / contextWindow
+}
+
+/**
+ * Model.compaction 附加字段（声明合并 —— 上游 Model 无此维度）：盘上兼容
+ * 字段 —— pi 不读（触发线走 pi reserve 制 + 引擎自适应），引擎也不消费，
+ * 仅为旧盘上 ModelDef 数据的类型兼容保留。
  */
 declare module '@earendil-works/pi-ai' {
   // 类型参数表须与原接口一致（合并语法要求），TApi 未用属刻意
@@ -88,16 +96,27 @@ declare module '@earendil-works/pi-ai' {
   }
 }
 
+// ———— pi CompactionSettings 的小窗自适应 ————
+
+/** pi 压缩参数形状（settings-manager getCompactionSettings 的返回面） */
+export interface PiCompactionSettings {
+  enabled: boolean
+  reserveTokens: number
+  keepRecentTokens: number
+}
+
 /**
- * 有效压缩触发阈值：max(半窗兜底, min(占比线, 余量线))。
- * ctx ≤ 0（目录缺数据的怪模型）→ Infinity（永不触发，渲染端回落 0.9）。
+ * 小窗下收敛 pi 的 reserve/keep：pi 默认固定 reserve 16384 / keep 20000，
+ * 小窗（ctx ≤ keep 时被摘要区间为空）会「触发线早早响、压缩无可压缩收场」。
+ * 收敛公式：keep = min(keep, 半窗)、reserve = min(reserve,
+ * 四分之一窗) —— 标准窗（≥ 40K/64K）两个 min 都取原值，行为零变化；
+ * 窗口未知（≤ 0，含目录缺数据）不碰 pi 解析结果。
  */
-export function compactionThreshold(contextWindow: number, override?: CompactionParamsOverride): number {
-  if (contextWindow <= 0) return Number.POSITIVE_INFINITY
-  const ratio = override?.thresholdRatio ?? COMPACTION_THRESHOLD
-  const floor = override?.roomFloorTokens ?? ROOM_FLOOR_TOKENS
-  const byRatio = contextWindow * ratio
-  const byRoom = contextWindow - floor
-  const ceiling = Math.min(byRatio, byRoom)
-  return Math.max(contextWindow * SMALL_WINDOW_THRESHOLD_FLOOR, ceiling)
+export function adaptCompactionToWindow(settings: PiCompactionSettings, contextWindow: number): PiCompactionSettings {
+  if (contextWindow <= 0) return settings
+  return {
+    ...settings,
+    keepRecentTokens: Math.min(settings.keepRecentTokens, Math.floor(contextWindow / 2)),
+    reserveTokens: Math.min(settings.reserveTokens, Math.floor(contextWindow / 4))
+  }
 }

@@ -1,6 +1,6 @@
 /**
- * PiSdkKernel 装配工厂（全局架构 D5 / 阶段 1.2）—— 把 pi coding-agent 的
- * createAgentSession 装配为 Cogent 会话内核（南缝唯一实现，阶段 1.3 起正名）。
+ * PiSdkKernel 装配工厂（全局架构 D5）—— 把 pi coding-agent 的
+ * createAgentSession 装配为 Cogent 会话内核（南缝唯一实现）。
  *
  * 装配纪律（对照 tmp 探针实证 + reference/pi 行号）：
  * - 会话 id：SessionManager.create(cwd, dir, {id}) 显式指定 —— pi 会话 id =
@@ -11,16 +11,15 @@
  *   由 index.ts 的凭据 sink 注入），绝不读写 ~/.pi 的 auth.json —— Cogent 的
  *   key 持久层在壳侧 safeStorage；
  * - 系统提示词：systemPromptOverride 整体注入 Cogent 自拼提示词；pi 在其后
- *   自动追加 <cwd> 环境段（探针实证，重复声明无害，1.4 对账去重）；
+ *   自动追加 <cwd> 环境段（探针实证，重复声明无害，已对账去重）；
  * - 审批（D8）：**链式包裹 agent.beforeToolCall** 而非 InlineExtension 的
  *   tool_call 事件 —— pi AgentSession 装的扩展分发器丢弃核心循环传入的
  *   abort signal（agent-session.ts:719 形参无 signal），挂起审批在中止时会
  *   永悬（agent-loop.ts:739 的 await 无超时无外部 resolve）；链式包裹保住
  *   pi 原钩子（扩展链不失联）且拿回 signal；
  * - 压缩：pi 内置（settings 默认 reserve 16384 / keep 20000，含溢出恢复与
- *   provider 自动重试，全部发生在 prompt() Promise 生命周期内）—— 手搓
- *   L1/L2 与 pi 会话树不兼容（pi 靠 message_end 追加，原位 splice 会分叉），
- *   整体让位。
+ *   provider 自动重试，全部发生在 prompt() Promise 生命周期内）；Cogent 侧
+ *   只做小窗自适应（见 factory 尾部的 settings 链式包裹）。
  */
 import { join, resolve } from 'node:path'
 import {
@@ -33,7 +32,17 @@ import {
   type ModelRuntime
 } from '@earendil-works/pi-coding-agent'
 import type { Agent, AgentMessage, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
+import type { Usage } from '@earendil-works/pi-ai'
+import { adaptCompactionToWindow } from '../runtime/compaction'
 import { COGENT_TOOL_NAMES } from '../runtime/tool-meta'
+
+/**
+ * 投影源里的压缩条：pi 的 CompactionSummaryMessage 不带 usage
+ * （createCompactionSummaryMessage 落树时丢弃），而 CompactionEntry 本身有
+ * —— readPiTranscript 构造投影源时补挂（仅呈现口径，不回写 pi 树），
+ * 历史折叠条的 summaryUsage 小字账由此而来。
+ */
+export type CompactionBarSource = Extract<AgentMessage, { role: 'compactionSummary' }> & { usage?: Usage }
 
 /**
  * 会话目录编码（pi session-manager.ts:590 getDefaultSessionDirPath 同款，
@@ -54,8 +63,9 @@ export const PI_AGENT_DIR_NAME = 'pi'
  * 而 Cogent 的历史回查是**呈现口径**（保留式：被摘要区原文照旧可滚，D9
  * 验收定稿）—— 故此处不走它，改遍历 getBranch() 全量条目自投影：message
  * 条目原样收，compaction 条目转 compactionSummary（pi 投影同款形状，
- * session-manager sessionEntryToContextMessages 对照），影子区/多代压缩条
- * 全部保留。找不到会话文件返回 undefined（新会话未跑过、或已删除）。
+ * session-manager sessionEntryToContextMessages 对照，另补挂 usage 见
+ * CompactionBarSource），影子区/多代压缩条全部保留。找不到会话文件返回
+ * undefined（新会话未跑过、或已删除）。
  */
 export function readPiTranscript(cwd: string, hostRoot: string, sessionId: string): AgentMessage[] | undefined {
   const sessionDir = piSessionDir(cwd, join(hostRoot, PI_AGENT_DIR_NAME))
@@ -66,12 +76,14 @@ export function readPiTranscript(cwd: string, hostRoot: string, sessionId: strin
     if (entry.type === 'message') {
       messages.push(entry.message)
     } else if (entry.type === 'compaction') {
-      messages.push({
+      const bar: CompactionBarSource = {
         role: 'compactionSummary',
         summary: entry.summary,
         tokensBefore: entry.tokensBefore,
-        timestamp: new Date(entry.timestamp).getTime()
-      })
+        timestamp: new Date(entry.timestamp).getTime(),
+        ...(entry.usage !== undefined && { usage: entry.usage })
+      }
+      messages.push(bar)
     }
   }
   return messages
@@ -103,6 +115,14 @@ export interface PiSessionOptions {
   modelRuntime: ModelRuntime
   /** Cogent 自拼系统提示词（buildSystemPrompt 的产物，会话生命周期内不变） */
   systemPrompt: string
+  /**
+   * 权限模式通告段：每轮运行前现读活 mode 的正向文案（四档全设
+   * —— 切换 = 内容替换，模型拿到的是当下状态而非考古历史）。经
+   * before_agent_start 扩展写进 systemPromptOptions 的自定义 section ——
+   * pi 对 sections 做「变更才追加 patch、回放按名替换」（append-only 树
+   * 安全，切换不堆积），模型可见的权限告知由此恢复。
+   */
+  permissionSection?: () => string
   approval: ApprovalBridge
   /** AgentSessionEvent 出口（session.ts 的转译入口；不关心的会话层事件自然落 default） */
   onEvent: (event: AgentSessionEvent) => void
@@ -126,11 +146,36 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     ? PiSessionManager.create(opts.cwd, sessionDir, { id: opts.sessionId })
     : PiSessionManager.open(existingFile, sessionDir)
 
+    // 压缩参数小窗自适应：pi 的 reserve/keep 固定默认对小窗模型
+  // （ctx ≤ keep）会「触发即无可压缩」。链式包裹 getCompactionSettings 按
+  // 活模型的 contextWindow 收敛（公式见 adaptCompactionToWindow；标准窗
+  // 零变化）。同一实例传 loader 与 session（此前 sdk 会自建第二个实例，
+  // 补丁只挂在我们这份上——现在统一单实例，顺带消灭双份）
+  const settingsManager = SettingsManager.create(opts.cwd, agentDir)
+  const innerCompactionSettings = settingsManager.getCompactionSettings.bind(settingsManager)
+  settingsManager.getCompactionSettings = (model) => {
+    const resolved = innerCompactionSettings(model)
+    if (model === undefined) return resolved
+    const window = opts.modelRuntime.getModel(model.provider, model.id)?.contextWindow
+    return window === undefined ? resolved : adaptCompactionToWindow(resolved, window)
+  }
+
   const resourceLoader = new DefaultResourceLoader({
     cwd: opts.cwd,
     agentDir,
-    settingsManager: SettingsManager.create(opts.cwd, agentDir),
-    systemPromptOverride: () => opts.systemPrompt
+    settingsManager,
+    systemPromptOverride: () => opts.systemPrompt,
+    // 权限模式通告：每轮按活 mode 设 cogent_permission section
+    // （四档全设正向文案）。pi 对 sections 的 diff 保证树内只留净变更史
+    extensionFactories: [
+      (pi) => {
+        pi.on('before_agent_start', (event) => {
+          const text = opts.permissionSection?.()
+          if (text === undefined) return
+          event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, cogent_permission: text }
+        })
+      }
+    ]
   })
   await resourceLoader.reload()
 
@@ -141,9 +186,10 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     modelRuntime: opts.modelRuntime,
     sessionManager: piSessionManager,
     resourceLoader,
+    settingsManager,
     ...(model !== undefined && { model }),
     thinkingLevel: 'off',
-    // 工具集（1.3 起）：pi 内置 8 选 7，shell 项按平台（win=powershell，见
+    // 工具集：pi 内置 8 选 7，shell 项按平台（win=powershell，见
     // tool-meta.ts 的 COGENT_TOOL_NAMES）。显式 allowlist 替换 pi 默认
     // （read/bash/edit/write）—— Cogent 的只读三件（grep/find/ls）也进集
     tools: COGENT_TOOL_NAMES

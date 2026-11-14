@@ -1,8 +1,7 @@
 /**
- * 工具循环集成测试 —— 原 tmp/cogent-smoke/tools-smoke.mjs 正名迁移
- * （2026-11-10 批次 1 建立，2026-11-11 批次 3 扩全量；2026-11-14 阶段 1.3
- * 断言对象整体换为 **pi 内置工具行为**：工具执行、截断/输出护栏、错误文案
- * 全部来自 @earendil-works/pi-coding-agent，引擎侧只保留审批/投影接线）。
+ * 工具循环集成测试 —— 断言对象 = **pi 内置工具行为**：工具执行、
+ * 截断/输出护栏、错误文案全部来自 @earendil-works/pi-coding-agent，
+ * 引擎侧只保留审批/投影接线。
  *
  * mock SSE（18940）+ 引擎驱动 + 断言三合一，临时 COGENT_HOME 隔离。
  * 场景流一条到底（单 it）：动作队列按请求序弹（串行驱动顺序确定），
@@ -14,7 +13,7 @@
  *  S3 截断护栏：行数上限（2000）/ 字节上限（50KB）/ 单行超限 三态（pi read）
  *  S4 grep 长行：pi truncateLine 的 [truncated] 标注（500 字符上限）
  *  S5 并发写队列：同批并行 4 写（race×2 + 不同文件×2）→ 同文件串行
- *  （pi 的 withFileMutationQueue 与自研 file-mutation-queue 同设计）
+ *  （pi 的 withFileMutationQueue：realpath 键 Promise 链）
  *  S6 杀引擎重启：session.messages 历史回查 toolCalls 复原
  *  S7 无绑定会话：相对路径按主目录（覆写后的 home）兜底
  *  S8 edit：精确替换/diff、多处匹配、不存在、CRLF 保留、越界（审批层软边界）
@@ -47,7 +46,7 @@ const ws = makeTempDir('cogent-tools-ws-')
 const outside = makeTempDir('cogent-tools-outside-')
 const home = makeTempDir('cogent-tools-home-')
 
-// 平台方言：shell 工具名与命令（1.3 起 win 用 pi 的 powershell 工具）
+// 平台方言：shell 工具名与命令（win 用 pi 的 powershell 工具）
 const IS_WIN = process.platform === 'win32'
 const SHELL = IS_WIN ? 'powershell' : 'bash'
 
@@ -145,7 +144,7 @@ const ACTIONS: Action[] = [
   text('E3 done'),
   { type: 'toolCall', callId: 'e4', tool: 'edit', args: { path: 'crlf.txt', edits: [{ oldText: 'two', newText: 'TWO' }] } }, // CRLF 保留
   text('E4 done'),
-  { type: 'toolCall', callId: 'e5', tool: 'edit', args: { path: join(outside, 'nope.txt'), edits: [{ oldText: 'a', newText: 'b' }] } }, // 越界拦截
+  { type: 'toolCall', callId: 'e5', tool: 'write', args: { path: join(outside, 'nope.txt'), content: 'OUTSIDE' } }, // 越界写（F6：auto 放行真落盘）
   text('E5 done'),
   // S9 shell 工具（请求序 r28 起；命令按平台方言）
   { type: 'toolCall', callId: 'b1', tool: SHELL, args: { command: 'echo cogent-bash-ok' } },
@@ -247,7 +246,7 @@ describe('工具循环集成（S1–S11 场景流，断言对象 = pi 内置工�
     for (const dir of [home, ws, outside]) removeDir(dir)
   })
 
-  it('场景流一条到底（断言编号沿用开发.md 配方时代的编号）', async () => {
+  it('场景流一条到底（断言编号沿用既有编号）', async () => {
     // ———— S1 基本循环 ————
     const s1 = await newSession({ cwd: ws })
     await engine.send('agent.submit', { sessionId: s1, text: '读 hello.txt', model: 'mock' })
@@ -259,6 +258,14 @@ describe('工具循环集成（S1–S11 场景流，断言对象 = pi 内置工�
     )
     const completed = await engine.waitEvent('tool.completed', (p) => p.sessionId === s1)
     check('2. tool.completed 非 error', completed.params.isError === false)
+    // 轮终实报：工具循环每轮 turn_end 发 context.updated ——
+    // 指示器 run 内实时跟随的数据源（断言在 run.completed 前已到、载荷有效）
+    const ctxLive = await engine.waitEvent('context.updated', (p) => p.sessionId === s1)
+    check(
+      '2b. context.updated 轮终实报到达（usage 三件套有效值）',
+      (ctxLive.params as { usage?: { input?: number } }).usage?.input !== undefined,
+      JSON.stringify(ctxLive.params)
+    )
     const done1 = await engine.waitEvent('run.completed', (p) => p.sessionId === s1)
     const segs = done1.params.messages ?? []
     const seg0Calls = segs[0]?.toolCalls
@@ -423,14 +430,16 @@ describe('工具循环集成（S1–S11 场景流，断言对象 = pi 内置工�
       JSON.stringify(crlfAfter)
     )
     await engine.waitEvent('run.completed', (p) => p.sessionId === s8d)
-    // E5 越界：审批层软边界拦截（1.3 起边界在 decideApproval，auto 模式下仍恒拒）
+    // E5 越界（F6 定稿重钉：zcode 对齐）：auto = 完全放行（主流的"完全访问"
+    // 名副其实 —— 越界 edit 照做）；边界的职责收窄为"规则适用域"（ask 的
+    // 「始终允许」永不覆盖越界，见 approval-upgrade S7）
     const s8e = await newSession({ cwd: ws })
     await engine.send('session.setPermission', { sessionId: s8e, mode: 'auto' })
     await engine.send('agent.submit', { sessionId: s8e, text: 'E5 越界', model: 'mock' })
     const e5End = await engine.waitEvent('tool.completed', (p) => p.sessionId === s8e && p.callId === 'e5')
-    check('20. 越界 edit 被拦（error 含边界提示）', e5End.params.isError === true && (e5End.params.summary ?? '').includes('边界'), e5End.params.summary)
+    check('20. 越界 edit 直行（auto 完全放行，非 error）', e5End.params.isError === false, (e5End.params.summary ?? '').slice(0, 120))
     await engine.waitEvent('run.completed', (p) => p.sessionId === s8e)
-    check('20b. 越界目标未落盘', !existsSync(join(outside, 'nope.txt')))
+    check('20b. 越界目标已落盘（完全访问名副其实）', existsSync(join(outside, 'nope.txt')))
 
     // ———— S9 shell 工具（win=powershell / 其他=bash） ————
     const bashSession = async (): Promise<string> => {
@@ -501,6 +510,14 @@ describe('工具循环集成（S1–S11 场景流，断言对象 = pi 内置工�
       (a1End.params.summary ?? '').slice(0, 120)
     )
     await engine.waitEvent('run.completed', (p) => p.sessionId === s10)
+    // 权限通告：autonomous 的 cogent_permission 段进请求 system（sections
+    // 通道 —— pi 变更才追加 patch、回放按名替换，运行中切模式下一轮生效）
+    const s10aBody = JSON.stringify(requestBodies[requestBodies.length - 1] ?? {})
+    check(
+      '27b. autonomous 请求 system 含权限通告段（cogent_permission）',
+      s10aBody.includes('<cogent_permission>') && s10aBody.includes('自主模式'),
+      s10aBody.slice(0, 160)
+    )
     const s10b = await newSession({ cwd: ws })
     await engine.send('session.setPermission', { sessionId: s10b, mode: 'autonomous' })
     await engine.send('agent.submit', { sessionId: s10b, text: 'S10b shell', model: 'mock' })

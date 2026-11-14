@@ -1,5 +1,5 @@
 /**
- * 会话运行时 —— pi AgentSession 的托管层（阶段 1.2a，内核替换手术）。
+ * 会话运行时 —— pi AgentSession 的托管层。
  *
  * 职责：
  * - 每会话一个 pi AgentSession（经 kernel/pi-session-factory 装配，南缝唯一
@@ -8,22 +8,20 @@
  * - 用户文本（agent.submit）→ pi.prompt()，pi 事件流转译为协议事件（notify
  *   回调注入，本文件不直接碰 stdout）；
  * - pi AgentSession 全托管运行期恢复：provider 自动重试、溢出压缩重试、阈值
- *   压缩都发生在 prompt() Promise 生命周期内 —— 旧手搓的 L1/L2 压缩、溢出
- *   恢复整体让位（与 pi 会话树不兼容：pi 靠 message_end 追加，原位 splice
- *   会分叉）；Cogent 保留的运行期逻辑只剩 AUTO_CONTINUE 续写（R6③：显式
- *   user 消息续跑，兼容 pi 树）与审批挂起（链式 beforeToolCall，见 factory）。
+ *   压缩都发生在 prompt() Promise 生命周期内；Cogent 侧的运行期逻辑只剩
+ *   AUTO_CONTINUE 续写（贴线 maxTokens 截断时注入显式 user 续写指令，上限
+ *   3 次）与审批挂起（链式 beforeToolCall，见 factory）。
  *
- * 终态纪律（与旧架构的关键差异）：协议 run.completed/run.failed 的发射点在
- * **agent_settled**（pi 在 _startRun 的 finally 里每轮 prompt 恰发一次）——
- * 它晚于全部内聚恢复/重试，天然的单一权威终态；旧实现里 agent_end 事件驱
- * 动终态 + settleRun 抑制竞态的复杂度（溢出/续写窗口的抑制判定）随之消解。
+ * 终态纪律：协议 run.completed/run.failed 的发射点在 **agent_settled**（pi
+ * 在 _startRun 的 finally 里每轮 prompt 恰发一次）—— 它晚于全部内聚恢复/
+ * 重试，天然的单一权威终态（单一发射点消解溢出/续写窗口的终态竞态）。
  *
  * 惰性纪律：恢复的会话启动只读 summary（v2 盘上文档），pi 内核与观测记录器
- * 都在首次使用（submit/compact/inspect 读取）时才建 —— 与旧惰性 Agent 同理。
+ * 都在首次使用（submit/compact/inspect 读取）时才建。
  *
  * 边界纪律：
- * - 本类实现 kernel/contract.ts 的 CogentKernel（南缝合同，全局架构 D4）：
- *   会话域服务与内核驱动尚为混体，阶段 1.3 起拆出 PiSdkKernel；
+ * - 本类实现 kernel/contract.ts 的 CogentKernel（南缝合同，全局架构 D4），
+ *   经 kernel/pi-session-factory 装配 pi AgentSession；
  * - 只依赖 pi-* 与 protocol 与 ../storage，零 Electron import（目录即边界）；
  * - handler 内信任协议类型，不做二次防御（约定.md §1.3，边界校验在 dispatch 入口）。
  */
@@ -42,7 +40,7 @@ import type {
 } from '@earendil-works/pi-coding-agent'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { ProtocolError, RpcErrorCode } from '../../protocol'
 import type {
   ChatMessage,
@@ -64,20 +62,20 @@ import { SessionInspector } from './inspector'
 import type { ProjectRegistry } from './project'
 import type { ApprovalRegistry } from './approvals'
 import type { CogentKernel, KernelNotifier } from '../kernel/contract'
-import { createPiSession, readPiTranscript } from '../kernel/pi-session-factory'
+import { type CompactionBarSource, createPiSession, readPiTranscript } from '../kernel/pi-session-factory'
 import { importLegacyTranscript } from '../kernel/legacy-import'
 // 上下文明细的转录整形（明细区数据源）：convertToLlmMessages 处理
 // compactionSummary 等自定义角色后与 pi 预算看到的载荷同源同形
-import { compactionThreshold, convertToLlmMessages } from './compaction'
+import { convertToLlmMessages, piTriggerRatio } from './compaction'
 import type { InspectStore, StorageDriver } from '../storage'
-import { SHELL_TOOL_NAME, toolMeta } from './tool-meta'
-import { outsideRootsMessage, resolveWithinRoots } from './write-boundary'
+import { SHELL_TOOL_NAME, toolDeclarations, toolMeta } from './tool-meta'
+import { resolveWithinRoots } from './write-boundary'
 
 /** 引擎事件出口的类型别名：runtime 通过它上报事件，不关心传输层（形状住在南缝合同） */
 export type Notify = KernelNotifier
 
 /**
- * 会话盘上文档形状（v2，阶段 1.2a 起）：只存会话域 summary —— 转录真源已迁
+ * 会话盘上文档形状（v2）：只存会话域 summary —— 转录真源在
  * pi JSONL（<hostRoot>/pi/sessions/…，pi 逐条追加）；置顶/归档/权限模式是
  * Cogent 的私域，pi 不知情，落在本文件。
  */
@@ -88,7 +86,7 @@ interface StoredSession {
 
 /**
  * 启动恢复时的盘上数据收窄（信任边界：磁盘旧数据可能被手改/属旧版本格式）。
- * v1（手搓持久化时代）带完整转录 —— 收进 legacyTranscript 等惰性导入 pi 树
+ * v1（架构重构前的盘上格式）带完整转录 —— 收进 legacyTranscript 等惰性导入 pi 树
  * （见 buildPiSession）；v2 只有 summary。只校验本层依赖的字段；转录内层
  * 结构信任 pi 的写入（引擎自己落的盘）。
  */
@@ -125,7 +123,7 @@ interface Session {
    * 首次 submit / inspect 读取时才建，seq/run 从落盘尾部接续
    */
   inspector?: SessionInspector
-  /** 系统提示词缓存（首用现算；会话生命周期内不变 —— AGENTS.md 改动不热更，同旧架构） */
+  /** 系统提示词缓存（首用现算；会话生命周期内不变 —— AGENTS.md 改动不热更） */
   systemPrompt?: string
 }
 
@@ -190,13 +188,39 @@ function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
     '\n\n# 工具\n' +
     '你可以调用工具：read（读单个文件，大文件用 offset/limit 分段读）、find（按通配模式找文件）、' +
     'grep（按正则全文搜索，可带上下文行）、ls（列目录一层内容）、' +
-    'write（整文件写入，须在可写根内，执行前可能需要用户批准）、' +
-    'edit（对已有文件做精确文本替换，边界同 write，执行前可能需要用户批准）、' +
+    'write（整文件写入，执行前可能需要用户批准）、' +
+    'edit（对已有文件做精确文本替换，执行前可能需要用户批准）、' +
     `${SHELL_TOOL_NAME}（执行 shell 命令，工作目录${bound ? '为工作区主根' : '为用户主目录'}，执行前可能需要用户批准）。` +
     '先用 ls/find/grep 定位、再用 read 读内容；修改已有文件优先 edit（带上下文精确匹配），' +
     '整文件新建或重写才用 write。\n' +
-    `${base}；读取的绝对路径不限位置，写入只能在${bound ? '工作区根目录内' : '用户主目录内'}。`
+    // F6 定稿后不再宣称"写入只能在根内"（那会让模型对越界写自我审查、连
+    // 工具都不调 —— 引擎已按模式裁决：auto/autonomous 放行、ask 弹面板）。
+    // 审批语义由 cogent_permission 段按活模式动态告知；这里只留弱预期
+    `${base}；读取的绝对路径不限位置；工作区外的写入可能需要用户批准后执行。`
   return prompt
+}
+
+/**
+ * 权限模式通告段：**四档全设正向文案**，
+ * 经 before_agent_start 扩展进 systemPromptOptions 的 cogent_permission
+ * section（pi 对 sections 变更才追加 patch、回放按名替换 —— 运行中切模式
+ * 下一轮即生效且不堆积）。
+ * 为什么 ask 也设段（首版曾"非 ask 不设"）：切回 ask 只是把段移除，但会话
+ * 历史里还留着此前被 plan 拦截的工具 error —— 模型会据历史推断"仍只读"、
+ * 连尝试都不尝试。四档全给明确的当下状态（切换 = 内容替换），模型每轮拿到
+ * 的是现状而非考古。文案与 decideApproval 的强制面同口径。
+ */
+function permissionSectionText(mode: PermissionMode): string {
+  switch (mode) {
+    case 'plan':
+      return '当前会话处于 plan（只读）模式：文件写入与命令执行会被拒绝，只能读取文件、搜索和列目录。不要尝试调用写类或执行类工具。'
+    case 'auto':
+      return '当前会话处于完全访问模式：所有工具调用直接执行，无需用户逐次确认。'
+    case 'autonomous':
+      return '当前会话处于自主模式：文件写直接执行（不限工作区）；命令执行仍需用户确认。'
+    default:
+      return '当前会话处于变更前确认模式：文件写入和命令执行会先请求用户批准，你可以正常尝试调用需要的工具。'
+  }
 }
 
 /**
@@ -232,7 +256,7 @@ function readGitBranch(cwd: string): string | null {
  * turn_end 封存成一段 ChatMessage；`segments` 按发生序收集全部段 ——
  * run.completed 的 messages 即它（text 段与工具卡交错保真），message 是
  * 全段聚合（老宿主兼容）。
- * 生命周期与旧架构不同：streaming 在 submit 受理时置位、**agent_settled**
+ * 生命周期：streaming 在 submit 受理时置位、**agent_settled**
  * 终态时清位 —— 覆盖 pi 内聚恢复（provider 重试/溢出压缩重试）与 AUTO_CONTINUE
  * 续写链的全窗口，也是 submit 忙判定的单一账本（见 submit）。
  */
@@ -329,7 +353,7 @@ function accumulateUsage(current: MessageUsage | undefined, add: MessageUsage): 
 }
 
 /**
- * 上下文明细三段估算（悬浮卡分类区数据源，2026-11-11）。
+ * 上下文明细三段估算（悬浮卡分类区数据源）。
  *
  * 为什么用 pi 的 estimate 而不是自己数：clampMaxTokensToContext（simple-options.js）
  * 每轮算 max_tokens 预算用的就是 estimateContextTokens —— 明细与引擎真实预算
@@ -342,30 +366,41 @@ function accumulateUsage(current: MessageUsage | undefined, add: MessageUsage): 
  * total 直接取 estimateContextTokens().tokens（= 末轮实报 usage + 其后 trailing
  * 估算，即预算式里的"占用"），保证三段和与引擎看到的占用一致。
  *
- * 输入源（1.2a 起）：pi.agent.state.messages（会话树投影）或 v1 旧转录 ——
- * 前者不含 system 消息（system 是提示词状态不进树，session-manager 投影滤除），
- * systemPrompt/toolDefs 两段自然为 0 估算；与旧口径的偏差属投影对账范围（1.4）。
+ * system 段来源：pi 的 system 是提示词状态不进树（只有
+ * sections patch 消息落树），领头那条由调用方传入 systemPrompt 现合成 ——
+ * 活会话取 piSession.systemPrompt（当前完整渲染），惰性会话取自拼提示词
+ * （缺 pi 追加的环境节，≈ 粗估可接受）；工具声明按 toolDeclarations 重建。
  */
-function estimateContext(messages: AgentMessage[]): ContextEstimate {
+function estimateContext(messages: AgentMessage[], systemPrompt?: string): ContextEstimate {
   // 先过 convertToLlmMessages：转录可能含 compactionSummary 自定义角色（无
   // content 数组），pi-ai estimateMessageTokens 对它不认识会炸；转换后与引擎
   // max_tokens 预算看到的载荷同源同形（预算口径只可能更准）
   const llmMessages = convertToLlmMessages(messages)
-  let systemPrompt = 0
+  if (systemPrompt !== undefined) {
+    // 合成领头 system（引擎请求组装的真实形态：文本 + toolsAdded 声明）；
+    // 树里的 sections patch 消息照常后行（pi 请求时坍缩进头部，估算近似加总）
+    llmMessages.unshift({
+      role: 'system',
+      content: systemPrompt,
+      toolsAdded: toolDeclarations() as never,
+      timestamp: 0
+    })
+  }
+  let systemTextTokens = 0
   let toolDefs = 0
   const rest: ReturnType<typeof convertToLlmMessages> = []
   for (const message of llmMessages) {
     if (message.role === 'system') {
       // content 可能是 string 或 TextContent[]；getSystemMessageText 统一成
       // 模型可见的完整文本（含 sections 渲染），与 estimate 内部口径一致
-      systemPrompt += estimateTextTokens(getSystemMessageText(message))
+      systemTextTokens += estimateTextTokens(getSystemMessageText(message))
       if (message.toolsAdded) toolDefs += estimateTextTokens(JSON.stringify(message.toolsAdded))
       continue
     }
     rest.push(message)
   }
   return {
-    systemPrompt,
+    systemPrompt: systemTextTokens,
     toolDefs,
     messages: rest.reduce((sum, m) => sum + estimateMessageTokens(m), 0),
     total: estimateContextTokens(llmMessages).tokens
@@ -394,7 +429,7 @@ export class SessionManager implements CogentKernel {
    */
   private compacting = new Set<string>()
   /**
-   * length 续写剩余次数(完备化 R6③,按会话):submit/手动续写时重置为 3。
+   * length 续写剩余次数(按会话):submit/手动续写时重置为 3。
    * agent_settled(抑制终态)与 settleRun(注入续写)两处同读 —— 前者据此抑制
    * 终态(续写还会接着跑),后者据此决定是否注入续写消息并扣减
    */
@@ -494,11 +529,40 @@ export class SessionManager implements CogentKernel {
   }
 
   /**
+   * 会话的项目归属（「允许，并切换为」的项目默认落位用）。无归属返回
+   * undefined（只切当前会话，不落项目默认）。
+   */
+  private projectIdOf(session: Session): string | undefined {
+    return this.projectByIdOrCwd(session.summary.cwd, session.summary.projectId)?.id
+  }
+
+  /**
+   * 项目解析（projectId 优先，否则 cwd 前缀落进某项目 cwds = 同项目；与
+   * renderer 新会话的项目默认链同口径）：resolve 归一 + 小写 + 补分隔符，
+   * 只防 `work` 误配 `work-x`，跨盘符/大小写差异按命中处理（Windows 不敏感）。
+   */
+  private projectByIdOrCwd(cwd: string | undefined, projectId: string | undefined) {
+    if (projectId !== undefined) {
+      const project = this.projects.get(projectId)
+      if (project !== undefined) return project
+    }
+    if (cwd === undefined) return undefined
+    const normalized = resolve(cwd).toLowerCase()
+    for (const project of this.projects.list()) {
+      for (const root of project.cwds) {
+        const r = resolve(root).toLowerCase()
+        if (normalized === r || normalized.startsWith(r + sep)) return project
+      }
+    }
+    return undefined
+  }
+
+  /**
    * 工具的基根（D2 修订）：绑定根，无绑定时兜底用户主目录 —— 桌面应用语境下
    * "launch cwd" 的等价物。保证**任何会话都有只读工具**（主流共识：读几乎
    * 不设限，Claude Code 的 Read/Glob/Grep 默认全盘允许；无绑定会话零工具
    * 比所有主流产品都严，2026-11-10 用户驳回）。写类工具的**限界根**沿用
-   * 同一列表（批次 2 消费：无根写主目录也要过审批）。
+   * 同一列表（无根写主目录也要过审批）。
    */
   private toolRoots(session: Session): string[] {
     const roots = this.workspaceRoots(session)
@@ -522,6 +586,13 @@ export class SessionManager implements CogentKernel {
     params: { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode } = {}
   ): SessionSummary {
     const now = Date.now()
+    // 模式缺省解析（F6）：直驱协议/其他宿主不带 permissionMode 时按项目默认
+    // 兜底（「允许，并切换为」的落位；renderer 走自己的同规则链，显式值优先
+    // 两不冲突）。项目也没设 → 不带字段 = ask（协议缺省语义，旧宿主不破）
+    const defaultMode =
+      params.permissionMode !== undefined
+        ? params.permissionMode
+        : this.projectByIdOrCwd(params.cwd, params.projectId)?.defaultPermissionMode
     // UUID 而非自增序号：自增在持久化后重启必然撞号（旧盘 s-1 vs 新会话 s-1）
     const summary: SessionSummary = {
       id: crypto.randomUUID(),
@@ -530,9 +601,7 @@ export class SessionManager implements CogentKernel {
       updatedAt: now,
       ...(params.cwd !== undefined && { cwd: params.cwd }),
       ...(params.projectId !== undefined && { projectId: params.projectId }),
-      // 「完全访问」的物化通道（第 5 步）：新聊天页 toggle 的选择随会话落定；
-      // 缺省不带 = ask（协议缺省语义，旧宿主不破）
-      ...(params.permissionMode !== undefined && { permissionMode: params.permissionMode })
+      ...(defaultMode !== undefined && { permissionMode: defaultMode })
     }
     this.sessions.set(summary.id, { summary })
     this.persist(summary.id)
@@ -605,9 +674,8 @@ export class SessionManager implements CogentKernel {
    * 呈现口径恒走 pi JSONL 全量回查（factory readPiTranscript：影子区/多代
    * 压缩条全保留，D9 保留式；pi 的 agent.state.messages 是**上下文口径**的
    * 裁剪投影，压缩后影子区消失，不能作历史呈现源）。pi JSONL 不存在时回落
-   * v1 旧转录（未导入的历史会话）。运行中的半截流式消息不在 JSONL
-   * （message_end 才落盘）—— 旧实现读活 state 可见半截，此差异留给 1.4
-   * 投影对账（流式期宿主本就以事件流增量呈现为主）。
+ * v1 旧转录（未导入的历史会话）。运行中的半截流式消息不在 JSONL
+ * （message_end 才落盘）—— 流式期宿主以事件流增量呈现为主，不受影响。
    */
   messages(sessionId: string): ChatMessage[] {
     const session = this.requireSession(sessionId)
@@ -623,11 +691,13 @@ export class SessionManager implements CogentKernel {
     // estimateContext 是纯转录函数，读时重算幂等、免盘上迁移，旧会话也由此
     // 直接有明细（免"无字段降级"）。挂点 = 从后往前首条带 usage 的 assistant，
     // 与指示器分子的读取序一致；纯工具段末条无正文本体的边角与事件路径同缺
-    // （flattenSegments 不落本体），不另补
+    // （flattenSegments 不落本体），不另补。system 段：活会话取 pi
+    // 当前渲染（含 pi 追加节），惰性回落自拼提示词（≈ 粗估）
+    const systemPrompt = session.pi?.systemPrompt ?? this.ensureSystemPrompt(session)
     for (let i = projected.length - 1; i >= 0; i--) {
       const m = projected[i]
       if (m.role === 'assistant' && m.usage) {
-        m.usage = { ...m.usage, contextEstimate: estimateContext(source) }
+        m.usage = { ...m.usage, contextEstimate: estimateContext(source, systemPrompt) }
         break
       }
     }
@@ -659,9 +729,10 @@ export class SessionManager implements CogentKernel {
     return {
       defaultModel: { provider: DEFAULT_PROVIDER, id: DEFAULT_MODEL },
       models: this.models.getModels().map((m) => {
-        // 有效压缩触发阈值随目录下发（完备化 R1）：指示器预警线画引擎真值，
-        // 消灭 renderer 侧 0.9 常量镜像 —— 小窗模型触发线显著前移（20K ≈59%）
-        const threshold = compactionThreshold(m.contextWindow, m.compaction)
+        // 压缩触发占比随目录下发：pi reserve 制真值口径
+        // （1 − min(16384, ctx/4)/ctx）—— 指示器预警线画引擎真实触发线，
+        // 画线偏离真值 = 用户看到"未到线就压了"
+        const ratio = piTriggerRatio(m.contextWindow)
         return {
           id: m.id,
           name: m.name,
@@ -674,8 +745,8 @@ export class SessionManager implements CogentKernel {
           maxTokens: m.maxTokens,
           // 目录原生 vs 用户添加（默认模型 UI 锁 id 的判定源，见 isUserDefined 注释）
           userDefined: this.customProviders.isUserDefined(m.provider, m.id),
-          // Infinity（窗口缺数据的怪模型）不带 → 渲染端回落 0.9
-          ...(Number.isFinite(threshold) && { compactionThresholdRatio: threshold / m.contextWindow })
+          // NaN（窗口缺数据的怪模型）不带 → 渲染端回落 0.9
+          ...(Number.isFinite(ratio) && { compactionThresholdRatio: ratio })
         }
       })
     }
@@ -790,7 +861,7 @@ export class SessionManager implements CogentKernel {
       if (current === undefined || current.id !== model.id || current.provider !== model.provider) {
         await pi.setModel(model)
       }
-      // 思考预算跟随模型（完备化 R7）：预算是模型属性，切模型换预算。
+      // 思考预算跟随模型：预算是模型属性，切模型换预算。
       // pi 的预算消费在请求选项层（Agent.thinkingBudgets 逐 prompt 带进
       // streamFn 选项），setModel 不动它，此处直赋（字段公开，官方同款手法）
       pi.agent.thinkingBudgets = model.thinkingBudgets
@@ -807,7 +878,7 @@ export class SessionManager implements CogentKernel {
 
   /**
    * 末条是否为可续写的 length 截断(R6③):纯文本/思考被截且续写预算未尽。
-   * **正文非空才续**(完备化验收修复 2026-11-12):正文为空 = 输出预算被
+   * **正文非空才续**:正文为空 = 输出预算被
    * 夹到趋零(room 耗尽),续写只会立即再截 —— 实测 20K 窗空回复连烧 11 次
    * 请求毫无产出。此时截断是「真没地方写」,正确出路是压缩腾地(动作条
    * 「立即压缩」),不是续写。agent_settled(抑制终态)与 settleRun(注入
@@ -900,8 +971,8 @@ export class SessionManager implements CogentKernel {
    * 手动压缩入口（session.compact）→ pi AgentSession.compact()。
    * 无可压缩/刚压过以协议错误显式反馈（手动动作要明确结果；pi 的抛错文案
    * "Already compacted" / "Nothing to compact" 映射于此），失败原样上抛。
-   * 压缩进度经 compaction_start/end 事件（转译层 → compaction.started/
-   * completed），与旧实现的事件面一致。
+ * 压缩进度经 compaction_start/end 事件（转译层 → compaction.started/
+ * completed）。
    */
   async compactSession(sessionId: string): Promise<{ tokensBefore: number; tokensAfter: number }> {
     const session = this.requireSession(sessionId)
@@ -960,17 +1031,19 @@ export class SessionManager implements CogentKernel {
     requestId: string,
     approved: boolean,
     message?: string,
-    always?: 'workspace'
-  ): { ok: true } {
+    always?: 'workspace',
+    switchMode?: 'auto' | 'autonomous'
+  ): { ok: true; summary?: SessionSummary } {
     const pending = this.pendingApprovals.get(requestId)
     if (pending === undefined) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, `审批请求不存在或已被裁决: ${requestId}`)
     }
+    const session = this.requireSession(pending.sessionId)
     // always 的语义校验在消费 pending 之前：无绑定根会话不落规则（防"全放主
     // 目录"的过大授权，D3 —— UI 不显示此项但协议直达，引擎侧是最后一道闸）；
     // 报错时请求未被消费，宿主仍可改发普通 respond
     if (always === 'workspace') {
-      const roots = this.workspaceRoots(this.requireSession(pending.sessionId))
+      const roots = this.workspaceRoots(session)
       if (roots.length === 0) {
         throw new ProtocolError(RpcErrorCode.InvalidParams, '无绑定工作区的会话不支持「始终允许」')
       }
@@ -978,6 +1051,16 @@ export class SessionManager implements CogentKernel {
       this.approvals.add(roots, pending.kind)
     }
     this.pendingApprovals.delete(requestId)
+    // 「允许，并切换为 X」（F6 定稿，zcode 同款）：本次放行 + 会话切模式 +
+    // 记为项目默认（同一项目的新会话沿用）。无项目归属的会话只切当前会话
+    let summary: SessionSummary | undefined
+    if (switchMode !== undefined) {
+      session.summary.permissionMode = switchMode
+      this.persist(session.summary.id)
+      summary = { ...session.summary }
+      const projectId = this.projectIdOf(session)
+      if (projectId !== undefined) this.projects.setDefaultPermissionMode(projectId, switchMode)
+    }
     // 拒绝附言（D2「告诉模型接下来怎么做」）：进 block reason → pi 工具错误结果
     // 给模型。截断上限防打爆工具结果（与 D8 截断纪律同源）；加前缀让模型明确
     // 这是拒绝后的用户指示而非工具输出
@@ -986,17 +1069,14 @@ export class SessionManager implements CogentKernel {
         ? `用户拒绝了本次操作。用户指示：${message.trim().slice(0, APPROVAL_MESSAGE_MAX_CHARS)}`
         : '用户拒绝了本次操作'
     pending.resolve(approved ? { block: false } : { block: true, reason: denyReason })
-    return { ok: true }
+    return { ok: true, ...(summary !== undefined && { summary }) }
   }
 
   /**
    * 会话级权限切换（权限模式菜单）：summary 记账 + 落盘；审批判定读活值
    * （decideApproval 每次现读 summary.permissionMode），运行中切换即生效。
-   * 提示词层通告（D6 的 system 通告消息）在 1.2a 降级欠账：pi 会话树是
-   * append-only，往 agent.state.messages 塞 system 通告不落树（会被投影刷新
-   * 冲掉）—— 归位路径是 systemPromptOverride 读活 mode 动态拼段（1.4 对账）。
-   * 当前面 = 模式强制仍生效（写被拦），仅模型收不到"你在 plan 模式"的告知，
-   * 可能多试几次被拦的写操作。
+   * 提示词层通告由 factory 的 before_agent_start 扩展每轮现读活 mode 设
+   * cogent_permission 节（D6）—— 本方法只管记账，不碰提示词。
    */
   setPermission(sessionId: string, mode: PermissionMode): SessionSummary {
     const session = this.requireSession(sessionId)
@@ -1007,13 +1087,17 @@ export class SessionManager implements CogentKernel {
 
   /**
    * 工具调用裁决（链式 beforeToolCall 的桥端，D4 判定矩阵：ToolKind ×
-   * permissionMode）。判定优先序（阶段 1.3 起全部在本层）：**软边界 >
-   * 工作区规则表放行 > mode 矩阵** —— pi 内置 write/edit 不限路径，越界
-   * 恒拒（含 auto/autonomous：可写根提示进模型可见的错误结果，可自我纠正）。
-   * mode 读 session.summary 的活引用（运行中切「完全访问」即生效）。ask：
-   * 发审批请求并挂起 —— async 未返回前工具不执行（pi 官方阻塞语义）；
-   * signal abort 兜底 resolve（否则中止后 Promise 永悬、run 永不结束 ——
-   * 核心 loop 的 await 钩子无超时）。
+   * permissionMode；zcode 对齐）。边界语义：
+   * - **auto / autonomous 完全放行**（含工作区外写 —— 主流的"完全访问/
+   *   自主"名副其实：Claude Code bypassPermissions / Codex danger-full-access
+   *   同款）；
+   * - **plan 拦**写/exec；
+   * - **ask**：exec 与**根内**写先查「始终允许」规则（规则 = 根内信任记忆，
+   *   永不覆盖越界）；未命中与**越界写**都弹面板 —— 人是最终裁决者；
+   * - 越界写弹面板时带 outsideRoots 标记（宿主据此隐藏「始终允许此工作区」）。
+   * mode 读 session.summary 活引用（运行中切换即生效）。ask 挂起：async
+   * 未返回前工具不执行（pi 官方阻塞语义）；signal abort 兜底 resolve
+   * （否则中止后 Promise 永悬、run 永不结束）。
    */
   private decideApproval(
     session: Session,
@@ -1026,30 +1110,29 @@ export class SessionManager implements CogentKernel {
     // 注册表 bug，stderr 已在转译层留诊断，这里按无害的只读放行）
     const kind = meta?.kind ?? 'read'
     if (kind === 'read') return Promise.resolve({ block: false })
-    // 写类软边界（1.3 自工具执行层上移）：pi write/edit 的 path 越界恒拒，
-    // 先于规则表与 mode —— 「始终允许」与 autonomous 的信任范围 = 根内写
-    if (kind === 'write' || kind === 'edit') {
-      const roots = this.toolRoots(session)
-      const path = args.path
-      if (typeof path === 'string' && resolveWithinRoots(path, roots) === null) {
-        return Promise.resolve({ block: true, reason: outsideRootsMessage(roots) })
-      }
-    }
     const mode = session.summary.permissionMode ?? 'ask'
     if (mode === 'auto') return Promise.resolve({ block: false })
     if (mode === 'plan') {
       return Promise.resolve({ block: true, reason: 'plan（只读）模式下写类工具被禁止' })
     }
-    // 自主模式（D6 定稿）：文件写信任放行（根内 —— 越界已被上方软边界拦下），
-    // exec/network 风险类照旧走询问
+    // 写类根内判定（软边界瘦身为"规则适用域"）：越界与否不再决定放拦，
+    // 只决定 ask 是否可吃「始终允许」规则 —— 信任记忆的范围 = 根内写
+    const roots = this.toolRoots(session)
+    const withinRoots =
+      kind !== 'write' && kind !== 'edit'
+        ? true
+        : typeof args.path !== 'string' || resolveWithinRoots(args.path, roots) !== null
+    // 自主模式（D6 定稿）：文件写信任放行（不限根内 —— 越界也放，F6 定稿），
+    // exec 等风险类照旧走询问（落到下方 ask 流程）
     if (mode === 'autonomous' && (kind === 'write' || kind === 'edit')) return Promise.resolve({ block: false })
-    // ask 判定前先查「始终允许」规则表（审批交互升级 D3）：会话工作区根与
-    // 某条同类别规则任一根命中即放行 —— 规则只能放行"边界内"的写（越界写
-    // 已被上方软边界恒拒）。无绑定根（workspaceRoots 为空）天然不命中，
-    // 无根会话不落规则的 UI 语义在引擎侧自洽
-    if (this.approvals.allows(this.workspaceRoots(session), kind)) return Promise.resolve({ block: false })
-    // ask：发审批请求并挂起（D5：无超时 —— 用户不点就一直等，宿主输入框
-    // 变停止钮可 abort；signal abort 兜底 resolve）
+    // ask（含 autonomous 的 exec）：根内（或非写类）先查规则表 —— 会话工作
+    // 区根与某条同类别规则任一根命中即放行；无绑定根天然不命中，无根会话
+    // 不落规则的 UI 语义在引擎侧自洽
+    if (withinRoots && this.approvals.allows(this.workspaceRoots(session), kind)) {
+      return Promise.resolve({ block: false })
+    }
+    // 弹审批面板并挂起（D5：无超时 —— 用户不点就一直等，宿主输入框变停止
+    // 钮可 abort；signal abort 兜底 resolve）
     const requestId = `appr-${crypto.randomUUID()}`
     const sessionId = session.summary.id
     return new Promise((resolve) => {
@@ -1061,7 +1144,8 @@ export class SessionManager implements CogentKernel {
         requestId,
         toolName,
         kind,
-        summary: meta !== undefined ? meta.summarize(args) : `${toolName}(?)`
+        summary: meta !== undefined ? meta.summarize(args) : `${toolName}(?)`,
+        ...(!withinRoots && { outsideRoots: true })
       })
       signal?.addEventListener('abort', () => {
         // 已被 respondApproval 消费则不动（用户裁决与中止竞态，先到先得）
@@ -1118,6 +1202,8 @@ export class SessionManager implements CogentKernel {
       sessionId,
       modelRuntime: this.modelRuntime,
       systemPrompt: this.ensureSystemPrompt(session),
+      // 权限通告读活 mode：扩展每轮现调，运行中切模式下一轮生效
+      permissionSection: () => permissionSectionText(session.summary.permissionMode ?? 'ask'),
       approval: {
         decide: (toolName, _toolCallId, args, signal) =>
           this.decideApproval(session, toolName, args, signal)
@@ -1128,8 +1214,8 @@ export class SessionManager implements CogentKernel {
 
     // v1 旧转录一次性导入（只在 pi 树是新建时 —— 已有 JSONL 说明早前导入过，
     // 重导会整段重复）。compactionSummary → 压缩条（firstKeptEntryId=null 语义
-    // 对齐），其余角色逐条 append；导入后清引用 + 盘上重写 v2（旧文档里的
-    // transcript 字段退役）
+    // 对齐），其余角色逐条 append；导入后清引用 + 盘上重写 v2（v2 文档不带
+    // transcript 字段）
     if (createdNew && session.legacyTranscript !== undefined) {
       const legacy = session.legacyTranscript
       if (legacy.length > 0) {
@@ -1201,7 +1287,7 @@ export class SessionManager implements CogentKernel {
   }
 
   /**
-   * 相邻纯文本段合并（完备化 R6③）：auto-continue 的 length 段 + 续写段 →
+   * 相邻纯文本段合并：auto-continue 的 length 段 + 续写段 →
    * 单段（正文无缝拼接、思考拼接、工具卡拼接、用量/耗时相加）。无相邻对
    * 返回原数组引用（热路径零拷贝）。相邻判定只看"段是否带工具卡"—— 带
    * 工具卡的段不并（截断只发生在纯文本/思考尾部，工具段与后续段的交错是
@@ -1239,7 +1325,7 @@ export class SessionManager implements CogentKernel {
    * 事件面 = AgentSessionEvent：核心 AgentEvent（message_update、turn_*、
    * tool_execution_* 等）同源直转；会话层事件里 agent_settled（终态）与
    * compaction_start/end（压缩）有协议对应，其余（queue_update、auto_retry_*、
-   * session_info_changed 等）暂无协议消费面，落 default（1.4 对账再议）。
+   * session_info_changed 等）暂无协议消费面，落 default（需要时再扩展协议）。
    */
   private translateEvent(session: Session, event: AgentSessionEvent): void {
     const sessionId = session.summary.id
@@ -1281,10 +1367,10 @@ export class SessionManager implements CogentKernel {
             // ChatMessage（段内 usage 是本轮自己的，非全 run 累计 —— 分段后
             // 每段的统计行各自成立）。三缓冲全空的轮不落段（pi 每轮至少有
             // text 或 toolCall 之一，此分支实际只挡极端 provider 怪癖）。
-            // 段时间戳取轮结束墙钟（UI「已工作」口径）：pi 的 assistant
-            // timestamp 是流打开时刻，旧架构靠改写消息对象对齐 —— 现在消息
-            // 由 pi 树持有（message_end 已先落盘，改内存 = 盘内漂移），只改
-            // 展示侧（历史回查路径的 timestamp 是流开口径，两路差异 1.4 对账）
+            // 段时间戳取 event.message.timestamp：pi 的
+            // assistant timestamp = 请求打开时刻，与历史回查路径（树里的同一
+            // 消息）完全一致 —— 气泡 HH:MM / 时长起点重启前后不漂移（不取
+            // 轮结束墙钟：那样流式期与重载后能差出整个回合时长）
             if (streaming.text !== '' || streaming.thinking !== '' || streaming.tools.length > 0) {
               streaming.segments.push({
                 // id 带 run 级前缀：段序号只在 run 内唯一，同会话多 run 会撞
@@ -1297,12 +1383,17 @@ export class SessionManager implements CogentKernel {
                 usage: projectUsage(event.message.usage),
                 durationMs: event.message.durationMs,
                 model: event.message.model,
-                timestamp: Date.now()
+                timestamp: event.message.timestamp
               })
             }
             streaming.text = ''
             streaming.thinking = ''
             streaming.tools = []
+            // 轮终实报落地：工具循环每轮 turn_end 发一份本轮
+            // usage —— 上下文指示器 run 内实时跟随（此前只随 run.completed
+            // 落账，多轮工具的 run 全程冻结在 run 前的值，中途触发的压缩
+            // 看起来"远未到线"）。终态后 segments 内 usage 为准
+            this.notify('context.updated', { sessionId, usage: projectUsage(event.message.usage) })
           }
           // 观测快照取 turn_end 终态消息（usage/stopReason/diagnostics 齐全）
           session.inspector?.turnCompleted(event.message)
@@ -1432,7 +1523,7 @@ export class SessionManager implements CogentKernel {
       }
       case 'agent_settled': {
         // 终态（每轮 prompt 生命周期恰一次，晚于全部内聚恢复/重试 —— 见类头
-        // "终态纪律"）。旧 agent_end 分支的正/负路径全部迁此
+        // "终态纪律"）。正/负路径都在此收口
         const streaming = this.streaming.get(sessionId)
         if (!this.sessions.has(sessionId)) {
           this.streaming.delete(sessionId)
@@ -1446,10 +1537,35 @@ export class SessionManager implements CogentKernel {
           const message = session.pi.agent.state.errorMessage
           this.streaming.delete(sessionId)
           session.inspector?.runFailed(message)
+          // 分段终态：失败/中止前已封存的轮次照常投影 —— abort
+          // 场景此前只有 message，已完成轮的 usage 不落宿主消息流，指示器
+          // 在停止后停在旧值（数据其实在 pi 树，重开会话才回来）。已封存段
+          // 里可能有 running 工具卡（打断在工具处）→ 标 blocked 同 store 侧
+          // 失败收尾口径；相邻纯文本段并回（续写形态同 completed）
+          if (streaming !== undefined) {
+            if (streaming.usage) {
+              // 分支内 session.pi 已收窄非空（errorMessage 守卫），直取；
+              // systemPrompt getter 恒返 string（pi 渲染当前 options），无缺省路
+              const estimate = estimateContext(
+                session.pi.agent.state.messages,
+                session.pi.systemPrompt
+              )
+              streaming.usage.contextEstimate = estimate
+              const lastSegment = streaming.segments.at(-1)
+              if (lastSegment?.usage) lastSegment.usage.contextEstimate = { ...estimate }
+            }
+            const segments = SessionManager.mergeContinuedSegments(streaming.segments)
+            this.notify('run.failed', {
+              sessionId,
+              message,
+              ...(segments.length > 0 && { messages: segments })
+            })
+            return
+          }
           this.notify('run.failed', { sessionId, message })
           return
         }
-        // length 截断可续写（完备化 R6③）：抑制终态、streaming 保活 ——
+        // length 截断可续写：抑制终态、streaming 保活 ——
         // settleRun 注入显式 continue 消息接着跑;预算尽或续写完成时由下一轮
         // agent_settled 正常收尾。抑制意味着本轮转录不重写盘:续写中途崩溃
         // 丢当前段（pi JSONL 已逐条落盘的除外），与"尽力落盘"语义一致可接受
@@ -1465,14 +1581,19 @@ export class SessionManager implements CogentKernel {
         // 路径在 messages() 按需现算，两条路各自出同源数据（estimateContext
         // 纯转录函数，见其注释）
         if (streaming?.usage) {
-          const estimate = estimateContext(session.pi?.agent.state.messages ?? [])
+          // system 段：piSession.systemPrompt = 当前完整渲染（自拼 + pi
+          // 追加节），与请求组装同源；与历史回查路径（messages()）同表达式
+          const estimate = estimateContext(
+            session.pi?.agent.state.messages ?? [],
+            session.pi?.systemPrompt ?? this.ensureSystemPrompt(session)
+          )
           streaming.usage.contextEstimate = estimate
           const lastSegment = streaming.segments.at(-1)
           if (lastSegment?.usage) lastSegment.usage.contextEstimate = { ...estimate }
         }
 
         // 观测快照吃结构类型（顶层 text/thinking）—— 段化后顶层缓冲已清空，
-        // 传各段聚合值（口径 = 拼接后总字符，与旧实现一致）
+        // 传各段聚合值（口径 = 拼接后总字符）
         if (streaming) {
           session.inspector?.runCompleted({
             text: streaming.segments.map((s) => s.content).join(''),
@@ -1483,7 +1604,7 @@ export class SessionManager implements CogentKernel {
             stopReason: streaming.stopReason
           })
         }
-        // 相邻纯文本段合并（完备化 R6③ 续写的呈现形态）：length 段 + 续写段
+        // 相邻纯文本段合并（续写的呈现形态）：length 段 + 续写段
         // → 单段。run 内相邻纯文本段只可能来自续写注入（无工具的轮会终结
         // run，带工具的 length 轮段里必带工具卡），合并无歧义；正文无缝拼接
         // （续写指令就是"从截断处接着写"），用量/耗时相加 = 计费真相
@@ -1520,7 +1641,7 @@ export class SessionManager implements CogentKernel {
       }
       // agent_start、message_start/end、agent_end（pi 版带 willRetry，终态已归
       // agent_settled）、queue_update、auto_retry_*、session_info_changed 等：
-      // 协议暂无对应事件，转译为空（1.4 对账再议）
+      // 协议暂无对应事件，转译为空（需要时再扩展协议）
       default:
         return
     }
@@ -1534,7 +1655,7 @@ export class SessionManager implements CogentKernel {
  * （配对进 toolCalls）不单独产出 —— 工具结果对 UI 是工具卡的尾部信息，
  * 不是独立消息（对模型才回灌成消息）。
  *
- * 输入源（1.2a 起）：pi 会话树投影（pi.agent.state.messages，压缩条以
+ * 输入源：pi 会话树投影（pi.agent.state.messages，压缩条以
  * compactionSummary 角色存活，session-manager 投影实证）或 v1 旧转录 ——
  * 两源同为 AgentMessage[]，投影规则不变。
  *
@@ -1542,7 +1663,7 @@ export class SessionManager implements CogentKernel {
  * 单测直测（tests：D9 时间序落点/延迟 flush 的引擎侧回归钉），session
  * 内调用点不变。
  */
-export function toChatMessages(messages: AgentMessage[]): ChatMessage[] {
+export function toChatMessages(messages: Array<AgentMessage | CompactionBarSource>): ChatMessage[] {
   // toolCallId → 执行结果（状态 + 摘要 + 起止）：转录里 toolResult 消息跟在
   // 发起它的 assistant 消息之后；先扫一遍建索引，投影时 O(1) 配对。
   // 起止重建自 pi 转录原生字段（timestamp = 结果创建时刻 ≈ 执行终点，
@@ -1582,14 +1703,17 @@ export function toChatMessages(messages: AgentMessage[]): ChatMessage[] {
     // pi Message 联合类型按 role 收窄
     if (message.role === 'compactionSummary') {
       flushBar()
+      // 投影源的压缩条可能带 usage（readPiTranscript 自 CompactionEntry 补挂，
+      // 见 CompactionBarSource）—— 历史折叠条的小字账由此与事件侧同源；
+      // tokensAfter 树里无存（pi 只在 compaction_end 事件携带），保持缺省
+      const bar = message as CompactionBarSource
       pendingBar = {
         role: 'compaction',
         content: message.summary,
-        // pi 树只存 tokensBefore（原生 CompactionSummaryMessage 形状）：
-        // tokensAfter/summaryUsage 是压缩时刻的账（compaction_end 事件侧随
-        // run 呈现），树里无存 —— 历史回查的折叠条缺省这两字段，1.4 投影
-        // 对账再议（pi 的 details 通道是补齐位）
-        compaction: { tokensBefore: message.tokensBefore },
+        compaction: {
+          tokensBefore: message.tokensBefore,
+          ...(bar.usage !== undefined && { summaryUsage: projectUsage(bar.usage) })
+        },
         timestamp: message.timestamp
       }
       continue

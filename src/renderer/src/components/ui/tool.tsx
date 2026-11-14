@@ -5,7 +5,7 @@
  * 状态映射照官方表：运行中 = 单行 TraceLine（不可折叠）；有输出 = 可折叠卡
  * （CodeBlock 展示结果，错误走 destructive 变体）；拒绝 = 置灰单行（denied）。
  * 数据 = ToolItem（协议 tool.started/completed 事件与 ChatMessage.toolCalls 共用投影）。
- * 批次 3 扩展（2026-11-11）：运行中且有 progress（bash 流式尾部快照）时挂
+ * 运行中且有 progress（bash 流式尾部快照）时挂
  * 直播尾行；终态有 diff（edit 工具）时折叠体首块渲染 diff（+绿 -红 上下文灰）。
  */
 import { useState } from 'react'
@@ -32,7 +32,7 @@ import { CodeBlock, CodeBlockContent } from '@/components/ui/code-block'
 
 export type ToolStatus = 'running' | 'ok' | 'error' | 'blocked'
 
-/** 状态 → 尾标文案（头行右侧小字；blocked = 审批拒绝/中止，批次 2 起会出现） */
+/** 状态 → 尾标文案（头行右侧小字；blocked = 审批拒绝/中止时出现） */
 const STATUS_LABEL: Record<ToolStatus, string> = {
   running: '执行中',
   ok: '完成',

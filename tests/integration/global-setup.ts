@@ -1,5 +1,5 @@
 /**
- * integration project 的 globalSetup（docs/计划/测试体系.md D5）：
+ * integration project 的 globalSetup（docs/模块/测试.md）：
  * 守卫构建产物新鲜度 —— out/main/host.js 缺失、或比引擎侧源码
  * （host / electron / shared / protocol）任一文件旧，就自动
  * `npm run build`。效果：`npm test` 一条命令即全绿，无需记得先 build；

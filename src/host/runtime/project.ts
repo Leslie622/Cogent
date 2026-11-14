@@ -14,7 +14,7 @@
  * 显示为「无项目」即可。级联删会话是危险动作，真要做也应由 UI 显式确认。
  */
 import { ProtocolError, RpcErrorCode } from '../../protocol'
-import type { ProjectSummary } from '../../protocol'
+import type { PermissionMode, ProjectSummary } from '../../protocol'
 import type { StorageDriver } from '../storage'
 
 const PROJECT_COLLECTION = 'projects'
@@ -49,6 +49,13 @@ function asStoredProject(doc: unknown, id: string): { summary: ProjectSummary; m
     summary.cwds.length === 0
   ) {
     throw new Error(`项目文档版本/形状不合法（projects/${id}.json），请手工处理后重启`)
+  }
+  // defaultPermissionMode 值域（消费面 = 新会话默认模式，垃圾值不放行）
+  if (
+    summary.defaultPermissionMode !== undefined &&
+    !['ask', 'plan', 'auto', 'autonomous'].includes(summary.defaultPermissionMode)
+  ) {
+    throw new Error(`项目文档权限模式不合法（projects/${id}.json），请手工处理后重启`)
   }
   return { summary: summary as ProjectSummary, migrated: false }
 }
@@ -116,6 +123,18 @@ export class ProjectRegistry {
     const summary = this.require(projectId)
     if (pinned) summary.pinnedAt = Date.now()
     else delete summary.pinnedAt
+    this.persist(projectId)
+    return { ...summary }
+  }
+
+  /**
+   * 项目级默认权限模式（审批面板「允许，并切换为」落位，zcode 同款：同一
+   * 项目的新会话沿用）。无项目会话（无 projectId 也不在任一 cwds 内）调
+   * 用方不会走到这 —— 审批入口按会话反查项目后才落。
+   */
+  setDefaultPermissionMode(projectId: string, mode: PermissionMode): ProjectSummary {
+    const summary = this.require(projectId)
+    summary.defaultPermissionMode = mode
     this.persist(projectId)
     return { ...summary }
   }

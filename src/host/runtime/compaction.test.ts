@@ -1,9 +1,7 @@
 /**
- * compaction.ts 单元测试（docs/计划/测试体系.md S2）—— 1.2a 瘦身后的存量
- * 两面：阈值公式（models.list 预警线）与 D9 保留式投影（estimateContext 的
- * 转录整形）。手搓压缩内核（L1 裁剪 / 切点 / 摘要指令）随实现让位 pi 内置
- * 压缩而删（全局架构 D6），对应场景一并退役；与 tests/integration/
- * compaction.test.ts 的黑盒场景流互补。
+ * compaction.ts 单元测试（docs/模块/测试.md）—— 两个纯函数面：触发线
+ * （models.list 预警线口径）与保留式投影（estimateContext 的转录整形）；
+ * 与 tests/integration/compaction.test.ts 的黑盒场景流互补。
  */
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type {
@@ -14,10 +12,11 @@ import type {
 } from '@earendil-works/pi-ai'
 import { describe, expect, it } from 'vitest'
 import {
+  adaptCompactionToWindow,
   COMPACTION_SUMMARY_PREFIX,
   COMPACTION_SUMMARY_SUFFIX,
-  compactionThreshold,
-  convertToLlmMessages
+  convertToLlmMessages,
+  piTriggerRatio
 } from './compaction'
 
 // ———— fixture 工厂（timestamp 单调递增，模拟真实转录时序） ————
@@ -57,30 +56,51 @@ const barMsg = (summary: string, at: number): AgentMessage => ({
   timestamp: at
 })
 
-// ———— 触发阈值（完备化 R1 公式：max(半窗兜底, min(占比线, 余量线))） ————
+// ———— 触发线（pi reserve 制真值口径） ————
 
-describe('compactionThreshold', () => {
-  it('目录缺数据的怪模型（ctx ≤ 0）→ Infinity 不触发', () => {
-    expect(compactionThreshold(0)).toBe(Number.POSITIVE_INFINITY)
-    expect(compactionThreshold(-1)).toBe(Number.POSITIVE_INFINITY)
+describe('piTriggerRatio', () => {
+  it('目录缺数据的怪模型（ctx ≤ 0）→ NaN（下发处 isFinite 守卫跳过）', () => {
+    expect(Number.isNaN(piTriggerRatio(0))).toBe(true)
+    expect(Number.isNaN(piTriggerRatio(-1))).toBe(true)
   })
 
-  it('大窗（> 81920）维持 90% 占比线 —— 100K 窗 → 90K', () => {
-    expect(compactionThreshold(100_000)).toBe(90_000)
+  it('标准窗：reserve 恒 16384 —— 100K → 0.83616、128K → 0.875、200K → 0.9192', () => {
+    expect(piTriggerRatio(100_000)).toBeCloseTo((100_000 - 16_384) / 100_000, 10)
+    expect(piTriggerRatio(128_000)).toBeCloseTo(0.872, 3)
+    expect(piTriggerRatio(200_000)).toBeCloseTo((200_000 - 16_384) / 200_000, 10)
   })
 
-  it('16K–80K 窗走余量线前移 —— 20K 窗 → 11808（完备化 S1 验收钉：90% 公式要 18000 才触发）', () => {
-    expect(compactionThreshold(20_000)).toBe(20_000 - 8_192)
+  it('小窗 reserve 被 ctx/4 钳制 —— 16K → 0.75（reserve 4000）、8K → 0.75（reserve 2048…同 3/4 线）', () => {
+    // floor(16000/4)=4000 < 16384 → 12000/16000 = 0.75；floor(8000/4)=2000 → 6000/8000 = 0.75
+    expect(piTriggerRatio(16_000)).toBe(0.75)
+    expect(piTriggerRatio(8_000)).toBe(0.75)
   })
 
-  it('特小窗（< 2×ROOM_FLOOR）被半窗兜底接管 —— 8K 窗 → 4096 而非 0（0 = 每回合必触发）', () => {
-    expect(compactionThreshold(8_000)).toBe(4_000)
+  it('旧预警公式（100K 窗画 90%）与真值（83.6%）的错位正是验收报的"未到线就压"', () => {
+    expect(piTriggerRatio(100_000)).toBeLessThan(0.9)
+  })
+})
+
+describe('adaptCompactionToWindow（1.4 小窗自适应）', () => {
+  const piDefaults = { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }
+
+  it('标准窗零变化 —— keep 边界 2×keep=40K、reserve 边界 4×reserve=65536，之上两个 min 都取原值', () => {
+    expect(adaptCompactionToWindow(piDefaults, 200_000)).toEqual(piDefaults)
+    expect(adaptCompactionToWindow(piDefaults, 65_536)).toEqual(piDefaults)
+    // 64000 恰低于 reserve 边界（floor(64000/4)=16000<16384）：reserve 轻微
+    // 收敛、keep 不动 —— 64K 窗触发线从 47616 挪到 48000，行为面不变
+    expect(adaptCompactionToWindow(piDefaults, 64_000)).toEqual({ ...piDefaults, reserveTokens: 16_000 })
   })
 
-  it('ModelDef 覆盖：thresholdRatio / roomFloorTokens 双通道', () => {
-    expect(compactionThreshold(100_000, { thresholdRatio: 0.5 })).toBe(50_000)
-    // 余量线换 floor：100K 窗 floor=16K → min(90K, 84K) = 84K
-    expect(compactionThreshold(100_000, { roomFloorTokens: 16_384 })).toBe(100_000 - 16_384)
+  it('小窗收敛：16K → keep 8000 / reserve 4000；8K → 4096 / 2048', () => {
+    expect(adaptCompactionToWindow(piDefaults, 16_000)).toEqual({ ...piDefaults, keepRecentTokens: 8000, reserveTokens: 4000 })
+    expect(adaptCompactionToWindow(piDefaults, 8_192)).toEqual({ ...piDefaults, keepRecentTokens: 4096, reserveTokens: 2048 })
+  })
+
+  it('非整除向下取整（17K 窗 keep=8500/reserve=4250）；窗口未知（≤0）原样返回', () => {
+    expect(adaptCompactionToWindow(piDefaults, 17_001)).toEqual({ ...piDefaults, keepRecentTokens: 8500, reserveTokens: 4250 })
+    expect(adaptCompactionToWindow(piDefaults, 0)).toBe(piDefaults)
+    expect(adaptCompactionToWindow(piDefaults, -1)).toBe(piDefaults)
   })
 })
 

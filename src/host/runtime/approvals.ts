@@ -1,16 +1,16 @@
 /**
  * 审批规则表 —— 「始终允许此工作区」的引擎侧落点（审批交互升级 D3）。
  *
- * 形状与存储位置的决策依据（三家调研，计划 §1.5）：
+ * 形状与存储位置的决策依据（三家调研，见 技术笔记/工具系统与审批.md）：
  * - 粒度 = 工作区 roots × 工具类别，**只存位置不存内容** —— Claude Code 的
  *   settings.local.json 存精确命令（含密钥）被误提交泄漏（Apiiro 实锤），
  *   Cogent 只存目录名，无参数泄漏面；
  * - 存 `~/.cogent/approvals.json`（引擎侧全局单文件，**不进项目目录**）——
  *   杜绝 repo 内误提交事故面；Qoder「始终允许本项目」同款工作区级持久；
- * - 判定优先序（D3）：软边界（1.3 起在审批层，session.ts decideApproval
- *   先查 write-boundary，越界恒拒）> 本规则表放行 > mode 矩阵 —— 规则只能
- *   放行"边界内"的写，越界写恒被拒，与 Claude Code「deny > allow 严格序」
- *   铁律同构。
+ * - 判定优先序（D3）：mode 矩阵（auto/autonomous 完全放行）> ask 档先查
+ *   write-boundary 根内判定再查本规则表 —— **规则 = 根内信任记忆，永不
+ *   放行越界写**（越界写照常弹面板交人裁决），与 Claude Code「deny >
+ *   allow 严格序」铁律同构。
  *
  * 为什么不走 StorageDriver / driver collection：collection 是
  * `<root>/<collection>/<id>.json` 目录语义（一实体一文件），而规则表是全局

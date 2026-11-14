@@ -4,7 +4,7 @@
  * 动作项 ② 置顶分区（pinnedAt 会话，按置顶时间倒序）③ 项目分区（两级：项目行
  * → 子会话，project store 真数据）④ 最近分区（一级会话行，按 updatedAt 倒序）。
  *
- * 数据源全部真实（演示域 data.ts 已退役）：会话 = chat store（引擎 session.list），
+ * 数据源全部真实：会话 = chat store（引擎 session.list），
  * 项目 = project store（引擎 project.list）。行点击 = chat.selectSession（高亮看
  * activeSessionId，行与内容不再错位）；发起入口 startNew = chat.createSession
  * （真建引擎会话防串话，见 docs/技术笔记/会话隔离与受理语义.md）+
@@ -608,8 +608,8 @@ export function HomeSidebar() {
 
         {/* 置顶分区：会话 + 项目混合（移动语义，各自 pinnedAt 倒序）。
             项目行复用 ProjectRow（完整动作簇：更多菜单/新建聊天/置顶菜单）——
-            此前手搓紧凑行丢了右侧按钮（用户发现），复用才是对的：置顶只是
-            换个分区渲染，行本身的能力不该变。子会话展开就地可见。
+            置顶只是换个分区渲染，行本身的能力不该变（自造紧凑行会丢右侧
+            按钮）。子会话展开就地可见。
             无置顶项时整节不渲染（用户 2026-11-13）：空着还占一行标题 +
             "暂无置顶"是纯噪音，首个置顶动作落地时分区自然出现 */}
         {pinnedProjects.length + pinnedChats.length > 0 && (

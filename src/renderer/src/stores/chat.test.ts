@@ -1,12 +1,13 @@
 /**
- * chat store 纯逻辑单元测试（docs/计划/测试体系.md S3）：IPC 剥壳 / 段展平 /
+ * chat store 纯逻辑单元测试（docs/模块/测试.md）：IPC 剥壳 / 段展平 /
  * 终态替换并回（审批锚回 + 压缩条时间序合并，D9 —— run.completed 整段替换
  * 吞 pruned/bar = 「已裁剪」行消失的回归钉）。事件驱动的 store 行为（伪事件
  * 序列经 bindEngineEvents）见 chat-store.test.tsx；本文件只测可纯调的函数。
  */
 import type { ChatMessage, ToolCallRecord } from '@/env.d'
 import { describe, expect, it } from 'vitest'
-import { flatWithApprovals, flatWithCompaction, flattenSegments, unwrapIpcError } from './chat'
+import { useProjectStore } from '@/stores/project'
+import { flatWithApprovals, flatWithCompaction, flattenSegments, projectDefaultMode, unwrapIpcError } from './chat'
 import type { ApprovalItem, MessageItem, PrunedItem, ToolItem } from './chat'
 
 // ———— fixture 工厂 ————
@@ -149,5 +150,31 @@ describe('flatWithCompaction（终态替换的压缩条/副行并回，D9 回归
     const out = flatWithCompaction(flat, [bar('b1', 30), pruned('p1', 30)])
     // pruned 与 bar 同 timestamp：先插 bar，pruned 随后（首个 > 30 仍是 s2）→ 紧随 bar
     expect(out.map((i) => i.id)).toEqual(['s1', 'b1', 'p1', 's2'])
+  })
+})
+
+// ———— projectDefaultMode（F6 项目级默认权限，createSession 解析链一环） ————
+
+describe('projectDefaultMode', () => {
+  it('projectId 直配命中（defaultPermissionMode 有值才返回）', () => {
+    useProjectStore.setState({
+      projects: [
+        { id: 'p1', name: 'A', cwds: ['C:/ws/a'], createdAt: 0, defaultPermissionMode: 'autonomous' },
+        { id: 'p2', name: 'B', cwds: ['C:/ws/b'], createdAt: 0 }
+      ]
+    })
+    expect(projectDefaultMode('p1')).toBe('autonomous')
+    expect(projectDefaultMode('p2')).toBeUndefined()
+    expect(projectDefaultMode('nope')).toBeUndefined()
+  })
+
+  it('cwd 前缀归属：命中 / 边界不误配 / 项目外 / 反斜杠归一', () => {
+    useProjectStore.setState({
+      projects: [{ id: 'p1', name: 'A', cwds: ['C:\\ws\\a'], createdAt: 0, defaultPermissionMode: 'auto' }]
+    })
+    expect(projectDefaultMode(undefined, 'C:\\WS\\A')).toBe('auto') // 大小写+斜杠归一
+    expect(projectDefaultMode(undefined, 'c:/ws/a/sub/dir')).toBe('auto') // 子路径命中
+    expect(projectDefaultMode(undefined, 'C:/ws/a-x')).toBeUndefined() // 前缀不补分隔符不误配
+    expect(projectDefaultMode(undefined, 'C:/elsewhere')).toBeUndefined()
   })
 })

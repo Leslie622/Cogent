@@ -7,7 +7,7 @@
  * 的 models.json 胶水换成"设置页表单 → 协议全量同步"：
  * 引擎只收 defs，无持久化（宿主持久化，握手/同步注入——见 docs/架构.md 凭据旅程）。
  *
- * 双注册（阶段 1.2a）：Cogent 有两套模型消费面 —— UI 目录/submit 解析走
+ * 双注册：Cogent 有两套模型消费面 —— UI 目录/submit 解析走
  * MutableModels（this.models），pi AgentSession 的请求路由走 ModelRuntime
  * （streamSimple 按 provider id 查它自己的表）。custom/* 是 runtime 不认识的
  * id，故 buildCustomProvider 的同一 Provider 实例既 setProvider（目录）也
@@ -28,7 +28,7 @@ import type { ModelRuntime } from '@earendil-works/pi-coding-agent'
 import type { CustomProviderDef, ModelDef, ProviderCompatDef, ProviderOverrideDef } from '../../protocol'
 
 /**
- * Model 对象上的思考预算通道（完备化 R7，声明合并 —— compaction.ts 的
+ * Model 对象上的思考预算通道（声明合并 —— compaction.ts 的
  * compaction 字段同款手法）：buildModel 从 ModelDef.thinkingBudgets 透传，
  * pi 自身不读；session 侧在 ensureAgent/模型切换时同步到 Agent
  * .thinkingBudgets（pi 的预算消费在请求选项层，不在 Model 层）。
@@ -92,12 +92,12 @@ function buildModel(
     cost: catalogBase?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: def.contextWindow ?? catalogBase?.contextWindow ?? CUSTOM_MODEL_CONTEXT_WINDOW,
     maxTokens: def.maxTokens ?? catalogBase?.maxTokens ?? CUSTOM_MODEL_MAX_TOKENS,
-    // 压缩参数覆盖（完备化 R1）：Cogent 附加字段走 compaction.ts 的声明合并通道，
+    // 压缩参数覆盖：Cogent 附加字段走 compaction.ts 的声明合并通道，
     // pi 不读；目录基底无此维度（pi 目录不标压缩参数），用户没配 = 引擎默认公式
     ...(def.compaction !== undefined && { compaction: def.compaction }),
-    // 思考预算（完备化 R7）：同样走声明合并附加字段，session 侧同步到 Agent
+    // 思考预算：同样走声明合并附加字段，session 侧同步到 Agent
     ...(def.thinkingBudgets !== undefined && { thinkingBudgets: def.thinkingBudgets }),
-    // 端点兼容覆盖（完备化 R7）：provider 级 compat 下沉到每个模型（pi 上游
+    // 端点兼容覆盖：provider 级 compat 下沉到每个模型（pi 上游
     // provider-composer 同位语义）。字段同名直通（ProviderCompatDef 是
     // OpenAICompletionsCompat 的子集）；anthropic 方言不经此面 —— 调用处不传
     ...(compat !== undefined && { compat })

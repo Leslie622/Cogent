@@ -1,14 +1,12 @@
 /**
- * 上下文压缩集成测试 —— 原 tmp/cogent-smoke/compaction-smoke.mjs 正名迁移
- * （2026-11-12 批次 4 + 完备化 S1–S8 + 三轮验收修复 + D9 保留式扩至 30 项；
- * 断言与场景流原样，载体换 Vitest，D6）。
+ * 上下文压缩集成测试 —— 压缩内核 = pi AgentSession 内置（触发线 reserve
+ * 制、摘要指令 pi 文本），本测试钉 Cogent 承接面：事件转译、投影、保留式
+ * 呈现、小窗自适应。
  *
  * mock SSE（18941）+ 引擎驱动 + 断言三合一，临时 COGENT_HOME 隔离
- * （USERPROFILE/HOME 同步覆写）。场景流一条到底（单 it，中途失败即终止，
- * 与原脚本 exit 语义一致）。
+ * （USERPROFILE/HOME 同步覆写）。场景流一条到底（单 it，中途失败即终止）。
  *
- * 场景流（一个大会话串到底 + 若干小会话；1.2a 起 pi 内核接管压缩，场景随
- * 之重钉 —— 触发线 reserve 制、摘要指令 pi 文本、L1 裁剪退役）：
+ * 场景流（一个大会话串到底 + 若干小会话）：
  *  S1 阈值自动触发（循环堆大回合到触发线；触发点动态）
  *  S2 压缩后请求投影（被摘要原文消失 + 摘要投影 + 保留区 + 新问）
  *  S4 手动无可压缩（小会话）→ InvalidRequest
@@ -23,7 +21,7 @@
  *  S13 思考预算通道（compat 字段名 × 档位预算）
  *  S14 场景(S2 验收 bug 回归)：轮间压缩配对完整性（请求 + JSONL 落盘）
  *  S15/S16 空续写拒绝 + 摘要请求领头形状
- * （check 编号沿用开发.md 配方时代的编号，1–23 + 5b/7b/9–22 各段）
+ * （check 编号沿用既有编号，1–23 + 5b/7b/9–22 各段）
  *
  * mock 关键点（勿改）：
  *  ① contextWindow 给 24000（真实产品量级；pi reserve 16384 → 触发线 7616，
@@ -55,7 +53,8 @@ const home = makeTempDir('cogent-compaction-home-')
 const ws = makeTempDir('cogent-compaction-ws-')
 
 // ———— 推演参数（pi 内核口径，estimateTokens = chars/4） ————
-// 触发线 = ctx−reserve16384；keep = 20000。mock 64K 窗 → 触发线 47616。
+// 触发线 = ctx−reserve；keep = 20000。mock 64K 窗经小窗自适应
+// reserve=min(16384, 16000)=16000 → 触发线 48000。
 // 回合 105000c → 26250 tok：单回合 > keep —— 从尾累计跨过 keep 落在 user
 // 条目（切点且 turn start，不落 split-turn），2 回合 ≈ 52500 过触发线。
 // 回合 < keep/2 时跨点会落到首个 user 之前（被摘要区只剩 system，被滤后
@@ -242,11 +241,12 @@ const MOCK_PROVIDERS = [
     name: 'Mock',
     baseUrl: `http://127.0.0.1:${PORT}/v1`,
     models: ['mock'],
-    // 关键点①：contextWindow 64000（pi 口径推演：触发线 = ctx−reserve16384 =
-    // 47616，须高于 keep 20000 才走常规整回合压缩 —— 小于它时触发落在
-    // keep 窗内，pi 只能切当回合做 turn-prefix 摘要，S1 的"被摘要区整回合"
-    // 结构不成立）。mock20k 供小窗场景（触发线 3616，split-turn 是 pi 小窗
-    // 的真行为，场景按事件面钉）
+    // 关键点①：contextWindow 64000（pi 口径推演：触发线 = ctx−reserve =
+    // 48000（1.4 小窗自适应把 reserve 收敛为 min(16384, 64000/4)=16000），
+    // 须高于 keep 20000 才走常规整回合压缩 —— 小于它时触发落在 keep 窗内，
+    // pi 只能切当回合做 turn-prefix 摘要，S1 的"被摘要区整回合"结构不成立）。
+    // mock20k 供小窗场景（自适应 keep=10000/reserve=5000 → 触发线 15000，
+    // 成功压缩提前是小窗自适应的修复行为，场景⑨钉）
     modelDefs: [
       { id: 'mock', contextWindow: 64_000 },
       { id: 'mock20k', contextWindow: 20_000 }
@@ -254,7 +254,7 @@ const MOCK_PROVIDERS = [
   }
 ]
 
-describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs，30 项断言）', () => {
+describe('上下文压缩集成（S1–S16 场景流，30 项断言）', () => {
   beforeAll(async () => {
     await new Promise<void>((r) => server.listen(PORT, '127.0.0.1', r))
     await initEngine(engine, { client: 'compaction-smoke', port: PORT, providers: MOCK_PROVIDERS })
@@ -266,7 +266,7 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
     for (const dir of [home, ws]) removeDir(dir)
   })
 
-  it('场景流一条到底（断言编号沿用开发.md 配方时代的编号）', { timeout: 600_000 }, async () => {
+  it('场景流一条到底（断言编号沿用既有编号）', { timeout: 600_000 }, async () => {
     // ———— S1 阈值自动触发（循环堆回合，触发点动态） ————
     const s1 = await newSession({ cwd: ws })
     const turnText = (k: number): string => `MILESTONE_${k} ` + 'x'.repeat(TURN_CHARS)
@@ -308,7 +308,7 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
     )
 
     // ———— S2 压缩后请求投影：旧文消失 + 摘要投影 + 保留区 + 新问 ————
-    // pi 时序（与手搓的关键差异）：threshold 压缩发生在触发回合 run 落定后
+    // pi 时序：threshold 压缩发生在触发回合 run 落定后
     // （post-run 检查），触发回合自己的请求仍是压缩前形态 —— 压缩后的投影
     // 要看**下一回合**的请求，这里追加一个探测回合
     await engine.send('agent.submit', { sessionId: s1, text: 'post-trigger probe', model: 'mock' })
@@ -427,12 +427,12 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
       `checkpoints=${checkpointCount} ${probeReq.slice(0, 160)}`
     )
 
-    // ———— S6 场景⑨（pi 版）：20K 窗（ctx = keep）的触发时机 ————
-    // pi 语义：触发线 = 20000−16384 = 3616 早早即响，但被摘要料 = 转录 −
-    // keep(20000) —— 窗口等于 keep 时只有转录**超出** keep 才有整回合可压，
-    // 前期每次触发都以「无可压缩」error 收场。逐回合垫到出现成功压缩：
-    // 占比必然 >80%（与手搓版 keep=min(20K, ctx/2) 的行为差异 —— 1.4 的
-    // CompactionSettings 按模型覆盖对账点）
+    // ———— S6 场景⑨：20K 窗（ctx = 默认 keep）的触发时机 ————
+    // pi 默认 keep 固定 20000 → 窗口等于 keep 时只有转录**超出** keep 才有
+    // 整回合可压，前期触发全以「无可压缩」收场、成功占比必然 >80%（旧钉）。
+    // 小窗自适应（adaptCompactionToWindow）：20K 窗 → keep = min(20K,
+    // ctx/2) = 10K、reserve = min(16384, ctx/4) = 5K —— 转录 > 10K 即有可压
+    // 区间，成功压缩显著提前（料过半窗即成，自适应 keep=min(20K,ctx/2)）
     const s3 = await newSession({ cwd: ws })
     let successRatio = 0
     for (let k = 1; k <= 20; k++) {
@@ -456,19 +456,21 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
       }
     }
     check(
-      '9. 20K 窗成功压缩发生在转录超 keep 时（占比 >80%；触发线早期只响 error）',
-      successRatio > 0.8,
+      '9. 20K 窗成功压缩提前（自适应 keep=10K：占比过半即成，显著低于旧 >80%）',
+      successRatio > 0.5 && successRatio < 0.8,
       `ratio=${(successRatio * 100).toFixed(1)}%`
     )
 
     // ———— S7 场景②(S2 验收):工具轮落账触发压缩且 run 不中断 ————
-    // 垫 1 大回合(30000 tok)+ 1 小回合(12000 tok)≈ 42000,稳在触发线 47616
-    // 下;read probe.txt 结果(5157)+ D0 轮开销落账后 ≈ 48000 过线 —— 压缩发
-    // 生在 DO:TOOL 这个 run 的检查点,run 不中断
+    // 垫 1 大回合(26250 tok)+ 1 中回合(17500 tok)≈ 43750,稳在触发线 48000
+    // 下;read probe.txt 结果(5157)+ D0 轮开销落账后 ≈ 49700 过线 —— 压缩发
+    // 生在 DO:TOOL 这个 run 的检查点(工具结果落账后、下一请求前),run 不中断。
+    // 触发线 48000 = 64000 − reserve16000(小窗自适应:64K 窗的 reserve 被
+    // min(16384, ctx/4) 轻微收敛,keep 20000 不变 —— 垫料须留足过线裕量)
     const s4 = await newSession({ cwd: ws })
     await engine.send('agent.submit', { sessionId: s4, text: 'S4TURN_1 ' + 'z'.repeat(TURN_CHARS), model: 'mock' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s4)
-    await engine.send('agent.submit', { sessionId: s4, text: 'S4TURN_2 ' + 'z'.repeat(63_000), model: 'mock' })
+    await engine.send('agent.submit', { sessionId: s4, text: 'S4TURN_2 ' + 'z'.repeat(70_000), model: 'mock' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s4)
     const earlyCompact = engine.events.find((e) => e.method === 'compaction.started' && e.params.sessionId === s4)
     if (earlyCompact) earlyCompact.__consumed = true
@@ -513,7 +515,7 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
     )
 
     // ———— S9 场景③(pi 版重钉):大结果落账后的压缩语义 ————
-    // 手搓 L1 裁剪已随内核替换退役（全局架构 D6）。pi 保留式下最新消息
+    // pi 保留式下最新消息
     // （含大工具结果）恒在保留区，被摘要的是**老历史**—— 摘要请求把被摘
     // 要区原文化序列化进 <conversation>（老回合原文可见），大结果原文随
     // 保留区进后续请求。大结果落账把会话推过 keep 线，压缩照常发生
@@ -662,7 +664,7 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
     // ———— S14 场景(S2 验收 bug 回归):轮间压缩后同 run 内请求的配对完整性 ————
     // 复现结构 = 验收翻车现场:垫到阈值边缘 → 大工具轮落账过线 → 轮间钩子在
     // run 中途压缩 → 压缩后的下一请求必须 toolCall/toolResult 严格配对。换引用
-    // 的旧实现会把 loop 当轮收尾消息双写进转录(配对重复 → 400);原位写回
+    // 逐条 append 而非原位写回（双写会把 loop 当轮收尾消息重复进转录 → 400）;
     // 后 transcript 与请求体都应干净
     const s11 = await newSession({ cwd: ws })
     // 垫底 1 大回合(30000)+ 1 小回合(15750)≈ 42000 稳在触发线下 + DO:TOOL
@@ -782,7 +784,6 @@ describe('上下文压缩集成（S1–S16 场景流，原 compaction-smoke.mjs�
     )
 
     // ———— S16 场景(pi 版):小窗深度占用的自动压缩摘要请求形状 ————
-    // 手搓的预算守卫降级(被摘要区直传、无 system 领头)已随内核替换退役;
     // pi 的摘要请求组装口径以其实现为准 —— 此处钉「小窗深占用下自动压缩
     // 照常成功」+ 记录领头形状(后续对账断言收紧的锚点)
     const s13b = await newSession({ cwd: ws })

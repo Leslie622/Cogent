@@ -1,8 +1,7 @@
 /**
- * API 格式下拉（2026-11-10 从 ModelsSection.tsx 拆出，同步换用 shadcn Select
- * 原语 —— base-luma registry 版；此前是 DropdownMenu 手搓的下拉等价物，
- * 按约定.md §3「shadcn 优先」退役）：CustomProviderDetail 专用，props 接口
- * 保持拆分前的形状（value / onChange，对调用方无感）。
+ * API 格式下拉 —— shadcn Select 原语（base-luma registry 版，约定.md §3
+ * 「shadcn 优先」）：CustomProviderDetail 专用，props 接口为 value /
+ * onChange（对调用方无感）。
  */
 import {
   Select,

@@ -1,14 +1,15 @@
 /**
- * toChatMessages 单元测试（docs/计划/测试体系.md S2）—— pi 转录 → UI
- * ChatMessage 投影。重点钉 D9 保留式的**呈现位**：压缩条在转录里插在切点
- * （下标在保留区之前），UI 投影按 timestamp 延迟落位（第三轮 GUI 验收
- * "留痕跳到上面去了"的引擎侧回归钉）；另有 R6③ 相邻段合并与工具配对。
+ * toChatMessages 单元测试（docs/模块/测试.md）—— pi 转录 → UI
+ * ChatMessage 投影。重点钉保留式呈现的**呈现位**：压缩条在转录里插在切点
+ * （下标在保留区之前），UI 投影按 timestamp 延迟落位（回归钉：压缩条
+ * 不跳位）；另有相邻段合并与工具配对。
  * 与 compaction.test.ts（纯函数层）、tests/integration/compaction.test.ts
  * （重启回查黑盒）三层互补。
  */
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, SystemMessage, ToolResultMessage, Usage, UserMessage } from '@earendil-works/pi-ai'
 import { describe, expect, it } from 'vitest'
+import type { CompactionBarSource } from '../kernel/pi-session-factory'
 import { toChatMessages } from './session'
 
 // ———— fixture 工厂 ————
@@ -222,5 +223,24 @@ describe('toChatMessages 压缩条时间序落位（D9 呈现位回归钉）', (
     const out = toChatMessages(messages)
     const bars = out.filter((m) => m.role === 'compaction')
     expect(bars.map((b) => b.content)).toEqual(['V1', 'V2'])
+  })
+
+  it('带 usage 的 bar（readPiTranscript 自 CompactionEntry 补挂）→ summaryUsage 投影；无 usage 缺省', () => {
+    const withUsage: CompactionBarSource = {
+      role: 'compactionSummary',
+      summary: 'S',
+      tokensBefore: 100,
+      timestamp: 100,
+      usage: usage(7)
+    }
+    const out = toChatMessages([userMsg('q', 10), withUsage, assistantMsg('a', 150)])
+    const bar = out.find((m) => m.role === 'compaction')
+    // summaryUsage = pi Usage 投影（与 compaction.completed 事件侧同源）；
+    // toMatchObject 只钉有效字段（fixture 未带 reasoning → 投影为缺省键）
+    expect(bar?.compaction?.summaryUsage).toMatchObject({ input: 7, output: 14, totalTokens: 21, totalCost: 0 })
+    expect(bar?.compaction?.tokensAfter).toBeUndefined()
+    // 无 usage（pi 树原生形状）→ summaryUsage 缺省，兼容旧会话
+    const plain = toChatMessages([userMsg('q', 10), barMsg('S2', 100), assistantMsg('a', 150)])
+    expect(plain.find((m) => m.role === 'compaction')?.compaction).toEqual({ tokensBefore: 100 })
   })
 })

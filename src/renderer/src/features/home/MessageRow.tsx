@@ -20,7 +20,7 @@ import type { MessageUsage } from '@/env.d'
 
 /** 消息的最小渲染形状（chat store 的 ChatMessage，props 单向传入；会话视图
     件 —— ConversationIndex 等 —— 共享，经 HomeChat 再导出）。role 含
-    'compaction'（批次 4 压缩折叠条）：MessageItem 联合随协议扩了角色，
+    'compaction'（压缩折叠条）：MessageItem 联合随协议扩了角色，
     MessageRow 是其类型流的终点，跟上才有完备分支（常态由 TurnGroup 的
     独立行快路接管，进不到这里） */
 export type MessageLike = {

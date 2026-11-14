@@ -21,39 +21,57 @@ import { MessageRow, UsageLine } from './MessageRow'
 import { ApprovalCard } from './ApprovalCard'
 import { CompactionBar, PrunedBar } from './CompactionBar'
 
-/** 回合（一问一答 + 其间全部过程项）；user 缺省 = 无提问头组 —— 压缩折叠条
- *  组（D9 保留式：bar 按时间序原位中插，自成一组并截断当前组；组内只有
- *  bar 与其配对裁剪副行，其后内容另起无头续组）、历史投影尾部前导的兜底组。
- *  startedAt = 无 user 头组的墙钟起点（第八轮验收：压缩条截断出的续组继承
- *  原 user 的 timestamp —— 不继承的话 turnDurationMs 无起点、头条只剩
- *  「已工作」没秒数） */
+/** 回合（一问一答 + 其间全部过程项）；user 缺省 = 无提问头组（历史投影尾部
+ *  前导的兜底组）。startedAt = 无 user 头组的墙钟起点（继承最近 user 的
+ *  timestamp —— 不继承的话 turnDurationMs 无起点、头条只剩「已工作」没秒数）。
+ *  压缩折叠条是**回合内的过程行**：不截断回合、不自成组
+ *  —— 一条用户消息恒一个「已工作」头与一份总时长（bar 自成组曾被验收否决：
+ *  一回合被多条 bar 切出多个工作头，形似多次独立工作） */
 export interface ChatTurn {
   user?: ChatMessage
   items: MessageItem[]
   startedAt?: number
 }
 
-/** 渲染期分组（D1；D9 补压缩条锚定）：用户消息开新回合（user 存 turn.user
- *  槽、不进 items），其后到下一用户消息前的项归本回合；压缩折叠条
- *  （role 'compaction'）自成一组且**截断当前组**（current 置空，其后内容
- *  自起无头续组）—— 不截断的话，bar 按时间序插在触发消息与回复之间时，
- *  流式占位/终态回复/工具卡会落进 bar 组，而 bar 组的渲染分支只认
- *  compaction/pruned 两类（其余映射 null）＝ 回复被整个吞掉（第三轮验收
- *  实测"压缩后无回复"）。[user 泡][bar 行][续组=回复] 正是 Codex 标记行形态 */
+/** 渲染期分组：用户消息开新
+ *  回合（user 存 turn.user 槽、不进 items），其后到下一用户消息前的项归本
+ *  回合。压缩条分两形（判据 = bar 之后、下一 user 前是否还有工作项 ——
+ *  轮间 bar 必然晚于上一轮收尾，时间比较分不出两形，只能向后看）：
+ *  - **轮间自动压缩**（run 内 checkpoint / 恢复路 continue，之后还有轮次）
+ *    → 行内过程条，按时间序插在过程流里（ProcessItem 的 compaction 分支）；
+ *  - **回合外压缩**（手动「立即压缩」/ idle，之后直到下一 user 无工作项）
+ *    → **独立成行**直接可见 —— 它不是该回合过程的一部分，塞进「已工作」
+ *    折叠体等于把用户的显式动作藏起来。
+ */
 export function groupTurns(items: MessageItem[]): ChatTurn[] {
   const turns: ChatTurn[] = []
   let current: ChatTurn | undefined
-  // 最近一次 user 的 timestamp：压缩条截断出的续组/bar 组继承它作墙钟起点
+  // 最近一次 user 的 timestamp：无头兜底组的墙钟起点
   let lastUserAt: number | undefined
-  for (const item of items) {
+  const isWorkItem = (x: MessageItem): boolean =>
+    x.type === 'tool' || x.type === 'approval' || (x.type === undefined && x.role !== 'compaction' && x.role !== 'user')
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
     if (item.type === undefined && item.role === 'user') {
       lastUserAt = item.timestamp
       current = { user: item, items: [] }
       turns.push(current)
-    } else if (item.type === undefined && item.role === 'compaction') {
-      // 截断：current 置空，下一项（非 user）自起无头续组
-      current = undefined
-      turns.push({ items: [item], startedAt: lastUserAt })
+    } else if (item.type === undefined && item.role === 'compaction' && current !== undefined && current.items.length > 0) {
+      // 向后看到下一个 user：还有工作项 = 轮间（行内）；没有 = 回合外（独立行）
+      let hasWorkInTurn = false
+      for (let j = i + 1; j < items.length; j++) {
+        const next = items[j]
+        if (next.type === undefined && next.role === 'user') break
+        if (isWorkItem(next)) {
+          hasWorkInTurn = true
+          break
+        }
+      }
+      if (!hasWorkInTurn) {
+        turns.push({ items: [item] })
+        continue
+      }
+      current.items.push(item)
     } else {
       if (current === undefined) {
         current = { items: [], startedAt: lastUserAt }
@@ -92,7 +110,8 @@ function splitTurn(
   let answerIndex = -1
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i]
-    if (item.type === undefined && item.content !== '') {
+    // 压缩条有 content（摘要）但不是回答 —— 行内条进过程流（D1 修订）
+    if (item.type === undefined && item.role !== 'compaction' && item.content !== '') {
       answerRaw = item
       answerIndex = i
       break
@@ -117,17 +136,29 @@ function splitTurn(
 }
 
 /**
- * 回合墙钟时长（D5）：提问 timestamp → 回合末条内容消息 timestamp
- * （含工具执行耗时；各段 durationMs 求和不含，会虚低）。工具卡行没有
- * timestamp，从尾部扫首条内容消息即回合收尾时刻。无 user 头组（D9 压缩条
- * 截断的续组）用继承的 startedAt 起点 —— 墙钟口径不变："用户等了多久"
+ * 回合墙钟时长（D5）：提问 timestamp → 回合收尾时刻。
+ * 段 timestamp 是**请求开口径**（与历史回查对齐、重启不漂移），
+ * 不再天然包含末段自身的模型耗时 —— 收尾 = 末段 timestamp + 该段
+ * durationMs（无 durationMs 的旧数据退化为开口径）；末条是纯工具段时取
+ * 工具卡 endedAt（执行收尾打点）。各段 durationMs 求和不含工具执行与
+ * 轮间隙，会虚低，不用。无 user 头组（D9 压缩条截断的续组）用继承的
+ * startedAt 起点 —— 墙钟口径不变："用户等了多久"
  */
 function turnDurationMs(turn: ChatTurn): number | undefined {
   const start = turn.user?.timestamp ?? turn.startedAt
   if (start === undefined) return undefined
   for (let i = turn.items.length - 1; i >= 0; i--) {
     const item = turn.items[i]
-    if (item.type === undefined) return Math.max(item.timestamp - start, 0)
+    if (item.type === 'tool') {
+      if (item.endedAt !== undefined) return Math.max(item.endedAt - start, 0)
+      continue
+    }
+    if (item.type === undefined) {
+      // 压缩条跳过：run 后压缩的 bar 时间戳晚于末段（含摘要调用耗时），
+      // 计入会把「已工作」撑到下一个 run 的边界 —— 压缩是记账不是工作
+      if (item.role === 'compaction') continue
+      return Math.max(item.timestamp + (item.durationMs ?? 0) - start, 0)
+    }
   }
   return undefined
 }
@@ -234,12 +265,12 @@ function ProcessItem({ item }: { item: MessageItem }) {
   if (item.type === 'approval') {
     return <ApprovalCard item={item} />
   }
-  // 裁剪副行（完备化 R3/D8）：折叠条同区的一行「已裁剪 N 处工具输出」
+  // 裁剪副行：折叠条同区的一行「已裁剪 N 处工具输出」
   if (item.type === 'pruned') {
     return <PrunedBar item={item} />
   }
-  // 压缩条类型分支（常态走 TurnGroupImpl 的独立行快路，不进过程体 ——
-  // 塞进「已工作」折叠体里的压缩标记等于看不见；此分支是类型完备兜底）
+  // 压缩条：回合内的过程行 —— 与工具卡同区，按时间序
+  // 原位插在压缩发生的位置；折叠体收起时随过程一起藏（留痕在，展开可见）
   if (item.role === 'compaction') {
     return <CompactionBar message={item} />
   }
@@ -250,26 +281,24 @@ function ProcessItem({ item }: { item: MessageItem }) {
 }
 
 function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
-  // 压缩折叠条独立行：无用户消息的单独回合组（D9 保留式：bar 原位插在
-  // 压缩发生位置，其上是保留的影子区历史、其下保留区以 user 消息另起回合；
-  // 多次压缩多条 bar 各自成组）—— 不套「已工作」头条/统计行（那是一个
-  // run 的语义，压缩不是 run）。组内可带 L1 prune 副行（completed 手术把
-  // [折叠条, 副行] 一起插在切点后）
+  // 回合外压缩条独立行（手动「立即压缩」/idle，groupTurns 按「bar 之后
+  // 无工作项」判出）：不套「已工作」头条/统计行 —— 那是一个 run 的语义，
+  // 压缩不是 run，且它是用户的显式动作、要直接可见。组内可带 L1 prune
+  // 副行（completed 手术一起插入）；其余项走 ProcessItem 兜底（无 user
+  // 兜底组以 bar 开头的旧转录边角）
   const first = turn.items[0]
   if (turn.user === undefined && first.type === undefined && first.role === 'compaction') {
     return (
       <div className="flex flex-col gap-2">
-        {turn.items.map((item) =>
-          item.type === 'pruned' ? (
-            <MessageScrollerItem key={item.id} messageId={item.id}>
-              <PrunedBar item={item} />
-            </MessageScrollerItem>
-          ) : item.type === undefined && item.role === 'compaction' ? (
-            <MessageScrollerItem key={item.id} messageId={item.id}>
+        {turn.items.map((item) => (
+          <MessageScrollerItem key={item.id} messageId={item.id}>
+            {item.type === undefined && item.role === 'compaction' ? (
               <CompactionBar message={item} />
-            </MessageScrollerItem>
-          ) : null
-        )}
+            ) : (
+              <ProcessItem item={item} />
+            )}
+          </MessageScrollerItem>
+        ))}
       </div>
     )
   }

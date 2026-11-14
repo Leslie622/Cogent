@@ -32,8 +32,8 @@ declare global {
       respondApproval: (
         requestId: string,
         approved: boolean,
-        options?: { message?: string; always?: 'workspace' }
-      ) => Promise<{ ok: true }>
+        options?: { message?: string; always?: 'workspace'; switchMode?: 'auto' | 'autonomous' }
+      ) => Promise<{ ok: true; summary?: SessionSummary }>
       /** 写入 API key（safeStorage 落盘 + 推引擎；明文只此一路出 renderer） */
       setApiKey: (providerId: string, apiKey: string) => Promise<{ ok: true }>
       /** 删除单条 API key（壳侧落盘移除 + 引擎内存表移除；清 key 的正路） */
@@ -137,6 +137,8 @@ export interface ProjectSummary {
   createdAt: number
   /** 置顶时间（毫秒）；缺省 = 未置顶 */
   pinnedAt?: number
+  /** 项目级默认权限模式（审批面板「允许，并切换为」落位）；缺省 = 未设置 */
+  defaultPermissionMode?: PermissionMode
 }
 
 /** 与 protocol/types.ts 对应 method 的参数形状（renderer 侧镜像声明） */
@@ -209,7 +211,16 @@ export type EngineEvent =
         stopReason?: string
       }
     }
-  | { method: 'run.failed'; params: { sessionId: string; message: string } }
+  | {
+      method: 'run.failed'
+      params: { sessionId: string; message: string; messages?: ChatMessage[] }
+    }
+  | {
+      /** 轮终实报（工具循环每轮 turn_end）：指示器 run 内实时跟随；终态后以
+          segments 内 usage 为准，压缩时弃置（切压缩后估算） */
+      method: 'context.updated'
+      params: { sessionId: string; usage: MessageUsage }
+    }
   | {
       method: 'message.delta'
       params: { sessionId: string; messageId: string; delta: string; kind?: 'text' | 'thinking' }
@@ -217,7 +228,18 @@ export type EngineEvent =
   | { method: 'tool.started'; params: { sessionId: string; callId: string; name: string; kind: string; summary?: string } }
   | { method: 'tool.completed'; params: { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string } }
   | { method: 'tool.progress'; params: { sessionId: string; callId: string; text: string } }
-  | { method: 'approval.request'; params: { sessionId: string; requestId: string; toolName: string; kind: string; summary: string } }
+  | {
+      method: 'approval.request'
+      params: {
+        sessionId: string
+        requestId: string
+        toolName: string
+        kind: string
+        summary: string
+        /** 写类目标在工作区根之外（面板据此隐藏「始终允许此工作区」） */
+        outsideRoots?: boolean
+      }
+    }
   | { method: 'inspect.event'; params: { sessionId: string; entry: InspectEntrySummary } }
   | { method: 'compaction.started'; params: { sessionId: string; reason: 'threshold' | 'manual' } }
   | {
@@ -364,8 +386,8 @@ export interface ModelSummary {
   maxTokens: number
   /** 是否用户添加（缺省 false = pi 目录原生）；默认模型设置 UI 锁 id */
   userDefined?: boolean
-  /** 有效压缩触发阈值占比（完备化 R1，引擎按 model.compaction 与窗口解出）；
-      指示器预警线画它，小窗模型显著前移（20K 窗 ≈59%）。缺省回落 0.9 */
+  /** 有效压缩触发阈值占比（pi reserve 制真值：1 − min(16384, ctx/4)/ctx）；
+      指示器预警线画它，小窗模型显著前移（20K 窗 ≈75%）。缺省回落 0.9 */
   compactionThresholdRatio?: number
 }
 
@@ -388,10 +410,10 @@ export interface ModelDef {
   input?: Array<'text' | 'image'>
   reasoning?: boolean
   thinkingLevels?: ThinkingLevel[]
-  /** 压缩参数覆盖（完备化 R1；缺省走引擎默认 0.9/8192）。设置 UI 在「高级」
-      折叠（S7），此处先随协议形状同步 */
+  /** 压缩参数覆盖 —— 盘上兼容字段：pi 不读、引擎不消费（触发线 = pi
+      reserve 制 + 窗口自适应），仅为旧盘上数据保留 */
   compaction?: CompactionParamsOverride
-  /** 思考预算（完备化 R7，token 按档位）：推理模型思考硬钳制，防小窗输出
+  /** 思考预算（token 按档位）：推理模型思考硬钳制，防小窗输出
       预算被吃光。设置 UI 在「高级」折叠 */
   thinkingBudgets?: ThinkingBudgetsOverride
 }
@@ -404,7 +426,7 @@ export interface ThinkingBudgetsOverride {
   high?: number
 }
 
-/** provider 级兼容覆盖（完备化 R7 高级面），镜像 protocol/types.ts；仅 openai
+/** provider 级兼容覆盖（高级面），镜像 protocol/types.ts；仅 openai
     系方言消费，未设置时引擎按 baseUrl 自动探测 */
 export interface ProviderCompatDef {
   thinkingTokenBudgetField?: 'thinking_budget' | 'thinking_budget_tokens' | 'thinking_token_budget'
@@ -436,7 +458,7 @@ export interface CustomProviderDef {
   disabledModels?: string[]
   /** 整 provider 禁用：保留定义不注册 */
   disabled?: boolean
-  /** 端点兼容覆盖（完备化 R7 高级面，仅 openai 系方言消费） */
+  /** 端点兼容覆盖（高级面，仅 openai 系方言消费） */
   compat?: ProviderCompatDef
 }
 

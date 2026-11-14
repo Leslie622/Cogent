@@ -15,10 +15,17 @@ import type { IpcDeps } from './index'
 
 export function registerApprovalIpc({ host }: IpcDeps): void {
   // 信任边界：renderer 不可信 —— 载荷形状在此收窄（业务校验在引擎 dispatch）。
-  // optional 的 message（拒绝附言）/ always（落工作区级规则）带了就约束形状，
-  // 语义矛盾（always + approved=false）在引擎入口拦 —— 这里只管传输形状
+  // optional 的 message（拒绝附言）/ always（落工作区级规则）/ switchMode
+  // （允许并切换为）带了就约束形状，语义矛盾在引擎入口拦 ——
+  // 这里只管传输形状
   ipcMain.handle(IPC.approvalRespond, async (_event, raw: unknown) => {
-    const payload = raw as { requestId: unknown; approved: unknown; message?: unknown; always?: unknown }
+    const payload = raw as {
+      requestId: unknown
+      approved: unknown
+      message?: unknown
+      always?: unknown
+      switchMode?: unknown
+    }
     if (typeof payload.requestId !== 'string' || payload.requestId.length === 0 || typeof payload.approved !== 'boolean') {
       throw new Error('approval:respond 非法调用：需要 { requestId: string, approved: boolean }')
     }
@@ -28,11 +35,19 @@ export function registerApprovalIpc({ host }: IpcDeps): void {
     if (payload.always !== undefined && payload.always !== 'workspace') {
       throw new Error("approval:respond 非法调用：always 只支持 'workspace'")
     }
+    if (
+      payload.switchMode !== undefined &&
+      payload.switchMode !== 'auto' &&
+      payload.switchMode !== 'autonomous'
+    ) {
+      throw new Error("approval:respond 非法调用：switchMode 只支持 'auto' | 'autonomous'")
+    }
     return host.request('approval.respond', {
       requestId: payload.requestId,
       approved: payload.approved,
       ...(payload.message !== undefined && { message: payload.message }),
-      ...(payload.always !== undefined && { always: payload.always })
+      ...(payload.always !== undefined && { always: payload.always }),
+      ...(payload.switchMode !== undefined && { switchMode: payload.switchMode })
     })
   })
 }

@@ -1,5 +1,5 @@
 /**
- * chat store 事件驱动行为测试（docs/计划/测试体系.md S5）：window.cogent
+ * chat store 事件驱动行为测试（docs/模块/测试.md）：window.cogent
  * 可编程 stub + bindEngineEvents 驱动**真实接线**（不测复制品）—— 事件 →
  * 状态手术的全链路。重点钉 D9 保留式呈现的 store 侧手术：
  * - compaction.pruned standalone 行立即落尾；
@@ -11,6 +11,8 @@
 import type { ChatMessage } from '@/env.d'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindEngineEvents, useChatStore } from './chat'
+import type { MessageItem } from './chat'
+import { useHomeStore } from './home'
 
 // ———— window.cogent 可编程 stub（模块加载前就位，bindEngineEvents 才拿得到） ————
 
@@ -42,8 +44,12 @@ beforeEach(() => {
 })
 
 const SID = 's1'
-/** 预置消息列表（直写 store，绕开 submit 的乐观路径） */
+/** 预置消息列表（直写 store，绕开 submit 的乐观路径）。视图态同步置 chat：
+ *  生产里"有活动会话"必然是 chat 态（openSession/send 都会翻转 home store），
+ *  submit 的物化条件按视图态优先，seed 不对齐会误入
+ *  "新聊天强制物化"分支 */
 const seedMessages = (items: ReturnType<typeof useChatStore.getState>['messagesBySession'][string]): void => {
+  useHomeStore.setState({ session: { kind: 'chat', chatId: SID } })
   useChatStore.setState((state) => ({
     messagesBySession: { ...state.messagesBySession, [SID]: items },
     activeSessionId: SID
@@ -154,5 +160,51 @@ describe('submit 边界失败（R10 IPC 剥壳 + 乐观回滚）', () => {
     expect(state.lastErrorBySession[SID]).toBe('会话正在回复中，请先停止或等待完成') // 剥过壳
     expect(state.runningBySession[SID]).toBe(false)
     expect(messages()).toHaveLength(0) // 乐观消息回滚
+  })
+})
+
+describe('context.updated 轮终实报与 run.failed 分段终态', () => {
+  const usageMsg = (n: number): ChatMessage => ({
+    id: `a-${n}`,
+    role: 'assistant',
+    content: `t${n}`,
+    usage: { input: n * 100, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: n * 100 + 10, totalCost: 0 },
+    timestamp: 1_000 + n
+  })
+
+  it('context.updated 落 live 值；run 终态清键（segments 内 usage 为准）', () => {
+    seedMessages([userMsg('u1', 100), usageMsg(1)])
+    emit({ method: 'context.updated', params: { sessionId: SID, usage: { input: 900, output: 50, cacheRead: 0, cacheWrite: 0, totalTokens: 950, totalCost: 0 } } })
+    expect(useChatStore.getState().contextLiveBySession[SID]?.input).toBe(900)
+    emit({ method: 'run.completed', params: { sessionId: SID, messages: [usageMsg(2)] } })
+    expect(useChatStore.getState().contextLiveBySession[SID]).toBeUndefined()
+  })
+
+  it('compaction.completed 弃置 live（压缩前旧账让位 tokensAfter 估算）', () => {
+    seedMessages([userMsg('u1', 100), usageMsg(1)])
+    emit({ method: 'context.updated', params: { sessionId: SID, usage: { input: 900, output: 50, cacheRead: 0, cacheWrite: 0, totalTokens: 950, totalCost: 0 } } })
+    emit({
+      method: 'compaction.completed',
+      params: { sessionId: SID, reason: 'threshold', tokensBefore: 900, tokensAfter: 100, summary: 'S', summarizedUntil: 200 }
+    })
+    expect(useChatStore.getState().contextLiveBySession[SID]).toBeUndefined()
+  })
+
+  it('run.failed 带分段终态：已完成轮替换流式区（usage 落账，指示器停止后即真实值）', () => {
+    // 流式态：user + 占位 + running 工具卡（abort 场景：一轮已完成、下一轮被打断）
+    seedMessages([
+      userMsg('u1', 100),
+      { id: 't1', type: 'tool', name: 'read', toolKind: 'read', summary: 'read(a)', status: 'running', startedAt: 150 },
+      { id: 'streaming', role: 'assistant', content: '半截', timestamp: 200 }
+    ])
+    useChatStore.setState((s) => ({ stoppingBySession: { ...s.stoppingBySession, [SID]: true } }))
+    emit({ method: 'run.failed', params: { sessionId: SID, message: '已中止', messages: [usageMsg(1)] } })
+    const list = messages() as MessageItem[]
+    // 引擎已完成轮的 usage 落进消息流；被截断的半截正文续在其后（封存保留）
+    const withUsage = list.find((m): m is ChatMessage => m.type === undefined && m.usage !== undefined)
+    expect(withUsage?.usage?.input).toBe(100)
+    expect(list.some((m) => m.type === undefined && m.content === '半截')).toBe(true)
+    expect(useChatStore.getState().runningBySession[SID]).toBe(false)
+    expect(useChatStore.getState().lastErrorBySession[SID]).toBeUndefined() // 停止不是错误
   })
 })

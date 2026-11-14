@@ -16,18 +16,33 @@
  * 选项行 = 直接执行（GUI 直觉）；附言框聚焦时 ↑↓ 移动选中并交还焦点。
  */
 import { useEffect, useRef, useState } from 'react'
-import { IconFileText, IconInfoCircle, IconPencil } from '@tabler/icons-react'
+import { IconChevronDown, IconCircleCheckFilled, IconFileText, IconInfoCircle, IconPencil } from '@tabler/icons-react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { useChatStore } from '@/stores/chat'
 
-/** 选项定义：序号自动按下标生成（无根会话去掉「始终允许」后顺移） */
+/** 「允许，并切换为」的可选档（F6 定稿，zcode 同款）：只列两档放宽模式 ——
+    切回收紧档是显式动作，走权限菜单，不藏在审批里 */
+const SWITCH_MODES = ['autonomous', 'auto'] as const
+type SwitchMode = (typeof SWITCH_MODES)[number]
+const SWITCH_MODE_LABEL: Record<SwitchMode, string> = { autonomous: '自主模式', auto: '完全访问' }
+
+/** 选项定义：序号自动按下标生成（无根/越界去掉「始终允许」后顺移） */
 interface ApprovalOption {
   label: string
   desc: string
-  /** 附言与 setPermission 由面板逻辑处理，这里只挂 respond 语义 */
-  run: (respond: (approved: boolean, options?: { message?: string; always?: 'workspace' }) => void) => void
+  /** 附言与切换由面板逻辑处理，这里只挂 respond 语义 */
+  run: (respond: (approved: boolean, options?: { message?: string; always?: 'workspace'; switchMode?: SwitchMode }) => void) => void
+  /** 带 switcher = 该行内嵌模式下拉（zcode 形态：⊙ 自主模式 ▾）；下拉自身的
+      点击不触发行执行（stopPropagation），选档只改 state */
+  switcher?: boolean
 }
 
 /**
@@ -49,28 +64,34 @@ function PendingApprovalCard({
   requestId,
   summary,
   hasRoots,
+  outsideRoots,
   autoFocus
 }: {
   requestId: string
   summary: string
   /** 有绑定根才显「始终允许此工作区」（D3：无根规则 = 全放主目录，过大） */
   hasRoots: boolean
+  /** 越界写（引擎标记）：规则 = 根内信任记忆，永不覆盖越界 → 隐藏「始终允许」 */
+  outsideRoots: boolean
   autoFocus: boolean
 }) {
   const respondApproval = useChatStore((s) => s.respondApproval)
-  const setPermission = useChatStore((s) => s.setPermission)
   const [selected, setSelected] = useState(0)
+  const [switchMode, setSwitchMode] = useState<SwitchMode>('autonomous')
   const [note, setNote] = useState('')
   const cardRef = useRef<HTMLDivElement>(null)
 
   /** respondApproval 的本卡绑定形态（选项 run 的统一签名）：requestId 已闭包 */
-  const respond = (approved: boolean, options?: { message?: string; always?: 'workspace' }) => {
+  const respond = (
+    approved: boolean,
+    options?: { message?: string; always?: 'workspace'; switchMode?: SwitchMode }
+  ) => {
     void respondApproval(requestId, approved, options)
   }
 
   const options: ApprovalOption[] = [
     { label: '允许', desc: '仅允许这一次', run: (r) => r(true) },
-    ...(hasRoots
+    ...(hasRoots && !outsideRoots
       ? [
           {
             label: '始终允许此工作区',
@@ -80,13 +101,10 @@ function PendingApprovalCard({
         ]
       : []),
     {
-      label: '完全访问',
-      desc: '授予完全访问权限，后续不再确认',
-      run: (r) => {
-        r(true)
-        const sessionId = useChatStore.getState().activeSessionId
-        if (sessionId !== null) void setPermission(sessionId, 'auto')
-      }
+      label: '允许，并切换为',
+      desc: '同一项目的新会话也会使用所选模式',
+      run: (r) => r(true, { switchMode }),
+      switcher: true
     },
     { label: '拒绝', desc: '这次先拒绝', run: (r) => r(false) }
   ]
@@ -149,7 +167,8 @@ function PendingApprovalCard({
         {dir !== '' && <span className="truncate text-muted-foreground">{dir}</span>}
       </div>
       {/* 选项列表：竖排全宽条状，序号 + 主文案 + 说明灰字；选中态浅灰底
-          （键盘 ↑↓/鼠标 hover 点亮，hover 走 CSS —— 移开即消，选中走 state） */}
+          （键盘 ↑↓/鼠标 hover 点亮，hover 走 CSS —— 移开即消，选中走 state）。
+          「允许，并切换为」行内嵌档位下拉（zcode 形态） */}
       <div className="mt-3 flex flex-col gap-1">
         {options.map((option, i) => (
           <button
@@ -165,6 +184,36 @@ function PendingApprovalCard({
           >
             <span className="w-4 shrink-0 text-[13px] tabular-nums text-muted-foreground">{i + 1}.</span>
             <span className="shrink-0">{option.label}</span>
+            {option.switcher === true ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] text-foreground hover:bg-accent-foreground/10"
+                    >
+                      <IconCircleCheckFilled className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                      {SWITCH_MODE_LABEL[switchMode]}
+                      <IconChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                    </span>
+                  }
+                  onClick={(event) => event.stopPropagation()}
+                />
+                <DropdownMenuContent align="start">
+                  {SWITCH_MODES.map((mode) => (
+                    <DropdownMenuItem key={mode} onClick={() => setSwitchMode(mode)}>
+                      <span className="flex items-center gap-1.5">
+                        {switchMode === mode && (
+                          <IconCircleCheckFilled className="size-3.5" aria-hidden="true" />
+                        )}
+                        {SWITCH_MODE_LABEL[mode]}
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             <span className="truncate text-[13px] text-muted-foreground">{option.desc}</span>
           </button>
         ))}
@@ -233,6 +282,7 @@ export function ApprovalPanel() {
             requestId={p.requestId}
             summary={p.summary}
             hasRoots={hasRoots}
+            outsideRoots={p.outsideRoots === true}
             autoFocus={i === 0}
           />
         ))}
