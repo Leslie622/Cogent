@@ -5,6 +5,7 @@ import { resolveEngineNode } from './host/runtime'
 import { CredentialStore } from './credentials/store'
 import { CustomProvidersStore } from './custom-providers/store'
 import { registerIpc } from './ipc'
+import { hardenWebviewAttachment } from './webview-policy'
 import { IPC } from '../../shared/ipc'
 
 // Windows 分数 DPI（125%/150%）下，LCD 亚像素文字经合成缩放会被 smear 成
@@ -44,7 +45,7 @@ function createWindow(): void {
       // 挂载值不动，而 spinner 是合成器动画照转，观感即"计时器卡死"。VS Code
       // 同款做法；桌面 Agent 客户端的流式 UI（计时/自动吸底）必须常活。
       backgroundThrottling: false,
-      preload: join(import.meta.dirname, '../preload/index.mjs')
+      preload: join(import.meta.dirname, '../preload/index.cjs')
     }
   })
 
@@ -112,9 +113,15 @@ void app.whenReady().then(() => {
   host = new HostManager({
     entryPath: join(import.meta.dirname, 'host.js'),
     nodeBin: engineNodeBin,
-    handshakeCredentials: credentialStore.readAll()
+    handshakeCredentials: credentialStore.readAll(),
+    // HTTP 门默认开（阶段 3a 起：webview 页面消费者需要；loopback + 恒鉴权）
+    enableHttpRpc: true
   })
   registerIpc({ host, getWindow: () => mainWindow }, credentialStore, customProvidersStore)
+
+  // webview 附加硬化（D10）：在任何窗口创建前挂上（will-attach-webview 按事件
+  // 拦截，createWindow 之后才挂就有绕过窗口期）
+  hardenWebviewAttachment()
 
   // 壳与引擎解耦：引擎起不来（缺 Node / 版本不符）不阻塞窗口，状态经 app:status
   // 暴露给 UI 呈现（preload.getStatus）。fire-and-forget 是刻意为之（void 标记）。

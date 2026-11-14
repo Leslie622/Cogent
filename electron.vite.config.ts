@@ -24,7 +24,17 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: resolve('src/electron/preload/index.ts')
+        // 双入口：index = 主 UI/console 宿主（sandbox:false）；guest = webview
+        // 第三方页面桥（sandbox:true —— 沙箱 preload 不支持 ESM，故全段
+        // 输出 CJS，index 同转 CJS 由 Electron 非沙箱 preload 兼容）
+        input: {
+          index: resolve('src/electron/preload/index.ts'),
+          guest: resolve('src/electron/preload/guest.ts')
+        },
+        output: {
+          format: 'cjs',
+          entryFileNames: '[name].cjs'
+        }
       }
     }
   },

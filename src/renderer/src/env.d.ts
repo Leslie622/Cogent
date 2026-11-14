@@ -57,6 +57,8 @@ declare global {
       openPath: (path: string) => Promise<string | null>
       /** 打开（或聚焦已开的）运行时控制台窗口 */
       openConsole: () => Promise<void>
+      /** 打开（或聚焦已开的）内嵌页面 demo 窗口（webview 容器，阶段 3a） */
+      openEmbedded: () => Promise<void>
       /** 读会话级偏好（选中模型/思考力度）；形状与 shared/ipc.ts 的 SettingsFile 镜像 */
       getSettings: () => Promise<AppSettingsFile>
       /** 写会话级偏好（字段合并） */

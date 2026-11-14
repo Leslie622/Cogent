@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cogent 内嵌页面 Demo</title>
+  <style>
+    /* demo 页刻意不用项目构建链（它模拟的是"第三方页面"，只能用 window.cogentHost） */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, 'Microsoft YaHei', sans-serif; background: #f6f7f9; color: #2d3142; display: flex; height: 100vh; }
+    header { position: fixed; top: 0; left: 0; right: 0; height: 44px; background: #fff; border-bottom: 1px solid #e4e7ec; display: flex; align-items: center; padding: 0 16px; gap: 10px; z-index: 10; -webkit-app-region: drag; }
+    header h1 { font-size: 14px; font-weight: 600; }
+    header .status { font-size: 12px; color: #6b7280; -webkit-app-region: no-drag; }
+    main { display: flex; flex: 1; margin-top: 44px; }
+    .chat { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #e4e7ec; }
+    .toolbar { padding: 10px 14px; background: #fff; border-bottom: 1px solid #e4e7ec; display: flex; gap: 8px; align-items: center; }
+    button { font-size: 12px; padding: 5px 12px; border: 1px solid #d0d5dd; border-radius: 6px; background: #fff; cursor: pointer; }
+    button:hover { background: #f3f4f6; }
+    .session-select { font-size: 12px; padding: 4px 6px; border: 1px solid #d0d5dd; border-radius: 6px; max-width: 200px; }
+    #messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+    .msg { max-width: 78%; padding: 8px 12px; border-radius: 10px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+    .msg.user { align-self: flex-end; background: #bf4520; color: #fff; }
+    .msg.assistant { align-self: flex-start; background: #fff; border: 1px solid #e4e7ec; }
+    .msg.error { align-self: center; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-size: 12px; }
+    .composer { display: flex; gap: 8px; padding: 12px 14px; background: #fff; border-top: 1px solid #e4e7ec; }
+    .composer input { flex: 1; font-size: 13px; padding: 8px 10px; border: 1px solid #d0d5dd; border-radius: 8px; }
+    .composer button { background: #2d3142; color: #fff; border-color: #2d3142; }
+    .events { width: 300px; display: flex; flex-direction: column; background: #fff; }
+    .events h2 { font-size: 12px; font-weight: 600; padding: 10px 14px; border-bottom: 1px solid #e4e7ec; color: #6b7280; }
+    #event-log { flex: 1; overflow-y: auto; padding: 8px 14px; font-family: ui-monospace, monospace; font-size: 11px; }
+    #event-log .evt { padding: 3px 0; border-bottom: 1px dashed #f0f1f3; color: #4b5563; }
+    #event-log .evt b { color: #2d3142; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>内嵌页面 Demo（第三方页面视角）</h1>
+    <span class="status" id="status">连接中…</span>
+  </header>
+  <main>
+    <div class="chat">
+      <div class="toolbar">
+        <select class="session-select" id="session-select"><option value="">（会话加载中）</option></select>
+        <button id="refresh">刷新会话</button>
+        <button id="new-session">新会话</button>
+      </div>
+      <div id="messages"></div>
+      <form class="composer" id="composer">
+        <input id="prompt" placeholder="发消息给本地 Agent（write 档）" autocomplete="off">
+        <button type="submit">发送</button>
+      </form>
+    </div>
+    <aside class="events">
+      <h2>事件流（WS 广播）</h2>
+      <div id="event-log"></div>
+    </aside>
+  </main>
+
+  <script>
+    // 第三方页面约定：唯一可用 API 是 window.cogentHost（guest preload 注入）。
+    // 拿不到票据/token，也不知道 Electron 的存在。
+    const sdk = window.cogentHost
+    const $status = document.getElementById('status')
+    const $select = document.getElementById('session-select')
+    const $messages = document.getElementById('messages')
+    const $log = document.getElementById('event-log')
+    let currentSessionId = null
+    let streamingText = ''
+
+    function appendMessage(kind, text) {
+      const div = document.createElement('div')
+      div.className = 'msg ' + kind
+      div.textContent = text
+      $messages.appendChild(div)
+      $messages.scrollTop = $messages.scrollHeight
+      return div
+    }
+    function logEvent(method, params) {
+      const div = document.createElement('div')
+      div.className = 'evt'
+      const brief = JSON.stringify(params).slice(0, 90)
+      div.innerHTML = '<b>' + method + '</b> ' + brief.replace(/</g, '&lt;')
+      $log.prepend(div)
+    }
+
+    async function refreshSessions() {
+      const sessions = await sdk.request('session.list', {})
+      $select.innerHTML = ''
+      for (const s of sessions) {
+        const opt = document.createElement('option')
+        opt.value = s.id
+        opt.textContent = s.title || s.id.slice(0, 8)
+        $select.appendChild(opt)
+      }
+      if (!currentSessionId && sessions.length > 0) currentSessionId = sessions[0].id
+      $select.value = currentSessionId || ''
+    }
+
+    sdk.ready().then(async (scope) => {
+      $status.textContent = '已连接（scope: ' + scope + '）'
+      await refreshSessions()
+      // 事件流订阅：流式增量 + 终态 + 全量日志
+      sdk.onEvent('message.delta', (p) => {
+        if (p.sessionId !== currentSessionId || p.kind !== 'text') return
+        const last = $messages.lastElementChild
+        if (!last || !last.classList.contains('assistant') || last.dataset.done === '1') {
+          streamingText = ''
+          appendMessage('assistant', '').dataset.role = 'stream'
+        }
+        streamingText += p.delta
+        const el = $messages.lastElementChild
+        el.textContent = streamingText
+        $messages.scrollTop = $messages.scrollHeight
+      })
+      sdk.onEvent('run.completed', (p) => {
+        const last = $messages.lastElementChild
+        if (last && last.dataset.role === 'stream') {
+          last.dataset.done = '1'
+          if (p.message && p.message.content !== undefined) last.textContent = p.message.content
+        }
+      })
+      sdk.onEvent('run.failed', (p) => appendMessage('error', '运行失败: ' + p.message))
+      ;['run.started', 'context.updated', 'tool.started', 'tool.completed', 'approval.request', 'compaction.started']
+        .forEach((m) => sdk.onEvent(m, (p) => logEvent(m, p)))
+    }, (error) => {
+      $status.textContent = '连接失败: ' + (error && error.message ? error.message : error)
+    })
+
+    document.getElementById('refresh').onclick = () => refreshSessions().catch((e) => appendMessage('error', String(e.message || e)))
+    document.getElementById('new-session').onclick = async () => {
+      const s = await sdk.request('session.create', { title: 'demo 页会话' })
+      currentSessionId = s.id
+      await refreshSessions()
+      appendMessage('assistant', '（已新建会话 ' + s.id.slice(0, 8) + '）')
+    }
+    $select.onchange = () => { currentSessionId = $select.value }
+    document.getElementById('composer').onsubmit = async (e) => {
+      e.preventDefault()
+      const input = document.getElementById('prompt')
+      const text = input.value.trim()
+      if (!text) return
+      if (!currentSessionId) { appendMessage('error', '先新建或选择一个会话'); return }
+      input.value = ''
+      appendMessage('user', text)
+      try {
+        await sdk.request('agent.submit', { sessionId: currentSessionId, text })
+      } catch (err) {
+        appendMessage('error', String(err.message || err))
+      }
+    }
+  </script>
+</body>
+</html>

@@ -34,7 +34,7 @@ function createConsoleWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
-      preload: join(import.meta.dirname, '../preload/index.mjs')
+      preload: join(import.meta.dirname, '../preload/index.cjs')
     }
   })
 

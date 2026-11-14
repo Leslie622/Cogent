@@ -80,6 +80,8 @@ const api = {
     ipcRenderer.invoke(IPC.settingsSave, partial),
   /** 打开（或聚焦已开的）运行时控制台窗口 */
   openConsole: (): Promise<void> => ipcRenderer.invoke(IPC.consoleOpen),
+  /** 打开（或聚焦已开的）内嵌页面 demo 窗口（webview 容器，阶段 3a） */
+  openEmbedded: (): Promise<void> => ipcRenderer.invoke(IPC.embeddedOpen),
 
   /** 弹系统目录选择框（创建项目用）；用户取消返回 null */
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke(IPC.workspacePickDirectory),

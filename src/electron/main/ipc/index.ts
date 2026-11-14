@@ -10,6 +10,8 @@ import type { CustomProvidersStore } from '../custom-providers/store'
 import { registerAppIpc } from './app'
 import { registerWindowIpc } from './window'
 import { registerConsoleIpc } from './console'
+import { registerEmbeddedIpc } from './embedded'
+import { registerGuestIpc } from './guest'
 import { registerEngineIpc } from './engine'
 import { registerApprovalIpc } from './approval'
 import { registerCredentialsIpc } from './credentials'
@@ -27,6 +29,8 @@ export function registerIpc(deps: IpcDeps, store: CredentialStore, customProvide
   registerAppIpc(deps.host)
   registerWindowIpc()
   registerConsoleIpc()
+  registerEmbeddedIpc()
+  registerGuestIpc(deps)
   registerEngineIpc(deps)
   registerApprovalIpc(deps)
   registerCredentialsIpc(deps.host, store)

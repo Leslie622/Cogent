@@ -53,6 +53,12 @@ export interface HostOptions {
    * optional：冒烟脚本/老宿主可不带。
    */
   handshakeCredentials?: Record<string, { apiKey: string }>
+  /**
+   * 开引擎 HTTP 门（阶段 3a 起默认开：webview 页面消费者需要；loopback +
+   * 恒鉴权，见 模块/HTTP通道.md）。注入 COGENT_HTTP_RPC=1，随机端口经
+   * initialize 响应 httpPort 上报。
+   */
+  enableHttpRpc?: boolean
 }
 
 export class HostManager {
@@ -119,7 +125,11 @@ export class HostManager {
     // 补设 ELECTRON_RUN_AS_NODE=1，行为才与纯 Node 一致（无 Chromium、无窗口 API）。
     const asElectronNode = this.opts.nodeBin === process.execPath
     const child = spawn(this.opts.nodeBin, [this.opts.entryPath], {
-      env: { ...process.env, ...(asElectronNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
+      env: {
+        ...process.env,
+        ...(asElectronNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+        ...(this.opts.enableHttpRpc ? { COGENT_HTTP_RPC: '1' } : {})
+      },
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true
     })

@@ -8,6 +8,7 @@
 | --- | --- |
 | [会话与对话](会话与对话.md) | SessionManager、submit 受理校验、流式段化、转录持久化与恢复、abort 语义 |
 | [HTTP通道](HTTP通道.md) | HostApi 第二扇门：POST /rpc 传输层、handleFrame 双门共用、事件归属（stdout 唯一出口）、loopback fail-closed |
+| [内嵌页面](内嵌页面.md) | webview 沙箱硬化、guest preload 三函数 SDK、票据传递链（main 签发 → preload 兑换 → 页面直连）、demo 页验收 |
 | [消息呈现](消息呈现.md) | 回合分组两态、Markdown 渲染、工具卡、思考呈现、审批痕迹行、压缩条呈现 |
 | [工具系统](工具系统.md) | pi 内置 8 选 7（win=powershell）、glob→find 映射、fd/rg 依赖与降级、ToolKind 投影、fd/rg 获取链与降级 |
 | [审批与权限](审批与权限.md) | 判定矩阵与优先序、挂起收尾、工作区规则表、权限通告、确认面板与 tag |

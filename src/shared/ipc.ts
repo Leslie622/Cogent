@@ -42,6 +42,11 @@ export const IPC = {
   shellOpenPath: 'shell:open-path',
   /** renderer → main：打开（或聚焦已开的）运行时控制台窗口 */
   consoleOpen: 'console:open',
+  /** renderer → main：打开（或聚焦已开的）内嵌页面 demo 窗口（阶段 3a 验收载体） */
+  embeddedOpen: 'embedded:open',
+  /** webview guest preload → main：取页面级凭证（一次性票据 + HTTP 门端口）；
+      仅 webview 型 guest 可调（ipc/guest.ts 校验 sender） */
+  guestCredentials: 'cogent:guest:credentials',
   /** renderer → main：窗口控制（最小化 / 切换最大化 / 关闭）——自绘 header 专用；作用于发起窗口 */
   windowMinimize: 'window:minimize',
   windowMaximizeToggle: 'window:maximize-toggle',
@@ -57,6 +62,15 @@ export interface AppStatus {
   nodeVersion: string | null
   /** state=failed 时的原因，供日志/UI 呈现 */
   error: string | null
+}
+
+/** guest:credentials 响应：一次性票据（30s，兑换即焚）+ HTTP 门端口 */
+export interface GuestCredentialsResult {
+  ticket: string
+  expiresAt: number
+  httpPort: number
+  /** 本次签发的档位（demo 页 = write：列会话/发起对话/收事件流） */
+  scope: 'readonly' | 'write'
 }
 
 /** key 配置状态（credentials:list 响应）：只回布尔位；明文只走 credentials:get 单取 */

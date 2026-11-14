@@ -20,6 +20,7 @@ import {
   IconMinus,
   IconSquare,
   IconTerminal2,
+  IconWindow,
   IconX,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
@@ -89,6 +90,18 @@ export function AppHeader({
           onClick={() => void window.cogent.openConsole()}
         >
           <IconTerminal2 className="size-[18px]" />
+        </Button>
+        {/* 内嵌页面 demo（阶段 3a）：webview 沙箱 + preload 小 SDK 的首个
+            页面消费者，开独立窗口 */}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={cn(CHROME_HOVER, 'ml-1')}
+          aria-label="打开内嵌页面 demo"
+          title="内嵌页面 demo"
+          onClick={() => void window.cogent.openEmbedded()}
+        >
+          <IconWindow className="size-[18px]" />
         </Button>
       </div>
 
