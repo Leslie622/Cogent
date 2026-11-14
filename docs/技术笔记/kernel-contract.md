@@ -1,6 +1,6 @@
 # CogentKernel 合同 —— 南缝的显式化
 
-> 全局架构 D4 / 阶段 1.1。落点：`src/host/kernel/contract.ts`（合同本体）、
+> 全局架构 D4。落点：`src/host/kernel/contract.ts`（合同本体）、
 > `runtime/session.ts`（SessionManager implements CogentKernel，零行为变化）。
 
 ## 1. 问题：Host 服务层与内核之间为什么要一道缝

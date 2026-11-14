@@ -1,6 +1,6 @@
-# UI 布局与视觉配方（布局阶段收官总结，AI 操作手册）
+# UI 布局与视觉配方（AI 操作手册）
 
-> 布局阶段（UI 件 1–7，2026-11-06 ~ 11-08）的定稿配方与技术坑汇总。
+> 布局定稿配方与技术坑汇总。
 > 本文只放"现在怎么写"；逐件落地的过程考古看 git 历史与 [计划/](计划/)。
 > 「布局结构」的区域代号（header / app-sidebar / content-sidebar / content-main）
 > 是描述、注释、组件命名的统一词汇；改布局前先读本文。
@@ -95,7 +95,8 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   确认灰字 + IconFileText + 文件名深色 + 路径灰字 —— 从引擎 summary `write(
   path,…)` 首参拆 basename/dirname，解析失败整条原样显）→ **竖排全宽选项**
   （序号 tabular 灰 + 主文案 + 说明灰字同行；允许/始终允许此工作区（无根
-  不显，序号顺移）/完全访问/拒绝）→ 附言输入框（h-9 rounded-lg **border-0
+  与**越界写**不显 —— 规则 = 根内信任记忆，序号顺移）/允许并切换为 ▾（自主
+  [默认]/完全访问；允许本次 + 切会话模式 + 记项目默认）/拒绝）→ 附言输入框（h-9 rounded-lg **border-0
   bg-muted/60** 无框浅灰条，placeholder「告诉模型接下来应该怎么做…」）→
   底部行（ⓘ IconInfoCircle「使用 ↑↓ 选择，回车确认」+ 右侧深色确认主钮
   `bg-foreground text-background`，发送钮同族）。**键盘模型 = 终端式选择的
@@ -110,16 +111,16 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   active 按压态**（cva 只有 hover + focus ring），深色主钮的按压色阶自补。
   裁决痕迹行 = ApprovalCard（TraceLine 置灰单行随裁决落消息流，run 终态
   替换保留）
-- **权限模式菜单**（features/home/PermissionMenu.tsx，2026-11-11 升级第 3 步，
-  原「完全访问」toggle 退役；当日用户定调修订配色）：dropdown-menu = 三档真
-  选项（计划模式 IconClipboardList / 变更前确认 IconShieldQuestion / 完全访问
-  IconShieldExclamation）+ 自主模式置灰占位（IconSparkles，exec/network 落地
-  后启用）+ **分隔线危险分组隔离**（完全访问独组，照图 2）；每项两行（名称 +
-  muted 说明）+ 当前项 IconCheck 右浮；完全访问的强调 = **warning 琥珀（警告
-  非错误 —— 曾用 destructive 红被推翻）**（菜单项 icon+label 与触发钮同语言）。
+- **权限模式菜单**（features/home/PermissionMenu.tsx）：dropdown-menu = **四档
+  真选项**（计划模式 IconClipboardList / 变更前确认 IconShieldQuestion / 自主
+  模式 IconSparkles / 完全访问 IconShieldExclamation）+ **分隔线危险分组隔离**
+  （完全访问独组，照图 2）；每项两行（名称 + muted 说明）+ 当前项 IconCheck
+  右浮；完全访问的强调 = **warning 琥珀（警告非错误 —— 曾用 destructive 红
+  被推翻）**（菜单项 icon+label 与触发钮同语言）。
   触发钮显**当前模式名 + ⌄**：**无常态背景**（含完全访问态，红胶囊常驻底
-  已废），仅 `hover:bg-accent-foreground/5` 出底；整体 `text-warning`，箭头
-  不单独给色（继承 currentColor，与主体统一）。
+  已废），仅 `hover:bg-accent-foreground/5` 出底；**三色区分**（完全访问 =
+  warning 琥珀、自主模式 = chrome-accent 蓝[链接同款实色 token]、计划/变更
+  前确认 = muted-foreground 灰），箭头不单独给色（继承 currentColor）。
   坑：base-luma dropdown Trigger 是 Base UI `render={<Button/>}` 模式，**不是**
   Radix `asChild`；菜单 side="top"（钮在底部输入区）。
   **坑 2（dropdown item 的强调色必须走原语变体）**：item 的 focus 高亮带
@@ -176,7 +177,7 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   `scrollToEnd()` —— 库的 autoScroll 只在"本来就在底部"时跟随（翻上去看历史
   会释放跟随），发送这个动作本身就是回底意图，翻历史/索引刻度跳转后发送
   照样吸底并恢复跟随；
-  对话索引轨道手搓
+  对话索引轨道自绘
   （每消息一颗刻度，激活项**自算**：视口顶边压着的消息 + 真实 scrollHeight 口径
   吸底点亮末条 —— 库的 visibility/scrollable 快照挂载后为空且受 content-visibility
   干扰，勿用；点击 scrollToMessage 平滑定位，按 messageId 查表不依赖锚点）；
