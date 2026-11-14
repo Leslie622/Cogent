@@ -157,7 +157,7 @@
   </p>
   <p class="lede">
     当前能力一句话：<b>工具循环 + 审批四档 + 上下文压缩 + 用量统计 + 项目域 + 运行时控制台</b>
-    全部在线；subagent / MCP / HostApi 面 B（HTTP/WS）尚未接线（见第 5 节）。
+    全部在线；subagent / MCP / HostApi HTTP/WS 通道尚未接线（见第 5 节）。
   </p>
 
   <!-- ================= 1. 架构 ================= -->
@@ -674,7 +674,7 @@
         <text x="796" y="388" font-size="11.5" fill="#8a857f">外部工具协议接入（阶段 4 能力总线）</text>
 
         <rect x="780" y="420" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
-        <text x="796" y="444" font-size="13.5" font-weight="700" fill="#78716c">HostApi 面 B / 技能 / webview</text>
+        <text x="796" y="444" font-size="13.5" font-weight="700" fill="#78716c">HostApi HTTP/WS / 技能 / webview</text>
         <text x="796" y="464" font-size="11.5" fill="#8a857f">HTTP/WS + 票据（阶段 2）/ skillsOverride（阶段 4）/ 第三方页（阶段 3）</text>
       </g>
     </svg>
@@ -686,7 +686,7 @@
     <tr><th style="width:56px">空位</th><th>内容</th><th>接线后本手册要补什么</th></tr>
     <tr><td>1</td><td>content blocks 消息模型细化（图片 / 结构块透传）</td><td>第 2 节 ChatMessage 形状更新；第 3 节转译表加新 block 类型</td></tr>
     <tr><td>2</td><td>steering / followUp（运行中插话；pi 队列 API）</td><td>第 2 节方法表加行；第 3 节时序图加插话泳道分支</td></tr>
-    <tr><td>3</td><td>HostApi 面 B：HTTP/WS + 根 secret + 票据签发（阶段 2）</td><td>第 1 节架构图加面 B；方法注册表双面共用说明</td></tr>
+    <tr><td>3</td><td>HostApi HTTP/WS 通道：根 secret + 票据签发（阶段 2）</td><td>第 1 节架构图加 HTTP/WS 通道；方法注册表双通道共用说明</td></tr>
     <tr><td>4</td><td>第三方页面 webview 沙箱 + preload 小 SDK（阶段 3）</td><td>第 1 节架构图 webview 框落地说明</td></tr>
     <tr><td>5</td><td>能力总线：技能座 / MCP 座 / 钩子座 InlineExtension 化（阶段 4）</td><td>第 4 节加对应小节；第 5 节右列卡片移左列</td></tr>
     <tr><td>6</td><td>对外 MCP Server / subagent 子会话座（阶段 5）</td><td>第 1 节出口说明；第 4 节加子会话协调器小节</td></tr>
