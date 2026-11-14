@@ -1,9 +1,11 @@
 /**
- * HTTP 门传输层单测：只测传输语义（帧进帧出 / 体积上限 / 非请求帧 400 /
- * 路由 404），不碰注册表 —— 帧处理逻辑由 handleFrame 持有，这里用假实现
- * 钉住两边的契约（FrameHandler 返回什么，HTTP 层就回什么）。
+ * HTTP 门传输层单测：钉传输语义（鉴权 401/403、票据 exchange、帧进帧出、
+ * 体积上限、路由），不碰注册表 —— 帧处理逻辑由 handleFrame 持有，这里用
+ * 假实现钉住两边的契约。鉴权材料用真 auth 工厂（store/token 签验链路在
+ * auth.test.ts 已钉，此处只验接线）。
  */
 import { afterEach, describe, expect, it } from 'vitest'
+import { createCapabilityStore, createRootSecret, signToken } from './auth'
 import { startHttpRpc, type FrameHandler, type HttpRpcServer } from './server'
 import type { RpcResponse } from '../../protocol'
 
@@ -15,76 +17,204 @@ const echoHandler: FrameHandler = (raw) => {
 
 const servers: HttpRpcServer[] = []
 
-async function start(handler: FrameHandler = echoHandler): Promise<{ server: HttpRpcServer; url: string }> {
-  const server = await startHttpRpc(handler)
+interface TestApp {
+  server: HttpRpcServer
+  base: string
+  /** 直连本测试的 rootSecret：开一个指定档位的口子签真 token（属性式签名，允许解构） */
+  token: (scope: 'readonly' | 'write' | 'admin') => string
+}
+
+async function start(handler: FrameHandler = echoHandler): Promise<TestApp> {
+  const rootSecret = createRootSecret()
+  const store = createCapabilityStore()
+  const server = await startHttpRpc(handler, { rootSecret, store })
   servers.push(server)
-  return { server, url: `http://127.0.0.1:${server.port}/rpc` }
+  return {
+    server,
+    base: `http://127.0.0.1:${server.port}`,
+    token: (scope) => signToken(rootSecret, scope)
+  }
 }
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()))
 })
 
-describe('startHttpRpc 传输语义', () => {
-  it('POST /rpc 帧进帧出：请求帧原样拿到响应帧', async () => {
-    const { url } = await start()
-    const res = await fetch(url, {
+describe('鉴权（2b：开门即要 token）', () => {
+  it('无 token 访问 /rpc 回 401', async () => {
+    const { base } = await start()
+    const res = await fetch(base + '/rpc', { method: 'POST', body: '{}' })
+    expect(res.status).toBe(401)
+  })
+
+  it('Bearer 头与 ?token= query 双轨等价', async () => {
+    const { base, token } = await start()
+    const byHeader = await fetch(base + '/rpc', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${token('readonly')}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.list', params: {} })
+    })
+    const byQuery = await fetch(`${base}/rpc?token=${token('readonly')}`, {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'session.list', params: {} })
+    })
+    expect(byHeader.status).toBe(200)
+    expect(byQuery.status).toBe(200)
+  })
+
+  it('伪造 token 401；401 优先于 404（未知路径也要 token）', async () => {
+    const { base } = await start()
+    expect((await fetch(base + '/rpc', { method: 'POST', headers: { authorization: 'Bearer forged' }, body: '{}' })).status).toBe(401)
+    expect((await fetch(base + '/nope', { method: 'POST', body: '{}' })).status).toBe(401)
+  })
+
+  it('档位强制：readonly token 调写方法 403、读方法 200', async () => {
+    const { base, token } = await start()
+    const readonly = { authorization: `Bearer ${token('readonly')}` }
+    expect(
+      (
+        await fetch(base + '/rpc', {
+          method: 'POST',
+          headers: readonly,
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.create', params: {} })
+        })
+      ).status
+    ).toBe(403)
+    const ok = await fetch(base + '/rpc', {
+      method: 'POST',
+      headers: readonly,
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'session.list', params: {} })
+    })
+    expect(ok.status).toBe(200)
+    expect(((await ok.json()) as RpcResponse & { result: { echo: string } }).result.echo).toBe('session.list')
+  })
+
+  it('capability.issue 归 admin：write token 403、admin token 放行', async () => {
+    const { base, token } = await start()
+    const frame = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'capability.issue', params: { scope: 'readonly' } })
+    expect((await fetch(base + '/rpc', { method: 'POST', headers: { authorization: `Bearer ${token('write')}` }, body: frame })).status).toBe(403)
+    expect((await fetch(base + '/rpc', { method: 'POST', headers: { authorization: `Bearer ${token('admin')}` }, body: frame })).status).toBe(200)
+  })
+})
+
+describe('票据换 token（/auth/exchange）', () => {
+  it('issue → exchange 得 token，token 可调 /rpc', async () => {
+    const rootSecret = createRootSecret()
+    const store = createCapabilityStore()
+    const server = await startHttpRpc(echoHandler, { rootSecret, store })
+    servers.push(server)
+    const { ticket } = store.issue('write')
+    const exchange = await fetch(`http://127.0.0.1:${server.port}/auth/exchange`, {
+      method: 'POST',
+      body: JSON.stringify({ ticket })
+    })
+    expect(exchange.status).toBe(200)
+    const { token } = (await exchange.json()) as { token: string }
+    expect(token).toBeTruthy()
+    const rpc = await fetch(`http://127.0.0.1:${server.port}/rpc`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'project.create', params: {} })
+    })
+    expect(rpc.status).toBe(200)
+  })
+
+  it('exchange 消费即焚：重放回 401；伪造票据 401', async () => {
+    const rootSecret = createRootSecret()
+    const store = createCapabilityStore()
+    const server = await startHttpRpc(echoHandler, { rootSecret, store })
+    servers.push(server)
+    const url = `http://127.0.0.1:${server.port}/auth/exchange`
+    const { ticket } = store.issue('readonly')
+    const body = JSON.stringify({ ticket })
+    expect((await fetch(url, { method: 'POST', body })).status).toBe(200)
+    expect((await fetch(url, { method: 'POST', body })).status).toBe(401)
+    expect((await fetch(url, { method: 'POST', body: JSON.stringify({ ticket: 'forged' }) })).status).toBe(401)
+  })
+
+  it('exchange 自身免 Bearer（票据就是凭证）', async () => {
+    // 独立装配：断言不带任何 token 的请求不被中间件 401 拦 —— 401 来自
+    // handler 的票据校验（错误文案含 ticket），两处 401 由此区分
+    const server = await startHttpRpc(echoHandler, {
+      rootSecret: createRootSecret(),
+      store: createCapabilityStore()
+    })
+    servers.push(server)
+    const res = await fetch(`http://127.0.0.1:${server.port}/auth/exchange`, {
+      method: 'POST',
+      body: JSON.stringify({ ticket: 'whatever' })
+    })
+    expect(res.status).toBe(401)
+    expect(((await res.json()) as { error: string }).error).toContain('ticket')
+  })
+})
+
+describe('传输语义（2a 存量）', () => {
+  it('POST /rpc 帧进帧出：请求帧原样拿到响应帧', async () => {
+    const { base, token } = await start()
+    const res = await fetch(base + '/rpc', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token('readonly')}`, 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'session.list', params: {} })
     })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({
-      jsonrpc: '2.0',
-      id: 7,
-      result: { echo: 'session.list' }
-    })
+    expect(await res.json()).toEqual({ jsonrpc: '2.0', id: 7, result: { echo: 'session.list' } })
   })
 
   it('handleFrame 返回 null（事件/畸形帧）时回 400', async () => {
-    const { url } = await start(() => Promise.resolve(null))
-    const res = await fetch(url, {
+    const { base, token } = await start(() => Promise.resolve(null))
+    const res = await fetch(base + '/rpc', {
       method: 'POST',
+      headers: { authorization: `Bearer ${token('readonly')}` },
       body: JSON.stringify({ jsonrpc: '2.0', method: 'run.started', params: {} })
     })
     expect(res.status).toBe(400)
-    const body = (await res.json()) as { error: string }
-    expect(body.error).toContain('not a request frame')
+    expect(((await res.json()) as { error: string }).error).toContain('not a request frame')
   })
 
   it('业务错误帧恒 200：错误住在帧的 error 字段（应用层语义）', async () => {
-    const { url } = await start(() =>
+    const { base, token } = await start(() =>
       Promise.resolve({
         jsonrpc: '2.0',
         id: 1,
         error: { code: -32601, message: 'unknown method: nope' }
       } satisfies RpcResponse)
     )
-    const res = await fetch(url, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'nope' }) })
+    const res = await fetch(base + '/rpc', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token('readonly')}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'nope' })
+    })
     expect(res.status).toBe(200)
-    const frame = (await res.json()) as RpcResponse
-    expect(frame.error?.message).toContain('unknown method')
+    expect(((await res.json()) as RpcResponse).error?.message).toContain('unknown method')
   })
 
   it('单帧体积超上限回 413（网络信任边界守卫）', async () => {
-    const { url } = await start()
+    const { base, token } = await start()
     const big = 'x'.repeat(1_000_001)
-    const res = await fetch(url, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'm', big }) })
+    const res = await fetch(base + '/rpc', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token('readonly')}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.list', big })
+    })
     expect(res.status).toBe(413)
   })
 
   it('未知路径与非 POST 方法都到不了帧处理（Hono 默认 404，无自动 405）', async () => {
-    const { server } = await start()
-    const base = `http://127.0.0.1:${server.port}`
-    expect((await fetch(base + '/nope', { method: 'POST', body: '{}' })).status).toBe(404)
-    expect((await fetch(base + '/rpc')).status).toBe(404)
+    const { base, token } = await start()
+    const auth = { authorization: `Bearer ${token('readonly')}` }
+    expect((await fetch(base + '/nope', { method: 'POST', headers: auth, body: '{}' })).status).toBe(404)
+    expect((await fetch(base + '/rpc', { headers: auth })).status).toBe(404)
   })
 
   it('close 后端口不再服务', async () => {
-    const { server, url } = await start()
+    const { server, base, token } = await start()
     await server.close()
-    const res = await fetch(url, { method: 'POST', body: '{}' }).catch((e: Error) => e)
-    // 连接被拒（ECONNREFUSED）即视为已关；仍能拿到响应才算失败
+    const res = await fetch(base + '/rpc', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token('readonly')}` },
+      body: '{}'
+    }).catch((e: Error) => e)
     expect(res instanceof Error || res.status >= 500).toBe(true)
   })
 })

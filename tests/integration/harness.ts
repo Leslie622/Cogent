@@ -91,6 +91,8 @@ export const chunk = (
 export interface EngineHandle {
   /** 事件流（重启 = 新 handle 新数组；__consumed 是 waitEvent 水位） */
   events: EngineEventFrame[]
+  /** stderr 按行收集（诊断透传之外的可查询副本，如 HTTP 门监听行） */
+  stderrLines: string[]
   send<T = SmokeResult>(method: string, params?: unknown): Promise<{ result?: T; error?: { code: number; message: string } }>
   /** 等待指定事件（带谓词与水位），到点即返回该帧；超时抛错 */
   waitEvent(
@@ -107,8 +109,10 @@ export interface EngineHandle {
  * 拉起引擎子进程（stdio JSON-RPC）。USERPROFILE/HOME 与 COGENT_HOME 同步
  * 覆写：无绑定会话的 os.homedir() 兜底根也隔离进临时目录（tools-smoke
  * 沉淀的手法）。重启 = kill 后再 startEngine（新 handle、新 events、新 id 序）。
+ * extraEnv：测试专用注入（如 COGENT_HTTP_RPC），置于隔离根覆写之前 ——
+ * 隔离根不可被注入覆盖。
  */
-export function startEngine(home: string): EngineHandle {
+export function startEngine(home: string, extraEnv: Record<string, string> = {}): EngineHandle {
   // 引擎 Node 对齐生产三级链（electron/main/host/runtime.ts）：COGENT_NODE_BIN →
   // 自带 runtime node（≥22.19，pi engines 门槛）→ process.execPath 兜底。
   // 不能恒用 execPath：开发机系统 node 可能低于 22.19（实测 22.14 无 zlib
@@ -119,11 +123,13 @@ export function startEngine(home: string): EngineHandle {
     bundled !== null && existsSync(bundled) ? bundled : null,
     process.execPath
   )
-  // stdio 三元组字面量 → spawn 推断 ChildProcessByStdio<Writable, Readable, null>，
-  // stdin/stdout 恒非空（engine.stderr 走 'inherit' 不用）
+  // stdio 三元组字面量 → spawn 推断 ChildProcessByStdio<Writable, Readable, Readable>，
+  // stdin/stdout 恒非空；stderr 收集进 stderrLines 并透传（保住原本 'inherit'
+  // 的排查体验，http-auth 冒烟还能程序化读监听行）
   const engine = spawn(engineNode, [join(process.cwd(), 'out/main/host.js')], {
     env: {
       ...process.env,
+      ...extraEnv,
       COGENT_HOME: home,
       USERPROFILE: home,
       HOME: home,
@@ -133,9 +139,23 @@ export function startEngine(home: string): EngineHandle {
       // 目录在 Host 内是内存态/显式传参，不经这里
       PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR ?? join(tmpdir(), 'cogent-test-pi-domain')
     },
-    stdio: ['pipe', 'pipe', 'inherit']
+    stdio: ['pipe', 'pipe', 'pipe']
   })
   const events: EngineEventFrame[] = []
+  const stderrLines: string[] = []
+  let stderrBuffer = ''
+  engine.stderr.on('data', (data: Buffer) => {
+    stderrBuffer += data.toString()
+    let nl: number
+    while ((nl = stderrBuffer.indexOf('\n')) >= 0) {
+      const line = stderrBuffer.slice(0, nl).trimEnd()
+      stderrBuffer = stderrBuffer.slice(nl + 1)
+      if (line) {
+        stderrLines.push(line)
+        process.stderr.write(`[engine] ${line}\n`)
+      }
+    }
+  })
   const pendingResponses = new Map<number, { resolve: (frame: unknown) => void }>()
   let nextId = 1
   let buffer = ''
@@ -159,6 +179,7 @@ export function startEngine(home: string): EngineHandle {
   })
   return {
     events,
+    stderrLines,
     send: <T = SmokeResult>(method: string, params?: unknown) =>
       new Promise<{ result?: T; error?: { code: number; message: string } }>((resolve) => {
         const id = nextId++

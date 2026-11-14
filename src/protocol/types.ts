@@ -742,6 +742,23 @@ export interface InspectEntryDetail {
 }
 
 /**
+ * HTTP 门 scope 档位（D3，阶段 2b）：readonly ⊂ write ⊂ admin 逐级包含；
+ * session 绑定档（页面级只碰单会话）留给阶段 3 webview 消费者再落。
+ */
+export type TokenScope = 'readonly' | 'write' | 'admin'
+
+/** capability.issue（D3 票据签发入口；stdio 血缘 = main 专用语义，HTTP 门需 admin） */
+export interface CapabilityIssueParams {
+  scope: TokenScope
+}
+export interface CapabilityIssueResult {
+  /** 一次性票据：32B base64url，30s TTL，/auth/exchange 消费即焚 */
+  ticket: string
+  /** epoch ms；过期即作废（zcode hostCapability 同款语义） */
+  expiresAt: number
+}
+
+/**
  * method 注册表：键名即线上协议。新增 method = 在此加一行 + 服务端加 handler。
  */
 export interface ProtocolMethods {
@@ -774,6 +791,8 @@ export interface ProtocolMethods {
   'inspect.entries': { params: InspectEntriesParams; result: InspectEntriesResult }
   /** 控制台：按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词…） */
   'inspect.entry': { params: InspectEntryParams; result: InspectEntryDetail }
+  /** HTTP 门票据签发（D3）：main 经 stdio 发起（血缘全权），Host 存证 */
+  'capability.issue': { params: CapabilityIssueParams; result: CapabilityIssueResult }
 }
 
 // ———— 事件映射（host → 宿主；骨架期先定形状，随实现细化） ————

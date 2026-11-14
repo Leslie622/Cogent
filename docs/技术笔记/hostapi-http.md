@@ -1,7 +1,9 @@
 # HostApi HTTP 通道 —— 同一注册表挂上第二扇门
 
-> 阶段 2a（2026-11-15）：`POST /rpc` 骨架。代码落点：`src/host/http/server.ts`
-> （传输层）、`src/host/host-main.ts` 的 `handleFrame()`（共用分发入口）。
+> 阶段 2a（2026-11-15）：`POST /rpc` 骨架；阶段 2b：票据鉴权（D3）。
+> 代码落点：`src/host/http/server.ts`（传输层）、`src/host/http/auth.ts`
+> （票据 store + rootSecret + token 签验）、`src/host/host-main.ts` 的
+> `handleFrame()`（共用分发入口）与 `capability.issue` handler。
 > 模块现状见 [../模块/HTTP通道.md](../模块/HTTP通道.md)。
 
 ## 1. 问题
@@ -36,7 +38,7 @@ pi 的 rpc 帧本身就是可序列化 JSON，换管道不改帧。
 - **单一分发路径**：`handleFrame()`（原 stdio dispatch 改造，返回响应帧
   而非直写 stdout）被 stdio 主循环与 HTTP 门共调 —— 不是"参照谁"，是
   D2 的字面落实：注册表单一，门只管帧进帧出。stdio 链路零行为改动由
-  全量集成测试回归佐证（84 用例）。
+  全量集成测试回归佐证（103 用例）。
 - **业务错误恒 200**：JSON-RPC 错误住在帧的 `error` 字段（与 stdio 出口
   逐字节同构）；HTTP 状态码只管传输层（413/400/404）。zcode 同款分层。
   代价是 curl 脚本必须解析帧判断成败 —— 对 Agent 引擎这是正确代价，
@@ -46,19 +48,37 @@ pi 的 rpc 帧本身就是可序列化 JSON，换管道不改帧。
 - **POST 先行、WS 后至**：2a 只装 `hono` + `@hono/node-server`；ws 依赖
   留到 2c（事件广播）再引入。Pi-meme 的游标事件流（cursor + resync）
   是 2c 断线补偿的现成参照。
-- **2a 无鉴权**：zcode 生来带 token，Cogent 骨架期靠 loopback 信任语义
-  （本机任意进程可连 —— 这同时是 curl 冒烟的口子）。2b 落 D3 票据时
-  对齐 zcode 双轨（Bearer 头 + `?token=` query）。
+- **2a 无鉴权 → 2b 恒鉴权**：zcode 的 ingressToken 可选（未配 = 匿名
+  loopback），Cogent 2b 起 `COGENT_HTTP_RPC=1` 语义就是"scoped token
+  通道"，无匿名档 —— 比 zcode 紧一档。双轨（Bearer 头 + `?token=`
+  query）与 zcode 同款，query 轨为 2c 浏览器 WS 握手预留。
+- **rootSecret 不出 Host 进程**（2b 落地对 D3 早期设想的修正）：早期设想
+  "根 secret 经握手给 main"服务于"main 签发"；落地为 main 发起（stdio
+  `capability.issue`）、Host 存证后，main 的信任就是 stdio 血缘、无需持钥，
+  rootSecret 唯一用途 = 长期 token 的 HMAC 材料（生成/签名/验签全在
+  Host 内）。zcode 的 ingressToken 也是同思路：凭证只在被连接侧闭环。
+- **票据有 store、长期 token 无状态**（分工）：一次性票据要防重放，
+  无状态 HMAC 做不到"消费即焚"，必须 store（zcode hostCapability 同构
+  + scope 维度）；长期 token 数量不定、生命周期 = Host 进程，用 HMAC
+  签名零存储，重启自然全失效 —— 两种生命周期两种机制，不混用。
 
 ## 5. 在 Cogent 的落点
 
-- `src/host/http/server.ts`：`startHttpRpc(handleFrame, { port })`，导出
-  `FrameHandler` 类型 = host-main `handleFrame` 的形状（`RpcResponse |
-  null`，null 表示非请求帧，stdio 丢弃 / HTTP 转 400 —— 两门对"无法回话"
-  的语义差异显式化在类型上）；
-- `src/host/host-main.ts`：`COGENT_HTTP_RPC=1` 时启动，端口 env
-  `COGENT_HTTP_PORT`（入口显式校验畸形值拒启），实际地址打 stderr；
-- 测试：`server.test.ts` 用假 handleFrame 钉传输契约（6 用例：帧进帧出 /
-  400 / 错误帧恒 200 / 413 / 路由 / close）；
-- 冒烟实录：真 Host（自带 node22）+ curl 过 initialize / session.list /
-  未知 method（-32601）/ 畸形 JSON（-32700 恒 200）/ GET（404）。
+- `src/host/http/server.ts`：`startHttpRpc(handleFrame, { port, rootSecret,
+  store })`；鉴权中间件（除 `/auth/exchange` 外必须 token）+ `METHOD_MIN_SCOPE`
+  方法档位表（28 方法 → readonly/write/admin 最低档，`capability.issue`
+  = admin）在 `/rpc` handler 内 403 强制；`FrameHandler` 类型（`RpcResponse
+  | null`，null 表示非请求帧，stdio 丢弃 / HTTP 转 400）；
+- `src/host/http/auth.ts`：`createCapabilityStore`（TTL 30s 消费即焚，
+  时钟/随机源可注入）、`createRootSecret`、`signToken`/`verifyToken`
+  （v1.payload.HMAC，timingSafeEqual 恒时比较）；
+- `src/host/host-main.ts`：`capability.issue` handler（scope 显式校验
+  fail-fast）；`COGENT_HTTP_RPC=1` + `COGENT_HTTP_PORT`（畸形值拒启），
+  实际地址打 stderr；
+- 测试三层：`auth.test.ts`（10 用例：即焚/重放/TTL/篡改/跨 secret）、
+  `server.test.ts`（14 用例：401/403/双轨/exchange/传输语义）、
+  `tests/integration/http-auth.test.ts`（真 Host 构建产物全链 S1–S9，
+  含 Host 重启后旧 token 失效的跨代断言）；
+- curl 冒烟实录（2b）：exchange 两档 → Bearer 读 `session.list`（200）→
+  readonly 越档 `session.create`（403）→ write 真建会话（200 拿 id）→
+  无 token（401）→ 票据重放（401）。

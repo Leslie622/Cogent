@@ -32,6 +32,7 @@ import {
   isRpcRequest,
   toRpcError,
   type ApprovalRespondParams,
+  type CapabilityIssueParams,
   type CredentialsListResult,
   type SessionArchiveParams,
   type CredentialsSetParams,
@@ -59,6 +60,7 @@ import { ProjectRegistry } from './runtime/project'
 import { ApprovalRegistry } from './runtime/approvals'
 import { InspectStore, JsonStorageDriver } from './storage'
 import { startHttpRpc } from './http/server'
+import { createCapabilityStore, createRootSecret } from './http/auth'
 
 /**
  * 存储根：第一方数据唯一根（决策 D1，docs/计划/工作区与会话真实化.md §1/§2）。
@@ -140,6 +142,10 @@ async function main(): Promise<void> {
   function reply(response: RpcResponse): void {
     process.stdout.write(JSON.stringify(response) + '\n')
   }
+
+  // HTTP 门票据 store（D3）：一次性短 TTL，消费即焚 —— 与 rootSecret 同属
+  // Host 进程内存态，重启全失效（token 生命周期 = Host 进程生命周期）
+  const capabilityStore = createCapabilityStore()
 
   /**
    * 握手：宿主确认链路可用，服务上报运行时信息（宿主据此做 Node 版本守卫）。
@@ -531,7 +537,23 @@ async function main(): Promise<void> {
     ['models.list', () => sessions.listModels()],
     ['providers.custom.sync', handleProvidersCustomSync],
     ['inspect.entries', handleInspectEntries],
-    ['inspect.entry', handleInspectEntry]
+    ['inspect.entry', handleInspectEntry],
+    // 票据签发（D3）：main 经 stdio 发起（血缘全权）；HTTP 门侧由档位表
+    // 限 admin（server.ts METHOD_MIN_SCOPE），防低档 token 自签提权
+    [
+      'capability.issue',
+      (params) => {
+        // 信任边界：params 是外部输入，在此做唯一一次显式校验
+        const scope = (params as Partial<CapabilityIssueParams>).scope
+        if (scope !== 'readonly' && scope !== 'write' && scope !== 'admin') {
+          throw new ProtocolError(
+            RpcErrorCode.InvalidParams,
+            'capability.issue 需要 { scope: readonly | write | admin }'
+          )
+        }
+        return capabilityStore.issue(scope)
+      }
+    ]
   ])
 
   /**
@@ -574,9 +596,10 @@ async function main(): Promise<void> {
     }
   }
 
-  // ———— HTTP 门（阶段 2a）：同一注册表，帧文本进、响应帧出 ————
-  // 默认不开（D2：loopback 且按需）。实际监听地址打到 stderr —— 冒烟脚本
-  // 与未来的 main 都从这里拿端口（main 集成批次再换成协议握手字段）。
+  // ———— HTTP 门（2a 骨架 + 2b 鉴权）：同一注册表，开门即要 token（D3）———
+  // 默认不开（D2：loopback 且按需）。rootSecret 启动新生成、不出进程。
+  // 实际监听地址打到 stderr —— 冒烟脚本与未来的 main 都从这里拿端口
+  // （main 集成批次再换成协议握手字段）。
   if (process.env.COGENT_HTTP_RPC === '1') {
     const portEnv = process.env.COGENT_HTTP_PORT
     const port = portEnv === undefined ? 0 : Number(portEnv)
@@ -584,7 +607,11 @@ async function main(): Promise<void> {
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
       throw new Error(`COGENT_HTTP_PORT 非法: ${portEnv}`)
     }
-    const http = await startHttpRpc(handleFrame, { port })
+    const http = await startHttpRpc(handleFrame, {
+      port,
+      rootSecret: createRootSecret(),
+      store: capabilityStore
+    })
     process.stderr.write(`[host] http rpc listening on 127.0.0.1:${http.port}\n`)
   }
 
