@@ -61,7 +61,7 @@
     <div class="diagram-container">
       <svg viewBox="0 0 1280 816" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="cogent-arch-title cogent-arch-desc">
         <title id="cogent-arch-title">Cogent 多内核 Agent 客户端目标架构</title>
-        <desc id="cogent-arch-desc">定稿三层两缝架构：Electron 31 壳内主 UI、webview 第三方页面与调试页经 HostApi 北缝的 stdio 与 HTTP/WS 双面进入 Host 进程；服务层与能力总线四座把技能、MCP 与钩子装配进 KernelRunner 南缝下的多个内核，默认内核为 pi-coding-agent；底部自带 Node 22 运行时与安全边界承载执行，对外 MCP Server 让外部智能体反向操作本地 Agent。</desc>
+        <desc id="cogent-arch-desc">定稿三层两缝架构：Electron 31 壳内主 UI、webview 第三方页面与调试页经 HostApi 北缝的 stdio 与 HTTP/WS 两条通道进入 Host 进程；服务层与能力总线四座把技能、MCP 与钩子装配进 KernelRunner 南缝下的多个内核，默认内核为 pi-coding-agent；底部自带 Node 22 运行时与安全边界承载执行，对外 MCP Server 让外部智能体反向操作本地 Agent，未立项的 chat 门面与拨出中继经同一 HTTP/WS 通道接入。</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
           <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
@@ -90,7 +90,7 @@
         <!-- Zone: outbound MCP port -->
         <rect x="1040" y="312" width="176" height="256" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
         <rect x="1060" y="316" width="136" height="16" rx="2" fill="#f5f5f5"/>
-        <text x="1128" y="328" fill="#5a6580" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">对外出口 · 阶段 5</text>
+        <text x="1128" y="328" fill="#5a6580" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">对外出口 · 排后</text>
 
         <!-- HostApi north seam band (accent focal 1) -->
         <rect x="208" y="216" width="1032" height="48" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.2"/>
@@ -152,7 +152,7 @@
 
         <!-- HostApi band text -->
         <text x="724" y="236" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">HostApi · 界面与引擎之间的唯一通道</text>
-        <text x="724" y="252" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">面 A · stdio JSON-RPC（主干）｜ 面 B · HTTP/WS 127.0.0.1（按需）· scoped token</text>
+        <text x="724" y="252" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">stdio JSON-RPC（主干）｜ HTTP/WS @127.0.0.1（按需）· scoped token</text>
 
         <!-- SKILL.md 技能 (external) -->
         <rect x="40" y="316" width="144" height="52" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
@@ -212,6 +212,9 @@
         <line x1="1064" y1="464" x2="1192" y2="464" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
         <text x="1128" y="490" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">会话 · 工具</text>
         <text x="1128" y="510" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">Bearer · 写默认关</text>
+        <line x1="1064" y1="526" x2="1192" y2="526" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="1128" y="546" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">chat 门面 · 未立项</text>
+        <text x="1128" y="564" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','Microsoft YaHei',sans-serif" text-anchor="middle">拨出中继 · 未立项</text>
 
         <!-- 外部智能体 (external) -->
         <rect x="1040" y="700" width="176" height="48" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
