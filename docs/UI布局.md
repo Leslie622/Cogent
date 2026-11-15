@@ -112,6 +112,27 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   按压色阶自补。
   裁决痕迹行 = ApprovalCard（TraceLine 置灰单行随裁决落消息流，run 终态
   替换保留）
+- **交互座三面板**（阶段 4c，交互座 = todo/ask_user/plan 三件工具的
+  呈现面；前两者与审批面板同位互斥——都是 run 挂起中的"占位等待"层，
+  HomeChat 条件链 hasPendingApproval ? ApprovalPanel : hasPendingPlan ?
+  PlanPanel : hasPendingQuestion ? QuestionPanel : Composer）：
+  - **任务清单条**（TodoStrip.tsx）：**输入区上方常驻**（不占输入位——
+    清单是跨回合的"进行中"，审批/提问是"当下"）；清单非空才挂载，
+    可折叠（IconChevronDown 旋转过渡），头部「任务清单 n/m」计数，
+    条目行 = 状态图标（完成 IconCircleCheckFilled 置灰/进行中
+    IconProgress 深色/待办 IconCircleDashed 灰）+ 内容（完成划线置灰）
+    + 高优先级红点（右缘，完成不显）；
+  - **提问面板**（QuestionPanel.tsx）：ApprovalPanel 母版变体——逐问题
+    块（rounded-xl bg-muted/40：header 灰前缀 + 问题深色 + 选项行（多选
+    带 IconCircleCheckFilled 勾选位）+「其他（自由输入）」常驻输入条，
+    输入优先于选项）+ 底部「可留空跳过」提示 + 提交主钮；整卡一次提交
+    （answers 按问题序，未答传空串 = 跳过）；
+  - **方案审批面板**（PlanPanel.tsx）：ApprovalPanel 母版同骨架（竖排
+    选项 + ↑↓/Enter 键盘模型 + 附言条）——「实现计划待审批」标题 +
+    方案预览（pre whitespace-pre-wrap，max-h-64 滚动限高）+ 两选项：
+    批准并切换为 ▾（ask[默认]/完全访问/自主模式——批准即出 plan 档，
+    收紧档不列）/ 拒绝；附言 = 拒绝的修改意见（回灌模型修订重提，
+    placeholder 明示）。
 - **权限模式菜单**（features/home/PermissionMenu.tsx）：dropdown-menu = **四档
   真选项**（计划模式 IconClipboardList / 变更前确认 IconShieldQuestion / 自主
   模式 IconSparkles / 完全访问 IconShieldExclamation）+ **分隔线危险分组隔离**
