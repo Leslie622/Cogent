@@ -40,9 +40,14 @@ function TodoRow({ item }: { item: TodoItem }) {
   )
 }
 
+/** 无清单会话的稳定空回退：选择器里写 `?? []` 字面量，zustand v5 严格相等下
+    每次快照都是新数组 → useSyncExternalStore 死循环（同 HomeChat 的
+    EMPTY_MESSAGES，约定.md §1.2 反模式 8） */
+const EMPTY_TODOS: TodoItem[] = []
+
 /** 条本体：空清单不挂载（HomeChat 侧由数据源保证，此处空态守一道） */
 export function TodoStrip() {
-  const todos = useChatStore((s) => s.todosBySession[s.activeSessionId ?? ''] ?? [])
+  const todos = useChatStore((s) => s.todosBySession[s.activeSessionId ?? ''] ?? EMPTY_TODOS)
   const [collapsed, setCollapsed] = useState(false)
   if (todos.length === 0) return null
   const done = todos.filter((t) => t.status === 'completed').length
