@@ -127,7 +127,9 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   `w-(--anchor-width)`（锚定 trigger 宽的 CSS 变量），非 Dialog 布局下锚
   变量不生效 → 弹层被内容/定位撑到超宽盖住周边（MCP 页作用域下拉实测）；
   解法 = `SelectContent align="start"` + 显式 `className="w-…/min-w-…"`
-  （布局约束非样式覆盖），Dialog 内表单下拉同样加保险。
+  （布局约束非样式覆盖），Dialog 内表单下拉同样加保险。官方新版 registry
+  源里的 `cn-menu-target` 类是 CLI 安装期 marker（非 CSS 定义），对人工
+  合入无增益 —— 不要为追它改组件。
   **坑 2（dropdown item 的强调色必须走原语变体）**：item 的 focus 高亮带
   `**:text-accent-foreground` 通配染色 —— 把**所有后代**文字/svg 强制压黑，
   子元素自己染的 `text-warning` 等强调色在 hover 下必被打掉（权限菜单
