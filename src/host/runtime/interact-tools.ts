@@ -231,12 +231,156 @@ export function createAskTool(bridge: AskBridge): ToolDefinition {
   })
 }
 
+// ———— plan 闭环（4c-3：enter_plan + submit_plan）————
+
+/** submit_plan 的方案文本上限（zcode PLAN_MODE_MAX_PLAN_CHARS 同值，plan-mode.ts:13） */
+export const PLAN_MAX_CHARS = 20_000
+
+/** 已批准计划的会话域记录（StoredSession.plan；cogent_plan 段的数据源） */
+export interface PlanRecord {
+  plan: string
+  /** 批准时刻（Unix 毫秒） */
+  approvedAt: number
+}
+
+/** 桥：enter_plan 切档（幂等 —— 已在此档直接成功）。返回可异步：与 TodoBridge 同款 */
+export interface EnterPlanBridge {
+  enterPlan(): void | Promise<void>
+}
+
+/** 桥：submit_plan 挂起审批（pendingPlans 同 pendingQuestions 骨架，批准路径
+ * 多一步切档 + plan 落账）。verdict 三路 —— approve（含目标档）/ deny（附反馈或无） */
+export interface SubmitPlanBridge {
+  submitPlan(
+    plan: string,
+    signal: AbortSignal | undefined
+  ): Promise<{ approved: true; switchMode?: string } | { approved: false; message?: string }>
+}
+
+/** cogent_plan 段文本（每回合活算；null = 无已批准计划 = 撤段）。
+ * 自带"已完成或不再相关则忽略"（zcode plan 文件提醒同款语义，文案封住误导面） */
+export function planSectionText(record: PlanRecord): string {
+  return (
+    '# 已批准的计划\n' +
+    '以下计划已经用户批准，按它推进执行：\n\n' +
+    record.plan +
+    '\n\n若其中的任务已全部完成或计划不再相关，忽略本节。'
+  )
+}
+
+const ENTER_PLAN_DESCRIPTION =
+  '进入 plan（只读）模式：文件写入与命令执行将被拒绝，只能调研（读文件/搜索/列目录）。' +
+  '适用于非平凡的多步骤实现任务 —— 先调研并把实现方案整理成计划，再调 submit_plan 请求批准。' +
+  '纯问答、小修复、只读调研不需要进 plan。'
+
+const ENTER_PLAN_PARAMS = Type.Object({})
+
+const SUBMIT_PLAN_DESCRIPTION =
+  '提交实现计划请求用户批准（只能在 plan 模式下使用）。计划必须完整放在 plan 参数：' +
+  '上下文开头、只写推荐方案、点名关键文件、含验证步骤。用户批准后会自动切换到执行模式；' +
+  '拒绝时可能附修改意见（按意见修订后重新提交）。不要用普通文本或 ask_user 问"这个方案行吗" —— 那正是本工具的职责。'
+
+const SUBMIT_PLAN_PARAMS = Type.Object({
+  plan: Type.String({ minLength: 1, maxLength: PLAN_MAX_CHARS, description: '完整的实现计划（markdown）' })
+})
+
+/** enter_plan 工具实例（无参；切档幂等） */
+export function createEnterPlanTool(bridge: EnterPlanBridge): ToolDefinition {
+  return defineTool<typeof ENTER_PLAN_PARAMS, Record<string, never>>({
+    name: 'enter_plan',
+    label: '进入计划模式',
+    description: ENTER_PLAN_DESCRIPTION,
+    parameters: ENTER_PLAN_PARAMS,
+    execute: async () => {
+      await bridge.enterPlan()
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              '已进入 plan（只读）模式：文件写入与命令执行会被拒绝。' +
+              '接下来只调研（读文件/搜索/列目录），完成后调 submit_plan 提交实现计划；' +
+              '调研中遇到需要用户拍板的疑点可用 ask_user 澄清。'
+          }
+        ],
+        details: {}
+      }
+    }
+  })
+}
+
+/** submit_plan 工具实例（非 plan 档 → isError 指引；挂起审批三路收口） */
+export function createSubmitPlanTool(
+  bridge: SubmitPlanBridge,
+  /** 读活模式（非 plan 档拒绝的判定源；session.summary 活引用） */
+  currentMode: () => string
+): ToolDefinition {
+  return defineTool<
+    typeof SUBMIT_PLAN_PARAMS,
+    { plan: string; switchMode?: string; approved?: boolean }
+  >({
+    name: 'submit_plan',
+    label: '提交计划',
+    description: SUBMIT_PLAN_DESCRIPTION,
+    parameters: SUBMIT_PLAN_PARAMS,
+    execute: async (_callId, params, signal) => {
+      if (currentMode() !== 'plan') {
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                '当前不在 plan 模式 —— 本工具仅用于 plan 模式下完成调研后提交实现计划。' +
+                '若计划已获批准，直接继续执行即可。'
+            }
+          ],
+          details: { plan: params.plan, approved: false },
+          isError: true
+        }
+      }
+      const verdict = await bridge.submitPlan(params.plan, signal)
+      if (verdict.approved) {
+        const modeLabel: Record<string, string> = {
+          ask: '变更前确认（ask）',
+          auto: '完全访问（auto）',
+          autonomous: '自主模式（autonomous）'
+        }
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `用户已批准你的计划，并将会话切换到 ${modeLabel[verdict.switchMode ?? 'ask']} 模式。` +
+                '现在开始执行 —— 建议先用 todo_write 把计划拆成任务清单，再逐步实施。\n\n' +
+                `## 已批准的计划：\n${params.plan}`
+            }
+          ],
+          details: { plan: params.plan, switchMode: verdict.switchMode, approved: true }
+        }
+      }
+      // 拒绝无反馈 → 停轮（terminate：拒绝代表用户要继续讨论，模型自我重写
+      // 计划只会空转 —— zcode stopTurnAfterResult 同判）；带反馈 → 模型修订重提
+      const denied = '用户未批准该计划。'
+      const message = verdict.message?.trim()
+      const noFeedback = message === undefined || message === ''
+      return {
+        content: [{ type: 'text', text: noFeedback ? denied : `${denied}用户指示：${message}` }],
+        details: { plan: params.plan, approved: false },
+        isError: true,
+        ...(noFeedback && { terminate: true })
+      }
+    }
+  })
+}
+
 // ———— 声明镜像（token 估算用，与请求里 toolsAdded 同源）————
 
 /** 交互座工具的模型侧声明（tool-meta.toolDeclarations 消费；schema 确定性同源） */
 export function interactToolDeclarations(): Array<{ name: string; description: string; parameters: unknown }> {
   return [
     { name: 'todo_write', description: TODO_DESCRIPTION, parameters: TODO_PARAMS },
-    { name: 'ask_user', description: ASK_DESCRIPTION, parameters: ASK_PARAMS }
+    { name: 'ask_user', description: ASK_DESCRIPTION, parameters: ASK_PARAMS },
+    { name: 'enter_plan', description: ENTER_PLAN_DESCRIPTION, parameters: ENTER_PLAN_PARAMS },
+    { name: 'submit_plan', description: SUBMIT_PLAN_DESCRIPTION, parameters: SUBMIT_PLAN_PARAMS }
   ]
 }

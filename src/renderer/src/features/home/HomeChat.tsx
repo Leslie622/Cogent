@@ -60,6 +60,7 @@ import { ApprovalPanel } from './ApprovalPanel'
 import { PermissionMenu } from './PermissionMenu'
 import { TodoStrip } from './TodoStrip'
 import { QuestionPanel } from './QuestionPanel'
+import { PlanPanel } from './PlanPanel'
 import { findActiveModel, useEngineStore } from '@/stores/engine'
 import { ConversationIndex } from './ConversationIndex'
 import { ModelMenu } from './ModelMenu'
@@ -397,6 +398,9 @@ export function HomeChat({
   const hasPendingQuestion = useChatStore(
     (s) => (s.pendingQuestionsBySession[s.activeSessionId ?? '']?.length ?? 0) > 0
   )
+  const hasPendingPlan = useChatStore(
+    (s) => (s.pendingPlansBySession[s.activeSessionId ?? '']?.length ?? 0) > 0
+  )
   const [draft, setDraft] = useState('')
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -412,6 +416,8 @@ export function HomeChat({
         <TodoStrip />
         {hasPendingApproval ? (
           <ApprovalPanel />
+        ) : hasPendingPlan ? (
+          <PlanPanel />
         ) : hasPendingQuestion ? (
           <QuestionPanel />
         ) : (

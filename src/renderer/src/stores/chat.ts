@@ -96,6 +96,12 @@ export interface PendingQuestion {
   }>
 }
 
+/** 挂起中的方案审批（交互座 4c-3，PlanPanel 数据源）：plan.requested 建、respond/abort 收尾 */
+export interface PendingPlan {
+  requestId: string
+  plan: string
+}
+
 /**
  * L1 prune 副行：一次检查点裁了 N 处工具输出 → 一行
  * 「已裁剪 N 处工具输出」；转录里对应物是改写后的 toolResult（marker 即
@@ -273,6 +279,9 @@ export interface ChatState {
   /** sessionId → 挂起提问（交互座 4c-2，QuestionPanel 数据源）：
       question.asked 建、respond/abort 收尾（引擎侧三路收口保证必清） */
   pendingQuestionsBySession: Partial<Record<string, PendingQuestion[]>>
+  /** sessionId → 挂起方案审批（交互座 4c-3，PlanPanel 数据源）：plan.requested
+      建、respond/abort 收尾（同上三路收口） */
+  pendingPlansBySession: Partial<Record<string, PendingPlan[]>>
   /** 初载失败的原因（引擎不可用等；App 横幅呈现）。null = 正常 */
   loadError: string | null
 
@@ -286,6 +295,12 @@ export interface ChatState {
   setPermission: (sessionId: string, mode: PermissionMode) => Promise<void>
   /** 回答挂起中的 ask_user（交互座 4c-2；QuestionPanel 调用） */
   respondQuestion: (requestId: string, answers: Array<string | string[]>) => Promise<void>
+  /** 裁决挂起中的 submit_plan（交互座 4c-3；PlanPanel 调用） */
+  respondPlan: (
+    requestId: string,
+    approved: boolean,
+    options?: { switchMode?: 'ask' | 'auto' | 'autonomous'; message?: string }
+  ) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
   setPinned: (sessionId: string, pinned: boolean) => Promise<void>
   archive: (sessionId: string, archived: boolean) => Promise<void>
@@ -373,6 +388,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   contextLiveBySession: {},
   todosBySession: {},
   pendingQuestionsBySession: {},
+  pendingPlansBySession: {},
   loadError: null,
 
   // 初载不自动建会话：归档是回收站语义，"活跃列表空"有两种含义 —— 首装，或
@@ -499,6 +515,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       delete todosBySession[sessionId]
       const pendingQuestionsBySession = { ...state.pendingQuestionsBySession }
       delete pendingQuestionsBySession[sessionId]
+      const pendingPlansBySession = { ...state.pendingPlansBySession }
+      delete pendingPlansBySession[sessionId]
       return {
         sessions,
         messagesBySession,
@@ -511,6 +529,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         prunedBySession,
         todosBySession,
         pendingQuestionsBySession,
+        pendingPlansBySession,
         // 删除活动会话与归档同款落点：视图落"新聊天"（不再自动跳 sessions[0] ——
         // 旧行为不触发 selectSession，目标会话消息未拉取会白屏）
         activeSessionId: wasActive ? null : state.activeSessionId
@@ -688,6 +707,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { pendingQuestionsBySession }
     })
     await window.cogent.respondQuestion(requestId, answers).catch(() => undefined)
+  },
+
+  /** 裁决挂起中的 submit_plan（交互座 4c-3）：先本地清挂起（同 respondQuestion
+      乐观语义）；批准切档时引擎带回摘要 → 同步列表模式标记 */
+  respondPlan: async (requestId, approved, options) => {
+    useChatStore.setState((state) => {
+      const pendingPlansBySession = { ...state.pendingPlansBySession }
+      for (const [sid, list] of Object.entries(pendingPlansBySession)) {
+        if (list?.some((p) => p.requestId === requestId)) {
+          pendingPlansBySession[sid] = list.filter((p) => p.requestId !== requestId)
+          break
+        }
+      }
+      return { pendingPlansBySession }
+    })
+    const result = await window.cogent
+      .respondPlan(requestId, approved, options)
+      .catch(() => undefined)
+    if (result?.summary !== undefined) {
+      const summary = result.summary
+      useChatStore.setState((state) => ({
+        sessions: state.sessions.map((s) => (s.id === summary.id ? summary : s))
+      }))
+    }
   }
 }))
 
@@ -836,6 +879,19 @@ export function bindEngineEvents(): () => void {
             pendingQuestionsBySession: {
               ...state.pendingQuestionsBySession,
               [sessionId]: [...list, { requestId, questions }]
+            }
+          }
+        })
+        return
+      }
+      case 'plan.requested': {
+        const { sessionId, requestId, plan } = event.params
+        useChatStore.setState((state) => {
+          const list = state.pendingPlansBySession[sessionId] ?? []
+          return {
+            pendingPlansBySession: {
+              ...state.pendingPlansBySession,
+              [sessionId]: [...list, { requestId, plan }]
             }
           }
         })

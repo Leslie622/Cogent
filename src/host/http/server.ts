@@ -88,6 +88,9 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   // 交互座 4c-2：回答挂起中的 ask_user —— 同 approval.respond 的"宿主侧
   // 人机裁决回流"语义面，同 write 档
   'question.respond': 'write',
+  // 交互座 4c-3：裁决方案审批（批准可切档 —— 切档本身即 session.setPermission
+  // 同级操作）；同 write 档
+  'plan.respond': 'write',
   'credentials.set': 'write',
   'credentials.remove': 'write',
   'providers.custom.sync': 'write',

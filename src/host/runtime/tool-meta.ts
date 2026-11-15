@@ -86,9 +86,12 @@ const TOOL_METAS: Record<string, { kind: ToolKind; summarize: (args: unknown) =>
   list_mcp_resource_templates: { kind: 'read', summarize: (a) => summarizeArgs('list_mcp_resource_templates', a) },
   read_mcp_resource: { kind: 'read', summarize: (a) => summarizeArgs('read_mcp_resource', a) },
   // 交互座（4c）：会话内交互工具，无文件/进程副作用 → read 档（审批链放行，
-  // plan 档可用 —— 清单维护正是 plan 工作流的组成；挂起交互的"审批"是
-  // 工具自身的面板，不走工具执行审批）
+  // plan 档可用 —— 清单维护/澄清提问/方案提交正是 plan 工作流的组成；挂起
+  // 交互的"审批"是工具自身的面板，不走工具执行审批）
   todo_write: { kind: 'read', summarize: summarizeTodoWriteArgs },
+  ask_user: { kind: 'read', summarize: (a) => summarizeArgs('ask_user', a) },
+  enter_plan: { kind: 'read', summarize: () => 'enter_plan()' },
+  submit_plan: { kind: 'read', summarize: () => 'submit_plan(方案)' },
   // 历史名（v1 旧转录）：glob，kind 同只读
   glob: { kind: 'read', summarize: (a) => summarizeArgs('glob', a) }
 }

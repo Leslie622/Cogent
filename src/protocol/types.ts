@@ -441,6 +441,14 @@ export interface QuestionRespondParams {
   requestId: string
   answers: Array<string | string[]>
 }
+/** plan.respond 参数（交互座 4c-3）：批准可带 switchMode（缺省 ask）；拒绝可附反馈 */
+export interface PlanRespondParams {
+  requestId: string
+  approved: boolean
+  switchMode?: 'ask' | 'auto' | 'autonomous'
+  /** 拒绝反馈（进工具结果给模型，修订后重提）；批准时忽略 */
+  message?: string
+}
 
 /** 置顶/取消置顶（同一入口，pinned 二值切换）；返回更新后的完整摘要 */
 export interface SessionSetPinnedParams {
@@ -998,6 +1006,8 @@ export interface ProtocolMethods {
   'approval.respond': { params: ApprovalRespondParams; result: ApprovalRespondResult }
   /** 交互座 4c-2：回答 question.asked（挂起中的 ask_user）；配对错 requestId → InvalidParams */
   'question.respond': { params: QuestionRespondParams; result: { ok: true } }
+  /** 交互座 4c-3：裁决 plan.requested（批准切档 / 拒绝附反馈）；带回切换后的会话摘要 */
+  'plan.respond': { params: PlanRespondParams; result: { ok: true; summary?: SessionSummary } }
   'credentials.set': { params: CredentialsSetParams; result: CredentialsSetResult }
   'credentials.remove': { params: CredentialsRemoveParams; result: CredentialsRemoveResult }
   'credentials.list': { params: Record<string, never>; result: CredentialsListResult }
@@ -1119,12 +1129,17 @@ export interface ProtocolEvents {
    * session.messages 的 todos 字段。
    */
   'todos.updated': { sessionId: string; todos: TodoItem[] }
-  /**
-   * 模型提问（交互座 4c-2）：ask_user 工具挂起中 —— 宿主以 question.respond
-   * 回答（面板替换输入区，与 approval.request 同款"占位等待"语义；无超时，
-   * 宿主输入框变停止钮可 abort）。answers 按问题序，空串 = 跳过该问。
-   */
-  'question.asked': { sessionId: string; requestId: string; questions: AskQuestionParam[] }
+/**
+ * 模型提问（交互座 4c-2）：ask_user 工具挂起中 —— 宿主以 question.respond
+ * 回答（面板替换输入区，与 approval.request 同款"占位等待"语义；无超时，
+ * 宿主输入框变停止钮可 abort）。answers 按问题序，空串 = 跳过该问。
+ */
+'question.asked': { sessionId: string; requestId: string; questions: AskQuestionParam[] }
+/**
+ * 方案审批请求（交互座 4c-3）：submit_plan 工具挂起中 —— 宿主以 plan.respond
+ * 裁决（批准可带切档 / 拒绝可附反馈）。plan = 方案全文（markdown，面板预览）。
+ */
+'plan.requested': { sessionId: string; requestId: string; plan: string }
   /**
    * 观测条目实时推送（控制台时间线增量）：每产生一条观测记录即推一条摘要，
    * 详情不随流走（按需 inspect.entry）。宿主的控制台没打开也应照常接收/丢弃 ——

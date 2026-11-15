@@ -57,7 +57,17 @@ import type {
   ToolCallRecord,
   ToolKind
 } from '../../protocol'
-import { createAskTool, createTodoTool, todosSectionText, type AskAnswers, type AskQuestion } from './interact-tools'
+import {
+  createAskTool,
+  createEnterPlanTool,
+  createSubmitPlanTool,
+  createTodoTool,
+  planSectionText,
+  todosSectionText,
+  type AskAnswers,
+  type AskQuestion,
+  type PlanRecord
+} from './interact-tools'
 import type { CredentialRegistry } from './credentials'
 import { CustomProviderRegistry } from './custom-providers'
 import { SessionInspector } from './inspector'
@@ -94,6 +104,8 @@ interface StoredSession {
   summary: SessionSummary
   /** 任务清单（交互座 4c）：todo_write 的活清单快照；缺省 = 无清单。模型侧另有转录回放兜底 */
   todos?: TodoItem[]
+  /** 已批准计划（交互座 4c-3）：cogent_plan 段的数据源；缺省 = 无。新批准覆盖旧值 */
+  plan?: PlanRecord
 }
 
 /**
@@ -105,9 +117,15 @@ interface StoredSession {
 function asStoredSession(
   doc: unknown,
   id: string
-): { summary: SessionSummary; todos?: TodoItem[]; legacyTranscript?: AgentMessage[] } {
+): { summary: SessionSummary; todos?: TodoItem[]; plan?: PlanRecord; legacyTranscript?: AgentMessage[] } {
   if (typeof doc !== 'object' || doc === null) throw new Error(`会话文档形状不合法（sessions/${id}.json）`)
-  const d = doc as { version?: unknown; summary?: SessionSummary; todos?: unknown; transcript?: unknown }
+  const d = doc as {
+    version?: unknown
+    summary?: SessionSummary
+    todos?: unknown
+    plan?: unknown
+    transcript?: unknown
+  }
   if (d.version !== 2 && d.version !== 1) {
     throw new Error(`会话文档版本不合法（sessions/${id}.json），请手工处理后重启`)
   }
@@ -120,9 +138,13 @@ function asStoredSession(
   if (d.todos !== undefined && !Array.isArray(d.todos)) {
     throw new Error(`会话文档任务清单形状不合法（sessions/${id}.json），请手工处理后重启`)
   }
+  if (d.plan !== undefined && (typeof d.plan !== 'object' || typeof (d.plan as PlanRecord).plan !== 'string')) {
+    throw new Error(`会话文档计划形状不合法（sessions/${id}.json），请手工处理后重启`)
+  }
   return {
     summary: d.summary,
     ...(d.todos !== undefined && { todos: d.todos as TodoItem[] }),
+    ...(d.plan !== undefined && { plan: d.plan as PlanRecord }),
     ...(d.version === 1 && { legacyTranscript: d.transcript as AgentMessage[] })
   }
 }
@@ -132,6 +154,8 @@ interface Session {
   summary: SessionSummary
   /** 任务清单（交互座 4c）：todo_write 全量替换维护；随会话文档持久化（todo_write 落笔即 persist） */
   todos: TodoItem[]
+  /** 已批准计划（交互座 4c-3）：plan.respond(approved) 落账，cogent_plan 段每回合注入 */
+  plan?: PlanRecord
   /** v1 旧盘的转录（pi 内核装配时一次性导入 pi 树，随后清引用；v2 会话无此字段 */
   legacyTranscript?: AgentMessage[]
   /** pi AgentSession；undefined = 尚未建 —— 惰性装配的落点 */
@@ -234,7 +258,12 @@ function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
 function permissionSectionText(mode: PermissionMode): string {
   switch (mode) {
     case 'plan':
-      return '当前会话处于 plan（只读）模式：文件写入与命令执行会被拒绝，只能读取文件、搜索和列目录。不要尝试调用写类或执行类工具。'
+      return (
+        '当前会话处于 plan（只读）模式：文件写入与命令执行会被拒绝，只能读取文件、搜索和列目录。不要尝试调用写类或执行类工具。\n' +
+        '工作流：先用只读工具完成调研；遇到需要用户拍板的疑点用 ask_user 澄清；' +
+        '调研充分后调 submit_plan 提交实现计划并等待批准。' +
+        '不要用普通文本或 ask_user 问「这个方案可以吗」—— 那正是 submit_plan 的职责。'
+      )
     case 'auto':
       return '当前会话处于完全访问模式：所有工具调用直接执行，无需用户逐次确认。'
     case 'autonomous':
@@ -475,6 +504,19 @@ export class SessionManager implements CogentKernel {
     string,
     { sessionId: string; resolve: (result: { answers: AskAnswers; cancelled?: boolean }) => void }
   >()
+  /**
+   * 挂起中的方案审批（交互座 4c-3，同款骨架）：submit_plan 的 execute 悬着等
+   * plan.respond。value 带 plan 全文（批准时落 StoredSession.plan 的数据源 ——
+   * 工具参数只在挂起点可见，respond 时已拿不到）。收尾三路同 pendingQuestions。
+   */
+  private pendingPlans = new Map<
+    string,
+    {
+      sessionId: string
+      plan: string
+      resolve: (verdict: { approved: true; switchMode?: string } | { approved: false; message?: string }) => void
+    }
+  >()
   private models: MutableModels
   private customProviders: CustomProviderRegistry
   /** 项目注册表（构造注入；submit/buildPiSession 时解析 projectId → 项目多根目录） */
@@ -522,6 +564,7 @@ export class SessionManager implements CogentKernel {
         this.sessions.set(doc.summary.id, {
           summary: doc.summary,
           todos: doc.todos ?? [],
+          ...(doc.plan !== undefined && { plan: doc.plan }),
           ...(doc.legacyTranscript !== undefined && { legacyTranscript: doc.legacyTranscript })
         })
       } catch (error) {
@@ -1241,6 +1284,46 @@ export class SessionManager implements CogentKernel {
       this.pendingQuestions.delete(requestId)
       pending.resolve({ answers: [], cancelled: true })
     }
+    // 挂起中的方案审批同批收口（拒绝语义：会话都没了，批准无从谈起）
+    for (const [requestId, pending] of this.pendingPlans) {
+      if (pending.sessionId !== sessionId) continue
+      this.pendingPlans.delete(requestId)
+      pending.resolve({ approved: false })
+    }
+  }
+
+  /**
+   * 方案裁决回流（交互座 4c-3，respondApproval.switchMode 同款切档语义）：
+   * 批准 → 切目标档（缺省 ask）+ StoredSession.plan 落账（cogent_plan 段源，
+   * 新批准覆盖旧值）+ 放行工具；拒绝 → 反馈（可空）进工具结果。
+   * 返回切换后的摘要（宿主同步列表模式标记；拒绝时缺省）。
+   */
+  respondPlan(
+    requestId: string,
+    approved: boolean,
+    switchMode?: 'ask' | 'auto' | 'autonomous',
+    message?: string
+  ): { ok: true; summary?: SessionSummary } {
+    const pending = this.pendingPlans.get(requestId)
+    if (pending === undefined) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, `方案请求不存在或已被裁决: ${requestId}`)
+    }
+    this.pendingPlans.delete(requestId)
+    let summary: SessionSummary | undefined
+    if (approved) {
+      const session = this.requireSession(pending.sessionId)
+      session.summary.permissionMode = switchMode ?? 'ask'
+      session.plan = { plan: pending.plan, approvedAt: Date.now() }
+      this.persist(session.summary.id)
+      summary = { ...session.summary }
+    }
+    const trimmed = message?.trim()
+    pending.resolve(
+      approved
+        ? { approved: true, ...(switchMode !== undefined && { switchMode }) }
+        : { approved: false, ...(trimmed !== undefined && trimmed !== '' && { message: trimmed }) }
+    )
+    return { ok: true, ...(summary !== undefined && { summary }) }
   }
 
   // ———— pi 内核装配（惰性） ————
@@ -1294,18 +1377,20 @@ export class SessionManager implements CogentKernel {
       modelRuntime: this.modelRuntime,
       systemPrompt: this.ensureSystemPrompt(session),
       // 自定义段每回合活算（factory 的 before_agent_start 钩子消费）：权限
-      // 通告读活 mode（运行中切档下一轮生效）；skills/todos 快照无缓存
+      // 通告读活 mode（运行中切档下一轮生效）；skills/todos/plan 快照无缓存
       //（UI 改动与手动改文件都下一回合生效 = 回合边界热刷新）
       sections: () => {
         const todos = todosSectionText(session.todos)
         return {
           cogent_permission: permissionSectionText(session.summary.permissionMode ?? 'ask'),
           skills: formatSkillsSection(this.skillStore.snapshot(boundRoots[0] ?? homedir()).skills),
-          ...(todos !== null && { cogent_todos: todos })
+          ...(todos !== null && { cogent_todos: todos }),
+          ...(session.plan !== undefined && { cogent_plan: planSectionText(session.plan) })
         }
       },
       // 交互座（4c）：todo_write 落笔 → 会话状态 + 持久化 + 北向事件；
-      // ask_user 挂起 → question.asked → question.respond/abort/settle 三路收尾
+      // ask_user 挂起 → question.asked → respond/abort/settle 三路收尾；
+      // plan 闭环 → enter_plan 切档 + submit_plan 挂起审批（plan.respond）
       customTools: [
         createTodoTool({
           updateTodos: (todos) => {
@@ -1336,7 +1421,31 @@ export class SessionManager implements CogentKernel {
                 }
               })
             })
-        })
+        }),
+        createEnterPlanTool({
+          enterPlan: () => {
+            // 幂等：已在此档照走 setPermission（记账 + 持久化同一路，无副作用差异）
+            this.setPermission(sessionId, 'plan')
+          }
+        }),
+        createSubmitPlanTool(
+          {
+            submitPlan: (plan, signal) =>
+              new Promise<{ approved: true; switchMode?: string } | { approved: false; message?: string }>((resolve) => {
+                const requestId = `plan-${crypto.randomUUID()}`
+                this.pendingPlans.set(requestId, { sessionId, plan, resolve })
+                this.notify('plan.requested', { sessionId, requestId, plan })
+                signal?.addEventListener('abort', () => {
+                  // 已被 respondPlan 消费则不动（裁决与中止竞态，先到先得）
+                  if (this.pendingPlans.delete(requestId)) {
+                    resolve({ approved: false })
+                  }
+                })
+              })
+          },
+          // 活模式读引用（非 plan 档拒绝的判定源；运行中切档即时生效）
+          () => session.summary.permissionMode ?? 'ask'
+        )
       ],
       approval: {
         decide: (toolName, _toolCallId, args, signal) =>
@@ -1422,7 +1531,8 @@ export class SessionManager implements CogentKernel {
       version: SESSION_FILE_VERSION,
       summary: session.summary,
       // 空清单不落字段（旧文档形状不变；清单事件本身就是"清空"的真相源）
-      ...(session.todos.length > 0 && { todos: session.todos })
+      ...(session.todos.length > 0 && { todos: session.todos }),
+      ...(session.plan !== undefined && { plan: session.plan })
     }
     try {
       this.storage.put(SESSION_COLLECTION, sessionId, doc as unknown as Record<string, unknown>)

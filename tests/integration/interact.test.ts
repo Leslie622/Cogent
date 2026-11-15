@@ -79,7 +79,29 @@ const ACTIONS: Action[] = [
         }
       ]
     }
-  }
+  },
+  // S4：enter_plan 切档 → 同 run submit_plan 挂起 → 批准后收尾
+  {
+    type: 'toolCall',
+    callId: 'p1',
+    tool: 'enter_plan',
+    args: {}
+  },
+  {
+    type: 'toolCall',
+    callId: 'p2',
+    tool: 'submit_plan',
+    args: { plan: '## 目标\n实现存储层。\n\n## 步骤\n1. 建 schema\n2. 写迁移' }
+  },
+  text('S4 收尾'), // S4 批准后的收尾轮（工具结果已含批准文案）
+  // S5：ask 档直接调 submit_plan（非 plan 档拒绝路径）
+  {
+    type: 'toolCall',
+    callId: 'p3',
+    tool: 'submit_plan',
+    args: { plan: '不该出现的方案' }
+  },
+  text('S5 收尾')
 ]
 let actionIndex = 0
 /** LLM 请求体留存（断言段注入与工具结果回灌） */
@@ -226,5 +248,61 @@ describe('交互座集成（customTools 注入 + todo_write 全链）', () => {
     // 重复回答已收口的请求 → InvalidParams（防静默成功）
     const stale = await engine.send('question.respond', { requestId: asked.params.requestId, answers: ['SQLite'] })
     check('10. 已收口的提问再答 → InvalidParams', stale.error?.code === -32602, JSON.stringify(stale.error))
+
+    // ———— S4 plan 闭环：enter_plan 切档 → submit_plan 挂起 → 批准切档 + 段注入 ————
+    await engine.send('agent.submit', { sessionId, text: '先规划再干', model: 'mock' })
+    const planRequested = await engine.waitEvent('plan.requested', (p) => p.sessionId === sessionId, 30_000)
+    check(
+      '11. enter_plan 幂等切档 + plan.requested 携带方案全文',
+      (planRequested.params.plan as string).includes('实现存储层'),
+      JSON.stringify(planRequested.params.plan).slice(0, 200)
+    )
+    const planVerdict = await engine.send('plan.respond', {
+      requestId: planRequested.params.requestId,
+      approved: true,
+      switchMode: 'auto'
+    })
+    check('12. 批准 + 切档 auto 成功', planVerdict.result?.ok === true, JSON.stringify(planVerdict.error ?? planVerdict.result))
+    await engine.waitEvent('run.completed', (p) => p.sessionId === sessionId, 30_000)
+    // 切档断言：工具结果含批准文案；批准后新 run 的系统提示含 cogent_plan 段 + auto 档通告
+    const s4Bodies = requestBodies.slice(6, 9)
+    const s4All = JSON.stringify(s4Bodies)
+    const approvedFragment = JSON.stringify('用户已批准你的计划').slice(1, -1)
+    check(
+      '13. 批准结果回灌（含已批准文案）',
+      s4All.includes(approvedFragment),
+      s4All.slice(0, 200)
+    )
+    await engine.send('agent.submit', { sessionId, text: '按计划开工', model: 'mock' })
+    await engine.waitEvent('run.completed', (p) => p.sessionId === sessionId, 30_000).catch(() => undefined)
+    const afterPlan = requestBodies.at(-1) as { messages?: Array<{ role: string }> } | undefined
+    const afterSystem = JSON.stringify((afterPlan?.messages ?? []).filter((m) => m.role === 'system'))
+    check(
+      '14. 批准后新 run：cogent_plan 段 + auto 档通告',
+      afterSystem.includes('已批准的计划') && afterSystem.includes('完全访问'),
+      afterSystem.slice(0, 300)
+    )
+    // 会话摘要已切 auto（plan.respond 返回值也带，这里验事件侧一致性）
+    const listed = await engine.send('session.list', {})
+    const summary = (listed.result as Array<{ id: string; permissionMode?: string }> | undefined)?.find(
+      (s) => s.id === sessionId
+    )
+    check('15. 会话摘要切档 auto', summary?.permissionMode === 'auto', JSON.stringify(summary))
+
+    // ———— S5 非 plan 档拒绝：ask 档直接调 submit_plan → isError 指引 ————
+    // 先切回 ask（S4 已切 auto），再提交
+    await engine.send('session.setPermission', { sessionId, mode: 'ask' })
+    await engine.send('agent.submit', { sessionId, text: '直接提方案', model: 'mock' })
+    const rejected = await engine.waitEvent(
+      'tool.completed',
+      (p) => p.sessionId === sessionId && p.callId === 'p3',
+      30_000
+    )
+    check(
+      '16. 非 plan 档调 submit_plan → isError 指引文案',
+      rejected.params.isError === true && (rejected.params.summary ?? '').includes('不在 plan 模式'),
+      JSON.stringify(rejected.params)
+    )
+    await engine.waitEvent('run.completed', (p) => p.sessionId === sessionId, 30_000).catch(() => undefined)
   }, 180_000)
 })

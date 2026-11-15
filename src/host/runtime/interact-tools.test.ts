@@ -1,15 +1,18 @@
 /**
- * interact-tools 单测（交互座 4c-1/4c-2）：todo_write 与 ask_user 的纯函数面
- * —— 结果文本格式化、段文本、参数摘要、跨字段校验。工具执行链（桥回调 /
- * customTools 注入 / 段活算 / 挂起三路收尾）由集成测试钉。
+ * interact-tools 单测（交互座 4c-1/2/3）：todo_write / ask_user / plan 闭环的
+ * 纯函数面 —— 结果文本格式化、段文本、参数摘要、跨字段校验、三路裁决文本。
+ * 工具执行链（桥回调 / customTools 注入 / 段活算 / 挂起收尾）由集成测试钉。
  */
 import { describe, expect, it } from 'vitest'
 import type { TodoItem } from '../../protocol'
 import {
   createAskTool,
+  createEnterPlanTool,
+  createSubmitPlanTool,
   createTodoTool,
   formatAskResult,
   formatTodoResult,
+  planSectionText,
   summarizeTodoWriteArgs,
   todosSectionText,
   validateAskQuestions,
@@ -173,5 +176,102 @@ describe('createAskTool（工具实例）', () => {
     const result = await pending
     expect(result.isError).toBeUndefined()
     expect((result.content[0] as { text: string }).text).toContain('"PostgreSQL"')
+  })
+})
+
+// ———— plan 闭环（4c-3）————
+
+const PLAN_TEXT = '## 目标\n实现存储层。\n\n## 步骤\n1. 建 schema\n2. 写迁移'
+
+describe('planSectionText（cogent_plan 段）', () => {
+  it('方案全文 + 自忽略尾注（误导面由文案封住）', () => {
+    const section = planSectionText({ plan: PLAN_TEXT, approvedAt: 0 })
+    expect(section).toContain('已批准的计划')
+    expect(section).toContain(PLAN_TEXT)
+    expect(section).toContain('不再相关')
+  })
+})
+
+describe('createEnterPlanTool（工具实例）', () => {
+  it('无参切档 + 结果带工作流指引', async () => {
+    const calls: string[] = []
+    const tool = createEnterPlanTool({
+      enterPlan: () => {
+        calls.push('plan')
+      }
+    })
+    const result = await tool.execute('c1', {}, undefined, undefined, {} as never)
+    expect(calls).toEqual(['plan'])
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toContain('plan（只读）模式')
+    expect(text).toContain('submit_plan')
+  })
+})
+
+describe('createSubmitPlanTool（工具实例三路裁决）', () => {
+  it('非 plan 档 → isError 指引（不挂起）', async () => {
+    const tool = createSubmitPlanTool({ submitPlan: () => new Promise(() => undefined) }, () => 'ask')
+    const result = await tool.execute('c1', { plan: PLAN_TEXT }, undefined, undefined, {} as never)
+    expect(result.isError).toBe(true)
+    expect((result.content[0] as { text: string }).text).toContain('不在 plan 模式')
+  })
+
+  it('批准 → 结果含切换档说明与方案全文', async () => {
+    let release: (v: { approved: true; switchMode?: string }) => void = () => undefined
+    const tool = createSubmitPlanTool(
+      {
+        submitPlan: () =>
+          new Promise((resolve) => {
+            release = resolve
+          })
+      },
+      () => 'plan'
+    )
+    const pending = tool.execute('c2', { plan: PLAN_TEXT }, undefined, undefined, {} as never)
+    release({ approved: true, switchMode: 'auto' })
+    const result = await pending
+    expect(result.isError).toBeUndefined()
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toContain('已批准')
+    expect(text).toContain('完全访问')
+    expect(text).toContain(PLAN_TEXT)
+  })
+
+  it('拒绝无反馈 → isError + terminate 停轮', async () => {
+    let release: (v: { approved: false; message?: string }) => void = () => undefined
+    const tool = createSubmitPlanTool(
+      {
+        submitPlan: () =>
+          new Promise((resolve) => {
+            release = resolve
+          })
+      },
+      () => 'plan'
+    )
+    const pending = tool.execute('c3', { plan: PLAN_TEXT }, undefined, undefined, {} as never)
+    release({ approved: false })
+    const result = await pending
+    expect(result.isError).toBe(true)
+    expect(result.terminate).toBe(true)
+    expect((result.content[0] as { text: string }).text).toBe('用户未批准该计划。')
+  })
+
+  it('拒绝带反馈 → 反馈进结果、不停轮（修订重提）', async () => {
+    let release: (v: { approved: false; message?: string }) => void = () => undefined
+    const tool = createSubmitPlanTool(
+      {
+        submitPlan: () =>
+          new Promise((resolve) => {
+            release = resolve
+          })
+      },
+      () => 'plan'
+    )
+    const pending = tool.execute('c4', { plan: PLAN_TEXT }, undefined, undefined, {} as never)
+    release({ approved: false, message: '第二步先做测试' })
+    const result = await pending
+    expect(result.isError).toBe(true)
+    expect(result.terminate).toBeUndefined()
+    expect((result.content[0] as { text: string }).text).toContain('用户指示：第二步先做测试')
   })
 })

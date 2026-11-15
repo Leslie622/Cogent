@@ -33,6 +33,7 @@ import {
   toRpcError,
   type ApprovalRespondParams,
   type CapabilityIssueParams,
+  type PlanRespondParams,
   type QuestionRespondParams,
   type CredentialsListResult,
   type SessionArchiveParams,
@@ -405,6 +406,28 @@ async function main(): Promise<void> {
     return sessions.respondQuestion(p.requestId, p.answers)
   }
 
+  /** plan.respond 入口校验（交互座 4c-3）：requestId 非空 + approved 布尔 +
+      optional switchMode 限值域 / message string（语义矛盾在引擎侧拦） */
+  function handlePlanRespond(params: unknown) {
+    const p = params as Partial<PlanRespondParams>
+    if (typeof p.requestId !== 'string' || p.requestId.length === 0 || typeof p.approved !== 'boolean') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'plan.respond 需要 { requestId: string, approved: boolean }')
+    }
+    if (p.message !== undefined && typeof p.message !== 'string') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'plan.respond 的 message 必须是 string')
+    }
+    if (
+      p.switchMode !== undefined &&
+      !(['ask', 'auto', 'autonomous'] as readonly string[]).includes(p.switchMode)
+    ) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, "plan.respond 的 switchMode 只支持 'ask' | 'auto' | 'autonomous'")
+    }
+    if (p.switchMode !== undefined && !p.approved) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'switchMode（批准后切档）只能伴随 approved=true')
+    }
+    return sessions.respondPlan(p.requestId, p.approved, p.switchMode, p.message)
+  }
+
   /** session.setPermission 入口校验：sessionId 非空 string + mode 限值域。
       mode 不校验会被静默存脏值（约定.md 1.2-6：兜底掩盖非法状态） */
   function handleSessionSetPermission(params: unknown) {
@@ -722,6 +745,7 @@ async function main(): Promise<void> {
     // IPC 直抵这里 —— 但协议上是普通 method（任何宿主都能驱动，无传输层特权）
     ['approval.respond', handleApprovalRespond],
     ['question.respond', handleQuestionRespond],
+    ['plan.respond', handlePlanRespond],
     ['credentials.set', handleCredentialsSet],
     ['credentials.remove', handleCredentialsRemove],
     ['credentials.list', handleCredentialsList],

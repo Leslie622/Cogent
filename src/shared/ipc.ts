@@ -20,6 +20,9 @@ export const IPC = {
   /** renderer → main：回答挂起中的 ask_user（交互座 4c-2；approvalRespond 同款
       宿主侧人机裁决通道；载荷 { requestId, answers }，直达引擎 question.respond） */
   questionRespond: 'question:respond',
+  /** renderer → main：裁决方案审批（交互座 4c-3；同款专属通道；载荷
+      { requestId, approved, switchMode?, message? }，直达引擎 plan.respond） */
+  planRespond: 'plan:respond',
   /** renderer → main：写入 API key（safeStorage 落盘 + 推给引擎） */
   credentialsSet: 'credentials:set',
   /** renderer → main：删除单条 API key（壳侧落盘移除 + 引擎内存表移除） */

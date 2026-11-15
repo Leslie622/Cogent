@@ -68,4 +68,29 @@ export function registerApprovalIpc({ host }: IpcDeps): void {
     }
     return host.request('question.respond', { requestId: payload.requestId, answers })
   })
+
+  // 方案裁决（交互座 4c-3）：同款宿主侧人机裁决通道。信任边界同上
+  ipcMain.handle(IPC.planRespond, async (_event, raw: unknown) => {
+    const payload = raw as { requestId: unknown; approved: unknown; switchMode?: unknown; message?: unknown }
+    if (typeof payload.requestId !== 'string' || payload.requestId.length === 0 || typeof payload.approved !== 'boolean') {
+      throw new Error('plan:respond 非法调用：需要 { requestId: string, approved: boolean }')
+    }
+    if (payload.message !== undefined && typeof payload.message !== 'string') {
+      throw new Error('plan:respond 非法调用：message 必须是 string')
+    }
+    if (
+      payload.switchMode !== undefined &&
+      payload.switchMode !== 'ask' &&
+      payload.switchMode !== 'auto' &&
+      payload.switchMode !== 'autonomous'
+    ) {
+      throw new Error("plan:respond 非法调用：switchMode 只支持 'ask' | 'auto' | 'autonomous'")
+    }
+    return host.request('plan.respond', {
+      requestId: payload.requestId,
+      approved: payload.approved,
+      ...(payload.switchMode !== undefined && { switchMode: payload.switchMode }),
+      ...(payload.message !== undefined && { message: payload.message })
+    })
+  })
 }

@@ -37,6 +37,13 @@ declare global {
       /** 回答挂起中的 ask_user（交互座 4c-2；respondApproval 同款专属通道）：
           answers 按问题序（选项 label / 自由输入；多选问题 = string[]） */
       respondQuestion: (requestId: string, answers: Array<string | string[]>) => Promise<{ ok: true }>
+      /** 裁决挂起中的 submit_plan（交互座 4c-3；同款专属通道）：批准可带
+          switchMode（切档），拒绝可附 message 反馈；summary = 切档后摘要 */
+      respondPlan: (
+        requestId: string,
+        approved: boolean,
+        options?: { switchMode?: 'ask' | 'auto' | 'autonomous'; message?: string }
+      ) => Promise<{ ok: true; summary?: SessionSummary }>
       /** 写入 API key（safeStorage 落盘 + 推引擎；明文只此一路出 renderer） */
       setApiKey: (providerId: string, apiKey: string) => Promise<{ ok: true }>
       /** 删除单条 API key（壳侧落盘移除 + 引擎内存表移除；清 key 的正路） */
@@ -340,6 +347,7 @@ export type EngineEvent =
         }>
       }
     }
+  | { method: 'plan.requested'; params: { sessionId: string; requestId: string; plan: string } }
   | { method: 'compaction.started'; params: { sessionId: string; reason: 'threshold' | 'manual' } }
   | {
       method: 'compaction.pruned'
