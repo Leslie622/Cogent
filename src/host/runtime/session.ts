@@ -53,9 +53,11 @@ import type {
   PermissionMode,
   ProviderOverrideDef,
   SessionSummary,
+  TodoItem,
   ToolCallRecord,
   ToolKind
 } from '../../protocol'
+import { createTodoTool, todosSectionText } from './interact-tools'
 import type { CredentialRegistry } from './credentials'
 import { CustomProviderRegistry } from './custom-providers'
 import { SessionInspector } from './inspector'
@@ -90,6 +92,8 @@ export type Notify = KernelNotifier
 interface StoredSession {
   version: 2
   summary: SessionSummary
+  /** 任务清单（交互座 4c）：todo_write 的活清单快照；缺省 = 无清单。模型侧另有转录回放兜底 */
+  todos?: TodoItem[]
 }
 
 /**
@@ -98,9 +102,12 @@ interface StoredSession {
  * （见 buildPiSession）；v2 只有 summary。只校验本层依赖的字段；转录内层
  * 结构信任 pi 的写入（引擎自己落的盘）。
  */
-function asStoredSession(doc: unknown, id: string): { summary: SessionSummary; legacyTranscript?: AgentMessage[] } {
+function asStoredSession(
+  doc: unknown,
+  id: string
+): { summary: SessionSummary; todos?: TodoItem[]; legacyTranscript?: AgentMessage[] } {
   if (typeof doc !== 'object' || doc === null) throw new Error(`会话文档形状不合法（sessions/${id}.json）`)
-  const d = doc as { version?: unknown; summary?: SessionSummary; transcript?: unknown }
+  const d = doc as { version?: unknown; summary?: SessionSummary; todos?: unknown; transcript?: unknown }
   if (d.version !== 2 && d.version !== 1) {
     throw new Error(`会话文档版本不合法（sessions/${id}.json），请手工处理后重启`)
   }
@@ -110,8 +117,12 @@ function asStoredSession(doc: unknown, id: string): { summary: SessionSummary; l
   if (d.version === 1 && !Array.isArray(d.transcript)) {
     throw new Error(`会话文档转录形状不合法（sessions/${id}.json），请手工处理后重启`)
   }
+  if (d.todos !== undefined && !Array.isArray(d.todos)) {
+    throw new Error(`会话文档任务清单形状不合法（sessions/${id}.json），请手工处理后重启`)
+  }
   return {
     summary: d.summary,
+    ...(d.todos !== undefined && { todos: d.todos as TodoItem[] }),
     ...(d.version === 1 && { legacyTranscript: d.transcript as AgentMessage[] })
   }
 }
@@ -119,6 +130,8 @@ function asStoredSession(doc: unknown, id: string): { summary: SessionSummary; l
 /** 内存态会话：pi 内核惰性 —— 恢复的会话在首次 submit/compact 时才装配 */
 interface Session {
   summary: SessionSummary
+  /** 任务清单（交互座 4c）：todo_write 全量替换维护；随会话文档持久化（todo_write 落笔即 persist） */
+  todos: TodoItem[]
   /** v1 旧盘的转录（pi 内核装配时一次性导入 pi 树，随后清引用；v2 会话无此字段 */
   legacyTranscript?: AgentMessage[]
   /** pi AgentSession；undefined = 尚未建 —— 惰性装配的落点 */
@@ -498,6 +511,7 @@ export class SessionManager implements CogentKernel {
         const doc = asStoredSession(this.storage.get(SESSION_COLLECTION, id), id)
         this.sessions.set(doc.summary.id, {
           summary: doc.summary,
+          todos: doc.todos ?? [],
           ...(doc.legacyTranscript !== undefined && { legacyTranscript: doc.legacyTranscript })
         })
       } catch (error) {
@@ -616,7 +630,7 @@ export class SessionManager implements CogentKernel {
       ...(params.projectId !== undefined && { projectId: params.projectId }),
       ...(defaultMode !== undefined && { permissionMode: defaultMode })
     }
-    this.sessions.set(summary.id, { summary })
+    this.sessions.set(summary.id, { summary, todos: [] })
     this.persist(summary.id)
     return summary
   }
@@ -715,6 +729,14 @@ export class SessionManager implements CogentKernel {
       }
     }
     return projected
+  }
+
+  /**
+   * 当前任务清单（session.messages 的 todos 字段 / TodoStrip 打开会话的种子）。
+   * 惰性会话零成本：清单在会话文档里（todo_write 落笔即 persist），不依赖 pi 装配。
+   */
+  todos(sessionId: string): TodoItem[] {
+    return [...this.requireSession(sessionId).todos]
   }
 
   // ———— 运行时控制台（inspect 域后端）————
@@ -1230,8 +1252,28 @@ export class SessionManager implements CogentKernel {
       sessionId,
       modelRuntime: this.modelRuntime,
       systemPrompt: this.ensureSystemPrompt(session),
-      // 权限通告读活 mode：扩展每轮现调，运行中切模式下一轮生效
-      permissionSection: () => permissionSectionText(session.summary.permissionMode ?? 'ask'),
+      // 自定义段每回合活算（factory 的 before_agent_start 钩子消费）：权限
+      // 通告读活 mode（运行中切档下一轮生效）；skills/todos 快照无缓存
+      //（UI 改动与手动改文件都下一回合生效 = 回合边界热刷新）
+      sections: () => {
+        const todos = todosSectionText(session.todos)
+        return {
+          cogent_permission: permissionSectionText(session.summary.permissionMode ?? 'ask'),
+          skills: formatSkillsSection(this.skillStore.snapshot(boundRoots[0] ?? homedir()).skills),
+          ...(todos !== null && { cogent_todos: todos })
+        }
+      },
+      // 交互座（4c）：todo_write 落笔 → 会话状态 + 持久化 + 北向事件
+      //（挂起类工具 ask_user/submit_plan 在后续批次进这张表）
+      customTools: [
+        createTodoTool({
+          updateTodos: (todos) => {
+            session.todos = todos
+            this.persist(sessionId)
+            this.notify('todos.updated', { sessionId, todos })
+          }
+        })
+      ],
       approval: {
         decide: (toolName, _toolCallId, args, signal) =>
           this.decideApproval(session, toolName, args, signal)
@@ -1243,11 +1285,6 @@ export class SessionManager implements CogentKernel {
         snapshot: mcpSnapshot,
         logPath: join(this.hostRoot, PI_AGENT_DIR_NAME, 'mcp.log'),
         updateConfig: (entry, patch) => this.mcpConfig.applyPatch(entry, patch)
-      },
-      // 技能座（4b）：skills 段每回合活算（factory 的 before_agent_start 钩子
-      // 消费）—— 快照无缓存，UI 改动与手动改文件都下一回合生效
-      skills: {
-        section: () => formatSkillsSection(this.skillStore.snapshot(boundRoots[0] ?? homedir()).skills)
       }
     })
 
@@ -1317,7 +1354,12 @@ export class SessionManager implements CogentKernel {
   private persist(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
-    const doc: StoredSession = { version: SESSION_FILE_VERSION, summary: session.summary }
+    const doc: StoredSession = {
+      version: SESSION_FILE_VERSION,
+      summary: session.summary,
+      // 空清单不落字段（旧文档形状不变；清单事件本身就是"清空"的真相源）
+      ...(session.todos.length > 0 && { todos: session.todos })
+    }
     try {
       this.storage.put(SESSION_COLLECTION, sessionId, doc as unknown as Record<string, unknown>)
     } catch (error) {

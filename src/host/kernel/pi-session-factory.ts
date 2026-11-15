@@ -32,7 +32,8 @@ import {
   type AgentSessionEvent,
   type LoadedMcpConfig,
   type McpServerEntry,
-  type ModelRuntime
+  type ModelRuntime,
+  type ToolDefinition
 } from '@earendil-works/pi-coding-agent'
 import type { Agent, AgentMessage, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import type { Usage } from '@earendil-works/pi-ai'
@@ -120,13 +121,21 @@ export interface PiSessionOptions {
   /** Cogent 自拼系统提示词（buildSystemPrompt 的产物，会话生命周期内不变） */
   systemPrompt: string
   /**
-   * 权限模式通告段：每轮运行前现读活 mode 的正向文案（四档全设
-   * —— 切换 = 内容替换，模型拿到的是当下状态而非考古历史）。经
-   * before_agent_start 扩展写进 systemPromptOptions 的自定义 section ——
-   * pi 对 sections 做「变更才追加 patch、回放按名替换」（append-only 树
-   * 安全，切换不堆积），模型可见的权限告知由此恢复。
+   * 自定义系统提示段：每轮运行前（before_agent_start）活算的 段名→内容 表。
+   * 值 null = 撤段（pi 段表 Record<string,string> 无 null，删除靠期望侧不出现
+   * 该键 —— diff 对转录回放的旧段产出补丁撤下，空墓碑语义）。返回 undefined
+   * = 本会话无段（不碰 sections）。pi 对 sections 做「变更才追加 patch、回放
+   * 按名替换」（append-only 树安全，切换不堆积）—— 活算 + diff = 回合边界
+   * 热刷新（权限通告 / 技能清单 / 任务清单 / 已批准计划 共用此机制）。
    */
-  permissionSection?: () => string
+  sections?: () => Record<string, string | null>
+  /**
+   * 交互座（4c）：Host 特有工具（todo_write / ask_user / submit_plan…）。
+   * pi 的 customTools 配置期注入（agent-session.ts:276）—— 名称自动并入
+   * tools 白名单（customTools 同样过 _isAllowedTool 过滤，:3679，不列名 =
+   * 注册不激活）。缺省 = 无自定义工具。
+   */
+  customTools?: ToolDefinition[]
   approval: ApprovalBridge
   /** AgentSessionEvent 出口（session.ts 的转译入口；不关心的会话层事件自然落 default） */
   onEvent: (event: AgentSessionEvent) => void
@@ -142,17 +151,6 @@ export interface PiSessionOptions {
     snapshot: LoadedMcpConfig
     logPath: string
     updateConfig: (entry: McpServerEntry, patch: McpSettingsPatch) => void
-  }
-  /**
-   * 技能座（阶段 4b）：系统提示 skills 段的内容源 —— **每回合活算**
-   * （before_agent_start 钩子调用）= 回合边界热刷新（UI 改动与手动改文件
-   * 都下一回合生效；dsh 需 Chokidar 是推模式缓存所迫，此处拉模式无需
-   * 监视器）。null = 当前空集，清除该段（空墓碑）。pi 静态注入面由
-   * noSkills + 空 skillsOverride 全关（见函数体），技能可见面全在此处。
-   * 缺省 = 本会话无技能座（不写 skills 段）。
-   */
-  skills?: {
-    section: () => string | null
   }
 }
 
@@ -218,18 +216,15 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
         : []),
       (pi) => {
         pi.on('before_agent_start', (event) => {
-          const permission = opts.permissionSection?.()
-          // skills 段每回合活算（热刷新）。空集 = 缺键（pi 的段表是
-          // Record<string,string>，删除靠期望侧不出现该键 —— diff 对转录
-          // 回放的旧段产出 null 补丁撤下；空墓碑语义）。diff 只在内容变时
-          // 追加 patch（同权限段机制），树内不堆积
-          const skillSection = opts.skills?.section()
-          if (permission === undefined && skillSection === undefined) return
+          // 段表每回合活算（权限通告 / 技能清单 / 任务清单 / 已批准计划）：
+          // null = 撤段（缺键语义，diff 对转录回放的旧段产出补丁撤下）；
+          // diff 只在内容变时追加 patch，树内不堆积（技能座 4b 验证的机制）
+          const wanted = opts.sections?.()
+          if (wanted === undefined || Object.keys(wanted).length === 0) return
           const sections = { ...event.systemPromptOptions.sections }
-          if (permission !== undefined) sections.cogent_permission = permission
-          if (skillSection !== undefined) {
-            if (skillSection === null) delete sections.skills
-            else sections.skills = skillSection
+          for (const [name, text] of Object.entries(wanted)) {
+            if (text === null) delete sections[name]
+            else sections[name] = text
           }
           event.systemPromptOptions.sections = sections
         })
@@ -252,8 +247,11 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     // tool-meta.ts 的 COGENT_TOOL_NAMES）。显式 allowlist 替换 pi 默认
     // （read/bash/edit/write）—— Cogent 的只读三件（grep/find/ls）也进集；
     // MCP 工具另按 MCP_TOOL_ALLOWLIST 放行（tools 列表会过滤扩展工具，
-    // 不列名则 direct 档 mcp__ 工具注册但不声明给模型，见 tool-meta 注释）
-    tools: [...COGENT_TOOL_NAMES, ...MCP_TOOL_ALLOWLIST]
+    // 不列名则 direct 档 mcp__ 工具注册但不声明给模型，见 tool-meta 注释）。
+    // 交互座（4c）：customTools 的名称并入白名单（customTools 同样过
+    // _isAllowedTool 过滤，不列名 = 注册不激活）
+    ...(opts.customTools !== undefined && { customTools: opts.customTools }),
+    tools: [...COGENT_TOOL_NAMES, ...MCP_TOOL_ALLOWLIST, ...(opts.customTools?.map((t) => t.name) ?? [])]
   })
 
   // 扩展生命周期绑定（SDK 消费者必做的一步，Pi-meme session.ts:917 同款）：

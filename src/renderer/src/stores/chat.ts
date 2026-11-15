@@ -12,7 +12,7 @@
  * 「出错了」的判别依据，见 docs/计划/回合过程折叠.md D6）。
  */
 import { create } from 'zustand'
-import type { ChatMessage, MessageUsage, PermissionMode, SessionSummary } from '@/env.d'
+import type { ChatMessage, MessageUsage, PermissionMode, SessionSummary, TodoItem } from '@/env.d'
 import { useHomeStore } from '@/stores/home'
 import { useEngineStore } from '@/stores/engine'
 import { useProjectStore } from '@/stores/project'
@@ -253,6 +253,9 @@ export interface ChatState {
       实时分子 —— run 终态（completed/failed）时随 segments 落账并清除，
       compaction.completed 时弃置（压缩前的旧值会让位于 tokensAfter 估算） */
   contextLiveBySession: Partial<Record<string, MessageUsage>>
+  /** sessionId → 任务清单（交互座 4c，TodoStrip 数据源）：todo_write 落笔的
+      全量快照（todos.updated 整段替换）；打开会话的种子来自 session.messages */
+  todosBySession: Partial<Record<string, TodoItem[]>>
   /** 初载失败的原因（引擎不可用等；App 横幅呈现）。null = 正常 */
   loadError: string | null
 
@@ -349,6 +352,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   compactingBySession: {},
   prunedBySession: {},
   contextLiveBySession: {},
+  todosBySession: {},
   loadError: null,
 
   // 初载不自动建会话：归档是回收站语义，"活跃列表空"有两种含义 —— 首装，或
@@ -378,10 +382,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   selectSession: async (sessionId) => {
     set({ activeSessionId: sessionId })
     // 按需拉历史（盘上转录已持久化，切换时重拉一次拿最新；本地缓存优化属后续件）。
-    // 展平：段化消息里的 toolCalls → 独立工具卡行（与流式期事件路径同一形状）
+    // 展平：段化消息里的 toolCalls → 独立工具卡行（与流式期事件路径同一形状）；
+    // todos 字段 = TodoStrip 种子（运行中增量走 todos.updated 事件）
     if (get().messagesBySession[sessionId] === undefined) {
-      const { messages } = await window.cogent.engineRequest('session.messages', { sessionId })
-      set((state) => ({ messagesBySession: { ...state.messagesBySession, [sessionId]: flattenSegments(messages) } }))
+      const { messages, todos } = await window.cogent.engineRequest('session.messages', { sessionId })
+      set((state) => ({
+        messagesBySession: { ...state.messagesBySession, [sessionId]: flattenSegments(messages) },
+        ...(todos !== undefined && { todosBySession: { ...state.todosBySession, [sessionId]: todos } })
+      }))
     }
   },
 
@@ -467,6 +475,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       delete compactingBySession[sessionId]
       const prunedBySession = { ...state.prunedBySession }
       delete prunedBySession[sessionId]
+      const todosBySession = { ...state.todosBySession }
+      delete todosBySession[sessionId]
       return {
         sessions,
         messagesBySession,
@@ -477,6 +487,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         truncatedBySession,
         compactingBySession,
         prunedBySession,
+        todosBySession,
         // 删除活动会话与归档同款落点：视图落"新聊天"（不再自动跳 sessions[0] ——
         // 旧行为不触发 selectSession，目标会话消息未拉取会白屏）
         activeSessionId: wasActive ? null : state.activeSessionId
@@ -767,6 +778,15 @@ export function bindEngineEvents(): () => void {
             }
           }
         })
+        return
+      }
+      case 'todos.updated': {
+        // 快照语义整段替换（全量替换的清单没有增量合并问题）；空清单也写 ——
+        // 清空是用户可见状态（TodoStrip 收起）
+        const { sessionId, todos } = event.params
+        useChatStore.setState((state) => ({
+          todosBySession: { ...state.todosBySession, [sessionId]: todos }
+        }))
         return
       }
       case 'compaction.started': {

@@ -185,12 +185,19 @@ export interface EngineMethodParams {
   'skills.setEnabled': { scope: SkillScope; name: string; value: 'enabled' | 'disabled' | 'inherit'; cwd?: string }
 }
 
+/** 任务清单条目（与 protocol TodoItem 镜像；todo_write 全量替换维护） */
+export interface TodoItem {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+  priority: 'high' | 'medium' | 'low'
+}
+
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
 export interface EngineMethodResult {
   'session.list': SessionSummary[]
   'session.create': SessionSummary
   'session.delete': { deleted: boolean }
-  'session.messages': { messages: ChatMessage[] }
+  'session.messages': { messages: ChatMessage[]; todos?: TodoItem[] }
   'session.setPinned': { summary: SessionSummary }
   'session.archive': { summary: SessionSummary }
   'session.listArchived': SessionSummary[]
@@ -316,6 +323,7 @@ export type EngineEvent =
       }
     }
   | { method: 'inspect.event'; params: { sessionId: string; entry: InspectEntrySummary } }
+  | { method: 'todos.updated'; params: { sessionId: string; todos: TodoItem[] } }
   | { method: 'compaction.started'; params: { sessionId: string; reason: 'threshold' | 'manual' } }
   | {
       method: 'compaction.pruned'

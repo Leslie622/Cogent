@@ -405,6 +405,23 @@ export interface SessionMessagesParams {
 }
 export interface SessionMessagesResult {
   messages: ChatMessage[]
+  /**
+   * 当前任务清单（交互座 4c，additive）：todo_write 维护的活清单 —— 打开
+   * 会话时 TodoStrip 的种子数据；运行中增量走 todos.updated 事件。缺省 =
+   * 无清单（从未写过 todo_write 的会话 / 旧引擎）。
+   */
+  todos?: TodoItem[]
+}
+
+/**
+ * 任务清单条目（交互座 4c；todo_write 工具参数与 todos.updated 事件共用）。
+ * 全量替换语义：每次 todo_write 提交完整清单（zcode/dsh 同款，非增量 patch）。
+ */
+export interface TodoItem {
+  /** 任务简述（一行） */
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+  priority: 'high' | 'medium' | 'low'
 }
 
 /** 置顶/取消置顶（同一入口，pinned 二值切换）；返回更新后的完整摘要 */
@@ -1076,6 +1093,12 @@ export interface ProtocolEvents {
      */
     outsideRoots?: boolean
   }
+  /**
+   * 任务清单更新（交互座 4c）：todo_write 每次落笔即推全量清单（快照语义，
+   * 宿主整段替换渲染）。TodoStrip 的运行中增量源；打开会话的种子走
+   * session.messages 的 todos 字段。
+   */
+  'todos.updated': { sessionId: string; todos: TodoItem[] }
   /**
    * 观测条目实时推送（控制台时间线增量）：每产生一条观测记录即推一条摘要，
    * 详情不随流走（按需 inspect.entry）。宿主的控制台没打开也应照常接收/丢弃 ——

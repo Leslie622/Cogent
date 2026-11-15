@@ -58,6 +58,7 @@ import { useProjectStore } from '@/stores/project'
 import { ProjectPicker } from './ProjectPicker'
 import { ApprovalPanel } from './ApprovalPanel'
 import { PermissionMenu } from './PermissionMenu'
+import { TodoStrip } from './TodoStrip'
 import { findActiveModel, useEngineStore } from '@/stores/engine'
 import { ConversationIndex } from './ConversationIndex'
 import { ModelMenu } from './ModelMenu'
@@ -400,6 +401,9 @@ export function HomeChat({
           Composer 发送时调 scrollToEnd 恢复跟随，翻历史/锚点定位后发送照样吸底 */}
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <ChatMessages />
+        {/* TodoStrip 在输入区上方常驻（清单非空才挂载，交互座 4c）：审批/输入
+            都是会话的"当下"，清单是跨回合的"进行中"——不占输入位 */}
+        <TodoStrip />
         {hasPendingApproval ? (
           <ApprovalPanel />
         ) : (

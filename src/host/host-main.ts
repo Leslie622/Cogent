@@ -239,7 +239,12 @@ async function main(): Promise<void> {
     if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.messages 需要 { sessionId: string }')
     }
-    return { messages: sessions.messages(p.sessionId) }
+    const todos = sessions.todos(p.sessionId)
+    return {
+      messages: sessions.messages(p.sessionId),
+      // 交互座 4c：TodoStrip 打开会话的种子数据（运行中增量走 todos.updated 事件）
+      ...(todos.length > 0 && { todos })
+    }
   }
 
   /** session.setPinned 入口校验：sessionId 非空 string + pinned 布尔 */
