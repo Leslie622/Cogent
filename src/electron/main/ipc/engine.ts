@@ -43,7 +43,8 @@ const ALLOWED_METHODS = new Set<string>([
   'inspect.entries',
   'inspect.entry',
   'mcp.list',
-  'mcp.sync'
+  'mcp.sync',
+  'mcp.override'
 ])
 
 export function registerEngineIpc({ host }: IpcDeps): void {

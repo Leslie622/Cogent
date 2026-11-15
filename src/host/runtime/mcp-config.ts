@@ -28,6 +28,7 @@ import {
   type McpServerConfigResult
 } from '@earendil-works/pi-mcp'
 import type { LoadedMcpConfig, McpExposure, McpServerConfig, McpServerEntry } from '@earendil-works/pi-coding-agent'
+// McpExposure 取 pi 的类型（两处声明同构，避免双导入冲突）
 import type { McpListResult, McpServerDef, McpServerSummary } from '../../protocol'
 import { ProtocolError, RpcErrorCode } from '../../protocol'
 
@@ -168,12 +169,9 @@ export class McpConfigStore {
     return servers
   }
 
-  /** user 级摘要（mcp.list 响应；项目级 override 是 cwd 相关的高级面，不进本视图）。
-      def = 盘上条目折回的协议定义（设置页编辑表单回填源，值保留用户原样） */
-  list(): McpListResult {
-    const errors: string[] = []
-    const servers = this.loadUser(errors)
-    const summaries: McpServerSummary[] = [...servers.values()].map(({ name, config }) => ({
+  /** 条目 → 协议摘要（list 投影共用；def = 盘上用户级原值折回协议形状） */
+  private summarize({ name, config }: McpServerEntry): McpServerSummary {
+    return {
       name,
       type: 'url' in config ? 'http' : 'stdio',
       detail: 'url' in config ? config.url : [config.command, ...(config.args ?? [])].join(' '),
@@ -203,18 +201,55 @@ export class McpConfigStore {
             ...(config.exposure !== undefined && { exposure: config.exposure }),
             ...(config.timeout !== undefined && { timeout: config.timeout })
           }
-    }))
-    return { servers: summaries, errors }
+    }
   }
 
   /**
-   * 合并快照（会话装配用，Pi-meme 快照语义的定格点）：user 定义 + 项目级
-   * override。项目级条目限制比 pi 更严 —— 只收 override（带 command/url/type
-   * 的定义条目显式报错跳过，pi 允许项目定义 server，Cogent 的信任门不开）。
+   * mcp.list 响应：缺省 user 级视图；带 cwd = 项目合并视图（enabled/exposure
+   * 为 override 后的生效值，def 仍是用户级原值，override 原样带给 UI 起草）。
    */
-  snapshot(cwd: string): LoadedMcpConfig {
+  list(cwd?: string): McpListResult {
+    if (cwd === undefined) {
+      const errors: string[] = []
+      return { servers: [...this.loadUser(errors).values()].map((e) => this.summarize(e)), errors }
+    }
+    const merged = this.merged(cwd)
+    const summaries = merged.entries.map((entry) => {
+      const override = merged.overrides.get(entry.name)
+      const user = merged.userEntries.get(entry.name)
+      return {
+        ...this.summarize(entry),
+        // def 恒为用户级原值（编辑表单的回填源不随作用域视图漂移）
+        ...(user !== undefined && { def: this.summarize(user).def }),
+        ...(override !== undefined && {
+          overrideApplied: true,
+          override: {
+            ...(override.enabled !== undefined && { enabled: override.enabled }),
+            ...(override.exposure !== undefined && { exposure: override.exposure })
+          }
+        })
+      }
+    })
+    return { servers: summaries, errors: merged.errors }
+  }
+
+  /**
+   * user + 项目 override 的合并装载（snapshot 与 list(cwd) 共用底座）。
+   * 项目级条目限制比 pi 更严 —— 只收 override（带 command/url/type 的定义
+   * 条目显式报错跳过，pi 允许项目定义 server，Cogent 的信任门不开）。
+   * overrides = 逐名字的项目 override 原样内容（list 合并视图给 UI 起草用）。
+   */
+  private merged(cwd: string): {
+    entries: McpServerEntry[]
+    overrides: Map<string, { enabled?: boolean; exposure?: McpExposure }>
+    /** override 应用前的用户级条目（list 合并视图的 def 投影源） */
+    userEntries: Map<string, McpServerEntry>
+    errors: string[]
+  } {
     const errors: string[] = []
     const servers = this.loadUser(errors)
+    const userEntries = new Map(servers)
+    const overrides = new Map<string, { enabled?: boolean; exposure?: McpExposure }>()
     const projectPath = this.projectFile(cwd)
     const { mcpServers: projectEntries, error } = readConfigFile(projectPath)
     if (error !== undefined) errors.push(error)
@@ -238,14 +273,55 @@ export class McpConfigStore {
         errors.push(`${projectPath}: server "${name}" 的 override 只能设 ${OVERRIDE_KEYS.join(', ')}`)
         continue
       }
-      const merged = validateMcpServerConfig(name, { ...base.config, ...value })
-      if (merged.kind === 'invalid') {
-        errors.push(`${projectPath}: ${merged.error}`)
+      const mergedEntry = validateMcpServerConfig(name, { ...base.config, ...value })
+      if (mergedEntry.kind === 'invalid') {
+        errors.push(`${projectPath}: ${mergedEntry.error}`)
         continue
       }
-      servers.set(name, { ...base, config: asPiConfig(merged.config), override: projectPath })
+      servers.set(name, { ...base, config: asPiConfig(mergedEntry.config), override: projectPath })
+      // 值域已在上方 extra 键检查 + pi 校验器过，enabled/exposure 原样摘出
+      overrides.set(name, {
+        ...(value.enabled !== undefined && { enabled: value.enabled === true }),
+        ...(value.exposure !== undefined && { exposure: value.exposure as McpExposure })
+      })
     }
-    return { servers: [...servers.values()], errors }
+    return { entries: [...servers.values()], overrides, userEntries, errors }
+  }
+
+  /**
+   * 合并快照（会话装配用，Pi-meme 快照语义的定格点）。
+   */
+  snapshot(cwd: string): LoadedMcpConfig {
+    const { entries, errors } = this.merged(cwd)
+    return { servers: entries, errors }
+  }
+
+  /**
+   * 全量替换某项的项目 override（mcp.override 委托）：写 <cwd>/.cogent/mcp.json
+   * 的 mcpServers[name] = patch；空 patch = 删除该项 override（回落用户级）。
+   * 目标必须有用户级定义（信任门：项目文件开不了新条目）。
+   */
+  override(cwd: string, name: string, patch: McpSettingsPatch): void {
+    const errors: string[] = []
+    if (!this.loadUser(errors).has(name)) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, `没有名为 "${name}" 的用户级 MCP server 可覆盖`)
+    }
+    const path = this.projectFile(cwd)
+    let text = existsSync(path) ? readFileSync(path, 'utf8') : ''
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
+    const parsed: unknown = text === '' ? {} : JSON.parse(text)
+    if (!isRecord(parsed) || (parsed.mcpServers !== undefined && !isRecord(parsed.mcpServers))) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, `${path}: expected an object with an "mcpServers" object`)
+    }
+    const servers = isRecord(parsed.mcpServers) ? parsed.mcpServers : undefined
+    const hasEmptyKeys = Object.keys(patch).length === 0
+    if (hasEmptyKeys) {
+      if (servers?.[name] !== undefined) delete servers[name]
+    } else {
+      parsed.mcpServers = { ...servers, [name]: patch }
+    }
+    const indent = (/^([ \t]+)\S/m.exec(text)?.[1]) ?? '  '
+    atomicWrite(path, `${JSON.stringify(parsed, null, indent)}\n`)
   }
 
   /**

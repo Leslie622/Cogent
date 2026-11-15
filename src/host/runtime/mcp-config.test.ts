@@ -138,4 +138,45 @@ describe('McpConfigStore', () => {
     expect(servers).toEqual([])
     expect(errors[0]).toMatch(/broken|Unexpected|expected/i)
   })
+
+  it('list(cwd) 合并视图：生效值 + overrideApplied/override 原样；def 仍用户级原值', () => {
+    const root = newRoot()
+    const store = new McpConfigStore(root)
+    store.sync([stdioDef])
+    const ws = wsWithProjectFile(root, { fs: { enabled: false } })
+    const user = store.list()
+    expect(user.servers[0].overrideApplied).toBeUndefined() // 用户级视图无标记
+    const merged = store.list(ws)
+    const s = merged.servers[0]
+    expect(s.enabled).toBe(false) // 生效值（override 后）
+    expect(s.exposure).toBe('direct')
+    expect(s.overrideApplied).toBe(true)
+    expect(s.override).toEqual({ enabled: false })
+    expect(s.def.enabled).toBeUndefined() // def = 用户级原值（enabled 缺省 true）
+  })
+
+  it('override 写入/清除：全量替换语义（空 patch = 删除条目回落用户级）', () => {
+    const root = newRoot()
+    const store = new McpConfigStore(root)
+    store.sync([stdioDef])
+    const ws = join(root, 'ws')
+    // 写 override（关 + 改档）
+    store.override(ws, 'fs', { enabled: false, exposure: 'hidden' })
+    const doc1 = JSON.parse(readFileSync(join(ws, '.cogent', 'mcp.json'), 'utf8')) as {
+      mcpServers: Record<string, unknown>
+    }
+    expect(doc1.mcpServers.fs).toEqual({ enabled: false, exposure: 'hidden' })
+    expect(store.list(ws).servers[0].enabled).toBe(false)
+    expect(store.list(ws).servers[0].exposure).toBe('hidden')
+    // 清除（空 patch）→ 回落用户级
+    store.override(ws, 'fs', {})
+    const doc2 = JSON.parse(readFileSync(join(ws, '.cogent', 'mcp.json'), 'utf8')) as {
+      mcpServers: Record<string, unknown>
+    }
+    expect(doc2.mcpServers).toEqual({})
+    expect(store.list(ws).servers[0].enabled).toBe(true)
+    expect(store.list(ws).servers[0].overrideApplied).toBeUndefined()
+    // 无用户级定义的名字不可覆盖（信任门）
+    expect(() => store.override(ws, 'ghost', { enabled: false })).toThrow(/没有名为/)
+  })
 })

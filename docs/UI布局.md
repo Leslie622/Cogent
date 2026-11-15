@@ -158,18 +158,23 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   模型行容器 = divide-y + rounded-lg border（行 h-12 px-4，徽标紧跟名称不贴右、
   动作簇 w-13 ml-auto hover 显形防跳动）。选中回落派生（selected 缺失 → 首个内置），
   详情组件按 id 挂 key 重置草稿态
-- **设置 · 连接（MCP 服务器页，2026-11-15 按 zcode 参考稿重排）**：单列分区
-  （max-w-3xl 骨架）—— 页头描述行明示「新会话生效」；工具行 = 左「已安装 N」
-  （粗 + 灰数字）· 右刷新 outline 圆钮 + 「新建」黑色主按钮；条目行
+- **设置 · 连接（MCP 服务器页，2026-11-15 按 zcode 参考稿重排 + 作用域）**：
+  单列分区（max-w-3xl 骨架）—— 页头描述随作用域切换（用户级：新会话生效
+  说明；项目级：工作区路径 + 覆盖语义）；工具行 = 作用域 Select（本机·用户 /
+  本项目）+「已安装 N」（粗 + 灰数字）+ 搜索胶囊（ml-auto w-56，侧栏同款
+  裸 input）+ 刷新 outline 圆钮 + 「新建」黑色主按钮（项目档禁用）；条目行
   （SettingsGroup 无标题卡 + divide-y）= size-10 圆角图标方块（stdio 终端 /
-  http 地球）+ 名称 + 已禁用/exposure 徽标 + 第二行灰字 detail·description +
-  右侧 Switch/编辑/删除（icon-xs 灰钮）；空态 = 虚线卡（border-dashed）居中
-  主副文案 + 「新建 MCP 服务器」主按钮 + 「导入」outline 钮；新增/编辑 Dialog
-  表单（stdio：命令 + 参数/环境变量多行文本一行一条；http：URL + 请求头；
-  暴露档 Select，name/type 编辑态锁定）；导入 Dialog = 粘贴 mcpServers JSON
-  （生态互拷形状）合并、重名覆盖；全量 mcp.sync 提交，引擎校验错回显
-  destructive 红条，文件级诊断单独「配置诊断」组卡。**连接状态点（zcode 绿/红）
-  无数据面**：Host headless，连接状态在 pi 会话内部（协议扩展列后续）
+  http 地球）+ 名称 + 已禁用/exposure/项目覆盖徽标 + 第二行灰字
+  detail·description + 右侧 Switch +（用户档：编辑/删除 icon-xs 灰钮；项目档：
+  overrideApplied 时重置 icon-xs）；空态 = 虚线卡（border-dashed）居中主副
+  文案 + 「新建 MCP 服务器」主按钮 + 「导入」outline 钮（项目档空态 = 指引
+  去用户档添加）；新增/编辑 Dialog 表单（stdio：命令 + 参数/环境变量多行
+  文本一行一条；http：URL + 请求头；暴露档 Select，name/type 编辑态锁定）；
+  导入 Dialog = 粘贴 mcpServers JSON（生态互拷形状）合并、重名覆盖；写路径
+  = 用户档整表 mcp.sync / 项目档单项 mcp.override（空 patch = 清除回落），
+  引擎校验错回显 destructive 红条，文件级诊断单独「配置诊断」组卡。
+  **连接状态点（zcode 绿/红）无数据面**：Host headless，连接状态在 pi 会话
+  内部（协议扩展列后续）
 - **设置侧边栏（2026-11-15 重组，zcode 形态）**：两分组「基础设置 / Agent
   能力」（常规/外观/模型设置/浏览器/电脑操控/键盘快捷键/已归档的聊天 +
   插件/MCP 服务器/技能/命令/钩子），技能/命令占位对应阶段 4 后续座；
@@ -236,12 +241,18 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
 
 globals.css webkit 定制（全应用生效）：轨道 13px、滑块两侧 4px 透明 border
 （background-clip: padding-box）→ 可视滑块 5px、离边有缝、命中区整条；黑 18%
-软叠、hover 30%。
+软叠、hover 30%。**不滚动即隐藏**：滑块默认全透明，滚动中显形 ——
+hooks/use-scrollbar-auto-hide（App 挂载一次）在 document 捕获 scroll（滚轮/
+键盘/拖拽滑块/程序化 scrollTo 都派发）给滚动容器挂 data-scrolling，静默 600ms
+摘除；悬停滑块命中区（整条 13px）也显形并加深 —— 隐藏态下唯一的常驻显形
+入口，否则滑块抓不到。经典条占位不随显隐变化（透明 ≠ overlay），
+scrollbar-gutter-stable 的防抖语义不受影响。
 **坑**：Tailwind v4.1 原生含 scrollbar-thin/none 及 `data-autoscrolling:scrollbar-
 thumb-transparent` 一类标准属性工具类 —— 非-auto 的 scrollbar-width/color 会让
-Chromium 绕过 webkit 定制走原生 overlay 条（Win11 自动隐藏 = "看不见滚动条"）。
-message-scroller 视口已按 data-slot 在 globals.css 拉回 auto；新滚动容器踩到同问题
-照抄该规则。
+Chromium 绕过 webkit 定制走原生条（自动隐藏随 OS 设置漂移，不受本应用显隐
+控制；deepseek-harness 即此路线，外观与显隐都交给引擎）。message-scroller
+视口按 data-slot 在 globals.css 拉回 auto，code-block 不用 scrollbar-thin；
+新滚动容器踩到同问题照抄该规则。
 
 ## 图标（Tabler 转正）
 

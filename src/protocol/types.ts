@@ -725,6 +725,14 @@ export interface McpServerSummary {
    * 编辑要以用户写入的原值为基 —— def 即盘上条目折回的协议形状。
    */
   def: McpServerDef
+  /**
+   * 项目 override 已作用于该项（list 带 cwd 时的合并视图口径）：enabled/
+   * exposure 是生效值（用户级原值仍在 def）。缺省 = 无 override 或本就是
+   * 用户级视图。
+   */
+  overrideApplied?: boolean
+  /** 项目 override 文件里该项的原样内容（list 带 cwd 时；overrideApplied 才有） */
+  override?: { enabled?: boolean; exposure?: McpExposure }
 }
 
 export interface McpListResult {
@@ -734,6 +742,21 @@ export interface McpListResult {
    * 逐条列出供 UI 呈现 —— 配置文件是外部输入（约定.md §1.1 持久化读取）
    */
   errors: string[]
+}
+
+/**
+ * 全量写项目级 override（mcp.override，作用域管理批次）：**全量替换**该项的
+ * 项目 override —— 传入键写入 <cwd>/.cogent/mcp.json，空 patch = 清除该项
+ * override（回落用户级定义）。UI 从 list 的 override 字段起步改一键再整发。
+ */
+export interface McpOverrideParams {
+  cwd: string
+  name: string
+  enabled?: boolean
+  exposure?: McpExposure
+}
+export interface McpOverrideResult {
+  ok: true
 }
 
 /** 全量同步 user 级定义（替换语义，与 providers.custom.sync 同构） */
@@ -861,10 +884,12 @@ export interface ProtocolMethods {
   'credentials.list': { params: Record<string, never>; result: CredentialsListResult }
   'models.list': { params: Record<string, never>; result: ModelsListResult }
   'providers.custom.sync': { params: ProvidersCustomSyncParams; result: ProvidersCustomSyncResult }
-  /** MCP 座：user 级 server 摘要 + 配置诊断（阶段 4a） */
-  'mcp.list': { params: Record<string, never>; result: McpListResult }
-  /** MCP 座：全量写 user 级定义（项目级 override 文件不经协议写，只能手改） */
+  /** MCP 座：server 摘要 + 配置诊断（缺省 user 级视图；带 cwd = 项目合并视图） */
+  'mcp.list': { params: { cwd?: string }; result: McpListResult }
+  /** MCP 座：全量写 user 级定义（新增/编辑/删除/导入的写路径） */
   'mcp.sync': { params: McpSyncParams; result: McpSyncResult }
+  /** MCP 座：全量替换某项的项目级 override（空 patch = 清除回落用户级） */
+  'mcp.override': { params: McpOverrideParams; result: McpOverrideResult }
   /** 控制台：拉会话的观测条目摘要（时间线数据源；ring 上限内全量，超出只留最近） */
   'inspect.entries': { params: InspectEntriesParams; result: InspectEntriesResult }
   /** 控制台：按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词…） */

@@ -89,6 +89,8 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   // MCP server 定义 = 未来会话可拉起的本地进程/外联端点，敏感面与自定义
   // provider 同级（stdio server 是进程执行面，但工具调用仍过审批链，write 档足够）
   'mcp.sync': 'write',
+  // 项目级 override（enabled/exposure）只会收敛，不能扩权 —— 同 write 档
+  'mcp.override': 'write',
   // 签发入口：只有 admin（或 stdio 血缘，不走此表）能再签票据 —— 防
   // readonly/write 持有者经任意传输门自签提权
   'capability.issue': 'admin'

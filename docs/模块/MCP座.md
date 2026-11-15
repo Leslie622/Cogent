@@ -8,19 +8,22 @@
 ## 是什么 / 在哪
 
 - store：`src/host/runtime/mcp-config.ts` —— 两级文件 + 校验 + 合并；
-- 协议方法：`mcp.list`（摘要+诊断，readonly 档）/ `mcp.sync`（全量写
-  user 级定义，write 档）—— 注册表在 host-main，HTTP 门档位同表；
+- 协议方法：`mcp.list`（摘要+诊断，readonly 档；缺省 user 级视图，带 cwd =
+  项目合并视图：生效值 + overrideApplied/override 原样，def 恒用户级原值）/
+  `mcp.sync`（全量写 user 级定义）/ `mcp.override`（全量替换某项的项目
+  override，空 patch = 清除回落）—— 后两者 write 档，注册表在 host-main；
 - 装配：`kernel/pi-session-factory.ts` —— `extensionFactories` 加入
   `createMcpExtension({ loadConfig, logPath, updateConfig })`；
 - 审批投影：`runtime/tool-meta.ts` —— `mcp__*` 前缀 → exec 档；
 - UI：设置页「MCP 服务器」分区（`renderer/features/settings/McpSection.tsx`，
-  zcode 形态：工具行计数/刷新/新建 + 图标方块条目行 + 虚线空态）——
-  renderer 经 `engine:request` 通用代理直达两个方法（白名单在
+  zcode 形态：作用域下拉 + 计数 + 搜索 + 刷新/新建工具行 + 图标方块条目行 +
+  虚线空态）—— renderer 经 `engine:request` 通用代理直达三个方法（白名单在
   `main/ipc/engine.ts`；MCP 配置真源在引擎，无壳侧双写，与 providers 的
-  专属通道恰成对照）。列表行启停/编辑/删除 + 新增/编辑 Dialog + 导入
-  Dialog（粘贴 mcpServers JSON 合并、重名覆盖），全量 mcp.sync 提交，
-  引擎校验错回显。连接状态（zcode 绿/红点）无数据面 —— 连接活在 pi 会话
-  内部，暴露需协议扩展（列后续）。
+  专属通道恰成对照）。**作用域**：本机·用户 = 定义面（增删改/导入，整表
+  mcp.sync）；本项目 = 合并视图（cwd 取当前活跃会话的工作区），开关/重置走
+  mcp.override（写工作区 .cogent/mcp.json，只影响该项目）。搜索 = 本地过滤。
+  连接状态（zcode 绿/红点）无数据面 —— 连接活在 pi 会话内部，暴露需协议
+  扩展（列后续）。
 
 ## 数据与生命周期
 

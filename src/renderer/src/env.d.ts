@@ -100,6 +100,7 @@ export type EngineMethod =
   | 'inspect.entry'
   | 'mcp.list'
   | 'mcp.sync'
+  | 'mcp.override'
 
 /**
  * 会话级偏好文件形状（与 shared/ipc.ts SettingsFile 镜像；preload 侧同源导出）。
@@ -169,8 +170,9 @@ export interface EngineMethodParams {
   'models.list': Record<string, never>
   'inspect.entries': { sessionId: string }
   'inspect.entry': { sessionId: string; seq: number }
-  'mcp.list': Record<string, never>
+  'mcp.list': { cwd?: string }
   'mcp.sync': { servers: McpServerDef[] }
+  'mcp.override': { cwd: string; name: string; enabled?: boolean; exposure?: McpExposure }
 }
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
@@ -199,6 +201,7 @@ export interface EngineMethodResult {
   'inspect.entry': InspectEntryDetail
   'mcp.list': { servers: McpServerSummary[]; errors: string[] }
   'mcp.sync': { synced: number }
+  'mcp.override': { ok: true }
 }
 
 /** MCP 工具暴露档（与 protocol McpExposure 镜像）：Cogent 只用 direct，其余档
@@ -225,6 +228,10 @@ export interface McpServerSummary {
   enabled: boolean
   exposure: McpExposure
   def: McpServerDef
+  /** 项目 override 已作用于该项（带 cwd 的合并视图口径） */
+  overrideApplied?: boolean
+  /** 项目 override 文件里该项的原样内容（UI 起草新 patch 的基线） */
+  override?: { enabled?: boolean; exposure?: McpExposure }
 }
 
 /**

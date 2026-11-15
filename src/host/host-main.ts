@@ -40,6 +40,7 @@ import {
   type InitializeParams,
   type InitializeResult,
   type McpExposure,
+  type McpOverrideParams,
   type McpServerDef,
   type McpSyncParams,
   type McpSyncResult,
@@ -569,6 +570,39 @@ async function main(): Promise<void> {
     return { synced: mcpConfig.sync(p.servers) }
   }
 
+  /** mcp.list 入口校验：cwd 可选（带 = 项目合并视图，须非空 string） */
+  function handleMcpList(params: unknown) {
+    const p = params as Partial<{ cwd: unknown }>
+    if (p.cwd !== undefined && (typeof p.cwd !== 'string' || p.cwd.length === 0)) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'mcp.list 的 cwd 必须是非空 string')
+    }
+    return mcpConfig.list(p.cwd)
+  }
+
+  /** mcp.override 入口校验：cwd/name 必填非空；enabled/exposure 带了就约束值域
+      （全量替换语义：都不带 = 清除该项 override） */
+  function handleMcpOverride(params: unknown) {
+    const p = params as Partial<McpOverrideParams>
+    if (typeof p.cwd !== 'string' || p.cwd.length === 0 || typeof p.name !== 'string' || p.name.length === 0) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'mcp.override 需要 { cwd: string, name: string }')
+    }
+    if (p.enabled !== undefined && typeof p.enabled !== 'boolean') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'mcp.override 的 enabled 必须是 boolean')
+    }
+    const EXPOSURES = ['direct', 'deferred', 'codemode', 'hidden'] as const satisfies readonly McpExposure[]
+    if (
+      p.exposure !== undefined &&
+      (typeof p.exposure !== 'string' || !(EXPOSURES as readonly string[]).includes(p.exposure))
+    ) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'mcp.override 的 exposure 必须是 direct|deferred|codemode|hidden 之一')
+    }
+    mcpConfig.override(p.cwd, p.name, {
+      ...(p.enabled !== undefined && { enabled: p.enabled }),
+      ...(p.exposure !== undefined && { exposure: p.exposure })
+    })
+    return { ok: true as const }
+  }
+
   /**
    * 方法注册表：method 名 → handler。
    * handler 内部信任协议类型（边界校验已在入口完成），业务异常直接 throw，
@@ -602,9 +636,11 @@ async function main(): Promise<void> {
     ['credentials.list', handleCredentialsList],
     ['models.list', () => sessions.listModels()],
     ['providers.custom.sync', handleProvidersCustomSync],
-    // MCP 座（4a）：配置摘要/诊断只读；全量写 user 级定义（项目级不经协议写）
-    ['mcp.list', () => mcpConfig.list()],
+    // MCP 座（4a + 作用域管理）：摘要/诊断只读（带 cwd = 项目合并视图）；
+    // 全量写 user 级定义；项目级 override 全量替换（空 = 清除回落）
+    ['mcp.list', handleMcpList],
     ['mcp.sync', handleMcpSync],
+    ['mcp.override', handleMcpOverride],
     ['inspect.entries', handleInspectEntries],
     ['inspect.entry', handleInspectEntry],
     // 票据签发（D3）：main 经 stdio 发起（血缘全权）；HTTP 门侧由档位表
