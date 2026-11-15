@@ -44,12 +44,9 @@ export function FormatSelect({
         if (next !== null) onChange(next)
       }}
     >
-      {/* 触发器外观对齐表单字段惯例（h-9 / rounded-lg / 实边框），压掉原语的
-          胶囊底（rounded-3xl + 半透明底色）与 w-fit 缺省 */}
-      <SelectTrigger
-        aria-label="API 格式"
-        className="mt-1.5 h-9 w-full justify-between rounded-lg border border-border bg-transparent px-3 text-[13px] font-normal text-foreground hover:bg-accent-foreground/5"
-      >
+      {/* 原生形态（胶囊风即组件库统一形态，2026-11-15 用户定调：不覆盖
+          shadcn 样式）；w-full 是表单占满行宽的布局约束 */}
+      <SelectTrigger aria-label="API 格式" className="mt-1.5 w-full">
         <SelectValue />
       </SelectTrigger>
       <SelectContent align="start" className="min-w-72">

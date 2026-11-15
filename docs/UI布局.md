@@ -123,6 +123,11 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   前确认 = muted-foreground 灰），箭头不单独给色（继承 currentColor）。
   坑：base-luma dropdown Trigger 是 Base UI `render={<Button/>}` 模式，**不是**
   Radix `asChild`；菜单 side="top"（钮在底部输入区）。
+  **坑（Select 弹层宽度必须显式给）**：base-luma `SelectContent` 默认
+  `w-(--anchor-width)`（锚定 trigger 宽的 CSS 变量），非 Dialog 布局下锚
+  变量不生效 → 弹层被内容/定位撑到超宽盖住周边（MCP 页作用域下拉实测）；
+  解法 = `SelectContent align="start"` + 显式 `className="w-…/min-w-…"`
+  （布局约束非样式覆盖），Dialog 内表单下拉同样加保险。
   **坑 2（dropdown item 的强调色必须走原语变体）**：item 的 focus 高亮带
   `**:text-accent-foreground` 通配染色 —— 把**所有后代**文字/svg 强制压黑，
   子元素自己染的 `text-warning` 等强调色在 hover 下必被打掉（权限菜单
@@ -144,9 +149,9 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   （mx-auto max-w-3xl px-10 py-8）+ 大标题（24px 粗体居左）+ 可选描述行
   （灰 13px）+ 可选工具行（计数/动作钮）+ 内容；SettingsGroup（组标题 +
   rounded-xl 描边卡 + divide-y 行分隔，label 可省）+ SettingsRow（左标题/
-  描述右控件，title 可带内联徽标）；控件四款：Switch（选中黑底）/
-  SelectControl（描边圆角 + 值 + 箭头，静态空位）/ SecondaryAction
-  （灰底小钮）/ 路径行（mono 截断 + 更改钮）。唯一例外 = 模型设置
+  描述右控件，title 可带内联徽标）；控件全部组件库原生形态（2026-11-15
+  定调不覆盖样式）：Switch / Select / Button（outline/secondary 等
+  变体档）；路径行（mono 截断 + 更改钮）。唯一例外 = 模型设置
   （master-detail 自撑布局，内容特殊）
 - **设置 · 模型设置（master-detail，2026-11-08）**：页内自撑 `h-full flex-col`
   （SettingsMain 的外层滚动不参与）—— 页头（标题 + 描述行右挂 [圆形刷新钮 +
@@ -161,8 +166,9 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
 - **设置 · 连接（MCP 服务器页，2026-11-15 按 zcode 参考稿重排 + 作用域）**：
   单列分区（max-w-3xl 骨架）—— 页头描述随作用域切换（用户级：新会话生效
   说明；项目级：工作区路径 + 覆盖语义）；工具行 = 作用域 Select（本机·用户 /
-  本项目）+「已安装 N」（粗 + 灰数字）+ 搜索胶囊（ml-auto w-56，侧栏同款
-  裸 input）+ 刷新 outline 圆钮 + 「新建」黑色主按钮（项目档禁用）；条目行
+  本项目，原生胶囊形态）+「已安装 N」（粗 + 灰数字）+ 搜索胶囊（ml-auto
+  w-56，侧栏同款裸 input）+ 刷新 outline 圆钮 + 「新建」黑色主按钮（项目档
+  禁用）；条目行
   （SettingsGroup 无标题卡 + divide-y）= size-10 圆角图标方块（stdio 终端 /
   http 地球）+ 名称 + 已禁用/exposure/项目覆盖徽标 + 第二行灰字
   detail·description + 右侧 Switch +（用户档：编辑/删除 icon-xs 灰钮；项目档：

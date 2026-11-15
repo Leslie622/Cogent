@@ -233,10 +233,10 @@ function ServerDialog({
         <div className={FIELD_GAP}>
           <div className={FIELD_LABEL}>类型</div>
           <Select value={type} items={TYPES} onValueChange={(next) => next !== null && setType(next)}>
-            <SelectTrigger aria-label="类型" disabled={initial !== null} className="mt-1.5 h-9 w-full rounded-lg">
+            <SelectTrigger aria-label="类型" disabled={initial !== null} className="mt-1.5 w-full">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent align="start" className="min-w-56">
               {TYPES.map((t) => (
                 <SelectItem key={t.value} value={t.value}>
                   {t.label}
@@ -300,10 +300,10 @@ function ServerDialog({
         <div className={FIELD_GAP}>
           <div className={FIELD_LABEL}>暴露档</div>
           <Select value={exposure} items={EXPOSURES} onValueChange={(next) => next !== null && setExposure(next)}>
-            <SelectTrigger aria-label="暴露档" className="mt-1.5 h-9 w-full rounded-lg">
+            <SelectTrigger aria-label="暴露档" className="mt-1.5 w-full">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent align="start" className="min-w-64">
               {EXPOSURES.map((t) => (
                 <SelectItem key={t.value} value={t.value}>
                   {t.label}
@@ -535,10 +535,13 @@ export function McpSection() {
       toolbar={
         <>
           <Select value={scope} items={SCOPES} onValueChange={(next) => next !== null && setScope(next)}>
-            <SelectTrigger aria-label="作用域" className="h-8 w-32 rounded-lg text-[13px]">
+            <SelectTrigger aria-label="作用域">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            {/* 弹层显式定宽 + 左对齐：默认 w-(--anchor-width) 锚变量在非 Dialog
+                布局下不生效（实测弹层失去宽度约束盖住右侧），此处是布局约束
+                非样式覆盖（2026-11-15 用户定调：组件用原生形态） */}
+            <SelectContent align="start" className="w-36">
               {SCOPES.map((s) => (
                 <SelectItem key={s.value} value={s.value}>
                   {s.label}

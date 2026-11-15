@@ -13,31 +13,21 @@ import { Switch } from '@/components/ui/switch'
 import { useEngineStore } from '@/stores/engine'
 import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
 
-/** 下拉占位钮：描边圆角 + 值 + 箭头（点击出菜单属后续件）。
-    px-3 必须 has-[>svg]:px-3 成对 —— xs 变体自带 has-[>svg]:px-1.5 会压回 */
+/** 下拉占位钮：outline 变体 + 值 + 箭头（点击出菜单属后续件）。
+    组件原生形态（2026-11-15 用户定调：不覆盖 shadcn 样式，用变体档位） */
 function SelectControl({ value, label }: { value: string; label: string }) {
   return (
-    <Button
-      variant="ghost"
-      size="xs"
-      className="h-8 gap-1 rounded-lg border border-border px-3 text-[13px] text-foreground has-[>svg]:px-3 hover:bg-accent-foreground/5"
-      aria-label={label}
-    >
+    <Button variant="outline" size="sm" aria-label={label}>
       {value}
       <IconChevronDown className="size-3.5 text-muted-foreground" />
     </Button>
   )
 }
 
-/** 次级动作钮（更改 / 打开"启动应用"）：灰底小方钮 */
+/** 次级动作钮（更改 / 打开"启动应用"）：secondary 变体原生形态 */
 function SecondaryAction({ label }: { label: string }) {
   return (
-    <Button
-      variant="secondary"
-      size="xs"
-      className="h-7 rounded-lg px-2.5 text-[13px] hover:bg-secondary/80"
-      aria-label={label}
-    >
+    <Button variant="secondary" size="sm" aria-label={label}>
       {label}
     </Button>
   )

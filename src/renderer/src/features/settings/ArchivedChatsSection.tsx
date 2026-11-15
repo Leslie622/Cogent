@@ -54,12 +54,13 @@ export function ArchivedChatsSection() {
             title={chat.title}
             desc={`归档于 ${new Date(chat.archivedAt ?? chat.updatedAt).toLocaleDateString()}`}
           >
-            {/* 右侧双钮自排（SettingsRow 的 children 容器只包一层，此处自组行内 flex） */}
+            {/* 右侧双钮自排（SettingsRow 的 children 容器只包一层，此处自组行内 flex）。
+                变体原生形态（2026-11-15 定调：不覆盖 shadcn 样式）；删除钮带
+                text-destructive 语义色 */}
             <div className="flex items-center gap-2">
               <Button
                 variant="secondary"
-                size="xs"
-                className="h-7 gap-1 rounded-lg px-2.5 text-[13px] hover:bg-secondary/80"
+                size="sm"
                 aria-label={`恢复 ${chat.title}`}
                 onClick={() => void restore(chat.id)}
               >
@@ -68,8 +69,8 @@ export function ArchivedChatsSection() {
               </Button>
               <Button
                 variant="secondary"
-                size="xs"
-                className="h-7 gap-1 rounded-lg px-2.5 text-[13px] text-destructive hover:bg-destructive/10"
+                size="sm"
+                className="text-destructive"
                 aria-label={`删除 ${chat.title}`}
                 onClick={() => void remove(chat.id)}
               >
