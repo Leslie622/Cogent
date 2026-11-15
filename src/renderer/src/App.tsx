@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { useScrollbarAutoHide } from '@/hooks/use-scrollbar-auto-hide'
 import { useEngineStore } from '@/stores/engine'
 import { bindEngineEvents, useChatStore } from '@/stores/chat'
 import { AppShell } from '@/features/shell/AppShell'
@@ -54,6 +55,8 @@ function EngineFailureBanner() {
 }
 
 export default function App() {
+  // 滚动条「不滚动即隐藏」的全局行为，挂载一次（样式侧见 globals.css）
+  useScrollbarAutoHide()
   useEffect(() => {
     // 事件订阅先行（避免 load 期间漏事件），再拉初始数据
     // （load 内部已把失败落 error 状态，void 不产生 unhandled rejection）
