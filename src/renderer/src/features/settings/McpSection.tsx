@@ -31,7 +31,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { SettingsGroup } from './SettingsParts'
+import { SettingsGroup, SettingsPage } from './SettingsParts'
 import { BADGE, FIELD_GAP, FIELD_LABEL } from './models-recipes'
 import type { McpExposure, McpServerDef, McpServerSummary } from '@/env.d'
 
@@ -462,38 +462,40 @@ export function McpSection() {
   const count = servers?.length ?? 0
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-10 py-8">
-      <h2 className="text-2xl font-semibold">MCP 服务器</h2>
-      <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-        外部工具经 Model Context Protocol 直接进入 Agent 循环（工具调用仍走审批）。
-        配置存储于用户级 ~/.cogent/mcp.json，变更<strong>新会话生效</strong>（进行中的会话不受影响）；
-        项目可在工作区 .cogent/mcp.json 里按 server 覆盖启停与暴露档。
-      </p>
-
-      {/* 工具行（zcode 形态）：左已安装计数 · 右刷新 + 新建主按钮 */}
-      <div className="mt-6 flex items-center gap-2">
-        <div className="text-sm">
-          <span className="font-medium">已安装</span>{' '}
-          <span className="text-muted-foreground">{count}</span>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="outline" size="icon-sm" disabled={busy} onClick={() => void refresh()} aria-label="刷新">
-            <IconRefresh className="size-4" />
-          </Button>
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() => {
-              setEditing(null)
-              setDialogOpen(true)
-            }}
-          >
-            <IconPlus className="size-4" />
-            新建
-          </Button>
-        </div>
-      </div>
-
+    <SettingsPage
+      title="MCP 服务器"
+      desc={
+        <>
+          外部工具经 Model Context Protocol 直接进入 Agent 循环（工具调用仍走审批）。
+          配置存储于用户级 ~/.cogent/mcp.json，变更<strong>新会话生效</strong>（进行中的会话不受影响）；
+          项目可在工作区 .cogent/mcp.json 里按 server 覆盖启停与暴露档。
+        </>
+      }
+      toolbar={
+        <>
+          {/* 左已安装计数（zcode 形态）· 右刷新 + 新建主按钮 */}
+          <div className="text-sm">
+            <span className="font-medium">已安装</span> <span className="text-muted-foreground">{count}</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="outline" size="icon-sm" disabled={busy} onClick={() => void refresh()} aria-label="刷新">
+              <IconRefresh className="size-4" />
+            </Button>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                setEditing(null)
+                setDialogOpen(true)
+              }}
+            >
+              <IconPlus className="size-4" />
+              新建
+            </Button>
+          </div>
+        </>
+      }
+    >
       {servers === null ? (
         <div className="mt-3 rounded-xl border border-border px-5 py-4 text-[13px] text-muted-foreground">加载中…</div>
       ) : count === 0 ? (
@@ -588,6 +590,6 @@ export function McpSection() {
 
       <ServerDialog open={dialogOpen} initial={editing} onClose={() => setDialogOpen(false)} onSave={saveFromDialog} />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImport={importFromDialog} />
-    </div>
+    </SettingsPage>
   )
 }

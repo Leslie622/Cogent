@@ -2,11 +2,12 @@
  * 设置 · 已归档的聊天分区：归档视图（回收站）。数据源 = session.listArchived
  * （引擎按 archivedAt 倒序）；每行 恢复（回主列表）/ 删除（彻底删，转录文件
  * 一并清）。空态文案对齐主流产品（ChatGPT 同款口吻）。
+ * 页头走 SettingsPage 骨架（与其他分区同款，zcode 对齐）。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { IconArrowBackUp, IconTrash } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
-import { SettingsGroup, SettingsRow } from './SettingsParts'
+import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
 import { useChatStore } from '@/stores/chat'
 import type { SessionSummary } from '@/env.d'
 
@@ -34,7 +35,11 @@ export function ArchivedChatsSection() {
   }
 
   return (
-    <SettingsGroup label="已归档的聊天">
+    <SettingsPage
+      title="已归档的聊天"
+      desc="归档是回收站语义：聊天从主列表移除但转录保留，可恢复或彻底删除。"
+    >
+      <SettingsGroup>
       {archived.length === 0 ? (
         <SettingsRow
           title="没有已归档的聊天"
@@ -76,5 +81,6 @@ export function ArchivedChatsSection() {
         ))
       )}
     </SettingsGroup>
+    </SettingsPage>
   )
 }

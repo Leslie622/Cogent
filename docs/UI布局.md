@@ -139,10 +139,15 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   语言）；**常显**不随 hover 隐藏，标题 pr 随之收窄（pr-2，无钮簇要让位）。
   派生 = chat store pendingApprovalsBySession 非空即显，useCallback 函数签名
   下传保行级 memo
-- **设置页**：SettingsParts 拼装 —— SettingsGroup（组标题 + rounded-xl 描边卡 +
-  divide-y 行分隔）+ SettingsRow（左标题/描述右控件）；控件四款：Switch（选中
-  黑底）/ SelectControl（描边圆角 + 值 + 箭头，静态空位）/ SecondaryAction
-  （灰底小钮）/ 路径行（mono 截断 + 更改钮）
+- **设置页**：SettingsParts 拼装 —— **SettingsPage（详情页统一骨架，zcode
+  对齐 2026-11-15：所有分区共用，不各自手写页头）**= 限宽单列
+  （mx-auto max-w-3xl px-10 py-8）+ 大标题（24px 粗体居左）+ 可选描述行
+  （灰 13px）+ 可选工具行（计数/动作钮）+ 内容；SettingsGroup（组标题 +
+  rounded-xl 描边卡 + divide-y 行分隔，label 可省）+ SettingsRow（左标题/
+  描述右控件，title 可带内联徽标）；控件四款：Switch（选中黑底）/
+  SelectControl（描边圆角 + 值 + 箭头，静态空位）/ SecondaryAction
+  （灰底小钮）/ 路径行（mono 截断 + 更改钮）。唯一例外 = 模型设置
+  （master-detail 自撑布局，内容特殊）
 - **设置 · 模型设置（master-detail，2026-11-08）**：页内自撑 `h-full flex-col`
   （SettingsMain 的外层滚动不参与）—— 页头（标题 + 描述行右挂 [圆形刷新钮 +
   黑色添加供应商]）+ `mx-10 mb-8 flex-1 min-h-0 rounded-xl border` 主体卡

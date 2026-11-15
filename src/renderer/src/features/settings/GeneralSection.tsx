@@ -3,14 +3,15 @@
  * 定风格 —— 开关（Switch，选中黑底合应用黑白系）、静态下拉钮（菜单属
  * 后续件）、路径 + 更改钮、动作钮。开关状态本地 useState 演示（设置持久化
  * 属引擎后续件）；文案按参考稿原样（ChatGPT→Cogent）。
- * 行/卡来自 SettingsParts 通用件，后续分区照此拼装。
+ * 页头/卡片/行全部来自 SettingsParts 通用件（SettingsPage 骨架），
+ * 后续分区照此拼装。
  */
 import { useState } from 'react'
 import { IconChevronDown } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useEngineStore } from '@/stores/engine'
-import { SettingsGroup, SettingsRow } from './SettingsParts'
+import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
 
 /** 下拉占位钮：描边圆角 + 值 + 箭头（点击出菜单属后续件）。
     px-3 必须 has-[>svg]:px-3 成对 —— xs 变体自带 has-[>svg]:px-1.5 会压回 */
@@ -53,9 +54,7 @@ export function GeneralSection() {
   const [fullView, setFullView] = useState(false)
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-10 py-8">
-      <h2 className="text-2xl font-semibold">常规</h2>
-
+    <SettingsPage title="常规">
       {/* 权限组：两个开关，完整访问带风险说明 + 了解更多（面板属后续件） */}
       <SettingsGroup label="权限">
         <SettingsRow
@@ -135,6 +134,6 @@ export function GeneralSection() {
           <SecondaryAction label="打开“启动应用”" />
         </SettingsRow>
       </SettingsGroup>
-    </div>
+    </SettingsPage>
   )
 }
