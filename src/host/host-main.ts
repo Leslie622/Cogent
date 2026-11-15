@@ -44,6 +44,11 @@ import {
   type McpServerDef,
   type McpSyncParams,
   type McpSyncResult,
+  type SkillListResult,
+  type SkillSaveParams,
+  type SkillScope,
+  type SkillSetEnabledParams,
+  type SkillWriteResult,
   type PermissionMode,
   type ProtocolEvents,
   type ProviderOverrideDef,
@@ -64,6 +69,7 @@ import { SessionManager } from './runtime/session'
 import { ProjectRegistry } from './runtime/project'
 import { ApprovalRegistry } from './runtime/approvals'
 import { McpConfigStore } from './runtime/mcp-config'
+import { SkillStore } from './runtime/skill-store'
 import { InspectStore, JsonStorageDriver } from './storage'
 import { startHttpRpc } from './http/server'
 import { createCapabilityStore, createRootSecret } from './http/auth'
@@ -117,6 +123,8 @@ async function main(): Promise<void> {
   const approvals = new ApprovalRegistry(STORAGE_ROOT)
   // MCP 客户端配置（~/.cogent/mcp.json 用户级定义 + 项目级 override 合并，阶段 4a）
   const mcpConfig = new McpConfigStore(STORAGE_ROOT)
+  // 技能目录（~/.cogent/skills 用户级 + <cwd>/.cogent/skills 项目级 + 两级启停，阶段 4b）
+  const skillStore = new SkillStore(STORAGE_ROOT)
   const sessions = new SessionManager(
     credentials,
     storage,
@@ -124,6 +132,7 @@ async function main(): Promise<void> {
     projects,
     approvals,
     mcpConfig,
+    skillStore,
     inspectStore,
     modelRuntime,
     STORAGE_ROOT
@@ -603,6 +612,59 @@ async function main(): Promise<void> {
     return { ok: true as const }
   }
 
+  /** skills.* 入口校验（共用）：scope 判别 + cwd（project 档必填）+ name 非空。
+      名字字符规则在 store 的 pi 同款校验里跑（单一权威，边界只管形状）。 */
+  function skillTarget(params: unknown): { scope: SkillScope; cwd: string | undefined; name: string } {
+    const p = params as Partial<SkillSaveParams>
+    if (p.scope !== 'user' && p.scope !== 'project') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.* 需要 scope: user|project')
+    }
+    if (p.cwd !== undefined && (typeof p.cwd !== 'string' || p.cwd.length === 0)) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.* 的 cwd 必须是非空 string')
+    }
+    if (typeof p.name !== 'string' || p.name.length === 0) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.* 需要 name: string')
+    }
+    return { scope: p.scope, cwd: p.cwd, name: p.name }
+  }
+
+  function handleSkillsSave(params: unknown): SkillWriteResult {
+    const p = params as Partial<SkillSaveParams>
+    const target = skillTarget(params)
+    if (typeof p.description !== 'string' || p.description.length === 0) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.save 需要 description: string')
+    }
+    if (typeof p.body !== 'string') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.save 需要 body: string（可为空串）')
+    }
+    skillStore.save(target.scope, target.cwd, target.name, p.description, p.body)
+    return { ok: true as const }
+  }
+
+  function handleSkillsList(params: unknown): SkillListResult {
+    const p = params as Partial<{ cwd: unknown }>
+    if (p.cwd !== undefined && (typeof p.cwd !== 'string' || p.cwd.length === 0)) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.list 的 cwd 必须是非空 string')
+    }
+    return skillStore.list(p.cwd)
+  }
+
+  function handleSkillsDelete(params: unknown): SkillWriteResult {
+    const target = skillTarget(params)
+    skillStore.delete(target.scope, target.cwd, target.name)
+    return { ok: true as const }
+  }
+
+  function handleSkillsSetEnabled(params: unknown): SkillWriteResult {
+    const p = params as Partial<SkillSetEnabledParams>
+    const target = skillTarget(params)
+    if (p.value !== 'enabled' && p.value !== 'disabled' && p.value !== 'inherit') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.setEnabled 需要 value: enabled|disabled|inherit')
+    }
+    skillStore.setEnabled(target.scope, target.cwd, target.name, p.value)
+    return { ok: true as const }
+  }
+
   /**
    * 方法注册表：method 名 → handler。
    * handler 内部信任协议类型（边界校验已在入口完成），业务异常直接 throw，
@@ -641,6 +703,12 @@ async function main(): Promise<void> {
     ['mcp.list', handleMcpList],
     ['mcp.sync', handleMcpSync],
     ['mcp.override', handleMcpOverride],
+    // 技能座（4b）：摘要/诊断只读（带 cwd = 两级合并视图）；写路径三条
+    //（save 写 SKILL.md / delete 删目录 / setEnabled 写两级状态文件）
+    ['skills.list', handleSkillsList],
+    ['skills.save', handleSkillsSave],
+    ['skills.delete', handleSkillsDelete],
+    ['skills.setEnabled', handleSkillsSetEnabled],
     ['inspect.entries', handleInspectEntries],
     ['inspect.entry', handleInspectEntry],
     // 票据签发（D3）：main 经 stdio 发起（血缘全权）；HTTP 门侧由档位表

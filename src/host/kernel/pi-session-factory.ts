@@ -143,6 +143,17 @@ export interface PiSessionOptions {
     logPath: string
     updateConfig: (entry: McpServerEntry, patch: McpSettingsPatch) => void
   }
+  /**
+   * 技能座（阶段 4b）：系统提示 skills 段的内容源 —— **每回合活算**
+   * （before_agent_start 钩子调用）= 回合边界热刷新（UI 改动与手动改文件
+   * 都下一回合生效；dsh 需 Chokidar 是推模式缓存所迫，此处拉模式无需
+   * 监视器）。null = 当前空集，清除该段（空墓碑）。pi 静态注入面由
+   * noSkills + 空 skillsOverride 全关（见函数体），技能可见面全在此处。
+   * 缺省 = 本会话无技能座（不写 skills 段）。
+   */
+  skills?: {
+    section: () => string | null
+  }
 }
 
 /** 装配一个 Cogent 会话的 pi 内核。createdNew = 新建会话树（false = 恢复已有 JSONL） */
@@ -182,6 +193,12 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     agentDir,
     settingsManager,
     systemPromptOverride: () => opts.systemPrompt,
+    // 技能座（4b）：pi 静态技能面全关 —— 不扫 .pi 发现域（noSkills，本就
+    // 与 .cogent 域不重叠），空 skillsOverride 整体替换发现结果（扩展动态
+    // 技能路径由此不可达 = Pi-meme freezeResourceLoader 同效守门）。技能
+    // 可见面走 before_agent_start 的 skills 段（见下）
+    noSkills: true,
+    skillsOverride: () => ({ skills: [], diagnostics: [] }),
     // 权限模式通告：每轮按活 mode 设 cogent_permission section
     // （四档全设正向文案）。pi 对 sections 的 diff 保证树内只留净变更史
     extensionFactories: [
@@ -201,9 +218,20 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
         : []),
       (pi) => {
         pi.on('before_agent_start', (event) => {
-          const text = opts.permissionSection?.()
-          if (text === undefined) return
-          event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, cogent_permission: text }
+          const permission = opts.permissionSection?.()
+          // skills 段每回合活算（热刷新）。空集 = 缺键（pi 的段表是
+          // Record<string,string>，删除靠期望侧不出现该键 —— diff 对转录
+          // 回放的旧段产出 null 补丁撤下；空墓碑语义）。diff 只在内容变时
+          // 追加 patch（同权限段机制），树内不堆积
+          const skillSection = opts.skills?.section()
+          if (permission === undefined && skillSection === undefined) return
+          const sections = { ...event.systemPromptOptions.sections }
+          if (permission !== undefined) sections.cogent_permission = permission
+          if (skillSection !== undefined) {
+            if (skillSection === null) delete sections.skills
+            else sections.skills = skillSection
+          }
+          event.systemPromptOptions.sections = sections
         })
       }
     ]

@@ -67,6 +67,7 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   'inspect.entries': 'readonly',
   'inspect.entry': 'readonly',
   'mcp.list': 'readonly',
+  'skills.list': 'readonly',
   // 写类（会话/项目变更、提交与裁决、凭据写、provider 同步）
   'session.create': 'write',
   'session.delete': 'write',
@@ -91,6 +92,12 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   'mcp.sync': 'write',
   // 项目级 override（enabled/exposure）只会收敛，不能扩权 —— 同 write 档
   'mcp.override': 'write',
+  // 技能写路径：save/delete 直接落用户磁盘文件（SKILL.md + 状态 JSON），
+  // 是提示词注入面（进系统提示）—— 与 mcp.sync 同 write 档；setEnabled
+  // 只动状态文件，同档不细分
+  'skills.save': 'write',
+  'skills.delete': 'write',
+  'skills.setEnabled': 'write',
   // 签发入口：只有 admin（或 stdio 血缘，不走此表）能再签票据 —— 防
   // readonly/write 持有者经任意传输门自签提权
   'capability.issue': 'admin'

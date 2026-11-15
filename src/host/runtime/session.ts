@@ -60,6 +60,8 @@ import type { CredentialRegistry } from './credentials'
 import { CustomProviderRegistry } from './custom-providers'
 import { SessionInspector } from './inspector'
 import { McpConfigStore } from './mcp-config'
+import { formatSkillsSection } from './skill-prompt'
+import { SkillStore } from './skill-store'
 import type { ProjectRegistry } from './project'
 import type { ApprovalRegistry } from './approvals'
 import type { CogentKernel, KernelNotifier } from '../kernel/contract'
@@ -470,6 +472,7 @@ export class SessionManager implements CogentKernel {
     projects: ProjectRegistry,
     approvals: ApprovalRegistry,
     mcpConfig: McpConfigStore,
+    private readonly skillStore: SkillStore,
     private inspectStore: InspectStore,
     modelRuntime: ModelRuntime,
     hostRoot: string
@@ -882,7 +885,9 @@ export class SessionManager implements CogentKernel {
       // 判等防每回合堆 thinking_level_change 空条目（同 setModel 注释）
       pi.setThinkingLevel(thinkingLevel as ThinkingLevel)
     }
-    await pi.prompt(text)
+    // /skill: 活展开：pi 内建展开查 loader 静态集（agent-session.ts:2319），
+    // 与段落钩子的回合热刷新会脱节 —— 统一由 skillStore 用活快照展开
+    await pi.prompt(this.skillStore.expandSkillCommand(text, this.workspaceRoots(session)[0]))
     await this.settleRun(session, pi)
   }
 
@@ -1210,6 +1215,12 @@ export class SessionManager implements CogentKernel {
     if (mcpSnapshot.errors.length > 0) {
       process.stderr.write(`[host] MCP 配置诊断（会话 ${sessionId}）: ${mcpSnapshot.errors.join('；')}\n`)
     }
+    // 技能座（4b）：发现诊断装配期留痕一次（此后随 skills.list 回 UI；
+    // 清单本身每回合活算 = 热刷新，诊断不拦装配 —— 技能是增益面）
+    const skillDiagnostics = this.skillStore.snapshot(boundRoots[0] ?? homedir()).errors
+    if (skillDiagnostics.length > 0) {
+      process.stderr.write(`[host] 技能目录诊断（会话 ${sessionId}）: ${skillDiagnostics.join('；')}\n`)
+    }
     const { session: pi, piSessionManager, createdNew } = await createPiSession({
       // pi 的 cwd = 工作区主根（无绑定时主目录兜底，同 toolRoots 语义）：
       // 项目发现（.gitignore/AGENTS.md）与会话目录编码都锚在它上；
@@ -1232,6 +1243,11 @@ export class SessionManager implements CogentKernel {
         snapshot: mcpSnapshot,
         logPath: join(this.hostRoot, PI_AGENT_DIR_NAME, 'mcp.log'),
         updateConfig: (entry, patch) => this.mcpConfig.applyPatch(entry, patch)
+      },
+      // 技能座（4b）：skills 段每回合活算（factory 的 before_agent_start 钩子
+      // 消费）—— 快照无缓存，UI 改动与手动改文件都下一回合生效
+      skills: {
+        section: () => formatSkillsSection(this.skillStore.snapshot(boundRoots[0] ?? homedir()).skills)
       }
     })
 

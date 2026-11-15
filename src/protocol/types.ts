@@ -767,6 +767,81 @@ export interface McpSyncResult {
   synced: number
 }
 
+// ———— 技能座（阶段 4b，docs/计划/技能座实现.md）————
+//
+// 技能 = 目录里的 SKILL.md 指令包（pi Agent Skills 生态形状），Host 管
+// 两个受管目录的发现/启停/编辑；进入会话走「清单进系统提示段、正文模型
+// read 自取」的渐进加载（pi 原生语义），段由 before_agent_start 钩子
+// 每回合活算（热刷新）。
+
+/** 技能定义所在作用域（由目录决定：~/.cogent/skills 或 <cwd>/.cogent/skills） */
+export type SkillScope = 'user' | 'project'
+
+/** skills.list 的技能摘要（设置页卡片行数据源） */
+export interface SkillSummary {
+  name: string
+  description: string
+  scope: SkillScope
+  /** SKILL.md 绝对路径（渐进加载的 read 入口，UI 展示用） */
+  path: string
+  /** 技能目录（references/ 等相对资源的锚点） */
+  baseDir: string
+  /** frontmatter disable-model-invocation：不进模型清单，仅 /skill: 手动可调 */
+  manualOnly: boolean
+  /** 两级启停求值后的生效值（清单注入按此过滤） */
+  enabled: boolean
+  /** user 级禁用名单命中（项目覆盖重新启用时 enabled=true 但此项仍为 true） */
+  userDisabled: boolean
+  /** 项目级状态文件对本名的显式覆盖（缺省 = 无覆盖，回落 user 名单） */
+  override?: boolean
+}
+
+export interface SkillListResult {
+  skills: SkillSummary[]
+  /**
+   * 发现/状态文件诊断（坏 frontmatter、名字非法、同名冲突、损坏 JSON）：
+   * 不炸列表逐条带回（约定.md §1.1 持久化读取）
+   */
+  errors: string[]
+}
+
+/** 新增/编辑一枚技能（skills.save）：frontmatter 由引擎生成（防手写错） */
+export interface SkillSaveParams {
+  scope: SkillScope
+  /** scope=project 时必填（项目技能目录所在的工作区主根） */
+  cwd?: string
+  /** 名字规则镜像 pi validateName：1-64、^[a-z0-9-]+$、无首尾/连续连字符 */
+  name: string
+  /** 1-1024 chars（pi validateDescription 同款） */
+  description: string
+  /** 正文 Markdown，不含 frontmatter */
+  body: string
+}
+
+export interface SkillDeleteParams {
+  scope: SkillScope
+  /** scope=project 时必填 */
+  cwd?: string
+  name: string
+}
+
+/** 写启停状态（skills.setEnabled）：user 档写禁用名单，project 档写 overrides */
+export interface SkillSetEnabledParams {
+  scope: SkillScope
+  /** scope=project 时必填 */
+  cwd?: string
+  name: string
+  /**
+   * enabled/disabled = 显式两态；project 档多一档 inherit = 清除该名覆盖
+   * （回落 user 名单求值）。user 档无更上层可回落，inherit 非法。
+   */
+  value: 'enabled' | 'disabled' | 'inherit'
+}
+
+export interface SkillWriteResult {
+  ok: true
+}
+
 export interface InspectEntriesParams {
   sessionId: string
 }
@@ -890,6 +965,14 @@ export interface ProtocolMethods {
   'mcp.sync': { params: McpSyncParams; result: McpSyncResult }
   /** MCP 座：全量替换某项的项目级 override（空 patch = 清除回落用户级） */
   'mcp.override': { params: McpOverrideParams; result: McpOverrideResult }
+  /** 技能座：技能摘要 + 发现诊断（带 cwd = 两级合并视图） */
+  'skills.list': { params: { cwd?: string }; result: SkillListResult }
+  /** 技能座：新增/编辑一枚技能（写 SKILL.md；frontmatter 引擎生成） */
+  'skills.save': { params: SkillSaveParams; result: SkillWriteResult }
+  /** 技能座：删除技能目录（含目录内附带资源） */
+  'skills.delete': { params: SkillDeleteParams; result: SkillWriteResult }
+  /** 技能座：写启停状态（user 名单 / project overrides） */
+  'skills.setEnabled': { params: SkillSetEnabledParams; result: SkillWriteResult }
   /** 控制台：拉会话的观测条目摘要（时间线数据源；ring 上限内全量，超出只留最近） */
   'inspect.entries': { params: InspectEntriesParams; result: InspectEntriesResult }
   /** 控制台：按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词…） */
