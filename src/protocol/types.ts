@@ -842,6 +842,13 @@ export interface SkillWriteResult {
   ok: true
 }
 
+/** 读单枚技能正文（skills.read）：编辑表单回填源（list 不带 body —— 正文可能很大） */
+export interface SkillReadResult {
+  description: string
+  /** 去 frontmatter 的正文 Markdown */
+  body: string
+}
+
 export interface InspectEntriesParams {
   sessionId: string
 }
@@ -967,6 +974,8 @@ export interface ProtocolMethods {
   'mcp.override': { params: McpOverrideParams; result: McpOverrideResult }
   /** 技能座：技能摘要 + 发现诊断（带 cwd = 两级合并视图） */
   'skills.list': { params: { cwd?: string }; result: SkillListResult }
+  /** 技能座：读单枚技能正文（编辑表单回填；zcode skills inspect 同位） */
+  'skills.read': { params: SkillDeleteParams; result: SkillReadResult }
   /** 技能座：新增/编辑一枚技能（写 SKILL.md；frontmatter 引擎生成） */
   'skills.save': { params: SkillSaveParams; result: SkillWriteResult }
   /** 技能座：删除技能目录（含目录内附带资源） */

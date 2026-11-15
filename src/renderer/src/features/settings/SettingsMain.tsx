@@ -8,6 +8,7 @@ import { GeneralSection } from './GeneralSection'
 import { ModelsSection } from './ModelsSection'
 import { ArchivedChatsSection } from './ArchivedChatsSection'
 import { McpSection } from './McpSection'
+import { SkillSection } from './SkillSection'
 import { findSettingsItem } from './data'
 import { useSettingsStore, type SettingsSectionId } from '@/stores/settings'
 
@@ -17,6 +18,7 @@ const SECTIONS: Partial<Record<SettingsSectionId, ComponentType>> = {
   models: ModelsSection,
   'archived-chats': ArchivedChatsSection,
   connections: McpSection,
+  skills: SkillSection,
 }
 
 export function SettingsMain() {

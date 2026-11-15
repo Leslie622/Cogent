@@ -31,7 +31,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { loadSkillsFromDir, stripFrontmatter, type ResourceDiagnostic, type Skill } from '@earendil-works/pi-coding-agent'
+import { loadSkillsFromDir, parseFrontmatter, stripFrontmatter, type ResourceDiagnostic, type Skill } from '@earendil-works/pi-coding-agent'
 import type { SkillListResult, SkillScope } from '../../protocol'
 import { ProtocolError, RpcErrorCode } from '../../protocol'
 
@@ -317,6 +317,23 @@ export class SkillStore {
     if (value === 'inherit') delete overrides[name]
     else overrides[name] = value === 'enabled'
     atomicWrite(path, `${JSON.stringify({ overrides }, null, 2)}\n`)
+  }
+
+  /**
+   * 读单枚技能正文（skills.read 委托）：编辑表单回填源。查找视图与调用方
+   * 的列表口径一致（user 档 = user 目录，project 档 = 两级合并胜者）。
+   */
+  read(scope: SkillScope, cwd: string | undefined, name: string): { description: string; body: string } {
+    const nameErrors = validateName(name)
+    if (nameErrors.length > 0) invalid(nameErrors)
+    const skill = this.discover(scope === 'project' ? cwd : undefined).skills.find((s) => s.name === name)
+    if (skill === undefined) invalid([`技能 "${name}" 不存在`])
+    const { frontmatter, body } = parseFrontmatter(readFileSync(skill.filePath, 'utf8'))
+    const description = frontmatter.description
+    if (typeof description !== 'string' || description.length === 0) {
+      invalid([`${skill.filePath}: description 缺失（引擎生成的技能不会这样 —— 手放文件请补 frontmatter）`])
+    }
+    return { description, body }
   }
 
   /**

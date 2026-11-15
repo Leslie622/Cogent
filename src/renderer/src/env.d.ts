@@ -101,6 +101,11 @@ export type EngineMethod =
   | 'mcp.list'
   | 'mcp.sync'
   | 'mcp.override'
+  | 'skills.list'
+  | 'skills.read'
+  | 'skills.save'
+  | 'skills.delete'
+  | 'skills.setEnabled'
 
 /**
  * 会话级偏好文件形状（与 shared/ipc.ts SettingsFile 镜像；preload 侧同源导出）。
@@ -173,6 +178,11 @@ export interface EngineMethodParams {
   'mcp.list': { cwd?: string }
   'mcp.sync': { servers: McpServerDef[] }
   'mcp.override': { cwd: string; name: string; enabled?: boolean; exposure?: McpExposure }
+  'skills.list': { cwd?: string }
+  'skills.read': { scope: SkillScope; name: string; cwd?: string }
+  'skills.save': { scope: SkillScope; name: string; description: string; body: string; cwd?: string }
+  'skills.delete': { scope: SkillScope; name: string; cwd?: string }
+  'skills.setEnabled': { scope: SkillScope; name: string; value: 'enabled' | 'disabled' | 'inherit'; cwd?: string }
 }
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
@@ -202,6 +212,11 @@ export interface EngineMethodResult {
   'mcp.list': { servers: McpServerSummary[]; errors: string[] }
   'mcp.sync': { synced: number }
   'mcp.override': { ok: true }
+  'skills.list': { skills: SkillSummary[]; errors: string[] }
+  'skills.read': { description: string; body: string }
+  'skills.save': { ok: true }
+  'skills.delete': { ok: true }
+  'skills.setEnabled': { ok: true }
 }
 
 /** MCP 工具暴露档（与 protocol McpExposure 镜像）：Cogent 只用 direct，其余档
@@ -232,6 +247,25 @@ export interface McpServerSummary {
   overrideApplied?: boolean
   /** 项目 override 文件里该项的原样内容（UI 起草新 patch 的基线） */
   override?: { enabled?: boolean; exposure?: McpExposure }
+}
+
+/** 技能定义所在作用域（与 protocol SkillScope 镜像） */
+export type SkillScope = 'user' | 'project'
+
+/** 技能摘要（skills.list 行；body 另经 skills.read 取） */
+export interface SkillSummary {
+  name: string
+  description: string
+  scope: SkillScope
+  /** SKILL.md 绝对路径（模型渐进加载的 read 入口） */
+  path: string
+  baseDir: string
+  /** frontmatter disable-model-invocation：不进模型清单，仅 /skill: 手动可调 */
+  manualOnly: boolean
+  enabled: boolean
+  userDisabled: boolean
+  /** 项目级状态文件对本名的显式覆盖（缺省 = 无覆盖） */
+  override?: boolean
 }
 
 /**

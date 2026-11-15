@@ -45,6 +45,7 @@ import {
   type McpSyncParams,
   type McpSyncResult,
   type SkillListResult,
+  type SkillReadResult,
   type SkillSaveParams,
   type SkillScope,
   type SkillSetEnabledParams,
@@ -655,6 +656,11 @@ async function main(): Promise<void> {
     return { ok: true as const }
   }
 
+  function handleSkillsRead(params: unknown): SkillReadResult {
+    const target = skillTarget(params)
+    return skillStore.read(target.scope, target.cwd, target.name)
+  }
+
   function handleSkillsSetEnabled(params: unknown): SkillWriteResult {
     const p = params as Partial<SkillSetEnabledParams>
     const target = skillTarget(params)
@@ -703,9 +709,10 @@ async function main(): Promise<void> {
     ['mcp.list', handleMcpList],
     ['mcp.sync', handleMcpSync],
     ['mcp.override', handleMcpOverride],
-    // 技能座（4b）：摘要/诊断只读（带 cwd = 两级合并视图）；写路径三条
+    // 技能座（4b）：摘要/诊断/正文只读（带 cwd = 两级合并视图）；写路径三条
     //（save 写 SKILL.md / delete 删目录 / setEnabled 写两级状态文件）
     ['skills.list', handleSkillsList],
+    ['skills.read', handleSkillsRead],
     ['skills.save', handleSkillsSave],
     ['skills.delete', handleSkillsDelete],
     ['skills.setEnabled', handleSkillsSetEnabled],

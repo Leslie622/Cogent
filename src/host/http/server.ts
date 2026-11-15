@@ -68,6 +68,7 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   'inspect.entry': 'readonly',
   'mcp.list': 'readonly',
   'skills.list': 'readonly',
+  'skills.read': 'readonly',
   // 写类（会话/项目变更、提交与裁决、凭据写、provider 同步）
   'session.create': 'write',
   'session.delete': 'write',

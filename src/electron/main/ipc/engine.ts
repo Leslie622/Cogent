@@ -44,7 +44,13 @@ const ALLOWED_METHODS = new Set<string>([
   'inspect.entry',
   'mcp.list',
   'mcp.sync',
-  'mcp.override'
+  'mcp.override',
+  // 技能座（4b）：真源 = 引擎侧技能目录与状态文件（无壳侧双写，与 MCP 同理）
+  'skills.list',
+  'skills.read',
+  'skills.save',
+  'skills.delete',
+  'skills.setEnabled'
 ])
 
 export function registerEngineIpc({ host }: IpcDeps): void {
