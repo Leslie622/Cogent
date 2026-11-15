@@ -9,6 +9,7 @@
  * mock 单桩：LLM（OpenAI SSE，18960）。临时 COGENT_HOME 隔离，技能经协议
  * skills.save 写入（顺带覆盖协议路径本身）。
  */
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
@@ -136,14 +137,29 @@ describe('技能座集成（协议方法 + 段注入 + read 闭环 + 回合热�
     const bad = await engine.send('skills.save', { scope: 'user', name: 'BAD NAME', description: 'd', body: 'b' })
     check('5. 非法名字显式拒绝（-32602）', bad.error?.code === -32602, JSON.stringify(bad.error))
 
+    // 生态兼容目录（.agents/skills，zcode 等工具装的）：手放后只读发现 + eco 标记
+    // （引擎 eco 根 = homedir()/.agents，harness 已把 HOME 指进临时 home → 天然隔离）
+    mkdirSync(join(home, '.agents', 'skills', 'eco-tool'), { recursive: true })
+    writeFileSync(
+      join(home, '.agents', 'skills', 'eco-tool', 'SKILL.md'),
+      '---\nname: eco-tool\ndescription: 生态工具\n---\n\n生态正文\n'
+    )
+    const ecoList = await engine.send<SkillListResult>('skills.list', {})
+    const ecoEntry = ecoList.result?.skills.find((s) => s.name === 'eco-tool')
+    check(
+      '5b. 生态目录发现：.agents/skills 技能进列表（eco 标记 + user 作用域 + 启用）',
+      ecoEntry?.eco === true && ecoEntry.scope === 'user' && ecoEntry.enabled === true,
+      JSON.stringify(ecoList.result)
+    )
+
     // ———— S2 段注入 + read 渐进加载闭环 ————
     const s2 = (await engine.send('session.create', { cwd: ws })).result?.id
     if (s2 === undefined) throw new Error('session.create 失败')
     await submitAndDone(s2, 'S2 用技能干活')
     const r0 = JSON.stringify(requestBodies[0] ?? {})
     check(
-      '6. 首轮系统提示含 <available_skills> 且 project 胜者入选（含 location）',
-      r0.includes('<available_skills>') && r0.includes('项目版描述') && r0.includes('commit-check'),
+      '6. 首轮系统提示含 <available_skills>：project 胜者 + 生态技能均入选',
+      r0.includes('<available_skills>') && r0.includes('项目版描述') && r0.includes('commit-check') && r0.includes('eco-tool'),
       r0.slice(0, 200)
     )
     const toolEnd = await engine.waitEvent('tool.completed', (p) => p.sessionId === s2 && p.callId === 'r1', 30_000).catch(() => undefined)
@@ -155,23 +171,29 @@ describe('技能座集成（协议方法 + 段注入 + read 闭环 + 回合热�
     const r1 = JSON.stringify(requestBodies[1] ?? {})
     check('8. 工具结果回灌二轮（循环闭合）', r1.includes('提交前三步'))
 
-    // ———— S3 同会话热禁用：下一轮请求清单消失（sections diff 补丁） ————
+    // ———— S3 同会话热禁用：下一轮请求该技能从清单消失（sections diff 补丁） ————
     await engine.send('skills.setEnabled', { scope: 'project', cwd: ws, name: 'commit-check', value: 'disabled' })
     await submitAndDone(s2, 'S3 再看清单')
     // 只看 system 角色消息：历史里的 read 工具结果天然含技能 frontmatter，
-    // 技能名出现在工具历史不算刷新失败
+    // 技能名出现在工具历史不算刷新失败。生态技能 eco-tool 仍启用 —— 段还在
+    // 且含它，恰好证明「消失的是被禁者」而非整段被掀（整段清除的空墓碑
+    // 语义由 skill-prompt.test.ts 的空集返回 null 钉）
     const r2 = requestBodies[2] as { messages?: Array<{ role: string }> } | undefined
     const systemText = JSON.stringify((r2?.messages ?? []).filter((m) => m.role === 'system'))
     check(
-      '9. 热刷新：同会话下一轮系统提示无技能段无技能名（系统提示仍完整）',
-      !systemText.includes('available_skills') && !systemText.includes('commit-check') && systemText.includes('You are Cogent'),
+      '9. 热刷新：同会话下一轮系统提示无 commit-check（生态技能仍在，段未被整掀）',
+      !systemText.includes('commit-check') && systemText.includes('eco-tool') && systemText.includes('You are Cogent'),
       systemText.slice(0, 200)
     )
 
     // ———— S4 inherit 回落 + /skill: 活展开 ————
     await engine.send('skills.setEnabled', { scope: 'project', cwd: ws, name: 'commit-check', value: 'inherit' })
     const relist = await engine.send<SkillListResult>('skills.list', { cwd: ws })
-    check('10. inherit 清覆盖：回落 user 名单（启用）', relist.result?.skills[0]?.enabled === true, JSON.stringify(relist.result?.skills))
+    check(
+      '10. inherit 清覆盖：回落 user 名单（启用）',
+      relist.result?.skills.find((s) => s.name === 'commit-check')?.enabled === true,
+      JSON.stringify(relist.result?.skills)
+    )
     await submitAndDone(s2, '/skill:commit-check 列出步骤')
     const r3 = requestBodies[3] as { messages?: Array<{ role: string }> } | undefined
     const userText = JSON.stringify((r3?.messages ?? []).filter((m) => m.role === 'user'))

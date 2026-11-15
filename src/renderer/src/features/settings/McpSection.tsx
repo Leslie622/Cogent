@@ -4,9 +4,10 @@
  * 经 engine:request 通用代理 —— 引擎独占写者，无壳侧双写）。全量替换语义：
  * 每次改动整表 mcp.sync；页头明示「变更新会话生效」（会话装配时快照定格）。
  * 作用域（zcode 对齐）：本机·用户 = 全局定义面（增删改/导入）；
- * 本项目 = 合并视图 + 项目 override 写入（开关落工作区 .cogent/mcp.json，
- * 只影响该项目；重置 = 清除 override 回落用户级）——项目 cwd 取当前活跃
- * 会话的工作区。搜索 = 本地过滤（名称/命令行·URL/描述）。
+ * 项目 = 合并视图 + 项目 override 写入（开关落工作区 .cogent/mcp.json，
+ * 只影响该项目；重置 = 清除 override 回落用户级）。作用域下拉 = 本机·用户
+ * + 全部项目（useProjectScope：默认跟随活跃会话归属项目，可任意切换；
+ * 项目 cwd = 主根 cwds[0]）。搜索 = 本地过滤（名称/命令行·URL/描述）。
  * 连接状态点（zcode 绿/红）无数据面 —— Host 是 headless，连接状态在 pi
  * 会话内部，需协议扩展才能暴露（后续候选，见 模块/MCP座.md 边界）。
  */
@@ -36,8 +37,10 @@ import {
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SettingsGroup, SettingsPage } from './SettingsParts'
+import { ScopeMenu } from './ScopeMenu'
 import { BADGE, FIELD_GAP, FIELD_LABEL } from './models-recipes'
-import { useChatStore } from '@/stores/chat'
+import { unwrapIpcError } from '@/stores/chat'
+import { useProjectScope } from '@/hooks/use-project-scope'
 import type { McpExposure, McpServerDef, McpServerSummary } from '@/env.d'
 
 /** 暴露档下拉（Cogent 只用 direct，其余档供手改配置的忠实回显） */
@@ -74,7 +77,7 @@ const parseEntries = (text: string, sep: string): Record<string, string> => {
 }
 
 /** IPC / 解析错误 → 文案（engine:request 直抛 Error，失败原样呈现给用户） */
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+const messageOf = (error: unknown): string => unwrapIpcError(error)
 
 const isStringRecord = (value: unknown): value is Record<string, string> =>
   typeof value === 'object' && value !== null && !Array.isArray(value) &&
@@ -522,14 +525,6 @@ function ImportDialog({
   )
 }
 
-/** 作用域两档（zcode「本机 · 用户」下拉同位） */
-const SCOPES = [
-  { value: 'user', label: '本机 · 用户' },
-  { value: 'project', label: '本项目' }
-] as const
-
-type McpScope = (typeof SCOPES)[number]['value']
-
 export function McpSection() {
   /** null = 加载中（首拉未返回） */
   const [servers, setServers] = useState<McpServerSummary[] | null>(null)
@@ -539,17 +534,16 @@ export function McpSection() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [editing, setEditing] = useState<McpServerDef | null>(null)
-  const [scope, setScope] = useState<McpScope>('user')
   const [query, setQuery] = useState('')
 
-  /** 项目作用域的 cwd：当前活跃会话的工作区（无绑定会话 = 项目档不可用） */
-  const projectCwd = useChatStore((s) => s.sessions.find((x) => x.id === s.activeSessionId)?.cwd)
+  /**
+   * 作用域选择：本机·用户 / 任一项目（useProjectScope，默认跟随活跃
+   * 会话归属的项目，手动挑过即固定）；项目档 cwd = 该项目主根 cwds[0]
+   */
+  const scopeState = useProjectScope()
+  const { scope, project, projectCwd } = scopeState
 
   const refresh = useCallback(async () => {
-    if (scope === 'project' && projectCwd === undefined) {
-      setServers([])
-      return
-    }
     try {
       const r = await window.cogent.engineRequest('mcp.list', scope === 'project' ? { cwd: projectCwd } : {})
       setServers(r.servers)
@@ -649,11 +643,11 @@ export function McpSection() {
           <>
             外部工具经 Model Context Protocol 直接进入 Agent 循环（工具调用仍走审批）。
             配置存储于用户级 ~/.cogent/mcp.json，变更<strong>新会话生效</strong>（进行中的会话不受影响）；
-            项目可在「本项目」作用域按 server 覆盖启停与暴露档。
+            项目可在项目作用域按 server 覆盖启停与暴露档。
           </>
         ) : (
           <>
-            项目作用域 = 工作区 <span className="font-mono">{projectCwd ?? '—'}</span> 下的 .cogent/mcp.json：
+            项目「{project?.name}」作用域 = 主根 <span className="font-mono">{projectCwd}</span> 下的 .cogent/mcp.json：
             开关只影响本项目的会话（覆盖用户级），「重置」清除覆盖回落用户级；
             server 的定义与增删改在「本机 · 用户」作用域操作。
           </>
@@ -661,27 +655,11 @@ export function McpSection() {
       }
       toolbar={
         <>
-          <Select value={scope} items={SCOPES} onValueChange={(next) => next !== null && setScope(next)}>
-            <SelectTrigger aria-label="作用域">
-              <SelectValue />
-            </SelectTrigger>
-            {/* 左对齐即可：弹层宽度约束在 ui/select 本体（min-w=锚宽，见其
-                注释），调用处不再打宽度补丁（组件原生形态方针）。
-                items 必须包 SelectGroup：Group 自带 p-1 内衬，是官方形态的
-                一部分（官方全部示例皆如此包裹）；裸塞 items 会让内容贴边、
-                高亮条顶到弹层边框（2026-11-15 MCP 页"弹层不对"的根因） */}
-            <SelectContent>
-              <SelectGroup>
-                {SCOPES.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <ScopeMenu state={scopeState} />
+          {/* 总计数（zcode 同位：竖分隔线 + 「服务器 N」） */}
+          <div className="h-4 w-px bg-border" />
           <div className="text-sm">
-            <span className="font-medium">已安装</span> <span className="text-muted-foreground">{count}</span>
+            服务器 <span className="text-muted-foreground">{count}</span>
           </div>
           {/* 搜索框：与侧栏同款裸 input 手搭（黑 5% 软叠胶囊底） */}
           <div className="ml-auto flex h-8 w-56 items-center gap-2 rounded-full bg-accent-foreground/5 px-3">
@@ -694,30 +672,11 @@ export function McpSection() {
               className="h-full w-full min-w-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-placeholder"
             />
           </div>
-          <Button variant="outline" size="icon-sm" disabled={busy} onClick={() => void refresh()} aria-label="刷新">
-            <IconRefresh className="size-4" />
-          </Button>
-          <Button
-            size="sm"
-            disabled={busy || !userScope}
-            onClick={() => {
-              setEditing(null)
-              setDialogOpen(true)
-            }}
-          >
-            <IconPlus className="size-4" />
-            新建
-          </Button>
         </>
       }
     >
       {servers === null ? (
         <div className="mt-3 rounded-xl border border-border px-5 py-4 text-[13px] text-muted-foreground">加载中…</div>
-      ) : !userScope && projectCwd === undefined ? (
-        /* 项目档但无工作区：指引切会话 */
-        <div className="mt-3 rounded-xl border border-dashed border-border px-6 py-10 text-center text-[13px] text-muted-foreground">
-          当前没有绑定工作区的活跃会话 —— 在聊天里选中一个项目会话后，这里显示该项目的覆盖设置。
-        </div>
       ) : count === 0 ? (
         userScope ? (
           /* 空态（zcode 形态）：虚线卡 + 主副文案 + 新建/导入双入口 */
@@ -752,7 +711,35 @@ export function McpSection() {
           没有匹配「{query.trim()}」的服务器
         </div>
       ) : (
-        <SettingsGroup label="">
+        <SettingsGroup
+          label={`已安装 ${count}`}
+          actions={
+            <>
+              <Button variant="outline" size="icon-sm" disabled={busy} onClick={() => void refresh()} aria-label="刷新">
+                <IconRefresh className="size-4" />
+              </Button>
+              {userScope && (
+                <>
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => setImportOpen(true)}>
+                    <IconDownload className="size-4" />
+                    导入
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setEditing(null)
+                      setDialogOpen(true)
+                    }}
+                  >
+                    <IconPlus className="size-4" />
+                    新建
+                  </Button>
+                </>
+              )}
+            </>
+          }
+        >
           {visible.map((s) => (
             <div key={s.name} className="flex items-center gap-4 px-5 py-4">
               {/* 类型图标方块（zcode 形态；无连接状态可标 —— 见文件头注释） */}

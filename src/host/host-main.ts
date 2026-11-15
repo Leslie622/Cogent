@@ -86,6 +86,13 @@ import { createCapabilityStore, createRootSecret } from './http/auth'
  */
 const STORAGE_ROOT = process.env.COGENT_HOME || join(homedir(), '.cogent')
 
+/**
+ * 生态兼容根（~/.agents）：zcode 等工具装技能的中立目录，技能座只读发现
+ * （写路径仍走 .cogent，见 skill-store 头注释）。集成测试经 HOME 覆写
+ * （harness 把 USERPROFILE/HOME 指进临时根）自动隔离，无需独立覆盖口。
+ */
+const AGENTS_ROOT = join(homedir(), '.agents')
+
 // 方言模块预热：pi-ai 的 API 方言是**首次请求时**才动态 import（lazyApi），
 // 冷启动一次要拉起整个厂商 SDK（openai-completions 连带 26MB 的 openai 包，
 // Windows Defender 扫描把首请求拖慢到秒级 —— 实测首句「你好」墙钟 5s 里 3.8s
@@ -127,7 +134,7 @@ async function main(): Promise<void> {
   // MCP 客户端配置（~/.cogent/mcp.json 用户级定义 + 项目级 override 合并，阶段 4a）
   const mcpConfig = new McpConfigStore(STORAGE_ROOT)
   // 技能目录（~/.cogent/skills 用户级 + <cwd>/.cogent/skills 项目级 + 两级启停，阶段 4b）
-  const skillStore = new SkillStore(STORAGE_ROOT)
+  const skillStore = new SkillStore(STORAGE_ROOT, AGENTS_ROOT)
   const sessions = new SessionManager(
     credentials,
     storage,

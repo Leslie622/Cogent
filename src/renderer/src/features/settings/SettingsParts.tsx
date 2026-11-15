@@ -39,11 +39,26 @@ export function SettingsPage({
   )
 }
 
-/** 设置分组：标题（可省 —— 列表卡直接顶格）+ 卡片容器；divide-y 出行间 1px 线（首行无线） */
-export function SettingsGroup({ label, children }: { label?: string; children: ReactNode }) {
+/** 设置分组：标题（可省 —— 列表卡直接顶格）+ 可选标题行右侧动作区（zcode
+    「已安装 N … [刷新][新建]」同位）+ 卡片容器；divide-y 出行间 1px 线（首行无线） */
+export function SettingsGroup({
+  label,
+  actions,
+  children
+}: {
+  label?: string
+  /** 标题行右侧动作（整组级按钮，如刷新/新建） */
+  actions?: ReactNode
+  children: ReactNode
+}) {
   return (
     <section className="mt-8 first:mt-7">
-      {label !== undefined && <h3 className="text-[15px] font-semibold">{label}</h3>}
+      {(label !== undefined || actions !== undefined) && (
+        <div className="flex items-center justify-between">
+          {label !== undefined && <h3 className="text-[15px] font-semibold">{label}</h3>}
+          {actions !== undefined && <div className="flex items-center gap-1">{actions}</div>}
+        </div>
+      )}
       <div className="mt-3 flex flex-col divide-y divide-border rounded-xl border border-border">
         {children}
       </div>

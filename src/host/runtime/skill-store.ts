@@ -8,6 +8,11 @@
  * - project 级 `<cwd>/.cogent/skills/<name>/SKILL.md`：同名覆盖 user
  *   （zcode nearest-wins，design/v2/skill.md:185-196；pi 的 user 先得
  *   skills.ts:457-459 是异类不采）+ 冲突诊断；
+ * - 生态兼容目录 `.agents/skills`（两级：`<agentsRoot>/skills` 与
+ *   `<cwd>/.agents/skills`）：zcode 等生态工具装技能的中立目录，**只读
+ *   发现 + 按名启停**，新建/编辑/删除仍走 .cogent（两套工具不改对方的
+ *   文件）；同级别同名 .cogent 胜（zcode「同一级别 .zcode 优先于 .agents」
+ *   同款，adapters/skills/roots.ts:112-118）；
  * - 启停：user `<root>/skills.json` 禁用名单 + project
  *   `<cwd>/.cogent/skills.json` overrides（可禁 user 技能 / 重新启用
  *   user 已禁 —— 近者胜，与定义优先级一致）。
@@ -137,14 +142,21 @@ function invalid(errors: string[]): never {
 export class SkillStore {
   private readonly userDir: string
   private readonly userStateFile: string
+  /** user 级生态兼容目录（<agentsRoot>/skills，如 ~/.agents/skills） */
+  private readonly userEcoDir: string
 
-  constructor(root: string) {
+  constructor(root: string, agentsRoot: string) {
     this.userDir = join(root, 'skills')
     this.userStateFile = join(root, 'skills.json')
+    this.userEcoDir = join(agentsRoot, 'skills')
   }
 
   private projectDir(cwd: string): string {
     return join(cwd, '.cogent', 'skills')
+  }
+
+  private projectEcoDir(cwd: string): string {
+    return join(cwd, '.agents', 'skills')
   }
 
   private projectStateFile(cwd: string): string {
@@ -155,13 +167,19 @@ export class SkillStore {
    * user（+ 可选 project）目录发现合并：同名 project 胜 + 冲突诊断；
    * realPath 去重防同一文件经 symlink 目录两处出现（pi loadSkills 的
    * realPathSet 同款，skills.ts:428-435）。
+   *
+   * 加目录序 = 同名优先级（后者胜）：项目 .cogent > 项目 .agents >
+   * 用户 .cogent > 用户 .agents（级别优先，同级别内自有目录压过生态
+   * 兼容目录）。eco 集合记生态目录出身（list 的 eco 标记数据源；被同名
+   * 覆盖的生态版按胜者 filePath 判，天然不误标）。
    */
-  private discover(cwd?: string): { skills: Skill[]; errors: string[] } {
+  private discover(cwd?: string): { skills: Skill[]; errors: string[]; eco: Set<string> } {
     const errors: string[] = []
     const byName = new Map<string, Skill>()
     const realPaths = new Set<string>()
+    const eco = new Set<string>()
 
-    const addDir = (dir: string, source: SkillScope): void => {
+    const addDir = (dir: string, source: SkillScope, isEco: boolean): void => {
       const { skills, diagnostics } = loadSkillsFromDir({ dir, source })
       errors.push(...diagnosticsToErrors(diagnostics))
       for (const skill of skills) {
@@ -173,12 +191,17 @@ export class SkillStore {
         }
         byName.set(skill.name, skill)
         realPaths.add(realPath)
+        if (isEco) eco.add(skill.filePath)
       }
     }
 
-    addDir(this.userDir, 'user')
-    if (cwd !== undefined) addDir(this.projectDir(cwd), 'project')
-    return { skills: [...byName.values()], errors }
+    addDir(this.userEcoDir, 'user', true)
+    addDir(this.userDir, 'user', false)
+    if (cwd !== undefined) {
+      addDir(this.projectEcoDir(cwd), 'project', true)
+      addDir(this.projectDir(cwd), 'project', false)
+    }
+    return { skills: [...byName.values()], errors, eco }
   }
 
   /** 两级启停状态装载（损坏文件 → 诊断 + 空态兜底，不炸求值） */
@@ -196,14 +219,21 @@ export class SkillStore {
   }
 
   /** list 共用底座：发现合并 + 两级状态（带 projectOverrides 原样给摘要投影） */
-  private merged(cwd?: string): { skills: Skill[]; userDisabled: Set<string>; projectOverrides: Map<string, boolean>; errors: string[] } {
+  private merged(cwd?: string): {
+    skills: Skill[]
+    userDisabled: Set<string>
+    projectOverrides: Map<string, boolean>
+    errors: string[]
+    eco: Set<string>
+  } {
     const discovered = this.discover(cwd)
     const states = this.loadStates(cwd)
     return {
       skills: discovered.skills,
       userDisabled: states.userDisabled,
       projectOverrides: states.projectOverrides,
-      errors: [...discovered.errors, ...states.errors]
+      errors: [...discovered.errors, ...states.errors],
+      eco: discovered.eco
     }
   }
 
@@ -218,7 +248,7 @@ export class SkillStore {
    * 覆盖列）；带 cwd = 两级合并视图（含被禁用项 —— 列表就是管理面）。
    */
   list(cwd?: string): SkillListResult {
-    const { skills, userDisabled, projectOverrides, errors } = this.merged(cwd)
+    const { skills, userDisabled, projectOverrides, errors, eco } = this.merged(cwd)
     return {
       skills: skills.map((skill) => ({
         name: skill.name,
@@ -229,7 +259,8 @@ export class SkillStore {
         manualOnly: skill.disableModelInvocation,
         enabled: SkillStore.effective(skill, userDisabled, projectOverrides),
         userDisabled: userDisabled.has(skill.name),
-        ...(projectOverrides.has(skill.name) && { override: projectOverrides.get(skill.name) })
+        ...(projectOverrides.has(skill.name) && { override: projectOverrides.get(skill.name) }),
+        ...(eco.has(skill.filePath) && { eco: true })
       })),
       errors
     }

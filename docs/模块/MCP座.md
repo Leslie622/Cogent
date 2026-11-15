@@ -16,12 +16,15 @@
   `createMcpExtension({ loadConfig, logPath, updateConfig })`；
 - 审批投影：`runtime/tool-meta.ts` —— `mcp__*` 前缀 → exec 档；
 - UI：设置页「MCP 服务器」分区（`renderer/features/settings/McpSection.tsx`，
-  zcode 形态：作用域下拉 + 计数 + 搜索 + 刷新/新建工具行 + 图标方块条目行 +
+  zcode 形态：分组作用域下拉 + 计数 + 搜索工具行 + 「已安装 N」组标题行
+  （右侧刷新/导入/新建）+ 图标方块条目行 +
   虚线空态；新增/编辑弹窗 = 表单/JSON 双模式，JSON 为生态形状单条直编、
   可改表单未暴露的 timeout 等字段）—— renderer 经 `engine:request` 通用代理直达三个方法（白名单在
   `main/ipc/engine.ts`；MCP 配置真源在引擎，无壳侧双写，与 providers 的
   专属通道恰成对照）。**作用域**：本机·用户 = 定义面（增删改/导入，整表
-  mcp.sync）；本项目 = 合并视图（cwd 取当前活跃会话的工作区），开关/重置走
+  mcp.sync）；项目 = 合并视图，下拉分组列出全部项目可分项目浏览
+  （useProjectScope：默认跟随活跃会话归属的项目、手动挑过即固定；cwd =
+  选中项目主根 cwds[0]），开关/重置走
   mcp.override（写工作区 .cogent/mcp.json，只影响该项目）。搜索 = 本地过滤。
   连接状态（zcode 绿/红点）无数据面 —— 连接活在 pi 会话内部，暴露需协议
   扩展（列后续）。

@@ -64,11 +64,30 @@ TOOL_NAMES）且 pi read 无 cwd 圈禁（tools/read.ts:71 仅查可读性），
 工作区外的 `~/.cogent/skills/...` 可读 —— **read 即加载器**，零成本获得
 zcode 两层加载的第二层。100KB 硬上限不做：pi read 自带输出截断护栏。
 
+### 3.4 生态兼容目录 `.agents/skills`（2026-11-15 手测反馈并入）
+
+zcode 的双根形状：同一目录基下 `.zcode` 原生 + `.agents` 兼容**合并加载
+而非 fallback**（adapters/skills/roots.ts:112-118 注释：用户可能同时装
+原生与兼容版；同级仍 `.zcode` 优先）。Cogent 把这形状搬到自己的两级：
+`.cogent` + `.agents` 各 user/project 两处，但生态侧**只读** —— 发现/
+清单/启停/`/skill:` 全兼容，新建/编辑/删除仍只写 `.cogent`（两套工具不
+改对方的文件；与 zcode 对 plugin 源「拒绝 symlink 即拒绝逃逸，不判指向」
+同思路，scan.ts:14-23）。同名优先级由加目录序编码：项目 .cogent >
+项目 .agents > 用户 .cogent > 用户 .agents。pi 无此层 —— loader 只管
+单目录内的规则，选哪些目录归 Host，D7 白拿不冲突。
+
 ## 4. 取舍
 
 - **同名优先级跟 zcode/dsh 不跟 pi**：pi 的 loadSkills user 先加先得
-  （skills.ts:457-459 user 胜）是异类；zcode（skill.md:185-196）与 dsh
+  （skills.ts:457-459 user 胜）是异类；zcode 与 dsh
   （layered-skill-registry.md:18 近层胜）及 Claude 生态都是 project 胜。
+  **注意出处口径（2026-11-15 实读修正）**：zcode 的 project 胜是其
+  **设计文档**（skill.md §优先级「同名取高优先级项，重复进 diagnostics」）；
+  其适配器实现实际**不按名去重** —— discoverSkills 按 path 收录，同名
+  两枚都进清单（adapters/skills/index.ts:80-84 注释「路径才是安装项
+  身份」），按名 loadSkill 稳定排序取先插入者 = **user 先得**，与设计
+  文档相反。Cogent 实现的是设计文档语义（同名 project 胜 + 冲突诊断），
+  对照源码时以本条为准。
   技能是被动文本，项目级允许定义（对照：MCP 座拒项目定义是进程信任门）；
 - **快照（MCP 座）vs 活算（本座）**：MCP 连接是装配期资源（pi 扩展持有），
   只能快照；技能是纯文本，每回合重读两目录的 I/O 可忽略，活算即热刷新。
@@ -87,8 +106,8 @@ zcode 两层加载的第二层。100KB 硬上限不做：pi read 自带输出截
 
 ## 6. 在 Cogent 的落点
 
-- `src/host/runtime/skill-store.ts`：两级目录 store（发现/合并/启停/
-  save-delete-read/`/skill:` 展开）；
+- `src/host/runtime/skill-store.ts`：四目录 store（.cogent 两级写路径 +
+  .agents 两级生态只读；发现/合并/启停/save-delete-read/`/skill:` 展开）；
 - `src/host/runtime/skill-prompt.ts`：预算 formatter（镜像 pi XML 形状）；
 - `src/host/kernel/pi-session-factory.ts`：noSkills + 空覆盖 + 段钩子；
 - `src/host/runtime/session.ts`：snapshot 闭包 + submit 活展开；

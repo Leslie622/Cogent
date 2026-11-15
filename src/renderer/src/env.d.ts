@@ -283,6 +283,8 @@ export interface SkillSummary {
   userDisabled: boolean
   /** 项目级状态文件对本名的显式覆盖（缺省 = 无覆盖） */
   override?: boolean
+  /** 来自 .agents 生态兼容目录（zcode 等工具装的）：只读发现 + 按名启停，编辑/删除禁用 */
+  eco?: boolean
 }
 
 /**
