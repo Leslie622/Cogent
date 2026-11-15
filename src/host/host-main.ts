@@ -33,6 +33,7 @@ import {
   toRpcError,
   type ApprovalRespondParams,
   type CapabilityIssueParams,
+  type QuestionRespondParams,
   type CredentialsListResult,
   type SessionArchiveParams,
   type CredentialsSetParams,
@@ -388,6 +389,22 @@ async function main(): Promise<void> {
     return sessions.respondApproval(p.requestId, p.approved, p.message, p.always, p.switchMode)
   }
 
+  /** question.respond 入口校验（交互座 4c-2）：requestId 非空 + answers 数组
+      （元素 string 或 string[]；逐项收窄——外部输入是信任边界，风格同上） */
+  function handleQuestionRespond(params: unknown) {
+    const p = params as Partial<QuestionRespondParams>
+    if (typeof p.requestId !== 'string' || p.requestId.length === 0 || !Array.isArray(p.answers)) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'question.respond 需要 { requestId: string, answers: (string|string[])[] }')
+    }
+    for (const answer of p.answers) {
+      const ok = typeof answer === 'string' || (Array.isArray(answer) && answer.every((a) => typeof a === 'string'))
+      if (!ok) {
+        throw new ProtocolError(RpcErrorCode.InvalidParams, 'question.respond 的 answers 元素必须是 string 或 string[]')
+      }
+    }
+    return sessions.respondQuestion(p.requestId, p.answers)
+  }
+
   /** session.setPermission 入口校验：sessionId 非空 string + mode 限值域。
       mode 不校验会被静默存脏值（约定.md 1.2-6：兜底掩盖非法状态） */
   function handleSessionSetPermission(params: unknown) {
@@ -704,6 +721,7 @@ async function main(): Promise<void> {
     // 宿主侧裁决通道：不经 renderer 通用代理（D3），main 的 approval:respond 专属
     // IPC 直抵这里 —— 但协议上是普通 method（任何宿主都能驱动，无传输层特权）
     ['approval.respond', handleApprovalRespond],
+    ['question.respond', handleQuestionRespond],
     ['credentials.set', handleCredentialsSet],
     ['credentials.remove', handleCredentialsRemove],
     ['credentials.list', handleCredentialsList],

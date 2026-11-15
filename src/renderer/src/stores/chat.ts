@@ -83,6 +83,20 @@ export interface PendingApproval {
 }
 
 /**
+ * 会话级挂起提问（交互座 4c-2，QuestionPanel 数据源）：question.asked 建、
+ * respond/abort/settle 收尾。载荷 = 问题全文（选项/多选位都在，面板直接渲染）。
+ */
+export interface PendingQuestion {
+  requestId: string
+  questions: Array<{
+    question: string
+    header?: string
+    options: Array<{ label: string; description?: string }>
+    multiSelect?: boolean
+  }>
+}
+
+/**
  * L1 prune 副行：一次检查点裁了 N 处工具输出 → 一行
  * 「已裁剪 N 处工具输出」；转录里对应物是改写后的 toolResult（marker 即
  * 痕迹），本行是纯呈现物 —— 历史回查投影不产此行（引擎投影的 toolResult
@@ -256,6 +270,9 @@ export interface ChatState {
   /** sessionId → 任务清单（交互座 4c，TodoStrip 数据源）：todo_write 落笔的
       全量快照（todos.updated 整段替换）；打开会话的种子来自 session.messages */
   todosBySession: Partial<Record<string, TodoItem[]>>
+  /** sessionId → 挂起提问（交互座 4c-2，QuestionPanel 数据源）：
+      question.asked 建、respond/abort 收尾（引擎侧三路收口保证必清） */
+  pendingQuestionsBySession: Partial<Record<string, PendingQuestion[]>>
   /** 初载失败的原因（引擎不可用等；App 横幅呈现）。null = 正常 */
   loadError: string | null
 
@@ -267,6 +284,8 @@ export interface ChatState {
   createSession: (params?: { cwd?: string; projectId?: string; permissionMode?: PermissionMode }) => Promise<string>
   /** 会话级权限切换（ask ↔ auto；「完全访问」按钮） */
   setPermission: (sessionId: string, mode: PermissionMode) => Promise<void>
+  /** 回答挂起中的 ask_user（交互座 4c-2；QuestionPanel 调用） */
+  respondQuestion: (requestId: string, answers: Array<string | string[]>) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
   setPinned: (sessionId: string, pinned: boolean) => Promise<void>
   archive: (sessionId: string, archived: boolean) => Promise<void>
@@ -353,6 +372,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   prunedBySession: {},
   contextLiveBySession: {},
   todosBySession: {},
+  pendingQuestionsBySession: {},
   loadError: null,
 
   // 初载不自动建会话：归档是回收站语义，"活跃列表空"有两种含义 —— 首装，或
@@ -477,6 +497,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       delete prunedBySession[sessionId]
       const todosBySession = { ...state.todosBySession }
       delete todosBySession[sessionId]
+      const pendingQuestionsBySession = { ...state.pendingQuestionsBySession }
+      delete pendingQuestionsBySession[sessionId]
       return {
         sessions,
         messagesBySession,
@@ -488,6 +510,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         compactingBySession,
         prunedBySession,
         todosBySession,
+        pendingQuestionsBySession,
         // 删除活动会话与归档同款落点：视图落"新聊天"（不再自动跳 sessions[0] ——
         // 旧行为不触发 selectSession，目标会话消息未拉取会白屏）
         activeSessionId: wasActive ? null : state.activeSessionId
@@ -649,6 +672,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
         sessions: state.sessions.map((s) => (s.id === summary.id ? summary : s))
       }))
     }
+  },
+
+  /** 回答挂起中的 ask_user（交互座 4c-2）：先本地清挂起（乐观，engine 拒识
+      requestId = 中止竞态在前，终局以 run 终态事件为准），再走专属通道 */
+  respondQuestion: async (requestId, answers) => {
+    useChatStore.setState((state) => {
+      const pendingQuestionsBySession = { ...state.pendingQuestionsBySession }
+      for (const [sid, list] of Object.entries(pendingQuestionsBySession)) {
+        if (list?.some((p) => p.requestId === requestId)) {
+          pendingQuestionsBySession[sid] = list.filter((p) => p.requestId !== requestId)
+          break
+        }
+      }
+      return { pendingQuestionsBySession }
+    })
+    await window.cogent.respondQuestion(requestId, answers).catch(() => undefined)
   }
 }))
 
@@ -787,6 +826,19 @@ export function bindEngineEvents(): () => void {
         useChatStore.setState((state) => ({
           todosBySession: { ...state.todosBySession, [sessionId]: todos }
         }))
+        return
+      }
+      case 'question.asked': {
+        const { sessionId, requestId, questions } = event.params
+        useChatStore.setState((state) => {
+          const list = state.pendingQuestionsBySession[sessionId] ?? []
+          return {
+            pendingQuestionsBySession: {
+              ...state.pendingQuestionsBySession,
+              [sessionId]: [...list, { requestId, questions }]
+            }
+          }
+        })
         return
       }
       case 'compaction.started': {

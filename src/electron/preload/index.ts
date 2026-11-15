@@ -48,6 +48,13 @@ const api = {
   ): Promise<{ ok: true; summary?: SessionSummary }> =>
     ipcRenderer.invoke(IPC.approvalRespond, { requestId, approved, ...options }),
 
+  /** 回答挂起中的 ask_user（交互座 4c-2；respondApproval 同款专属通道）：
+      answers 按问题序，元素 = 选项 label / 自由输入（多选问题 = string[]） */
+  respondQuestion: (
+    requestId: string,
+    answers: Array<string | string[]>
+  ): Promise<{ ok: true }> => ipcRenderer.invoke(IPC.questionRespond, { requestId, answers }),
+
   /** 写入 API key：safeStorage 落盘 + 推给引擎内存（key 明文只此一路出 renderer） */
   setApiKey: (providerId: string, apiKey: string): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.credentialsSet, { providerId, apiKey }),

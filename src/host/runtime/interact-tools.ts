@@ -118,9 +118,125 @@ export function summarizeTodoWriteArgs(args: unknown): string {
   return `todo_write(${todoCounts(todos as TodoItem[])})`
 }
 
+// ———— ask_user（4c-2）————
+
+/** ask_user 的问题/选项形状（schema Static 的手工镜像，协议层共用） */
+export interface AskOption {
+  label: string
+  description?: string
+}
+export interface AskQuestion {
+  question: string
+  header?: string
+  options: AskOption[]
+  multiSelect?: boolean
+}
+/** 每问答案：字符串（单选/自由输入）；多选 = 数组；空串 = 跳过未答 */
+export type AskAnswers = Array<string | string[]>
+
+/**
+ * 桥：ask_user 挂起 → 宿主作答。session.ts 登记 pendingQuestions + 发
+ * question.asked 事件，Promise 悬到 question.respond / abort / 会话收尾
+ *（pendingApprovals 同款三路收尾）。
+ */
+export interface AskBridge {
+  ask(questions: AskQuestion[], signal: AbortSignal | undefined): Promise<{ answers: AskAnswers; cancelled?: boolean }>
+}
+
+/**
+ * schema 之外的跨字段校验（TypeBox 表达不了唯一性）：问题文本唯一、选项
+ * label 唯一、不得自带「其他/Other」（面板自动提供自由输入，zcode 72-89
+ * 同款）。违规文案直接给模型（isError 结果，模型自查修正后重调）。
+ */
+export function validateAskQuestions(questions: AskQuestion[]): string | undefined {
+  const seenQuestions = new Set<string>()
+  for (const q of questions) {
+    if (seenQuestions.has(q.question)) return `问题文本必须唯一，重复了：「${q.question}」。`
+    seenQuestions.add(q.question)
+    const labels = new Set<string>()
+    for (const option of q.options) {
+      if (labels.has(option.label)) return `同问题的选项 label 不得重复：「${q.question}」的「${option.label}」。`
+      labels.add(option.label)
+      if (option.label === '其他' || option.label === 'Other') {
+        return `不要提供「其他」选项（「${q.question}」）—— 面板会自动附带自由输入。`
+      }
+    }
+  }
+  return undefined
+}
+
+/**
+ * 答案 → 模型 facing 结果文本（zcode handlers:131-158 三态风格）：
+ * 取消 / 全跳过 / 部分跳过 / 全答。多选数组以「；」连接。
+ */
+export function formatAskResult(questions: AskQuestion[], answers: AskAnswers, cancelled?: boolean): string {
+  if (cancelled === true) return '用户取消了回答。请基于已有信息继续，或在回复中说明仍需要哪些输入。'
+  const pairs: string[] = []
+  let skipped = 0
+  questions.forEach((q, i) => {
+    const answer = answers[i] ?? ''
+    const text = Array.isArray(answer) ? answer.join('；') : answer
+    if (text.trim() === '') {
+      skipped++
+      return
+    }
+    pairs.push(`"${q.question}"="${text}"`)
+  })
+  if (pairs.length === 0) return '用户未作答（跳过了全部问题）。请自行判断并继续。'
+  const prefix = skipped > 0 ? `用户回答了部分问题（跳过 ${skipped} 个）：` : '用户已回答你的问题：'
+  return `${prefix}${pairs.join('；')}。`
+}
+
+const ASK_DESCRIPTION =
+  '当你被用户的决策卡住、无法合理继续时，向用户提出结构化问题（每问 2-4 个选项）。' +
+  '只问真正需要人拍板的事；一次性问全（最多 4 问），不要连环追问。' +
+  '选项不带「其他」—— 用户总能自由输入。非阻塞问题改在回复正文里问。'
+
+const ASK_PARAMS = Type.Object({
+  questions: Type.Array(
+    Type.Object({
+      question: Type.String({ description: '问题全文' }),
+      header: Type.Optional(Type.String({ description: '问题短标签（≤12 字符）', maxLength: 12 })),
+      options: Type.Array(
+        Type.Object({
+          label: Type.String({ description: '选项标签（1-5 个词）' }),
+          description: Type.Optional(Type.String({ description: '选项说明（一句话）' }))
+        }),
+        { minItems: 2, maxItems: 4, description: '2-4 个选项' }
+      ),
+      multiSelect: Type.Optional(Type.Boolean({ description: '多选（缺省单选）' }))
+    }),
+    { minItems: 1, maxItems: 4, description: '1-4 个问题' }
+  )
+})
+
+/** ask_user 工具实例（挂起在 bridge.ask；signal abort → cancelled 收口） */
+export function createAskTool(bridge: AskBridge): ToolDefinition {
+  return defineTool({
+    name: 'ask_user',
+    label: '向用户提问',
+    description: ASK_DESCRIPTION,
+    parameters: ASK_PARAMS,
+    execute: async (_callId, params, signal) => {
+      const violation = validateAskQuestions(params.questions)
+      if (violation !== undefined) {
+        return { content: [{ type: 'text', text: violation }], details: { questions: params.questions }, isError: true }
+      }
+      const { answers, cancelled } = await bridge.ask(params.questions, signal)
+      return {
+        content: [{ type: 'text', text: formatAskResult(params.questions, answers, cancelled) }],
+        details: { questions: params.questions, answers, ...(cancelled === true && { cancelled: true }) }
+      }
+    }
+  })
+}
+
 // ———— 声明镜像（token 估算用，与请求里 toolsAdded 同源）————
 
 /** 交互座工具的模型侧声明（tool-meta.toolDeclarations 消费；schema 确定性同源） */
 export function interactToolDeclarations(): Array<{ name: string; description: string; parameters: unknown }> {
-  return [{ name: 'todo_write', description: TODO_DESCRIPTION, parameters: TODO_PARAMS }]
+  return [
+    { name: 'todo_write', description: TODO_DESCRIPTION, parameters: TODO_PARAMS },
+    { name: 'ask_user', description: ASK_DESCRIPTION, parameters: ASK_PARAMS }
+  ]
 }

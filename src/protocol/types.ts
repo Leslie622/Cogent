@@ -424,6 +424,24 @@ export interface TodoItem {
   priority: 'high' | 'medium' | 'low'
 }
 
+/** ask_user 的选项（交互座 4c-2；question.asked 事件载荷） */
+export interface AskOptionParam {
+  label: string
+  description?: string
+}
+/** ask_user 的单个问题 */
+export interface AskQuestionParam {
+  question: string
+  header?: string
+  options: AskOptionParam[]
+  multiSelect?: boolean
+}
+/** question.respond 参数：按问题序作答；字符串（单选/自由输入）、多选数组、空串 = 跳过 */
+export interface QuestionRespondParams {
+  requestId: string
+  answers: Array<string | string[]>
+}
+
 /** 置顶/取消置顶（同一入口，pinned 二值切换）；返回更新后的完整摘要 */
 export interface SessionSetPinnedParams {
   sessionId: string
@@ -978,6 +996,8 @@ export interface ProtocolMethods {
   'agent.submit': { params: AgentSubmitParams; result: AgentSubmitResult }
   'agent.abort': { params: { sessionId: string }; result: { aborted: boolean } }
   'approval.respond': { params: ApprovalRespondParams; result: ApprovalRespondResult }
+  /** 交互座 4c-2：回答 question.asked（挂起中的 ask_user）；配对错 requestId → InvalidParams */
+  'question.respond': { params: QuestionRespondParams; result: { ok: true } }
   'credentials.set': { params: CredentialsSetParams; result: CredentialsSetResult }
   'credentials.remove': { params: CredentialsRemoveParams; result: CredentialsRemoveResult }
   'credentials.list': { params: Record<string, never>; result: CredentialsListResult }
@@ -1099,6 +1119,12 @@ export interface ProtocolEvents {
    * session.messages 的 todos 字段。
    */
   'todos.updated': { sessionId: string; todos: TodoItem[] }
+  /**
+   * 模型提问（交互座 4c-2）：ask_user 工具挂起中 —— 宿主以 question.respond
+   * 回答（面板替换输入区，与 approval.request 同款"占位等待"语义；无超时，
+   * 宿主输入框变停止钮可 abort）。answers 按问题序，空串 = 跳过该问。
+   */
+  'question.asked': { sessionId: string; requestId: string; questions: AskQuestionParam[] }
   /**
    * 观测条目实时推送（控制台时间线增量）：每产生一条观测记录即推一条摘要，
    * 详情不随流走（按需 inspect.entry）。宿主的控制台没打开也应照常接收/丢弃 ——

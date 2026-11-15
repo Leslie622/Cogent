@@ -34,6 +34,9 @@ declare global {
         approved: boolean,
         options?: { message?: string; always?: 'workspace'; switchMode?: 'auto' | 'autonomous' }
       ) => Promise<{ ok: true; summary?: SessionSummary }>
+      /** 回答挂起中的 ask_user（交互座 4c-2；respondApproval 同款专属通道）：
+          answers 按问题序（选项 label / 自由输入；多选问题 = string[]） */
+      respondQuestion: (requestId: string, answers: Array<string | string[]>) => Promise<{ ok: true }>
       /** 写入 API key（safeStorage 落盘 + 推引擎；明文只此一路出 renderer） */
       setApiKey: (providerId: string, apiKey: string) => Promise<{ ok: true }>
       /** 删除单条 API key（壳侧落盘移除 + 引擎内存表移除；清 key 的正路） */
@@ -324,6 +327,19 @@ export type EngineEvent =
     }
   | { method: 'inspect.event'; params: { sessionId: string; entry: InspectEntrySummary } }
   | { method: 'todos.updated'; params: { sessionId: string; todos: TodoItem[] } }
+  | {
+      method: 'question.asked'
+      params: {
+        sessionId: string
+        requestId: string
+        questions: Array<{
+          question: string
+          header?: string
+          options: Array<{ label: string; description?: string }>
+          multiSelect?: boolean
+        }>
+      }
+    }
   | { method: 'compaction.started'; params: { sessionId: string; reason: 'threshold' | 'manual' } }
   | {
       method: 'compaction.pruned'

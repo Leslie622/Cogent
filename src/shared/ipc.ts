@@ -17,6 +17,9 @@ export const IPC = {
       安全边界，宿主侧裁决走独立通道，与「工具结果不经 renderer 转发」同理；
       载荷 { requestId, approved }，直达引擎 approval.respond） */
   approvalRespond: 'approval:respond',
+  /** renderer → main：回答挂起中的 ask_user（交互座 4c-2；approvalRespond 同款
+      宿主侧人机裁决通道；载荷 { requestId, answers }，直达引擎 question.respond） */
+  questionRespond: 'question:respond',
   /** renderer → main：写入 API key（safeStorage 落盘 + 推给引擎） */
   credentialsSet: 'credentials:set',
   /** renderer → main：删除单条 API key（壳侧落盘移除 + 引擎内存表移除） */

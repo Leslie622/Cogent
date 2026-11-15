@@ -57,7 +57,7 @@ import type {
   ToolCallRecord,
   ToolKind
 } from '../../protocol'
-import { createTodoTool, todosSectionText } from './interact-tools'
+import { createAskTool, createTodoTool, todosSectionText, type AskAnswers, type AskQuestion } from './interact-tools'
 import type { CredentialRegistry } from './credentials'
 import { CustomProviderRegistry } from './custom-providers'
 import { SessionInspector } from './inspector'
@@ -465,6 +465,16 @@ export class SessionManager implements CogentKernel {
     string,
     { sessionId: string; kind: ToolKind; resolve: (result: { block: boolean; reason?: string }) => void }
   >()
+  /**
+   * 挂起中的提问（交互座 4c-2，pendingApprovals 同款骨架）：ask_user 的
+   * execute 悬着等 question.respond。三路收尾：respond（作答）/
+   * signal abort（取消 —— abort 的兜底 resolve，防 Promise 永悬）/
+   * settleInteractions（会话删除/退出批量收口）。
+   */
+  private pendingQuestions = new Map<
+    string,
+    { sessionId: string; resolve: (result: { answers: AskAnswers; cancelled?: boolean }) => void }
+  >()
   private models: MutableModels
   private customProviders: CustomProviderRegistry
   /** 项目注册表（构造注入；submit/buildPiSession 时解析 projectId → 项目多根目录） */
@@ -674,9 +684,10 @@ export class SessionManager implements CogentKernel {
     if (!session) return false
     // pi 内核整拆（abort 全部运行中工作 + 拆钩，agent-session dispose 语义）
     session.pi?.dispose()
-    // 挂起审批先收尾再拆会话：resolve block 让链式 beforeToolCall 的 await 落地、
+    // 挂起审批/提问先收尾再拆会话：resolve 让挂起中的 await 落地、
     // run 正常走完收尾路径（事件转译要能找到会话，先 settle 后删）
     this.settleApprovals(sessionId, '会话已删除')
+    this.settleInteractions(sessionId)
     // pi 转录真源随删（JSONL 只被本会话引用；惰性未装配的会话没有 pi 文件）
     const piFile = session.pi?.sessionManager.getSessionFile()
     if (piFile !== undefined) {
@@ -1051,7 +1062,10 @@ export class SessionManager implements CogentKernel {
   /** 进程退出前统一收尾（引擎随宿主关闭；pi dispose 内聚 abort 全部运行） */
   disposeAll(): void {
     for (const session of this.sessions.values()) session.pi?.dispose()
-    for (const sessionId of this.sessions.keys()) this.settleApprovals(sessionId, '引擎退出')
+    for (const sessionId of this.sessions.keys()) {
+      this.settleApprovals(sessionId, '引擎退出')
+      this.settleInteractions(sessionId)
+    }
     this.sessions.clear()
     this.streaming.clear()
     this.compacting.clear()
@@ -1202,6 +1216,33 @@ export class SessionManager implements CogentKernel {
     }
   }
 
+  // ———— 交互座提问（4c-2，respondApproval 同款骨架） ——
+
+  /**
+   * 宿主作答回流：resolve 挂起中的 ask_user Promise。唔配对 requestId
+   *（已答过 / abort 已收尾 / 不存在）→ InvalidParams（双击提交、作答与
+   * 中止竞态，显式报错防静默成功）。answers 长度不做强校验：缺项按跳过
+   * 处理（formatAskResult 的空串分支），宿主少传不炸。
+   */
+  respondQuestion(requestId: string, answers: AskAnswers): { ok: true } {
+    const pending = this.pendingQuestions.get(requestId)
+    if (pending === undefined) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, `提问请求不存在或已被回答: ${requestId}`)
+    }
+    this.pendingQuestions.delete(requestId)
+    pending.resolve({ answers })
+    return { ok: true }
+  }
+
+  /** 某会话的全部挂起提问以取消收尾（删除/退出兜底；abort 走桥内 signal listener） */
+  private settleInteractions(sessionId: string): void {
+    for (const [requestId, pending] of this.pendingQuestions) {
+      if (pending.sessionId !== sessionId) continue
+      this.pendingQuestions.delete(requestId)
+      pending.resolve({ answers: [], cancelled: true })
+    }
+  }
+
   // ———— pi 内核装配（惰性） ————
 
   /**
@@ -1263,8 +1304,8 @@ export class SessionManager implements CogentKernel {
           ...(todos !== null && { cogent_todos: todos })
         }
       },
-      // 交互座（4c）：todo_write 落笔 → 会话状态 + 持久化 + 北向事件
-      //（挂起类工具 ask_user/submit_plan 在后续批次进这张表）
+      // 交互座（4c）：todo_write 落笔 → 会话状态 + 持久化 + 北向事件；
+      // ask_user 挂起 → question.asked → question.respond/abort/settle 三路收尾
       customTools: [
         createTodoTool({
           updateTodos: (todos) => {
@@ -1272,6 +1313,29 @@ export class SessionManager implements CogentKernel {
             this.persist(sessionId)
             this.notify('todos.updated', { sessionId, todos })
           }
+        }),
+        createAskTool({
+          ask: (questions: AskQuestion[], signal) =>
+            new Promise<{ answers: AskAnswers; cancelled?: boolean }>((resolve) => {
+              const requestId = `ask-${crypto.randomUUID()}`
+              this.pendingQuestions.set(requestId, { sessionId, resolve })
+              this.notify('question.asked', {
+                sessionId,
+                requestId,
+                questions: questions.map((q) => ({
+                  question: q.question,
+                  ...(q.header !== undefined && q.header !== '' && { header: q.header }),
+                  options: q.options.map((o) => ({ label: o.label, ...(o.description !== undefined && o.description !== '' && { description: o.description }) })),
+                  ...(q.multiSelect === true && { multiSelect: true })
+                }))
+              })
+              signal?.addEventListener('abort', () => {
+                // 已被 respondQuestion 消费则不动（作答与中止竞态，先到先得）
+                if (this.pendingQuestions.delete(requestId)) {
+                  resolve({ answers: [], cancelled: true })
+                }
+              })
+            })
         })
       ],
       approval: {

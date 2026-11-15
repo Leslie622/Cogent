@@ -59,6 +59,7 @@ import { ProjectPicker } from './ProjectPicker'
 import { ApprovalPanel } from './ApprovalPanel'
 import { PermissionMenu } from './PermissionMenu'
 import { TodoStrip } from './TodoStrip'
+import { QuestionPanel } from './QuestionPanel'
 import { findActiveModel, useEngineStore } from '@/stores/engine'
 import { ConversationIndex } from './ConversationIndex'
 import { ModelMenu } from './ModelMenu'
@@ -387,9 +388,14 @@ export function HomeChat({
     (s) => s.sessions.find((x) => x.id === s.activeSessionId)?.title ?? '新聊天'
   )
   // 待审批 = ApprovalPanel **替换**输入区（2026-11-11 用户定调：审批卡覆盖
-  // 输入位、待审批不支持输入）。草稿提升到本层持有，Composer 卸载不丢字
+  // 输入位、待审批不支持输入）。草稿提升到本层持有，Composer 卸载不丢字。
+  // 挂起提问（4c-2）同款占位（QuestionPanel 与审批面板互斥呈现 —— 都是
+  // run 挂起中的人机裁决，同一时刻至多一类挂起是引擎执行模型的自然结果）
   const hasPendingApproval = useChatStore(
     (s) => (s.pendingApprovalsBySession[s.activeSessionId ?? '']?.length ?? 0) > 0
+  )
+  const hasPendingQuestion = useChatStore(
+    (s) => (s.pendingQuestionsBySession[s.activeSessionId ?? '']?.length ?? 0) > 0
   )
   const [draft, setDraft] = useState('')
   return (
@@ -406,6 +412,8 @@ export function HomeChat({
         <TodoStrip />
         {hasPendingApproval ? (
           <ApprovalPanel />
+        ) : hasPendingQuestion ? (
+          <QuestionPanel />
         ) : (
           <ChatComposer session={session} value={draft} onValueChange={setDraft} />
         )}
