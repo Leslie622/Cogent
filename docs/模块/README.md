@@ -12,6 +12,7 @@
 | [消息呈现](消息呈现.md) | 回合分组两态、Markdown 渲染、工具卡、思考呈现、审批痕迹行、压缩条呈现 |
 | [工具系统](工具系统.md) | pi 内置 8 选 7（win=powershell）、glob→find 映射、fd/rg 依赖与降级、ToolKind 投影、fd/rg 获取链与降级 |
 | [MCP座](MCP座.md) | 两级 mcp.json 配置（user 定义 + 项目仅 override）、createMcpExtension 装配（快照语义）、mcp.list/sync 协议方法、mcp__ 工具 exec 档审批投影 |
+| [技能座](技能座.md) | 两级技能目录（同名 project 胜）、skillsOverride+段钩子注入（回合边界热刷新）、read 渐进加载、/skill: 活展开、清单预算 |
 | [审批与权限](审批与权限.md) | 判定矩阵与优先序、挂起收尾、工作区规则表、权限通告、确认面板与 tag |
 | [上下文压缩](上下文压缩.md) | 触发公式、checkpoint 摘要、L1 裁剪、溢出恢复、保留式转录表示 |
 | [工作区与项目](工作区与项目.md) | ~/.cogent 存储根、项目域多根、侧栏分区语义、工作区注入、信任与归档 |

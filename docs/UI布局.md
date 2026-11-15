@@ -191,9 +191,20 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   引擎校验错回显 destructive 红条，文件级诊断单独「配置诊断」组卡。
   **连接状态点（zcode 绿/红）无数据面**：Host headless，连接状态在 pi 会话
   内部（协议扩展列后续）
+- **设置 · 技能页（阶段 4b，MCP 页同骨架）**：单列分区 —— 页头描述随
+  作用域切换（用户级：渐进加载说明 + **下一回合生效**（与 MCP 的「新会话
+  生效」对照）+ 手放目录提示；项目级：工作区路径 + 同名覆盖语义 + 本页
+  可直接新建项目技能）；工具行 = 作用域 Select +「已安装 N」+ 搜索胶囊 +
+  刷新 + 「新建」（项目档无 cwd 禁用）；条目行 = size-10 书本图标方块 +
+  名称 + 已禁用/手动调用/项目定义/项目覆盖徽标 + 第二行灰字 description
+  （title=路径）+ Switch +（用户档或项目定义行：编辑/删除 icon-xs；项目档
+  override 存在时重置 icon-xs = inherit 回落）；编辑弹窗 = name（编辑锁）+
+  description + 正文等宽 Textarea（回填经 skills.read 单取，list 不带
+  body）；空态虚线卡 + 手放目录指引；「配置诊断」组卡同 MCP 页
 - **设置侧边栏（2026-11-15 重组，zcode 形态）**：两分组「基础设置 / Agent
   能力」（常规/外观/模型设置/浏览器/电脑操控/键盘快捷键/已归档的聊天 +
-  插件/MCP 服务器/技能/命令/钩子），技能/命令占位对应阶段 4 后续座；
+  插件/MCP 服务器/技能/命令/钩子），命令占位对应阶段 4 后续座
+  （技能已落地 4b）；
   顶部保留标题 + 搜索框（占位）
 - **品牌图标 ProviderLogo**（components/，模型菜单等按 providerId 复用）：
   @lobehub/icons 按名导入（sideEffects:false 摇树）—— 单色标（Anthropic/OpenAI/
