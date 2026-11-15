@@ -25,6 +25,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
@@ -33,7 +34,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SettingsGroup, SettingsPage } from './SettingsParts'
 import { BADGE, FIELD_GAP, FIELD_LABEL } from './models-recipes'
 import { useChatStore } from '@/stores/chat'
@@ -97,6 +98,12 @@ function parseImport(text: string): { defs: McpServerDef[]; errors: string[] } {
   const defs: McpServerDef[] = []
   const errors: string[] = []
   for (const [name, raw] of Object.entries(map)) {
+    if (name.trim().length === 0) {
+      // 空键直接拒绝：序列化半填表单会出现 ""，落到通用缺字段文案会变成
+      // 悬空引号开头的一串（"… 缺少 …"），单独给明确的键名提示
+      errors.push('服务器名称不能为空（JSON 键）')
+      continue
+    }
     if (!isRecord(raw)) {
       errors.push(`"${name}" 不是对象`)
       continue
@@ -120,15 +127,31 @@ function parseImport(text: string): { defs: McpServerDef[]; errors: string[] } {
         ...shared
       })
     } else {
-      errors.push(`"${name}" 缺少 command 或 url，无法导入`)
+      errors.push(`"${name}" 缺少 command 或 url`)
     }
   }
   return { defs, errors }
 }
 
 /**
+ * def → JSON 模式文本（zcode 表单/JSON 双模式对齐）：单条生态互拷形状
+ * `{ "名字": { …条目… } }`；type 由 command/url 推断（parseImport 同款），
+ * 不写入 —— 与 pi / Claude Desktop 等的 mcpServers 形状一致。
+ */
+const defToJsonText = (def: McpServerDef): string => {
+  const { name, type: _type, ...entry } = def
+  return JSON.stringify({ [name]: entry }, null, 2)
+}
+
+/** JSON 模式起手模板（空表单切入时给样例，直接改 / 粘贴覆盖） */
+const JSON_TEMPLATE =
+  '{\n  "filesystem": {\n    "command": "npx",\n    "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]\n  }\n}'
+
+/**
  * 新增/编辑表单弹窗。编辑态锁 name 与 type（改类型 = 换一个 server，
- * 走删除+新增更诚实）；保存时由父组件整表 mcp.sync。
+ * 走删除+新增更诚实；JSON 模式的名字 = JSON 键，改名同样拒绝）；保存时由
+ * 父组件整表 mcp.sync。表单 / JSON 双模式：JSON 直编生态形状，可改表单
+ * 未暴露的字段（timeout 等）；模式互切带双向换算，坏 JSON 不放行切换。
  */
 function ServerDialog({
   open,
@@ -151,24 +174,118 @@ function ServerDialog({
   const [headers, setHeaders] = useState('')
   const [description, setDescription] = useState('')
   const [exposure, setExposure] = useState<McpExposure>('direct')
+  const [mode, setMode] = useState<'form' | 'json'>('form')
+  const [jsonText, setJsonText] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
 
-  // 每次打开重置（initial 区分新增/编辑）
+  /** def → 表单态（打开重置与 JSON→表单切换共用；useCallback 稳定引用供 effect 依赖） */
+  const applyDef = useCallback((d: McpServerDef | null): void => {
+    setName(d?.name ?? '')
+    setType(d?.type ?? 'stdio')
+    setCommand(d?.type === 'stdio' ? d.command : '')
+    setArgs(linesOf(d?.type === 'stdio' ? d.args : undefined))
+    setEnv(entriesOf(d?.type === 'stdio' ? d.env : undefined, '='))
+    setUrl(d?.type === 'http' ? d.url : '')
+    setHeaders(entriesOf(d?.type === 'http' ? d.headers : undefined, ':'))
+    setDescription(d?.description ?? '')
+    setExposure(d?.exposure ?? 'direct')
+  }, [])
+
+  // 每次打开重置（initial 区分新增/编辑），恒回表单模式
   useEffect(() => {
     if (!open) return
-    setName(initial?.name ?? '')
-    setType(initial?.type ?? 'stdio')
-    setCommand(initial?.type === 'stdio' ? initial.command : '')
-    setArgs(linesOf(initial?.type === 'stdio' ? initial.args : undefined))
-    setEnv(entriesOf(initial?.type === 'stdio' ? initial.env : undefined, '='))
-    setUrl(initial?.type === 'http' ? initial.url : '')
-    setHeaders(entriesOf(initial?.type === 'http' ? initial.headers : undefined, ':'))
-    setDescription(initial?.description ?? '')
-    setExposure(initial?.exposure ?? 'direct')
+    applyDef(initial)
+    setMode('form')
+    setJsonText('')
     setFormError(null)
-  }, [open, initial])
+  }, [open, initial, applyDef])
+
+  /** 表单态 → def（空可选字段省略；不做校验 —— JSON 序列化半成品也要能出，校验在保存） */
+  const buildDef = (): McpServerDef => {
+    const parsedArgs = parseLines(args)
+    const parsedEnv = parseEntries(env, '=')
+    const parsedHeaders = parseEntries(headers, ':')
+    const shared = {
+      ...(description.trim().length > 0 && { description: description.trim() }),
+      // enabled 编辑时保留原值（表单不管启停 —— 列表行开关管；JSON 模式写入的
+      // 显式值会经 parseImport 原样带回 —— 直编即用户意图）
+      ...(initial?.enabled !== undefined && { enabled: initial.enabled }),
+      exposure
+    }
+    return type === 'stdio'
+      ? {
+          name: name.trim(),
+          type,
+          command: command.trim(),
+          ...(parsedArgs.length > 0 && { args: parsedArgs }),
+          ...(Object.keys(parsedEnv).length > 0 && { env: parsedEnv }),
+          ...shared
+        }
+      : {
+          name: name.trim(),
+          type,
+          url: url.trim(),
+          ...(Object.keys(parsedHeaders).length > 0 && { headers: parsedHeaders }),
+          ...shared
+        }
+  }
+
+  /** JSON 文本 → 单条 def；非法 / 条目数≠1 / 编辑态改名 → 带文案的 null（模式切换与保存共用） */
+  const parseJsonDef = (): { def: McpServerDef | null; error: string | null } => {
+    try {
+      const { defs, errors } = parseImport(jsonText)
+      if (defs.length !== 1) {
+        return {
+          def: null,
+          error: errors.length > 0 ? errors.join('；') : `JSON 需要恰好一个服务器条目（当前 ${defs.length} 个，多个走「导入」）`
+        }
+      }
+      if (initial !== null && defs[0].name !== initial.name) {
+        return { def: null, error: '编辑时名称不可改（表单模式中已锁定）' }
+      }
+      return { def: defs[0], error: null }
+    } catch (error) {
+      return { def: null, error: messageOf(error) }
+    }
+  }
+
+  const switchMode = (next: 'form' | 'json'): void => {
+    if (next === mode) return
+    if (next === 'json') {
+      // 表单 → JSON：全新空表单给起手模板（直接改 / 粘贴覆盖）；
+      // 半填表单原样序列化（空名键留在 JSON 里改）
+      const d = buildDef()
+      const blank = d.name === '' && (d.type === 'stdio' ? d.command : d.url).trim() === ''
+      setJsonText(blank ? JSON_TEMPLATE : defToJsonText(d))
+      setMode('json')
+      setFormError(null)
+      return
+    }
+    // JSON → 表单：换算失败留在 JSON 态报错（坏 JSON 不进表单）
+    const { def, error } = parseJsonDef()
+    if (def === null) {
+      setFormError(error)
+      return
+    }
+    applyDef(def)
+    setMode('form')
+    setFormError(null)
+  }
 
   const save = (): void => {
+    if (mode === 'json') {
+      if (jsonText.trim().length === 0) {
+        setFormError('粘贴或编辑服务器 JSON')
+        return
+      }
+      const { def, error } = parseJsonDef()
+      if (def === null) {
+        setFormError(error)
+        return
+      }
+      onSave(def, initial?.name ?? null)
+      return
+    }
     const trimmed = name.trim()
     if (trimmed.length === 0) {
       setFormError('名称必填（字母 / 数字 / _ / -）')
@@ -182,136 +299,146 @@ function ServerDialog({
       setFormError('http 服务器需要 URL')
       return
     }
-    const parsedArgs = parseLines(args)
-    const parsedEnv = parseEntries(env, '=')
-    const parsedHeaders = parseEntries(headers, ':')
-    const shared = {
-      ...(description.trim().length > 0 && { description: description.trim() }),
-      // enabled 编辑时保留原值（表单不管启停 —— 列表行开关管）
-      ...(initial?.enabled !== undefined && { enabled: initial.enabled }),
-      exposure
-    }
-    onSave(
-      type === 'stdio'
-        ? {
-            name: trimmed,
-            type,
-            command: command.trim(),
-            ...(parsedArgs.length > 0 && { args: parsedArgs }),
-            ...(Object.keys(parsedEnv).length > 0 && { env: parsedEnv }),
-            ...shared
-          }
-        : {
-            name: trimmed,
-            type,
-            url: url.trim(),
-            ...(Object.keys(parsedHeaders).length > 0 && { headers: parsedHeaders }),
-            ...shared
-          },
-      initial?.name ?? null
-    )
+    onSave(buildDef(), initial?.name ?? null)
   }
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{initial !== null ? '编辑 MCP 服务器' : '添加 MCP 服务器'}</DialogTitle>
         </DialogHeader>
 
-        <div>
-          <div className={FIELD_LABEL}>名称</div>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="如 filesystem"
-            disabled={initial !== null}
-            className="mt-1.5"
-          />
-        </div>
+        {/* 表单/JSON 双模式（zcode 同款）：Tabs 胶囊分段；坏 JSON 不放行切回表单 */}
+        <Tabs
+          value={mode}
+          onValueChange={(v: string) => { if (v === 'form' || v === 'json') switchMode(v) }}
+          className="min-h-0 flex-1 gap-4"
+        >
+          <TabsList>
+            <TabsTrigger value="form">表单</TabsTrigger>
+            <TabsTrigger value="json">JSON</TabsTrigger>
+          </TabsList>
+          {/* 中段滚动区（ui/dialog DialogContent 注释的长内容弹窗形态）：头/尾
+              钉住；-mx-4 px-4 全出血 → 滚动条贴右缘（头尾在外，轨道不穿圆角） */}
+          <div className="-mx-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-4">
+            <TabsContent value="form" className="flex flex-col gap-4">
+              <div>
+                <div className={FIELD_LABEL}>名称</div>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="如 filesystem"
+                  disabled={initial !== null}
+                  className="mt-1.5"
+                />
+              </div>
 
-        <div className={FIELD_GAP}>
-          <div className={FIELD_LABEL}>类型</div>
-          <Select value={type} items={TYPES} onValueChange={(next) => next !== null && setType(next)}>
-            <SelectTrigger aria-label="类型" disabled={initial !== null} className="mt-1.5 w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start" className="min-w-56">
-              {TYPES.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+              <div className={FIELD_GAP}>
+                <div className={FIELD_LABEL}>类型</div>
+                <Select value={type} items={TYPES} onValueChange={(next) => next !== null && setType(next)}>
+                  <SelectTrigger aria-label="类型" disabled={initial !== null} className="mt-1.5 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="start" className="min-w-56">
+                    <SelectGroup>
+                      {TYPES.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>
+                          {t.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
 
-        {type === 'stdio' ? (
-          <>
-            <div className={FIELD_GAP}>
-              <div className={FIELD_LABEL}>启动命令</div>
-              <Input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="如 npx" className="mt-1.5" />
-            </div>
-            <div className={FIELD_GAP}>
-              <div className={FIELD_LABEL}>参数（一行一个）</div>
-              <Textarea
-                value={args}
-                onChange={(e) => setArgs(e.target.value)}
-                placeholder={'-y\n@modelcontextprotocol/server-filesystem\n.'}
-                rows={3}
-                className="mt-1.5"
-              />
-            </div>
-            <div className={FIELD_GAP}>
-              <div className={FIELD_LABEL}>环境变量（一行一条 KEY=VALUE）</div>
-              <Textarea
-                value={env}
-                onChange={(e) => setEnv(e.target.value)}
-                placeholder="API_BASE=https://example.com"
-                rows={2}
-                className="mt-1.5"
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            <div className={FIELD_GAP}>
-              <div className={FIELD_LABEL}>URL</div>
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/mcp" className="mt-1.5" />
-            </div>
-            <div className={FIELD_GAP}>
-              <div className={FIELD_LABEL}>请求头（一行一条 名称: 值）</div>
-              <Textarea
-                value={headers}
-                onChange={(e) => setHeaders(e.target.value)}
-                placeholder="Authorization: Bearer ..."
-                rows={2}
-                className="mt-1.5"
-              />
-            </div>
-          </>
-        )}
+              {type === 'stdio' ? (
+                <>
+                  <div className={FIELD_GAP}>
+                    <div className={FIELD_LABEL}>启动命令</div>
+                    <Input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="如 npx" className="mt-1.5" />
+                  </div>
+                  <div className={FIELD_GAP}>
+                    <div className={FIELD_LABEL}>参数（一行一个）</div>
+                    <Textarea
+                      value={args}
+                      onChange={(e) => setArgs(e.target.value)}
+                      placeholder={'-y\n@modelcontextprotocol/server-filesystem\n.'}
+                      rows={3}
+                      className="mt-1.5"
+                    />
+                  </div>
+                  <div className={FIELD_GAP}>
+                    <div className={FIELD_LABEL}>环境变量（一行一条 KEY=VALUE）</div>
+                    <Textarea
+                      value={env}
+                      onChange={(e) => setEnv(e.target.value)}
+                      placeholder="API_BASE=https://example.com"
+                      rows={2}
+                      className="mt-1.5"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className={FIELD_GAP}>
+                    <div className={FIELD_LABEL}>URL</div>
+                    <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/mcp" className="mt-1.5" />
+                  </div>
+                  <div className={FIELD_GAP}>
+                    <div className={FIELD_LABEL}>请求头（一行一条 名称: 值）</div>
+                    <Textarea
+                      value={headers}
+                      onChange={(e) => setHeaders(e.target.value)}
+                      placeholder="Authorization: Bearer ..."
+                      rows={2}
+                      className="mt-1.5"
+                    />
+                  </div>
+                </>
+              )}
 
-        <div className={FIELD_GAP}>
-          <div className={FIELD_LABEL}>描述（可选，一句话说明它提供什么）</div>
-          <Input value={description} onChange={(e) => setDescription(e.target.value)} className="mt-1.5" />
-        </div>
+              <div className={FIELD_GAP}>
+                <div className={FIELD_LABEL}>描述（可选，一句话说明它提供什么）</div>
+                <Input value={description} onChange={(e) => setDescription(e.target.value)} className="mt-1.5" />
+              </div>
 
-        <div className={FIELD_GAP}>
-          <div className={FIELD_LABEL}>暴露档</div>
-          <Select value={exposure} items={EXPOSURES} onValueChange={(next) => next !== null && setExposure(next)}>
-            <SelectTrigger aria-label="暴露档" className="mt-1.5 w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start" className="min-w-64">
-              {EXPOSURES.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+              <div className={FIELD_GAP}>
+                <div className={FIELD_LABEL}>暴露档</div>
+                <Select value={exposure} items={EXPOSURES} onValueChange={(next) => next !== null && setExposure(next)}>
+                  <SelectTrigger aria-label="暴露档" className="mt-1.5 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="start" className="min-w-64">
+                    <SelectGroup>
+                      {EXPOSURES.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>
+                          {t.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="json">
+              <div>
+                <div className={FIELD_LABEL}>服务器 JSON（生态互拷形状，单个条目；可编辑表单未暴露的字段）</div>
+                <Textarea
+                  value={jsonText}
+                  onChange={(e) => {
+                    setJsonText(e.target.value)
+                    setFormError(null) // 输入即清错，红字不跨编辑残留
+                  }}
+                  placeholder={'{\n  "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }\n}'}
+                  rows={12}
+                  className="mt-1.5 font-mono text-[12px]"
+                />
+              </div>
+            </TabsContent>
+          </div>
+        </Tabs>
 
         {formError !== null && <div className="mt-3 text-[13px] text-destructive">{formError}</div>}
 
@@ -367,7 +494,7 @@ function ImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>导入 MCP 服务器</DialogTitle>
         </DialogHeader>
@@ -538,15 +665,19 @@ export function McpSection() {
             <SelectTrigger aria-label="作用域">
               <SelectValue />
             </SelectTrigger>
-            {/* 弹层显式定宽 + 左对齐：默认 w-(--anchor-width) 锚变量在非 Dialog
-                布局下不生效（实测弹层失去宽度约束盖住右侧），此处是布局约束
-                非样式覆盖（2026-11-15 用户定调：组件用原生形态） */}
-            <SelectContent align="start" className="w-36">
-              {SCOPES.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
+            {/* 左对齐即可：弹层宽度约束在 ui/select 本体（min-w=锚宽，见其
+                注释），调用处不再打宽度补丁（组件原生形态方针）。
+                items 必须包 SelectGroup：Group 自带 p-1 内衬，是官方形态的
+                一部分（官方全部示例皆如此包裹）；裸塞 items 会让内容贴边、
+                高亮条顶到弹层边框（2026-11-15 MCP 页"弹层不对"的根因） */}
+            <SelectContent>
+              <SelectGroup>
+                {SCOPES.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
           <div className="text-sm">

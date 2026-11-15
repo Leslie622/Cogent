@@ -17,7 +17,8 @@
 - 审批投影：`runtime/tool-meta.ts` —— `mcp__*` 前缀 → exec 档；
 - UI：设置页「MCP 服务器」分区（`renderer/features/settings/McpSection.tsx`，
   zcode 形态：作用域下拉 + 计数 + 搜索 + 刷新/新建工具行 + 图标方块条目行 +
-  虚线空态）—— renderer 经 `engine:request` 通用代理直达三个方法（白名单在
+  虚线空态；新增/编辑弹窗 = 表单/JSON 双模式，JSON 为生态形状单条直编、
+  可改表单未暴露的 timeout 等字段）—— renderer 经 `engine:request` 通用代理直达三个方法（白名单在
   `main/ipc/engine.ts`；MCP 配置真源在引擎，无壳侧双写，与 providers 的
   专属通道恰成对照）。**作用域**：本机·用户 = 定义面（增删改/导入，整表
   mcp.sync）；本项目 = 合并视图（cwd 取当前活跃会话的工作区），开关/重置走

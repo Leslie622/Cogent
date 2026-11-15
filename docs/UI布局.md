@@ -66,7 +66,7 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   group-hover:opacity-100；信息区条目的钮簇**保留 focus-within**（菜单 portal 在
   行外，hover 已断），折叠箭头**不挂** focus-within（焦点残留会赖着不灭）。
   **右键菜单 + 菜单开着保高亮**（2026-11-11）：行 div 经 `render` 顶替为
-  ContextMenuTrigger（base-luma context-menu，Base UI 原生右键/长按触发，
+  ContextMenuTrigger（base-nova context-menu，Base UI 原生右键/长按触发，
   Positioner 默认锚指针位置）；菜单开着时行不掉高亮 —— trigger 挂
   `data-popup-open`，行底配 `data-popup-open:`（行自身=右键菜单）+
   `has-[[data-popup-open]]:`（行内「更多」dropdown 开着，:has 只看后代匹配不到
@@ -107,8 +107,9 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   附言框 Enter = 拒绝并附言（stopPropagation，isComposing 挡输入法）、↑↓
   交还列表；多条挂起竖排多卡（pi 并行工具并发），首卡聚焦。确认主钮反馈
   阶梯：`bg-foreground → hover:/85 → active:/70` —— 近黑底上 hover:/90 只差
-  10% 透明度肉眼无感（首验「没 hover」翻车点）；base-luma button 原语**无
-  active 按压态**（cva 只有 hover + focus ring），深色主钮的按压色阶自补。
+  10% 透明度肉眼无感（首验「没 hover」翻车点）；base-nova button 原语**无
+  active 按压色阶**（cva 只有 hover + focus ring + active 位移），深色主钮的
+  按压色阶自补。
   裁决痕迹行 = ApprovalCard（TraceLine 置灰单行随裁决落消息流，run 终态
   替换保留）
 - **权限模式菜单**（features/home/PermissionMenu.tsx）：dropdown-menu = **四档
@@ -121,13 +122,17 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   已废），仅 `hover:bg-accent-foreground/5` 出底；**三色区分**（完全访问 =
   warning 琥珀、自主模式 = chrome-accent 蓝[链接同款实色 token]、计划/变更
   前确认 = muted-foreground 灰），箭头不单独给色（继承 currentColor）。
-  坑：base-luma dropdown Trigger 是 Base UI `render={<Button/>}` 模式，**不是**
+  坑：base-nova dropdown Trigger 是 Base UI `render={<Button/>}` 模式，**不是**
   Radix `asChild`；菜单 side="top"（钮在底部输入区）。
-  **坑（Select 弹层宽度必须显式给）**：base-luma `SelectContent` 默认
-  `w-(--anchor-width)`（锚定 trigger 宽的 CSS 变量），非 Dialog 布局下锚
-  变量不生效 → 弹层被内容/定位撑到超宽盖住周边（MCP 页作用域下拉实测）；
-  解法 = `SelectContent align="start"` + 显式 `className="w-…/min-w-…"`
-  （布局约束非样式覆盖），Dialog 内表单下拉同样加保险。官方新版 registry
+  **坑（Select 弹层宽度）**：base-nova `SelectContent` 默认
+  `w-(--anchor-width)` + `min-w-36`。`--anchor-width` 由 Floating UI 写在
+  positioner 的 inline style 上（实测恒有值 = 触发器宽；早期「非 Dialog
+  布局下不生效」为误诊，当时外扩的真因是 min-w-36 地板 + 调用处按 luma
+  触发器宽度配的 w-36 死补偿 —— base-nova 触发器收窄后暴露：144px 菜单
+  对 ~110px 触发器）。窄胶囊触发器（w-fit）解法 =
+  `className="w-[var(--anchor-width,fit-content)] min-w-0"`（= 触发器宽，
+  fit-content 仅兜底；**禁写死宽度** —— 按某代风格触发器配的补偿换装必漂）；
+  `w-full` 表单触发器（Dialog 内）不受地板影响，原样即可。官方新版 registry
   源里的 `cn-menu-target` 类是 CLI 安装期 marker（非 CSS 定义），对人工
   合入无增益 —— 不要为追它改组件。
   **坑 2（dropdown item 的强调色必须走原语变体）**：item 的 focus 高亮带
@@ -176,8 +181,11 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   detail·description + 右侧 Switch +（用户档：编辑/删除 icon-xs 灰钮；项目档：
   overrideApplied 时重置 icon-xs）；空态 = 虚线卡（border-dashed）居中主副
   文案 + 「新建 MCP 服务器」主按钮 + 「导入」outline 钮（项目档空态 = 指引
-  去用户档添加）；新增/编辑 Dialog 表单（stdio：命令 + 参数/环境变量多行
-  文本一行一条；http：URL + 请求头；暴露档 Select，name/type 编辑态锁定）；
+  去用户档添加）；新增/编辑 Dialog = 表单/JSON 双模式（Tabs 胶囊分段独占
+  标题下首行；表单：stdio 命令 + 参数/环境变量多行一行一条，http URL +
+  请求头，暴露档 Select，name/type 编辑态锁定；JSON：单条生态形状
+  `{ "名字": { …条目… } }` 直编，可改表单未暴露的字段如 timeout，坏 JSON
+  不放行切回表单，编辑态改名两模式同拒）；
   导入 Dialog = 粘贴 mcpServers JSON（生态互拷形状）合并、重名覆盖；写路径
   = 用户档整表 mcp.sync / 项目档单项 mcp.override（空 patch = 清除回落），
   引擎校验错回显 destructive 红条，文件级诊断单独「配置诊断」组卡。
@@ -232,9 +240,9 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   `@source '../../../node_modules/streamdown/dist'` 显式声明才生成 CSS。代码等宽
   = JetBrains Mono 随包（可变字重）+ `--font-mono` token（CJK 注释回落鸿蒙）
 - **滚动渐隐** `.scroll-fade-b/-y/-x`（mask 两端 24px 渐变，ChatGPT 同款不硬截；
-  base-luma 组件引用了这组类，已补定义）
+  base-nova 组件引用了这组类，已补定义）
 - **危险确认弹窗**（FullAccessConfirm，2026-11-11 照用户参考图）：alert-dialog +
-  checkbox 经 base-luma registry 安装；结构 = 警告三角图标 + 标题「要启用完全访问
+  checkbox 经 base-nova registry 安装；结构 = 警告三角图标 + 标题「要启用完全访问
   吗？」/ 说明 / 权限项卡片（`rounded-xl bg-muted` 内每行 图标 size-5 muted + 名称
   font-medium + 描述 text-xs，`Separator bg-border/60` 分隔）/ 风险提示 text-xs
   muted / 勾选门控行（label 包 Checkbox，Base UI 的 checkbox 根是 button——HTML
@@ -272,10 +280,16 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
 
 1. **tailwind-merge 变体坑**：覆写带变体的类必须同变体成对写（`px-2
    has-[>svg]:px-2`），裸工具类压不住 xs/icon-xs 自带的 `has-[>svg]:px-1.5`；
-   input-group 默认 rounded-3xl/聚焦 ring 用 `has-data-[align=...]`/`has-[[...]:focus-visible]`
-   同变体反制；**DialogContent 宽度同坑**：其自带 `sm:max-w-md`，调用处裸写
-   `max-w-xl`/`max-w-lg` 桌面端压不住（全部被钉在 448px，嵌套弹窗出现"两层等宽"），
-   必须写 `sm:max-w-*` 同变体反制
+   input-group 的聚焦 ring（`has-[[data-slot=input-group-control]:focus-visible]`
+   一族）同样要同变体反制（ChatComposer 输入区聚焦无反馈即此写法）；
+   **DialogContent 宽度同坑**：其自带 `sm:max-w-sm`（base-nova 从 md 收小），
+   调用处裸写 `max-w-xl`/`max-w-lg` 桌面端压不住（全部被钉在 384px，嵌套弹窗
+   出现"两层等宽"），必须写 `sm:max-w-*` 同变体反制；
+   **高度溢出的分工**（2026-11-15 MCP 新建表单超视口、保存钮够不着实测）：
+   组件本体限高 `max-h-[calc(100%-2rem)]` + 纵向 flex；长内容弹窗在调用处给
+   中段包 `min-h-0 flex-1 overflow-y-auto` 滚动区，头/尾钉住，配 `-mx-4
+   px-4` 全出血让滚动条贴右缘（头/尾在滚动区外，轨道不穿圆角、不截 footer
+   通栏；首版整弹窗滚动即栽此坑）；本体 overflow-y-auto 仅作未包滚动区时的兜底
 2. base-ui 触发器无 asChild → `render={<Button/>}` prop
 3. react-resizable-panels v4：`orientation` 非 direction；Panel 两层结构 className
    落内层（style prop 亦落内层，可覆写 overflow）；无 defaultCollapsed 入参
@@ -329,9 +343,10 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
    顶格恒差半个拇指宽（2026-11-10 用户发现上下文窗口滑杆"1M 没填满"差 2px
    的根因；拇指的视觉 margin 不参与该计算，实测只量拇指宽度）。center 模式
    （非 inset）Indicator=value% 直出、拇指中心恰在 P% 且不走实测管线 —— 填充
-   需要精确到轨道边缘的滑杆用 center。ui/slider 已加 thumbAlignment 透传
-   （默认 edge-client-only 保 ThinkingSlider 既有行为；marks 定位公式
-   `calc(12px + …)` 按 inset 几何推导，center 模式下会偏）
+    需要精确到轨道边缘的滑杆用 center。ui/slider 已加 thumbAlignment 透传
+    （默认 edge-client-only 保 ThinkingSlider 既有行为；marks 定位公式
+    `calc(6px + …)` 按 inset 几何推导 —— 6px/12px 对应 base-nova 拇指
+    size-3 的半径/全宽，center 模式下会偏）
 13. **base-ui Slider 键盘接管口（不等距档位必须用）**：Thumb 接受 onKeyDown
    （落在内部 input 上）；mergeProps 让用户 handler **先于**内置步进执行，
    且内置 keydown 开头就检查 `event.defaultPrevented` —— 用户先
@@ -339,6 +354,13 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
    档位（如 200K/200K/600K）下内置均匀 step 步进会在窄档卡死（步进后又被
    吸附回原档），StopSlider 的相邻档步进即靠此口（ui/slider 的
    thumbOnKeyDown 透传）
+14. **registry 的裸 `data-horizontal:`/`data-vertical:` 变体随附即坏**：
+   base-ui 只设 `data-orientation`，这两个变体编译成 `[data-horizontal]`
+   存在式选择器**永远不匹配**（2026-11-15 MCP 弹窗 Tabs 渲染成左右分栏
+   实测；separator 同款写法，细线曾因此无尺寸不可见）。已修 tabs/separator
+   两文件本体为 `data-[orientation=*]` 显式值匹配（tabs 自渲染属性，
+   separator 补自渲染）——**新装 registry 组件凡见裸 data-值 变体先核
+   base-ui 实际设的属性名**
 
 ## 视觉对标方法论（"照某图实现"类任务）
 
