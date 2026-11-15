@@ -66,7 +66,7 @@ function Slider<Value extends number | readonly number[]>({
       thumbAlignment={thumbAlignment}
       {...props}
     >
-      {/* Control 不裁切（无 overflow-hidden）：轨道（h-2）矮于拇指（h-4），
+      {/* Control 不裁切（无 overflow-hidden）：轨道（h-1）矮于拇指（size-3），
           拇指与 focus ring 的 ring-offset 都要越出 Control 上下沿渲染，裁了
           圆钮会被削平、聚焦环残缺。轨道自身的圆角裁切由 Track 的
           overflow-hidden 负责。 */}
@@ -80,7 +80,7 @@ function Slider<Value extends number | readonly number[]>({
             端点定位点压到边缘被裁半。 */}
         <SliderPrimitive.Track
           data-slot="slider-track"
-          className="relative grow overflow-hidden rounded-full bg-input/90 select-none data-[orientation=horizontal]:h-2 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-2"
+          className="relative grow overflow-hidden rounded-full bg-muted select-none data-[orientation=horizontal]:h-1 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1"
         >
           <SliderPrimitive.Indicator
             data-slot="slider-range"
@@ -93,13 +93,14 @@ function Slider<Value extends number | readonly number[]>({
               key={mark}
               data-active={filledThrough !== undefined && mark <= filledThrough ? "" : undefined}
               /* 标记跟随可停靠范围而非轨道边缘，避免端点圆点被 overflow 裁半。
-                 12px 对应思考力度滑块的拇指半径。
+                 6px 对应拇指半径（nova 拇指 size-3 = 12px 宽，inset 模式下
+                 拇指中心行程 = 两端各缩半个拇指宽）。
                  命中区：6px 圆点太小，用不可见 ::before 各向外扩 8px（22×22，
                  相邻档位间距 ~40px 不至于互相覆盖）参与命中测试 —— 伪元素盒
                  属于宿主元素，hover/click 落上面即落在点上；上下越出轨道的
                  部分被 Track overflow-hidden 裁掉各 1px，无碍。 */
               style={{
-                left: `calc(12px + (100% - 24px) * ${((mark - min) / (max - min)).toFixed(4)})`,
+                left: `calc(6px + (100% - 12px) * ${((mark - min) / (max - min)).toFixed(4)})`,
               }}
             />
           ))}
@@ -115,7 +116,7 @@ function Slider<Value extends number | readonly number[]>({
             aria-label={thumbAriaLabel}
             getAriaValueText={getThumbAriaValueText}
             onKeyDown={thumbOnKeyDown}
-            className="block h-4 w-6 shrink-0 rounded-full bg-white shadow-md ring-1 ring-black/10 transition-[color,box-shadow,background-color,inset-inline-start,transform] select-none not-dark:bg-clip-padding hover:ring-4 hover:ring-ring/30 focus-visible:ring-4 focus-visible:ring-ring/30 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 data-[orientation=vertical]:h-6 data-[orientation=vertical]:w-4"
+            className="relative block size-3 shrink-0 rounded-full border border-ring bg-white ring-ring/50 transition-[color,box-shadow,inset-inline-start,transform] select-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
           />
         ))}
       </SliderPrimitive.Control>

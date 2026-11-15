@@ -70,7 +70,7 @@ marked ^18（remend 的流式修复基础），CJK 走同一 "friendly" 家族�
 
 ## 5. 在 Cogent 的落点
 
-- `components/ui/markdown.tsx`：Streamdown 封装。base-luma registry 无 markdown 件
+- `components/ui/markdown.tsx`：Streamdown 封装。base-nova registry 无 markdown 件
   （逐名核实 404），按 约定.md §3 手写，同 reasoning.tsx 先例。偏离包默认的三处：
   **① 链接**重写 —— 色走 `--color-chrome-accent`（UI 方针"文内链接专用色"，包默认
   text-primary 在本项目是近黑）；点击 preventDefault 后 `window.open(href)`：主进程只有

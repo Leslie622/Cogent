@@ -1,11 +1,12 @@
 /**
- * API 格式下拉 —— shadcn Select 原语（base-luma registry 版，约定.md §3
+ * API 格式下拉 —— shadcn Select 原语（base-nova registry 版，约定.md §3
  * 「shadcn 优先」）：CustomProviderDetail 专用，props 接口为 value /
  * onChange（对调用方无感）。
  */
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -50,11 +51,14 @@ export function FormatSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent align="start" className="min-w-72">
-        {API_FORMATS.map((format) => (
-          <SelectItem key={format.value} value={format.value}>
-            {format.label}
-          </SelectItem>
-        ))}
+        {/* SelectGroup 的 p-1 内衬是官方形态的一部分（同 McpSection 注释） */}
+        <SelectGroup>
+          {API_FORMATS.map((format) => (
+            <SelectItem key={format.value} value={format.value}>
+              {format.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
       </SelectContent>
     </Select>
   )
