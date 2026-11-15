@@ -1,9 +1,9 @@
 /**
- * content-sidebar 的设置页内容（UI 件 6，参考稿 ChatGPT 设置栏）：标题 +
- * 搜索框 + 三组分区列表（个人/集成/编码）。行样式与 HomeSidebar 同配方
- * （h-8 圆角行、黑 5% hover/active 软叠、图标 muted + 文字近黑）；选中分区
- * 走 settings store，点行切换，content-main 随之换占位标题。
- * 分区内容本身属后续件（data.ts 登记入口）；搜索只出形（过滤属后续件）。
+ * content-sidebar 的设置页内容：标题 + 搜索框 + 两分组分区列表（分组结构
+ * 参考 zcode 设置栏，2026-11-15 用户指令：基础设置 / Agent 能力两组）。
+ * 行样式与 HomeSidebar 同配方（h-8 圆角行、黑 5% hover/active 软叠、
+ * 图标 muted + 文字近黑）；选中分区走 settings store，点行切换，
+ * content-main 随之挂内容组件。
  */
 import { SETTINGS_GROUPS } from './data'
 import { cn } from 'cn'
@@ -39,8 +39,8 @@ export function SettingsSidebar() {
         </div>
 
         {SETTINGS_GROUPS.map((group) => (
-          <section key={group.label} className="mt-4 flex flex-col gap-0.5">
-            {/* 分组标题：灰字，非按钮（与 HomeSidebar 分区标题同档 14px） */}
+          <section key={group.label} className="mt-4 first:mt-4 flex flex-col gap-0.5">
+            {/* 分组标题：灰字，非按钮（与 HomeSidebar 分区标题同档） */}
             <div className="flex h-7 items-center px-2 text-sm text-muted-foreground">
               {group.label}
             </div>

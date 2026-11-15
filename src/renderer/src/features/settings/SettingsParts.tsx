@@ -7,11 +7,11 @@
  */
 import type { ReactNode } from 'react'
 
-/** 设置分组：标题 + 卡片容器；divide-y 出行间 1px 线（首行无线） */
-export function SettingsGroup({ label, children }: { label: string; children: ReactNode }) {
+/** 设置分组：标题（可省 —— 列表卡直接顶格）+ 卡片容器；divide-y 出行间 1px 线（首行无线） */
+export function SettingsGroup({ label, children }: { label?: string; children: ReactNode }) {
   return (
     <section className="mt-8 first:mt-7">
-      <h3 className="text-[15px] font-semibold">{label}</h3>
+      {label !== undefined && <h3 className="text-[15px] font-semibold">{label}</h3>}
       <div className="mt-3 flex flex-col divide-y divide-border rounded-xl border border-border">
         {children}
       </div>

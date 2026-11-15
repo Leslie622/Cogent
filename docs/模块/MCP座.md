@@ -13,11 +13,14 @@
 - 装配：`kernel/pi-session-factory.ts` —— `extensionFactories` 加入
   `createMcpExtension({ loadConfig, logPath, updateConfig })`；
 - 审批投影：`runtime/tool-meta.ts` —— `mcp__*` 前缀 → exec 档；
-- UI：设置页「连接」分区（`renderer/features/settings/McpSection.tsx`）——
+- UI：设置页「MCP 服务器」分区（`renderer/features/settings/McpSection.tsx`，
+  zcode 形态：工具行计数/刷新/新建 + 图标方块条目行 + 虚线空态）——
   renderer 经 `engine:request` 通用代理直达两个方法（白名单在
   `main/ipc/engine.ts`；MCP 配置真源在引擎，无壳侧双写，与 providers 的
-  专属通道恰成对照）。列表行启停/编辑/删除 + Dialog 表单（stdio/http 分栏），
-  全量 mcp.sync 提交，引擎校验错回显。
+  专属通道恰成对照）。列表行启停/编辑/删除 + 新增/编辑 Dialog + 导入
+  Dialog（粘贴 mcpServers JSON 合并、重名覆盖），全量 mcp.sync 提交，
+  引擎校验错回显。连接状态（zcode 绿/红点）无数据面 —— 连接活在 pi 会话
+  内部，暴露需协议扩展（列后续）。
 
 ## 数据与生命周期
 

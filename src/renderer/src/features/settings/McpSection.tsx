@@ -1,12 +1,24 @@
 /**
- * 设置 · 连接分区（MCP 服务器管理，阶段 4a-2）：数据真源 = 引擎的
- * ~/.cogent/mcp.json（mcp.list / mcp.sync 经 engine:request 通用代理 ——
- * 引擎独占写者，无壳侧双写）。全量替换语义：每次改动整表 mcp.sync；
- * 页面明示「变更新会话生效」（会话装配时快照定格，进行中会话不受影响）。
- * 工具进循环后仍走审批链（exec 档默认询问），此处只管配置。
+ * 设置 · MCP 服务器分区（阶段 4a-2，2026-11-15 按 zcode 参考稿重排）：
+ * 数据真源 = 引擎的 ~/.cogent/mcp.json（mcp.list / mcp.sync 经 engine:request
+ * 通用代理 —— 引擎独占写者，无壳侧双写）。全量替换语义：每次改动整表
+ * mcp.sync；页头明示「变更新会话生效」（会话装配时快照定格）。
+ * 形态（zcode 对齐）：工具行（已安装计数 / 刷新 / 新建主按钮）+ 条目行
+ * （类型图标方块 + 名称两行 + 启停/编辑/删除）+ 虚线空态卡（新建/导入）。
+ * 导入 = 粘贴 mcpServers JSON（生态互拷形状）合并，重名覆盖。
+ * 连接状态点（zcode 绿/红）无数据面 —— Host 是 headless，连接状态在 pi
+ * 会话内部，需协议扩展才能暴露（后续候选，见 模块/MCP座.md 边界）。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { IconPencil, IconPlus, IconTrash } from '@tabler/icons-react'
+import {
+  IconDownload,
+  IconPencil,
+  IconPlus,
+  IconRefresh,
+  IconTerminal2,
+  IconTrash,
+  IconWorld
+} from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -19,7 +31,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { SettingsGroup, SettingsRow } from './SettingsParts'
+import { SettingsGroup } from './SettingsParts'
 import { BADGE, FIELD_GAP, FIELD_LABEL } from './models-recipes'
 import type { McpExposure, McpServerDef, McpServerSummary } from '@/env.d'
 
@@ -56,8 +68,59 @@ const parseEntries = (text: string, sep: string): Record<string, string> => {
   return out
 }
 
-/** IPC 错误 → 文案（engine:request 直抛 Error，同步失败原样呈现给用户） */
+/** IPC / 解析错误 → 文案（engine:request 直抛 Error，失败原样呈现给用户） */
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
+const isStringRecord = (value: unknown): value is Record<string, string> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) &&
+  Object.values(value).every((v) => typeof v === 'string')
+
+/** 普通对象判定（值未知；server 条目必须是它） */
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/**
+ * 导入载荷 → defs（renderer 侧结构提取；值域校验在引擎 mcp.sync 入口）。
+ * 接受两种形状：`{ "mcpServers": { … } }`（生态通用形状，剪贴板互拷）或直接
+ * `{ "名字": { command/url… } }` 的 map。缺 command/url 的条目记名报错。
+ */
+function parseImport(text: string): { defs: McpServerDef[]; errors: string[] } {
+  const parsed: unknown = JSON.parse(text)
+  if (!isRecord(parsed)) {
+    throw new Error('导入内容需要是 JSON 对象（{"mcpServers": { … }}）')
+  }
+  const map = isRecord(parsed.mcpServers) ? parsed.mcpServers : parsed
+  const defs: McpServerDef[] = []
+  const errors: string[] = []
+  for (const [name, raw] of Object.entries(map)) {
+    if (!isRecord(raw)) {
+      errors.push(`"${name}" 不是对象`)
+      continue
+    }
+    const cfg = raw
+    const shared = {
+      ...(typeof cfg.description === 'string' && { description: cfg.description }),
+      ...(cfg.enabled !== undefined && { enabled: cfg.enabled === true }),
+      ...(typeof cfg.exposure === 'string' && { exposure: cfg.exposure as McpExposure }),
+      ...(typeof cfg.timeout === 'number' && { timeout: cfg.timeout })
+    }
+    if (typeof cfg.url === 'string' && cfg.url.length > 0) {
+      defs.push({ name, type: 'http', url: cfg.url, ...(isStringRecord(cfg.headers) && { headers: cfg.headers }), ...shared })
+    } else if (typeof cfg.command === 'string' && cfg.command.length > 0) {
+      defs.push({
+        name,
+        type: 'stdio',
+        command: cfg.command,
+        ...(Array.isArray(cfg.args) && { args: cfg.args as string[] }),
+        ...(isStringRecord(cfg.env) && { env: cfg.env }),
+        ...shared
+      })
+    } else {
+      errors.push(`"${name}" 缺少 command 或 url，无法导入`)
+    }
+  }
+  return { defs, errors }
+}
 
 /**
  * 新增/编辑表单弹窗。编辑态锁 name 与 type（改类型 = 换一个 server，
@@ -165,13 +228,7 @@ function ServerDialog({
 
         <div className={FIELD_GAP}>
           <div className={FIELD_LABEL}>类型</div>
-          <Select
-            value={type}
-            items={TYPES}
-            onValueChange={(next) => {
-              if (next !== null) setType(next)
-            }}
-          >
+          <Select value={type} items={TYPES} onValueChange={(next) => next !== null && setType(next)}>
             <SelectTrigger aria-label="类型" disabled={initial !== null} className="mt-1.5 h-9 w-full rounded-lg">
               <SelectValue />
             </SelectTrigger>
@@ -189,12 +246,7 @@ function ServerDialog({
           <>
             <div className={FIELD_GAP}>
               <div className={FIELD_LABEL}>启动命令</div>
-              <Input
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="如 npx"
-                className="mt-1.5"
-              />
+              <Input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="如 npx" className="mt-1.5" />
             </div>
             <div className={FIELD_GAP}>
               <div className={FIELD_LABEL}>参数（一行一个）</div>
@@ -221,12 +273,7 @@ function ServerDialog({
           <>
             <div className={FIELD_GAP}>
               <div className={FIELD_LABEL}>URL</div>
-              <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com/mcp"
-                className="mt-1.5"
-              />
+              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/mcp" className="mt-1.5" />
             </div>
             <div className={FIELD_GAP}>
               <div className={FIELD_LABEL}>请求头（一行一条 名称: 值）</div>
@@ -248,13 +295,7 @@ function ServerDialog({
 
         <div className={FIELD_GAP}>
           <div className={FIELD_LABEL}>暴露档</div>
-          <Select
-            value={exposure}
-            items={EXPOSURES}
-            onValueChange={(next) => {
-              if (next !== null) setExposure(next)
-            }}
-          >
+          <Select value={exposure} items={EXPOSURES} onValueChange={(next) => next !== null && setExposure(next)}>
             <SelectTrigger aria-label="暴露档" className="mt-1.5 h-9 w-full rounded-lg">
               <SelectValue />
             </SelectTrigger>
@@ -283,6 +324,73 @@ function ServerDialog({
   )
 }
 
+/** 导入弹窗：粘贴生态通用形状的 JSON（{"mcpServers": { … }}），重名覆盖 */
+function ImportDialog({
+  open,
+  onClose,
+  onImport
+}: {
+  open: boolean
+  onClose: () => void
+  onImport: (defs: McpServerDef[]) => void
+}) {
+  const [text, setText] = useState('')
+  const [formError, setFormError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open) {
+      setText('')
+      setFormError(null)
+    }
+  }, [open])
+
+  const run = (): void => {
+    if (text.trim().length === 0) {
+      setFormError('粘贴要导入的 JSON')
+      return
+    }
+    try {
+      const { defs, errors } = parseImport(text)
+      if (defs.length === 0) {
+        setFormError(errors.length > 0 ? errors.join('；') : '没有可导入的服务器')
+        return
+      }
+      onImport(defs)
+    } catch (error) {
+      setFormError(messageOf(error))
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>导入 MCP 服务器</DialogTitle>
+        </DialogHeader>
+        <div>
+          <div className={FIELD_LABEL}>粘贴配置 JSON（与 Claude Desktop / zcode 等互拷的 mcpServers 形状）</div>
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={'{\n  "mcpServers": {\n    "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }\n  }\n}'}
+            rows={8}
+            className="mt-1.5 font-mono text-[12px]"
+          />
+        </div>
+        {formError !== null && <div className="mt-3 text-[13px] leading-relaxed text-destructive">{formError}</div>}
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            取消
+          </Button>
+          <Button size="sm" onClick={run}>
+            导入
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function McpSection() {
   /** null = 加载中（首拉未返回） */
   const [servers, setServers] = useState<McpServerSummary[] | null>(null)
@@ -290,6 +398,7 @@ export function McpSection() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [editing, setEditing] = useState<McpServerDef | null>(null)
 
   const refresh = useCallback(async () => {
@@ -332,10 +441,16 @@ export function McpSection() {
     void sync(next)
   }
 
+  /** 导入合并：重名覆盖（导入值是用户刚确认的最新意图），其余保留，新增追加 */
+  const importFromDialog = (defs: McpServerDef[]): void => {
+    const merged = new Map((servers ?? []).map((s) => [s.name, s.def]))
+    for (const def of defs) merged.set(def.name, def)
+    setImportOpen(false)
+    void sync([...merged.values()])
+  }
+
   const toggle = (summary: McpServerSummary, enabled: boolean): void => {
-    const next = (servers ?? []).map((s) =>
-      s.name === summary.name ? { ...s.def, enabled } : s.def
-    )
+    const next = (servers ?? []).map((s) => (s.name === summary.name ? { ...s.def, enabled } : s.def))
     void sync(next)
   }
 
@@ -344,36 +459,90 @@ export function McpSection() {
     void sync(next)
   }
 
+  const count = servers?.length ?? 0
+
   return (
     <div className="mx-auto w-full max-w-3xl px-10 py-8">
-      <h2 className="text-2xl font-semibold">连接</h2>
+      <h2 className="text-2xl font-semibold">MCP 服务器</h2>
       <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-        MCP 服务器：外部工具经 Model Context Protocol 直接进入 Agent 循环（工具调用仍走审批）。
+        外部工具经 Model Context Protocol 直接进入 Agent 循环（工具调用仍走审批）。
         配置存储于用户级 ~/.cogent/mcp.json，变更<strong>新会话生效</strong>（进行中的会话不受影响）；
         项目可在工作区 .cogent/mcp.json 里按 server 覆盖启停与暴露档。
       </p>
 
-      <SettingsGroup label="MCP 服务器">
-        {servers === null ? (
-          <div className="px-5 py-4 text-[13px] text-muted-foreground">加载中…</div>
-        ) : servers.length === 0 ? (
-          <div className="px-5 py-4 text-[13px] text-muted-foreground">
-            尚未配置 MCP 服务器 —— 添加一个，让 Agent 用上外部工具。
-          </div>
-        ) : (
-          servers.map((s) => (
-            <SettingsRow
-              key={s.name}
-              title={
-                <span className="flex items-center gap-2">
-                  {s.name}
-                  <span className={BADGE}>{s.type}</span>
-                  <span className={BADGE}>{s.exposure}</span>
-                </span>
-              }
-              desc={s.detail + (s.description !== undefined ? ` —— ${s.description}` : '')}
+      {/* 工具行（zcode 形态）：左已安装计数 · 右刷新 + 新建主按钮 */}
+      <div className="mt-6 flex items-center gap-2">
+        <div className="text-sm">
+          <span className="font-medium">已安装</span>{' '}
+          <span className="text-muted-foreground">{count}</span>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="outline" size="icon-sm" disabled={busy} onClick={() => void refresh()} aria-label="刷新">
+            <IconRefresh className="size-4" />
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              setEditing(null)
+              setDialogOpen(true)
+            }}
+          >
+            <IconPlus className="size-4" />
+            新建
+          </Button>
+        </div>
+      </div>
+
+      {servers === null ? (
+        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-[13px] text-muted-foreground">加载中…</div>
+      ) : count === 0 ? (
+        /* 空态（zcode 形态）：虚线卡 + 主副文案 + 新建/导入双入口 */
+        <div className="mt-3 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-12 text-center">
+          <div className="text-sm font-medium">尚未安装 MCP 服务器</div>
+          <div className="text-[13px] text-muted-foreground">手动新建服务器，或导入已有配置。</div>
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                setEditing(null)
+                setDialogOpen(true)
+              }}
             >
-              <div className="flex items-center gap-1">
+              <IconPlus className="size-4" />
+              新建 MCP 服务器
+            </Button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => setImportOpen(true)}>
+              <IconDownload className="size-4" />
+              导入
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <SettingsGroup label="">
+          {servers.map((s) => (
+            <div key={s.name} className="flex items-center gap-4 px-5 py-4">
+              {/* 类型图标方块（zcode 形态；无连接状态可标 —— 见文件头注释） */}
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
+                {s.type === 'http' ? (
+                  <IconWorld className="size-[18px] text-muted-foreground" />
+                ) : (
+                  <IconTerminal2 className="size-[18px] text-muted-foreground" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm font-medium">{s.name}</span>
+                  {!s.enabled && <span className={BADGE}>已禁用</span>}
+                  <span className={BADGE}>{s.exposure}</span>
+                </div>
+                <div className="mt-0.5 truncate text-[13px] text-muted-foreground">
+                  {s.detail}
+                  {s.description !== undefined ? ` · ${s.description}` : ''}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
                 <Switch
                   checked={s.enabled}
                   disabled={busy}
@@ -392,35 +561,14 @@ export function McpSection() {
                 >
                   <IconPencil className="size-4" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  disabled={busy}
-                  onClick={() => remove(s)}
-                  aria-label={`删除 ${s.name}`}
-                >
+                <Button variant="ghost" size="icon-xs" disabled={busy} onClick={() => remove(s)} aria-label={`删除 ${s.name}`}>
                   <IconTrash className="size-4" />
                 </Button>
               </div>
-            </SettingsRow>
-          ))
-        )}
-        {/* 添加行：卡片尾部常驻入口（新增态 initial=null） */}
-        <div className="flex items-center px-5 py-3">
-          <Button
-            variant="ghost"
-            size="xs"
-            disabled={busy}
-            onClick={() => {
-              setEditing(null)
-              setDialogOpen(true)
-            }}
-          >
-            <IconPlus className="size-4" />
-            添加服务器
-          </Button>
-        </div>
-      </SettingsGroup>
+            </div>
+          ))}
+        </SettingsGroup>
+      )}
 
       {fileErrors.length > 0 && (
         <SettingsGroup label="配置诊断">
@@ -438,12 +586,8 @@ export function McpSection() {
         </div>
       )}
 
-      <ServerDialog
-        open={dialogOpen}
-        initial={editing}
-        onClose={() => setDialogOpen(false)}
-        onSave={saveFromDialog}
-      />
+      <ServerDialog open={dialogOpen} initial={editing} onClose={() => setDialogOpen(false)} onSave={saveFromDialog} />
+      <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImport={importFromDialog} />
     </div>
   )
 }

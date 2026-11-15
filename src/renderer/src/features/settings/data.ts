@@ -1,29 +1,23 @@
 /**
  * 设置分区注册表（静态）：分组列表供 SettingsSidebar 渲染，id→条目查找供
- * SettingsMain 出占位标题。分区内容组件属后续件，到件时在此登记入口。
+ * SettingsMain 出占位标题。分组与条目参考 zcode 设置栏（2026-11-15 用户
+ * 指令）：基础设置（应用面）/ Agent 能力（扩展面）两组；已实现的分区挂
+ * 内容组件（SettingsMain 注册表），其余占位（技能/命令对应阶段 4 后续座）。
  */
 import type { ComponentType } from 'react'
 import {
-  IconApps,
-  IconArrowsSplit2,
-  IconAt,
+  IconArchive,
   IconBrowser,
   IconCommand,
-  IconDatabase,
-  IconDownload,
-  IconGitBranch,
-  IconMicrophone,
-  IconMoodSmile,
-  IconPalette,
   IconPointer,
+  IconPlug,
+  IconPuzzle,
   IconRobot,
   IconSettings,
-  IconShield,
   IconSun,
   IconTerminal2,
+  IconWand,
   IconWebhook,
-  IconWorld,
-  IconArchive,
 } from '@tabler/icons-react'
 import type { SettingsSectionId } from '@/stores/settings'
 
@@ -34,41 +28,28 @@ export type SettingsItem = {
 }
 export type SettingsGroup = { label: string; items: SettingsItem[] }
 
-/** 顺序/命名照参考稿（ChatGPT 设置栏）：个人 / 集成 / 编码 三组 */
+/** 两分组（zcode 形态）：基础设置 / Agent 能力 */
 export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   {
-    label: '个人',
+    label: '基础设置',
     items: [
       { id: 'general', label: '常规', icon: IconSettings },
-      { id: 'models', label: '模型设置', icon: IconRobot },
-      { id: 'import', label: '导入', icon: IconDownload },
       { id: 'appearance', label: '外观', icon: IconSun },
-      { id: 'archived-chats', label: '已归档的聊天', icon: IconArchive },
-      { id: 'voice', label: '语音', icon: IconMicrophone },
-      { id: 'storage', label: '存储', icon: IconDatabase },
-      { id: 'config', label: '配置', icon: IconShield },
-      { id: 'personalization', label: '个性化', icon: IconPalette },
-      { id: 'companion', label: '迷你界面和智能伙伴', icon: IconMoodSmile },
-      { id: 'shortcuts', label: '键盘快捷键', icon: IconCommand },
-    ],
-  },
-  {
-    label: '集成',
-    items: [
-      { id: 'plugins', label: '插件', icon: IconAt },
-      { id: 'computer-control', label: '电脑操控', icon: IconPointer },
-      { id: 'app-snapshots', label: '应用快照', icon: IconApps },
+      { id: 'models', label: '模型设置', icon: IconRobot },
       { id: 'browser', label: '浏览器', icon: IconBrowser },
+      { id: 'computer-control', label: '电脑操控', icon: IconPointer },
+      { id: 'shortcuts', label: '键盘快捷键', icon: IconCommand },
+      { id: 'archived-chats', label: '已归档的聊天', icon: IconArchive },
     ],
   },
   {
-    label: '编码',
+    label: 'Agent 能力',
     items: [
+      { id: 'plugins', label: '插件', icon: IconPuzzle },
+      { id: 'connections', label: 'MCP 服务器', icon: IconPlug },
+      { id: 'skills', label: '技能', icon: IconWand },
+      { id: 'commands', label: '命令', icon: IconTerminal2 },
       { id: 'hooks', label: '钩子', icon: IconWebhook },
-      { id: 'connections', label: '连接', icon: IconWorld },
-      { id: 'git', label: 'Git', icon: IconGitBranch },
-      { id: 'environment', label: '环境', icon: IconTerminal2 },
-      { id: 'worktrees', label: 'Worktrees', icon: IconArrowsSplit2 },
     ],
   },
 ]
