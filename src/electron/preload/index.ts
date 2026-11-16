@@ -55,13 +55,13 @@ const api = {
     answers: Array<string | string[]>
   ): Promise<{ ok: true }> => ipcRenderer.invoke(IPC.questionRespond, { requestId, answers }),
 
-  /** 裁决挂起中的 submit_plan（交互座 4c-3；同款专属通道）：批准可带
-      switchMode（批准后切档 + 记为项目默认语义同 respondApproval），拒绝可附
-      message 反馈（进工具结果给模型修订）；result.summary = 切档后的会话摘要 */
+  /** 裁决挂起中的 submit_plan（交互座 4c-3；同款专属通道）：批准 = 关计划
+      开关（权限档不动），拒绝可附 message 反馈（进工具结果给模型修订）；
+      result.summary = 批准后的会话摘要 */
   respondPlan: (
     requestId: string,
     approved: boolean,
-    options?: { switchMode?: 'ask' | 'auto' | 'autonomous'; message?: string }
+    options?: { message?: string }
   ): Promise<{ ok: true; summary?: SessionSummary }> =>
     ipcRenderer.invoke(IPC.planRespond, { requestId, approved, ...options }),
 

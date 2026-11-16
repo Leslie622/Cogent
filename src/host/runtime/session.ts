@@ -141,8 +141,16 @@ function asStoredSession(
   if (d.plan !== undefined && (typeof d.plan !== 'object' || typeof (d.plan as PlanRecord).plan !== 'string')) {
     throw new Error(`会话文档计划形状不合法（sessions/${id}.json），请手工处理后重启`)
   }
+  // v2 盘 plan 档迁移（正交开关 v3）：plan 曾是档位联合值，原档已被覆盖无从
+  // 考据 → 回 ask 缺省 + 开关开（行为保真：只读约束不丢）。磁盘旧数据属信任
+  // 边界，mode 以 string 比较（类型层 'plan' 已删）
+  const summary = { ...d.summary }
+  if ((d.summary.permissionMode as string) === 'plan') {
+    summary.permissionMode = 'ask'
+    summary.planEnabled = true
+  }
   return {
-    summary: d.summary,
+    summary,
     ...(d.todos !== undefined && { todos: d.todos as TodoItem[] }),
     ...(d.plan !== undefined && { plan: d.plan as PlanRecord }),
     ...(d.version === 1 && { legacyTranscript: d.transcript as AgentMessage[] })
@@ -246,24 +254,19 @@ function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
 }
 
 /**
- * 权限模式通告段：**四档全设正向文案**，
+ * 权限模式通告段：**三档全设正向文案**，
  * 经 before_agent_start 扩展进 systemPromptOptions 的 cogent_permission
  * section（pi 对 sections 变更才追加 patch、回放按名替换 —— 运行中切模式
  * 下一轮即生效且不堆积）。
  * 为什么 ask 也设段（首版曾"非 ask 不设"）：切回 ask 只是把段移除，但会话
- * 历史里还留着此前被 plan 拦截的工具 error —— 模型会据历史推断"仍只读"、
- * 连尝试都不尝试。四档全给明确的当下状态（切换 = 内容替换），模型每轮拿到
+ * 历史里还留着此前被拦截的工具 error —— 模型会据历史推断"仍受限"、
+ * 连尝试都不尝试。三档全给明确的当下状态（切换 = 内容替换），模型每轮拿到
  * 的是现状而非考古。文案与 decideApproval 的强制面同口径。
+ * 只读计划是正交开关（cogent_plan_active 段），不在本段 —— 两个正交维度
+ * 各自替换互不干扰（docs/计划/计划模式正交开关.md）。
  */
 function permissionSectionText(mode: PermissionMode): string {
   switch (mode) {
-    case 'plan':
-      return (
-        '当前会话处于 plan（只读）模式：文件写入与命令执行会被拒绝，只能读取文件、搜索和列目录。不要尝试调用写类或执行类工具。\n' +
-        '工作流：先用只读工具完成调研；遇到需要用户拍板的疑点用 ask_user 澄清；' +
-        '调研充分后调 submit_plan 提交实现计划并等待批准。' +
-        '不要用普通文本或 ask_user 问「这个方案可以吗」—— 那正是 submit_plan 的职责。'
-      )
     case 'auto':
       return '当前会话处于完全访问模式：所有工具调用直接执行，无需用户逐次确认。'
     case 'autonomous':
@@ -271,6 +274,20 @@ function permissionSectionText(mode: PermissionMode): string {
     default:
       return '当前会话处于变更前确认模式：文件写入和命令执行会先请求用户批准，你可以正常尝试调用需要的工具。'
   }
+}
+
+/**
+ * 计划模式段（开关开启时注入、关闭即撤段）：只读约束 + 调研→submit_plan
+ * 工作流。zcode runtime-reminders 的 plan still active 提醒同源 —— 每回合
+ * 常驻，防模型长对话后忘记自己只读。
+ */
+function planModeSectionText(): string {
+  return (
+    '当前会话开启了计划模式（只读）：文件写入与命令执行会被拒绝，只能读取文件、搜索和列目录。不要尝试调用写类或执行类工具。\n' +
+    '工作流：先用只读工具完成调研；遇到需要用户拍板的疑点用 ask_user 澄清；' +
+    '调研充分后调 submit_plan 提交实现计划并等待批准。' +
+    '不要用普通文本或 ask_user 问「这个方案可以吗」—— 那正是 submit_plan 的职责。'
+  )
 }
 
 /**
@@ -663,12 +680,18 @@ export class SessionManager implements CogentKernel {
   // ———— 会话 CRUD ————
 
   create(
-    params: { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode } = {}
+    params: {
+      title?: string
+      cwd?: string
+      projectId?: string
+      permissionMode?: PermissionMode
+      planEnabled?: boolean
+    } = {}
   ): SessionSummary {
     const now = Date.now()
     // 模式缺省解析（F6）：直驱协议/其他宿主不带 permissionMode 时按项目默认
-    // 兜底（「允许，并切换为」的落位；renderer 走自己的同规则链，显式值优先
-    // 两不冲突）。项目也没设 → 不带字段 = ask（协议缺省语义，旧宿主不破）
+    // 兜底（renderer 走自己的同规则链，显式值优先两不冲突）。项目也没设 →
+    // 不带字段 = ask（协议缺省语义，旧宿主不破）
     const defaultMode =
       params.permissionMode !== undefined
         ? params.permissionMode
@@ -681,7 +704,8 @@ export class SessionManager implements CogentKernel {
       updatedAt: now,
       ...(params.cwd !== undefined && { cwd: params.cwd }),
       ...(params.projectId !== undefined && { projectId: params.projectId }),
-      ...(defaultMode !== undefined && { permissionMode: defaultMode })
+      ...(defaultMode !== undefined && { permissionMode: defaultMode }),
+      ...(params.planEnabled === true && { planEnabled: true })
     }
     this.sessions.set(summary.id, { summary, todos: [] })
     this.persist(summary.id)
@@ -1152,6 +1176,9 @@ export class SessionManager implements CogentKernel {
       session.summary.permissionMode = switchMode
       this.persist(session.summary.id)
       summary = { ...session.summary }
+      // 与 setPermission/setPlanMode 同款北向广播：审批面板切档是引擎侧改档，
+      // 不广播则宿主权限钮不联动（session.summaryChanged 的统一语义）
+      this.notify('session.summaryChanged', { summary })
       const projectId = this.projectIdOf(session)
       if (projectId !== undefined) this.projects.setDefaultPermissionMode(projectId, switchMode)
     }
@@ -1176,7 +1203,24 @@ export class SessionManager implements CogentKernel {
     const session = this.requireSession(sessionId)
     session.summary.permissionMode = mode
     this.persist(sessionId)
-    return { ...session.summary }
+    const summary = { ...session.summary }
+    this.notify('session.summaryChanged', { summary })
+    return summary
+  }
+
+  /**
+   * 计划模式开关（正交于权限档）：UI 计划钮/菜单开关项与 enter_plan 工具
+   * 共用此路 —— 记账 + 落盘 + 北向广播一次完成。enabled 只翻 planEnabled，
+   **不碰 permissionMode**（开关关闭后原档自动恢复，无需回退档）。
+   */
+  setPlanMode(sessionId: string, enabled: boolean): SessionSummary {
+    const session = this.requireSession(sessionId)
+    if (enabled) session.summary.planEnabled = true
+    else delete session.summary.planEnabled
+    this.persist(sessionId)
+    const summary = { ...session.summary }
+    this.notify('session.summaryChanged', { summary })
+    return summary
   }
 
   /**
@@ -1204,11 +1248,13 @@ export class SessionManager implements CogentKernel {
     // 注册表 bug，stderr 已在转译层留诊断，这里按无害的只读放行）
     const kind = meta?.kind ?? 'read'
     if (kind === 'read') return Promise.resolve({ block: false })
+    // 计划开关短路优先于档位放行（zcode permission/service.ts:148 同序）：
+    // 「完全访问 + 计划开着」= 只读 —— 开关语义不受档位影响
+    if (session.summary.planEnabled === true) {
+      return Promise.resolve({ block: true, reason: '计划模式（只读）下写类与执行类工具被禁止' })
+    }
     const mode = session.summary.permissionMode ?? 'ask'
     if (mode === 'auto') return Promise.resolve({ block: false })
-    if (mode === 'plan') {
-      return Promise.resolve({ block: true, reason: 'plan（只读）模式下写类工具被禁止' })
-    }
     // 写类根内判定（软边界瘦身为"规则适用域"）：越界与否不再决定放拦，
     // 只决定 ask 是否可吃「始终允许」规则 —— 信任记忆的范围 = 根内写
     const roots = this.toolRoots(session)
@@ -1293,17 +1339,12 @@ export class SessionManager implements CogentKernel {
   }
 
   /**
-   * 方案裁决回流（交互座 4c-3，respondApproval.switchMode 同款切档语义）：
-   * 批准 → 切目标档（缺省 ask）+ StoredSession.plan 落账（cogent_plan 段源，
-   * 新批准覆盖旧值）+ 放行工具；拒绝 → 反馈（可空）进工具结果。
-   * 返回切换后的摘要（宿主同步列表模式标记；拒绝时缺省）。
+   * 方案裁决回流（交互座 4c-3）：批准 → 关计划开关（permissionMode 不动，
+   * 原档自动恢复）+ StoredSession.plan 落账（cogent_plan 段源，新批准覆盖
+   * 旧值）+ 放行工具；拒绝 → 开关保持开（修订重提的语义前提），反馈（可空）
+   * 进工具结果。返回批准后的摘要（拒绝时缺省）。
    */
-  respondPlan(
-    requestId: string,
-    approved: boolean,
-    switchMode?: 'ask' | 'auto' | 'autonomous',
-    message?: string
-  ): { ok: true; summary?: SessionSummary } {
+  respondPlan(requestId: string, approved: boolean, message?: string): { ok: true; summary?: SessionSummary } {
     const pending = this.pendingPlans.get(requestId)
     if (pending === undefined) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, `方案请求不存在或已被裁决: ${requestId}`)
@@ -1312,15 +1353,16 @@ export class SessionManager implements CogentKernel {
     let summary: SessionSummary | undefined
     if (approved) {
       const session = this.requireSession(pending.sessionId)
-      session.summary.permissionMode = switchMode ?? 'ask'
+      delete session.summary.planEnabled
       session.plan = { plan: pending.plan, approvedAt: Date.now() }
       this.persist(session.summary.id)
       summary = { ...session.summary }
+      this.notify('session.summaryChanged', { summary })
     }
     const trimmed = message?.trim()
     pending.resolve(
       approved
-        ? { approved: true, ...(switchMode !== undefined && { switchMode }) }
+        ? { approved: true }
         : { approved: false, ...(trimmed !== undefined && trimmed !== '' && { message: trimmed }) }
     )
     return { ok: true, ...(summary !== undefined && { summary }) }
@@ -1383,6 +1425,7 @@ export class SessionManager implements CogentKernel {
         const todos = todosSectionText(session.todos)
         return {
           cogent_permission: permissionSectionText(session.summary.permissionMode ?? 'ask'),
+          ...(session.summary.planEnabled === true && { cogent_plan_active: planModeSectionText() }),
           skills: formatSkillsSection(this.skillStore.snapshot(boundRoots[0] ?? homedir()).skills),
           ...(todos !== null && { cogent_todos: todos }),
           ...(session.plan !== undefined && { cogent_plan: planSectionText(session.plan) })
@@ -1390,7 +1433,7 @@ export class SessionManager implements CogentKernel {
       },
       // 交互座（4c）：todo_write 落笔 → 会话状态 + 持久化 + 北向事件；
       // ask_user 挂起 → question.asked → respond/abort/settle 三路收尾；
-      // plan 闭环 → enter_plan 切档 + submit_plan 挂起审批（plan.respond）
+      // plan 闭环 → enter_plan 开关 + submit_plan 挂起审批（plan.respond）
       customTools: [
         createTodoTool({
           updateTodos: (todos) => {
@@ -1424,14 +1467,14 @@ export class SessionManager implements CogentKernel {
         }),
         createEnterPlanTool({
           enterPlan: () => {
-            // 幂等：已在此档照走 setPermission（记账 + 持久化同一路，无副作用差异）
-            this.setPermission(sessionId, 'plan')
+            // 幂等：已开着照走 setPlanMode（记账 + 持久化 + 广播同一路，无副作用差异）
+            this.setPlanMode(sessionId, true)
           }
         }),
         createSubmitPlanTool(
           {
             submitPlan: (plan, signal) =>
-              new Promise<{ approved: true; switchMode?: string } | { approved: false; message?: string }>((resolve) => {
+              new Promise<{ approved: true } | { approved: false; message?: string }>((resolve) => {
                 const requestId = `plan-${crypto.randomUUID()}`
                 this.pendingPlans.set(requestId, { sessionId, plan, resolve })
                 this.notify('plan.requested', { sessionId, requestId, plan })
@@ -1443,8 +1486,8 @@ export class SessionManager implements CogentKernel {
                 })
               })
           },
-          // 活模式读引用（非 plan 档拒绝的判定源；运行中切档即时生效）
-          () => session.summary.permissionMode ?? 'ask'
+          // 活开关读引用（未开启时 submit_plan 拒绝的判定源；运行中切换即时生效）
+          () => session.summary.planEnabled === true
         )
       ],
       approval: {

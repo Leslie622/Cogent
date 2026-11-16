@@ -290,17 +290,20 @@ export interface ChatState {
   load: () => Promise<void>
   selectSession: (sessionId: string) => Promise<void>
   /** 建会话并设为活动，返回新会话 id（submit 按需物化后直取，不回读状态判空） */
-  createSession: (params?: { cwd?: string; projectId?: string; permissionMode?: PermissionMode }) => Promise<string>
-  /** 会话级权限切换（ask ↔ auto；「完全访问」按钮） */
+  createSession: (params?: {
+    cwd?: string
+    projectId?: string
+    permissionMode?: PermissionMode
+    planEnabled?: boolean
+  }) => Promise<string>
+  /** 会话级权限切换（「完全访问」按钮；三档，计划是独立开关见 setPlanMode） */
   setPermission: (sessionId: string, mode: PermissionMode) => Promise<void>
+  /** 计划模式开关（正交于权限档；PlanToggle/菜单开关项调用） */
+  setPlanMode: (sessionId: string, enabled: boolean) => Promise<void>
   /** 回答挂起中的 ask_user（交互座 4c-2；QuestionPanel 调用） */
   respondQuestion: (requestId: string, answers: Array<string | string[]>) => Promise<void>
-  /** 裁决挂起中的 submit_plan（交互座 4c-3；PlanPanel 调用） */
-  respondPlan: (
-    requestId: string,
-    approved: boolean,
-    options?: { switchMode?: 'ask' | 'auto' | 'autonomous'; message?: string }
-  ) => Promise<void>
+  /** 裁决挂起中的 submit_plan（交互座 4c-3；PlanPanel 调用）：批准 = 关计划开关 */
+  respondPlan: (requestId: string, approved: boolean, options?: { message?: string }) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
   setPinned: (sessionId: string, pinned: boolean) => Promise<void>
   archive: (sessionId: string, archived: boolean) => Promise<void>
@@ -445,7 +448,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       useEngineStore.getState().defaultPermissionMode
     const summary = await window.cogent.engineRequest('session.create', {
       ...params,
-      permissionMode
+      permissionMode,
+      // new 态计划开关暂存位（PlanToggle/菜单开关项写入 home store）随物化带上
+      planEnabled: params?.planEnabled ?? (home.kind === 'new' ? home.planEnabled : undefined)
     })
     set((state) => ({
       sessions: [{ ...summary }, ...state.sessions],
@@ -709,8 +714,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await window.cogent.respondQuestion(requestId, answers).catch(() => undefined)
   },
 
+  /** 计划模式开关（正交开关）：与 setPermission 同款 —— 引擎判定读活值，
+      运行中切换即生效；摘要经 session.summaryChanged 广播回列表（RPC 返回值
+      同步一份，双路幂等） */
+  setPlanMode: async (sessionId, enabled) => {
+    const { summary } = await window.cogent.engineRequest('session.setPlanMode', { sessionId, enabled })
+    set((state) => ({
+      sessions: state.sessions.map((s) => (s.id === sessionId ? summary : s))
+    }))
+  },
+
   /** 裁决挂起中的 submit_plan（交互座 4c-3）：先本地清挂起（同 respondQuestion
-      乐观语义）；批准切档时引擎带回摘要 → 同步列表模式标记 */
+      乐观语义）；批准后引擎关计划开关并带回摘要 → 同步列表 */
   respondPlan: async (requestId, approved, options) => {
     useChatStore.setState((state) => {
       const pendingPlansBySession = { ...state.pendingPlansBySession }
@@ -895,6 +910,16 @@ export function bindEngineEvents(): () => void {
             }
           }
         })
+        return
+      }
+      case 'session.summaryChanged': {
+        // 摘要广播（正交开关 v3）：档位/计划开关的引擎侧变化（手动切换、
+        // enter_plan、plan.respond 批准）→ 替换列表项，权限钮/计划钮即时联动。
+        // RPC 返回值更新是同款形状的另一条路（用户主动路径），两路幂等
+        const { summary } = event.params
+        useChatStore.setState((state) => ({
+          sessions: state.sessions.map((s) => (s.id === summary.id ? summary : s))
+        }))
         return
       }
       case 'compaction.started': {

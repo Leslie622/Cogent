@@ -258,7 +258,19 @@ export function makeTempDir(prefix: string): string {
 }
 
 export function removeDir(dir: string): void {
-  rmSync(dir, { recursive: true, force: true })
+  // Windows 句柄延迟释放重试（2026-11-16 实测：engine.kill() 后立刻删 ws 目录
+  // 稳定 EBUSY —— TerminateProcess 返回≠句柄回收完成，杀毒/索引服务也可能
+  // 瞬时握住 Temp 目录；10:13 起复现，与具体改动无关）。外部世界边界（约定.md
+  // 1.1），重试退避是标准防御；重试耗尽仍失败才让错误浮出
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (attempt >= 10 || (error as NodeJS.ErrnoException).code !== 'EBUSY') throw error
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+    }
+  }
 }
 
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))

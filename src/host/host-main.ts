@@ -63,6 +63,7 @@ import {
   SessionContinueParams,
   type SessionMessagesParams,
   type SessionSetPermissionParams,
+  type SessionSetPlanModeParams,
   type SessionSetPinnedParams,
   type ThinkingLevelWithOff
 } from '../protocol'
@@ -277,13 +278,13 @@ async function main(): Promise<void> {
   /** PermissionMode 值域守卫（入口校验共用）：stdio 载荷是任意 JSON，类型声明
       不构成运行时保证，typeof 检查是真实防御（约定.md 1.1 stdio 帧边界） */
   function isPermissionMode(value: unknown): value is PermissionMode {
-    return value === 'auto' || value === 'ask' || value === 'plan' || value === 'autonomous'
+    return value === 'auto' || value === 'ask' || value === 'autonomous'
   }
 
   /** session.create 入口校验：optional 字段带了就必须合法（permissionMode 限值域）。
       逐字段独立守卫（不用 || 复合）—— TS 的控制流分析只在独立 if 里窄化类型 */
   function handleSessionCreate(params: unknown) {
-    const p = params as Partial<{ title: unknown; cwd: unknown; projectId: unknown; permissionMode: unknown }>
+    const p = params as Partial<{ title: unknown; cwd: unknown; projectId: unknown; permissionMode: unknown; planEnabled: unknown }>
     if (p.title !== undefined && typeof p.title !== 'string') {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.create 的 title 必须是 string')
     }
@@ -294,13 +295,17 @@ async function main(): Promise<void> {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.create 的 projectId 必须是非空 string')
     }
     if (p.permissionMode !== undefined && !isPermissionMode(p.permissionMode)) {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.create 的 permissionMode 必须是 auto|ask|plan 之一')
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.create 的 permissionMode 必须是 auto|ask|autonomous 之一')
+    }
+    if (p.planEnabled !== undefined && typeof p.planEnabled !== 'boolean') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.create 的 planEnabled 必须是 boolean')
     }
     return sessions.create({
       title: p.title,
       cwd: p.cwd,
       projectId: p.projectId,
-      permissionMode: p.permissionMode
+      permissionMode: p.permissionMode,
+      planEnabled: p.planEnabled
     })
   }
 
@@ -414,7 +419,7 @@ async function main(): Promise<void> {
   }
 
   /** plan.respond 入口校验（交互座 4c-3）：requestId 非空 + approved 布尔 +
-      optional switchMode 限值域 / message string（语义矛盾在引擎侧拦） */
+      optional message string */
   function handlePlanRespond(params: unknown) {
     const p = params as Partial<PlanRespondParams>
     if (typeof p.requestId !== 'string' || p.requestId.length === 0 || typeof p.approved !== 'boolean') {
@@ -423,16 +428,7 @@ async function main(): Promise<void> {
     if (p.message !== undefined && typeof p.message !== 'string') {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'plan.respond 的 message 必须是 string')
     }
-    if (
-      p.switchMode !== undefined &&
-      !(['ask', 'auto', 'autonomous'] as readonly string[]).includes(p.switchMode)
-    ) {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, "plan.respond 的 switchMode 只支持 'ask' | 'auto' | 'autonomous'")
-    }
-    if (p.switchMode !== undefined && !p.approved) {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, 'switchMode（批准后切档）只能伴随 approved=true')
-    }
-    return sessions.respondPlan(p.requestId, p.approved, p.switchMode, p.message)
+    return sessions.respondPlan(p.requestId, p.approved, p.message)
   }
 
   /** session.setPermission 入口校验：sessionId 非空 string + mode 限值域。
@@ -440,9 +436,22 @@ async function main(): Promise<void> {
   function handleSessionSetPermission(params: unknown) {
     const p = params as Partial<SessionSetPermissionParams>
     if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 || !isPermissionMode(p.mode)) {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.setPermission 需要 { sessionId: string, mode: auto|ask|plan }')
+      throw new ProtocolError(
+        RpcErrorCode.InvalidParams,
+        'session.setPermission 需要 { sessionId: string, mode: auto|ask|autonomous }'
+      )
     }
     return { summary: sessions.setPermission(p.sessionId, p.mode) }
+  }
+
+  /** session.setPlanMode 入口校验（计划开关，正交于权限档）：sessionId 非空
+      string + enabled 布尔 */
+  function handleSessionSetPlanMode(params: unknown) {
+    const p = params as Partial<SessionSetPlanModeParams>
+    if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 || typeof p.enabled !== 'boolean') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.setPlanMode 需要 { sessionId: string, enabled: boolean }')
+    }
+    return { summary: sessions.setPlanMode(p.sessionId, p.enabled) }
   }
 
   /** session.compact 入口校验：sessionId 非空 string（手动压缩，D7）。
@@ -738,6 +747,7 @@ async function main(): Promise<void> {
     ['session.archive', handleSessionArchive],
     ['session.listArchived', () => sessions.listArchived()],
     ['session.setPermission', handleSessionSetPermission],
+    ['session.setPlanMode', handleSessionSetPlanMode],
     ['session.compact', handleSessionCompact],
     ['session.continue', handleSessionContinue],
     ['project.list', () => projects.list()],

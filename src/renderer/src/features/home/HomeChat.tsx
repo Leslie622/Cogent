@@ -58,6 +58,7 @@ import { useProjectStore } from '@/stores/project'
 import { ProjectPicker } from './ProjectPicker'
 import { ApprovalPanel } from './ApprovalPanel'
 import { PermissionMenu } from './PermissionMenu'
+import { PlanToggle } from './PlanToggle'
 import { TodoStrip } from './TodoStrip'
 import { QuestionPanel } from './QuestionPanel'
 import { PlanPanel } from './PlanPanel'
@@ -312,10 +313,14 @@ function ChatComposer({
           </div>
         )}
 
-        {/* has-* 反制两条：①组件给带 textarea 的组默认 rounded-2xl，压回
-            rounded-3xl；②聚焦态 border-ring + ring-3 光晕，参考稿聚焦无变化
-            —— 都同变体覆写（tailwind-merge 按变体组去重） */}
-        <InputGroup className="rounded-3xl border-foreground/10 bg-background has-[>textarea]:rounded-3xl has-[[data-slot=input-group-control]:focus-visible]:border-foreground/10 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+        {/* 组件基类三条反制（tailwind-merge 按变体组去重，同变体后写者胜）：
+            ① dark:bg-input/30 常驻灰底 → 覆回纯背景；
+            ② has-disabled:bg-input/50 + opacity-50 —— 空输入时发送钮 disabled，
+            整组被 :has(:disabled) 命中像盖了层灰蒙版（打字才散）——置灰语义
+            该只落在发送钮自己身上（Button 自带 disabled 样式），组级这两条压掉；
+            ③ 聚焦态 border-ring + ring-3 光晕，参考稿聚焦无变化。
+            另带 textarea 的组默认 rounded-2xl，压回 rounded-3xl */}
+        <InputGroup className="rounded-3xl border-foreground/10 bg-background has-[>textarea]:rounded-3xl has-[[data-slot=input-group-control]:focus-visible]:border-foreground/10 has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-disabled:bg-background has-disabled:opacity-100 dark:bg-background dark:has-disabled:bg-background">
           <InputGroupTextarea
             value={value}
             onChange={(event) => setValue(event.target.value)}
@@ -329,7 +334,9 @@ function ChatComposer({
             placeholder="随心输入"
             className="max-h-52 px-4 pt-5 pb-2 placeholder:text-placeholder"
           />
-          <InputGroupAddon align="block-end" className="gap-2 p-2">
+          {/* gap-1：工具行三块（+ / 权限钮 / 计划 chip）紧凑（2026-11-16 用户
+              定调，曾 gap-2 偏松）；分隔线自身 mx 已归零由本 gap 接管间距 */}
+          <InputGroupAddon align="block-end" className="gap-1 p-2">
             {/* + 号：icon-xs 的 size-6 定宽改成 h-6 w-auto + px-2（与右侧文字钮
                 同为 8px 水平内距，行内对齐） */}
             <InputGroupButton
@@ -339,9 +346,10 @@ function ChatComposer({
             >
               <IconPlus className="size-4.5" />
             </InputGroupButton>
-            {/* 权限模式菜单（审批交互升级第 3 步，原「完全访问」toggle 升级）：
-                四档真选项（自主模式随 bash 落地解灰）+ 危险分组分隔线，触发钮显当前模式名 */}
+            {/* 权限模式菜单（三档单选 + 顶部计划开关项）+ 计划开关外置 chip
+                （正交开关 v3：chip 常显开关态，菜单项等价入口，两处同源同步） */}
             <PermissionMenu session={session} />
+            <PlanToggle session={session} />
             <div className="ml-auto flex items-center gap-3">
               {/* 上下文指示器紧邻模型下拉：分母（contextWindow）跟着模型走 */}
               <ContextIndicator session={session} />
@@ -410,10 +418,13 @@ export function HomeChat({
           Provider 包到 Composer 外层：发送是"回到底部"的用户意图（主流产品语义），
           Composer 发送时调 scrollToEnd 恢复跟随，翻历史/锚点定位后发送照样吸底 */}
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-        <ChatMessages />
-        {/* TodoStrip 在输入区上方常驻（清单非空才挂载，交互座 4c）：审批/输入
-            都是会话的"当下"，清单是跨回合的"进行中"——不占输入位 */}
-        <TodoStrip />
+        {/* 内容区主体（relative 供 TodoStrip absolute 挂靠）：清单浮在消息流
+            右上角（2026-11-16 用户定调），不再占输入区上方布局位 —— 跨回合的
+            "进行中"状态与"当下"输入（下方的面板/输入框）彻底分离 */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <ChatMessages />
+          <TodoStrip />
+        </div>
         {hasPendingApproval ? (
           <ApprovalPanel />
         ) : hasPendingPlan ? (

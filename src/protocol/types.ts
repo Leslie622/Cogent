@@ -13,7 +13,7 @@
  */
 
 /** 协议版本：语义承诺 = 帧格式与既有 method 语义不变，新增能力走可选字段/新 method */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 3
 
 // ———— JSON-RPC 2.0 极简子集 ————
 
@@ -116,10 +116,16 @@ export interface SessionSummary {
   archivedAt?: number
   /**
    * 会话级权限模式（工具审批判定矩阵的会话侧输入，docs/计划/工具系统与审批.md D4）：
-   * ask（缺省）= 写类工具先审批；auto = 全放行（「完全访问」）；plan = 只读。
-   * 缺省按 ask 处理（旧盘数据无此字段即落默认行为，只增不破）。
+   * ask（缺省）= 写类工具先审批；auto = 全放行（「完全访问」）；autonomous =
+   * 文件写放行/exec 询问。缺省按 ask 处理（旧盘数据无此字段即落默认行为）。
    */
   permissionMode?: PermissionMode
+  /**
+   * 计划模式开关（正交于权限档，docs/计划/计划模式正交开关.md）：true = 只读
+   * 约束生效（写/exec 拒绝，优先于档位放行）+ submit_plan 可用。缺省 = 关。
+   * permissionMode 永不被 plan 触碰 —— 关闭开关后原档自动恢复，无需记回退档。
+   */
+  planEnabled?: boolean
 }
 
 /**
@@ -168,7 +174,7 @@ export interface ContextEstimate {
  * 工具调用投影（工具卡数据形状，docs/计划/工具系统与审批.md §3）：
  * 流式（tool.started/completed 事件）与历史回查（ChatMessage.toolCalls）共用。
  * status 三态：ok = 执行成功；error = 执行失败（结果 isError）；blocked =
- * 未执行（审批拒绝 / plan 模式 / 中止 —— 模型收到的是 error 结果 + 原因）。
+ * 未执行（审批拒绝 / 计划模式只读拦截 / 中止 —— 模型收到的是 error 结果 + 原因）。
  */
 export interface ToolCallRecord {
   /** pi toolCall 块 id（事件流与历史回查的配对键） */
@@ -278,12 +284,14 @@ export interface ModelSummary {
 export type ToolKind = 'read' | 'write' | 'edit' | 'exec' | 'network'
 
 /**
- * 会话级权限模式：auto=全自动；ask=写类操作需确认；plan=只读规划；
+ * 会话级权限模式：auto=全自动；ask=写类操作需确认；
  * autonomous=自主模式（D6 定稿：文件写
  * write/edit 信任放行，exec/network 风险类逐次询问 —— 之前无 exec/network
- * 工具时它只能是 ask 同义词，故一直置灰占位）
+ * 工具时它只能是 ask 同义词，故一直置灰占位）。
+ * 只读计划是正交开关（SessionSummary.planEnabled），不占档位 —— v3 起删
+ * 'plan' 联合值（docs/计划/计划模式正交开关.md）。
  */
-export type PermissionMode = 'auto' | 'ask' | 'plan' | 'autonomous'
+export type PermissionMode = 'auto' | 'ask' | 'autonomous'
 
 // ———— 方法映射：method 名 → 参数/结果 ————
 
@@ -421,7 +429,6 @@ export interface TodoItem {
   /** 任务简述（一行） */
   content: string
   status: 'pending' | 'in_progress' | 'completed'
-  priority: 'high' | 'medium' | 'low'
 }
 
 /** ask_user 的选项（交互座 4c-2；question.asked 事件载荷） */
@@ -441,11 +448,10 @@ export interface QuestionRespondParams {
   requestId: string
   answers: Array<string | string[]>
 }
-/** plan.respond 参数（交互座 4c-3）：批准可带 switchMode（缺省 ask）；拒绝可附反馈 */
+/** plan.respond 参数（交互座 4c-3）：批准 = 关计划开关（档位不动）；拒绝可附反馈（开关保持开） */
 export interface PlanRespondParams {
   requestId: string
   approved: boolean
-  switchMode?: 'ask' | 'auto' | 'autonomous'
   /** 拒绝反馈（进工具结果给模型，修订后重提）；批准时忽略 */
   message?: string
 }
@@ -477,6 +483,18 @@ export interface SessionSetPermissionParams {
   mode: PermissionMode
 }
 export interface SessionSetPermissionResult {
+  summary: SessionSummary
+}
+
+/**
+ * 计划模式开关（正交于权限档）：UI 计划钮/菜单开关项的引擎通道。开关变化经
+ * session.summaryChanged 事件北向广播（enter_plan 工具与手动 toggle 同路）。
+ */
+export interface SessionSetPlanModeParams {
+  sessionId: string
+  enabled: boolean
+}
+export interface SessionSetPlanModeResult {
   summary: SessionSummary
 }
 
@@ -989,13 +1007,14 @@ export interface CapabilityIssueResult {
 export interface ProtocolMethods {
   initialize: { params: InitializeParams; result: InitializeResult }
   'session.list': { params: Record<string, never>; result: SessionSummary[] }
-  'session.create': { params: { title?: string; permissionMode?: PermissionMode; cwd?: string; projectId?: string }; result: SessionSummary }
+  'session.create': { params: { title?: string; permissionMode?: PermissionMode; planEnabled?: boolean; cwd?: string; projectId?: string }; result: SessionSummary }
   'session.delete': { params: { sessionId: string }; result: { deleted: boolean } }
   'session.messages': { params: SessionMessagesParams; result: SessionMessagesResult }
   'session.setPinned': { params: SessionSetPinnedParams; result: SessionSetPinnedResult }
   'session.listArchived': { params: Record<string, never>; result: SessionSummary[] }
   'session.archive': { params: SessionArchiveParams; result: SessionArchiveResult }
   'session.setPermission': { params: SessionSetPermissionParams; result: SessionSetPermissionResult }
+  'session.setPlanMode': { params: SessionSetPlanModeParams; result: SessionSetPlanModeResult }
   'session.compact': { params: SessionCompactParams; result: SessionCompactResult }
   'session.continue': { params: SessionContinueParams; result: SessionContinueResult }
   'project.list': { params: Record<string, never>; result: ProjectSummary[] }
@@ -1138,11 +1157,19 @@ export interface ProtocolEvents {
  * 宿主输入框变停止钮可 abort）。answers 按问题序，空串 = 跳过该问。
  */
 'question.asked': { sessionId: string; requestId: string; questions: AskQuestionParam[] }
-/**
- * 方案审批请求（交互座 4c-3）：submit_plan 工具挂起中 —— 宿主以 plan.respond
- * 裁决（批准可带切档 / 拒绝可附反馈）。plan = 方案全文（markdown，面板预览）。
- */
-'plan.requested': { sessionId: string; requestId: string; plan: string }
+  /**
+   * 方案审批请求（交互座 4c-3）：submit_plan 工具挂起中 —— 宿主以 plan.respond
+   * 裁决（批准 = 关计划开关，档位不动 / 拒绝可附反馈，开关保持开）。
+   * plan = 方案全文（markdown，面板预览）。
+   */
+  'plan.requested': { sessionId: string; requestId: string; plan: string }
+  /**
+   * 会话摘要变化广播（正交开关 v3 起）：permissionMode / planEnabled 任何引擎侧
+   * 变化（手动切换、enter_plan 工具、plan.respond 批准）即推全量摘要 —— 宿主
+   * 替换列表项，权限钮/计划钮即时联动（此前只有 RPC 返回值一条路，引擎内
+   * enter_plan 开关 UI 无从得知）。
+   */
+  'session.summaryChanged': { summary: SessionSummary }
   /**
    * 观测条目实时推送（控制台时间线增量）：每产生一条观测记录即推一条摘要，
    * 详情不随流走（按需 inspect.entry）。宿主的控制台没打开也应照常接收/丢弃 ——

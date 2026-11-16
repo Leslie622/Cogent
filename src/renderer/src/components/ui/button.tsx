@@ -30,6 +30,8 @@ const buttonVariants = cva(
         "icon-sm":
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
+        // 胶囊档（TodoStrip 折叠态等浮层小控件）：不定高、圆角满、内距紧
+        pill: "h-auto gap-1.5 rounded-full px-3 py-1.5 text-sm",
       },
     },
     defaultVariants: {

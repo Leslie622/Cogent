@@ -24,6 +24,11 @@ export type HomeSession =
        * 关，显式缺省回 ask 才是安全缺省
        */
       permissionMode?: PermissionMode
+      /**
+       * 计划开关暂存位（正交开关 v3）：与权限暂存同链同语义 —— 物化时随
+       * session.create 落 planEnabled；undefined = 未开
+       */
+      planEnabled?: boolean
     }
 
 interface HomeState {

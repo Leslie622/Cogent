@@ -6,7 +6,7 @@
  * 模块级常量，约定.md §1.2 反模式 8）。死循环在测试 renderer 同样表现为
  * render 抛错，本件挂载即守。附带一条有清单的正向渲染。
  */
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useChatStore } from '@/stores/chat'
 import { TodoStrip } from './TodoStrip'
@@ -20,8 +20,7 @@ beforeEach(() => {
 
 const todo = (content: string, status: TodoItem['status']): TodoItem => ({
   content,
-  status,
-  priority: 'medium'
+  status
 })
 
 describe('TodoStrip 挂载稳定性（快照引用回归）', () => {
@@ -50,5 +49,22 @@ describe('TodoStrip 挂载稳定性（快照引用回归）', () => {
     expect(screen.getByText('1/2')).toBeInTheDocument()
     expect(screen.getByText('读参考实现')).toBeInTheDocument()
     expect(screen.getByText('写回归测试')).toBeInTheDocument()
+  })
+
+  it('折叠两态：点头部收成计数胶囊（条目隐藏、计数仍在），再点恢复整卡', () => {
+    useChatStore.setState({
+      activeSessionId: SID,
+      todosBySession: {
+        [SID]: [todo('调研', 'pending'), todo('实现', 'pending')]
+      }
+    })
+    render(<TodoStrip />)
+    // 展开态头部钮收起：条目消失、计数保留（折叠 = 胶囊最小占位）
+    fireEvent.click(screen.getByRole('button', { name: /任务清单/ }))
+    expect(screen.getByText('0/2')).toBeInTheDocument()
+    expect(screen.queryByText('调研')).not.toBeInTheDocument()
+    // 胶囊点回展开：条目恢复
+    fireEvent.click(screen.getByRole('button', { name: /任务清单/ }))
+    expect(screen.getByText('调研')).toBeInTheDocument()
   })
 })

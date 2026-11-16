@@ -96,14 +96,20 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   path,…)` 首参拆 basename/dirname，解析失败整条原样显）→ **竖排全宽选项**
   （序号 tabular 灰 + 主文案 + 说明灰字同行；允许/始终允许此工作区（无根
   与**越界写**不显 —— 规则 = 根内信任记忆，序号顺移）/允许并切换为 ▾（自主
-  [默认]/完全访问；允许本次 + 切会话模式 + 记项目默认）/拒绝）→ 附言输入框（h-9 rounded-lg **border-0
+  [默认]/完全访问；允许本次 + 切会话模式 + 记项目默认；下拉 = SwitchModeDropdown
+  共用组件，见权限模式菜单段）/拒绝）→ 附言输入框（h-9 rounded-lg **border-0
   bg-muted/60** 无框浅灰条，placeholder「告诉模型接下来应该怎么做…」）→
   底部行（ⓘ IconInfoCircle「使用 ↑↓ 选择，回车确认」+ 右侧深色确认主钮
   `bg-foreground text-background`，发送钮同族）。**键盘模型 = 终端式选择的
   GUI 化**：↑↓/Tab 移动**选中态**（React state 浅灰底 bg-muted 高亮，非 DOM
   焦点轮转；hover 同步选中，**mouseLeave/附言框 focus 清高亮** —— 聚焦输入
-  框后选项灰底赖着不消是首验翻车点），Enter/确认钮 = 执行选中项，点击行 =
-  直接执行；面板出现即聚焦卡容器（tabIndex -1，替换了输入框焦点不能漂移）；
+  框后选项灰底赖着不消是首验翻车点；mouseLeave 的例外 = 档位下拉开着时不清
+  （弹层是 portal 在行外，移进弹层必经 mouseLeave，不豁免则高亮丢成 -1、确认
+  钮/Enter **静默无操作** —— 2026-11-16 修复的根因），下拉开/关**锁所在行**
+  高亮、关时焦点还卡容器（Base UI 关菜单默认还焦点给下拉触发器，Enter 会重弹
+  下拉而非确认）），Enter/确认钮 = 执行选中项，点击行 =
+  直接执行；**无选中（-1）时确认主钮置灰**（无可确认项不给确认，Enter 同语义
+  无动作）；面板出现即聚焦卡容器（tabIndex -1，替换了输入框焦点不能漂移）；
   附言框 Enter = 拒绝并附言（stopPropagation，isComposing 挡输入法）、↑↓
   交还列表；多条挂起竖排多卡（pi 并行工具并发），首卡聚焦。确认主钮反馈
   阶梯：`bg-foreground → hover:/85 → active:/70` —— 近黑底上 hover:/90 只差
@@ -116,33 +122,99 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   呈现面；前两者与审批面板同位互斥——都是 run 挂起中的"占位等待"层，
   HomeChat 条件链 hasPendingApproval ? ApprovalPanel : hasPendingPlan ?
   PlanPanel : hasPendingQuestion ? QuestionPanel : Composer）：
-  - **任务清单条**（TodoStrip.tsx）：**输入区上方常驻**（不占输入位——
-    清单是跨回合的"进行中"，审批/提问是"当下"）；清单非空才挂载，
-    可折叠（IconChevronDown 旋转过渡），头部「任务清单 n/m」计数，
-    条目行 = 状态图标（完成 IconCircleCheckFilled 置灰/进行中
-    IconProgress 深色/待办 IconCircleDashed 灰）+ 内容（完成划线置灰）
-    + 高优先级红点（右缘，完成不显）；
-  - **提问面板**（QuestionPanel.tsx）：ApprovalPanel 母版变体——逐问题
-    块（rounded-xl bg-muted/40：header 灰前缀 + 问题深色 + 选项行（多选
-    带 IconCircleCheckFilled 勾选位）+「其他（自由输入）」常驻输入条，
-    输入优先于选项）+ 底部「可留空跳过」提示 + 提交主钮；整卡一次提交
-    （answers 按问题序，未答传空串 = 跳过）；
+  - **任务清单条**（TodoStrip.tsx）：**内容区右上角浮动卡**（w-80，
+    absolute top-3 right-4 + shadow-sm——清单是跨回合的"进行中"，
+    与消息流叠放不占布局位）；清单非空才挂载，可折叠：折叠收小
+    **移入**角内（top-1.5 right-2.5 + transition 滑入滑出）成计数
+    胶囊 = Button outline+**pill 档**（button.tsx 自有变体，text-sm/
+    px-3，整钮可点展开，IconListCheck size-4.5，IconArrowsDiagonal
+    展开图标 **hover 才动画加入**：默认零占位（w-0 + 负 margin 抵
+    gap），hover 宽/距/透明度三过渡。**坑**：w-0 必须写在**包裹
+    span** 上 —— Button 基类 `[&_svg:not([class*='size-'])]:size-4`
+    兜底 specificity 压过传入单类，svg 直写 w-0 会被顶回 16px 占位；
+    span 不受该规则管，内层 svg 带 size-4 挡兜底。**收起冷却**：折叠钮
+    位置与胶囊几乎重合，收起瞬间指针压在胶囊上 hover 即命中 → 动画
+    「收起即触发」，收起时挂 600ms 冷却整体摘掉 group-hover 类，指针
+    移开再回来即正常）；
+    展开卡头部 = 纯展示行（IconListCheck size-4.5 + 标题 text-sm/
+    计数 text-[13px] 比条目行大半档，不可点）+ 行尾**独立折叠钮**
+    Button ghost icon-sm（IconArrowsDiagonalMinimize2 折叠语义、
+    aria-label，与胶囊展开图标配对——标题与折叠不做同一按钮，首验
+    整行可点被否），条目区 max-h-56 限高滚动；条目行 = 状态
+    图标（完成 IconCircleCheckFilled **emerald-600 实色**（zcode 对齐）/
+    进行中 IconProgress 深色/待办 IconCircleDashed 灰）+ 内容（完成
+    划线置灰）；
+  - **提问面板**（QuestionPanel.tsx）：zcode AskUserQuestion 同形态的
+    **单题向导卡**（2026-11-16 验收定调，替代多问竖排）——头部 = header
+    胶囊（rounded-md border）+ 问题正文 truncate + **‹n/m› 问题切换器**
+    （IconChevronLeft/Right，到边禁用；单问题不渲染）；选项行带**数字
+    序号**（灰 tabular-nums，选中/作答变深；多选在序号后带
+    IconCircleCheckFilled 勾选位），白卡直排**无灰内块**（选中
+    bg-muted / 高亮与 hover bg-muted/75）；末行「其他」自由输入与选项
+    共用序号空间（placeholder「输入你的回答...」，输入非空 = 序号变深
+    且提交时覆盖选项选择）；**收题模型（点击即确定，2026-11-16 定调）**：
+    单选点选项/键盘选中 = 落草稿并自动推进（末题即整卡提交，点已选中
+    项 = 取消留本题重选）；多选点击 = 勾选切换不推进，「继续」收题；
+    「其他」输入框内 Enter（isComposing 挡输入法）= 以输入收题推进；
+    底部 = 键盘提示「使用 Tab / 上下键选择，回车或空格选中」（zcode
+    同句，键盘模型与 PlanPanel 同构：↑↓/Tab 循环高亮含「其他」行，
+    Enter/空格与点击同语义，高亮在「其他」行 Enter = 聚焦输入，输入
+    框内 ↑↓ 交还列表、空格不吞——无高亮时不拦截冒泡键）+「忽略」
+    outline 钮（**分题跳过**：清该题草稿收题——非末题翻页、末题整卡
+    提交（该题空串），每题可忽略、卡不留「点了没反应」态）+ 主钮
+    （非末题「继续」= 以草稿收题翻页，末题「提交」
+    = 整卡提交，answers 按问题序，未答传空串 = 引擎按跳过处理）；
+    草稿跨切换保留，面板出现即聚焦卡容器（PlanPanel 同规）；
   - **方案审批面板**（PlanPanel.tsx）：ApprovalPanel 母版同骨架（竖排
-    选项 + ↑↓/Enter 键盘模型 + 附言条）——「实现计划待审批」标题 +
-    方案预览（pre whitespace-pre-wrap，max-h-64 滚动限高）+ 两选项：
-    批准并切换为 ▾（ask[默认]/完全访问/自主模式——批准即出 plan 档，
-    收紧档不列）/ 拒绝；附言 = 拒绝的修改意见（回灌模型修订重提，
-    placeholder 明示）。
-- **权限模式菜单**（features/home/PermissionMenu.tsx）：dropdown-menu = **四档
-  真选项**（计划模式 IconClipboardList / 变更前确认 IconShieldQuestion / 自主
-  模式 IconSparkles / 完全访问 IconShieldExclamation）+ **分隔线危险分组隔离**
-  （完全访问独组，照图 2）；每项两行（名称 + muted 说明）+ 当前项 IconCheck
-  右浮；完全访问的强调 = **warning 琥珀（警告非错误 —— 曾用 destructive 红
+    选项 + ↑↓/Enter 键盘模型 + 附言条，无选中时确认钮置灰同规）——
+    「实现计划待审批」标题 + 方案预览（pre whitespace-pre-wrap，max-h-64
+    滚动限高）+ 两选项：批准（= 退出计划模式，按当前权限档开始执行 ——
+    正交开关 v3 起批准不切档，原档自动恢复）/ 拒绝；附言 = 拒绝的
+    修改意见（回灌模型修订重提，placeholder 明示）。
+- **档位下拉**（features/home/SwitchModeDropdown.tsx，审批面板
+  「允许，并切换为 ▾」行内下拉）：**视觉与权限菜单同源** —— 弹层项直接
+  复用 PermissionMenu 导出的 `MODES`/`ModeItem`（模式图标 size-4.5 +
+  strokeWidth 2.25 + 两行文案 + 当前档 IconCheck 右浮 + 完全访问 warning
+  琥珀变体；min-w-56 放宽为布局类），触发器显当前档模式图标 + 档名 + ⌄、
+  三色随档（完全访问 = warning 琥珀 / 自主 = chrome-accent / 收紧档 muted，
+  权限菜单触发钮同语言）。**选「完全访问」先过 FullAccessConfirm 闸门**
+  （2026-11-16 定调：任何入口切 auto 都过闸门；曾直切并记项目默认绕过它），
+  **闸门即最终确认**：确认启用 = 允许本次并切 auto 一步到位（onAutoApproved
+  执行器；曾只落本地 state，用户过完风险闸门以为切完、实际还悬着行级
+  「确认」未按）；取消 = 面板不动。点当前档无操作（权限菜单同语义）。
+  **坑（portal 事件冒泡）**：弹层 DOM 挂 body portal，但 React 合成事件沿
+  React 树冒泡 —— 本下拉整个嵌在宿主面板的选项行 <button> 里，菜单项/
+  闸门按钮的 click 会冒到行 onClick **误执行整行**（「点完全访问却按旧档
+  允许并切换」的真根因，2026-11-16 二次修复）—— DropdownMenuContent 与
+  闸门外层各包一层 onClick stopPropagation；trigger 的 stopPropagation 只
+  护住它自己。
+  曾用形态（纯文字项 + IconCircleCheckFilled 黑圆勾选中标记 + 触发器灰圆勾
+  模仿 zcode ⊙）语义不明已废。
+- **权限模式菜单**（features/home/PermissionMenu.tsx）：dropdown-menu =
+  **顶部「计划模式」开关项**（IconClipboardList，勾选 = 开关开启，toggle
+  语义非档位单选；desc 开启态切换「开启中：只读约束生效」）+ **分隔线**
+  （隔开关组与档位组两种交互语义，正交开关 v3 从原「完全访问上面」的危险
+  分组线挪来）+ **三档真选项**（变更前确认 IconShieldQuestion / 自主模式
+  IconSparkles / 完全访问 IconShieldExclamation）；每项两行（名称 + muted
+  说明）+ 当前项 IconCheck 右浮；`MODES`/`ModeItem` 导出为全 app 档位呈现
+  的**单一视觉真源**（SwitchModeDropdown 共用）；完全访问的强调 =
+  **warning 琥珀（警告非错误 —— 曾用 destructive 红
   被推翻）**（菜单项 icon+label 与触发钮同语言）。
-  触发钮显**当前模式名 + ⌄**：**无常态背景**（含完全访问态，红胶囊常驻底
+  触发钮显**当前档名 + ⌄**：**无常态背景**（含完全访问态，红胶囊常驻底
   已废），仅 `hover:bg-accent-foreground/5` 出底；**三色区分**（完全访问 =
-  warning 琥珀、自主模式 = chrome-accent 蓝[链接同款实色 token]、计划/变更
-  前确认 = muted-foreground 灰），箭头不单独给色（继承 currentColor）。
+  warning 琥珀、自主模式 = chrome-accent 蓝[链接同款实色 token]、变更
+  前确认 = muted-foreground 灰），箭头不单独给色（继承 currentColor）；
+  计划开关态不占触发钮（旁侧 PlanToggle chip 常显）。
+- **计划开关外置 chip**（features/home/PlanToggle.tsx，权限钮右侧）：
+  **只在开关开启时渲染**（非计划态不显示 chip 不置灰——开启入口 =
+  菜单开关项，2026-11-16 定调）；左侧矮竖线分隔（h-4 居中裸 span ——
+  Separator 组件 self-stretch 撑满行高且 data 变体类覆盖不掉，2026-11-16
+  用户定调「横杠太高太粗」后改固定矮线）；IconClipboardList +「计划」+
+  **hover 浮现 × 关闭钮**（opacity 过渡不占位，点击关闭）；文字色 =
+  **muted-foreground 浅灰**（两轮定调：不要蓝强调、不要主前景色——
+  与 ask 档触发钮同级，hover 深一档回 foreground）；与菜单开关项同
+  数据源（session.summaryChanged 回流）
+  同动作（session.setPlanMode）。
   坑：base-nova dropdown Trigger 是 Base UI `render={<Button/>}` 模式，**不是**
   Radix `asChild`；菜单 side="top"（钮在底部输入区）。
   **坑（Select 弹层宽度）**：base-nova `SelectContent` 默认
@@ -285,8 +357,10 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   labelable，label 点击自然联动）/ footer 取消 outline + 确认 **destructive 红**
   （危险动作闸门语境，与权限触发钮 warning 琥珀 = 两个语境并存）；勾选态
   `useEffect(open) → false` 每次打开重置（风险确认不跨次残留）。权限项只列已落地
-  能力（文件 / 终端），network 工具落地后补第三行。菜单选「完全访问」先过此闸门
-  （已是 auto 再点不弹）；**Base UI 的 AlertDialogAction 是裸 Button 不自动关窗**，
+  能力（文件 / 终端），network 工具落地后补第三行。选「完全访问」先过此闸门
+  （权限菜单与审批面板的档位下拉两入口同规，2026-11-16 定调 —— 曾只有
+  权限菜单过闸、审批路径直切并记项目默认绕过；已是 auto 再点不弹）；
+  **Base UI 的 AlertDialogAction 是裸 Button 不自动关窗**，
   确认回调里手动 `onOpenChange(false)`
 
 ## 滚动条

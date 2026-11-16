@@ -94,6 +94,7 @@ export type EngineMethod =
   | 'session.archive'
   | 'session.listArchived'
   | 'session.setPermission'
+  | 'session.setPlanMode'
   | 'session.compact'
   | 'session.continue'
   | 'project.list'
@@ -126,7 +127,7 @@ export interface AppSettingsFile {
   activeModelId?: string
   activeProviderId?: string
   thinkingLevel?: string
-  /** 新会话默认权限（开关两态 ask↔auto；plan 不进默认，见 D6 拍板） */
+  /** 新会话默认权限（开关两态 ask↔auto；计划是独立开关不进默认，见 D6 拍板） */
   defaultPermissionMode?: 'ask' | 'auto'
 }
 
@@ -142,12 +143,14 @@ export interface SessionSummary {
   pinnedAt?: number
   /** 归档时间（毫秒）；缺省 = 未归档（回收站语义） */
   archivedAt?: number
-  /** 权限模式（缺省 = ask：写类工具先审批；auto = 完全访问；plan = 只读） */
+  /** 权限模式（缺省 = ask：写类工具先审批；auto = 完全访问；autonomous = 自主） */
   permissionMode?: PermissionMode
+  /** 计划模式开关（正交于权限档）：true = 只读约束生效 + submit_plan 可用；缺省 = 关 */
+  planEnabled?: boolean
 }
 
-/** 会话级权限模式（与 protocol PermissionMode 镜像） */
-export type PermissionMode = 'auto' | 'ask' | 'plan' | 'autonomous'
+/** 会话级权限模式（与 protocol PermissionMode 镜像；只读计划是正交开关不占档位） */
+export type PermissionMode = 'auto' | 'ask' | 'autonomous'
 
 /** 项目摘要（与 protocol ProjectSummary 镜像）：项目 = 目录绑定（多根，首个主根） */
 export interface ProjectSummary {
@@ -164,13 +167,14 @@ export interface ProjectSummary {
 /** 与 protocol/types.ts 对应 method 的参数形状（renderer 侧镜像声明） */
 export interface EngineMethodParams {
   'session.list': Record<string, never>
-  'session.create': { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode }
+  'session.create': { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode; planEnabled?: boolean }
   'session.delete': { sessionId: string }
   'session.messages': { sessionId: string }
   'session.setPinned': { sessionId: string; pinned: boolean }
   'session.archive': { sessionId: string; archived: boolean }
   'session.listArchived': Record<string, never>
   'session.setPermission': { sessionId: string; mode: PermissionMode }
+  'session.setPlanMode': { sessionId: string; enabled: boolean }
   'session.compact': { sessionId: string }
   'session.continue': { sessionId: string }
   'project.list': Record<string, never>
@@ -199,7 +203,6 @@ export interface EngineMethodParams {
 export interface TodoItem {
   content: string
   status: 'pending' | 'in_progress' | 'completed'
-  priority: 'high' | 'medium' | 'low'
 }
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
@@ -212,6 +215,7 @@ export interface EngineMethodResult {
   'session.archive': { summary: SessionSummary }
   'session.listArchived': SessionSummary[]
   'session.setPermission': { summary: SessionSummary }
+  'session.setPlanMode': { summary: SessionSummary }
   'session.compact': { tokensBefore: number; tokensAfter: number }
   'session.continue': { ok: true }
   'project.list': ProjectSummary[]
@@ -350,6 +354,7 @@ export type EngineEvent =
       }
     }
   | { method: 'plan.requested'; params: { sessionId: string; requestId: string; plan: string } }
+  | { method: 'session.summaryChanged'; params: { summary: SessionSummary } }
   | { method: 'compaction.started'; params: { sessionId: string; reason: 'threshold' | 'manual' } }
   | {
       method: 'compaction.pruned'

@@ -16,23 +16,17 @@
  * 选项行 = 直接执行（GUI 直觉）；附言框聚焦时 ↑↓ 移动选中并交还焦点。
  */
 import { useEffect, useRef, useState } from 'react'
-import { IconChevronDown, IconCircleCheckFilled, IconFileText, IconInfoCircle, IconPencil } from '@tabler/icons-react'
+import { IconFileText, IconInfoCircle, IconPencil } from '@tabler/icons-react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { useChatStore } from '@/stores/chat'
+import { SwitchModeDropdown } from './SwitchModeDropdown'
 
 /** 「允许，并切换为」的可选档（F6 定稿，zcode 同款）：只列两档放宽模式 ——
     切回收紧档是显式动作，走权限菜单，不藏在审批里 */
 const SWITCH_MODES = ['autonomous', 'auto'] as const
 type SwitchMode = (typeof SWITCH_MODES)[number]
-const SWITCH_MODE_LABEL: Record<SwitchMode, string> = { autonomous: '自主模式', auto: '完全访问' }
 
 /** 选项定义：序号自动按下标生成（无根/越界去掉「始终允许」后顺移） */
 interface ApprovalOption {
@@ -80,6 +74,12 @@ function PendingApprovalCard({
   const [switchMode, setSwitchMode] = useState<SwitchMode>('autonomous')
   const [note, setNote] = useState('')
   const cardRef = useRef<HTMLDivElement>(null)
+  /** 下拉开合标记：开着时行的 mouseLeave 不清高亮（弹层是 portal，移进弹层
+      必经 mouseLeave——不清则 selected 丢成 -1，确认钮/Enter 静默无操作，
+      2026-11-16 修复的根因）。selected 事件顺序：
+      挂载 0 → 进行 i → 离行 -1（下拉开则保持）→ 下拉开/关锁所在行 i（关时
+      焦点还卡容器）→ 附言框 focus -1（确认钮置灰，Enter 走拒绝+附言） */
+  const switcherOpenRef = useRef(false)
 
   /** respondApproval 的本卡绑定形态（选项 run 的统一签名）：requestId 已闭包 */
   const respond = (
@@ -176,7 +176,9 @@ function PendingApprovalCard({
             type="button"
             onClick={() => execute(i)}
             onMouseEnter={() => setSelected(i)}
-            onMouseLeave={clearSelection}
+            onMouseLeave={() => {
+              if (!switcherOpenRef.current) clearSelection()
+            }}
             className={cn(
               'flex h-9 items-center gap-2 rounded-lg px-2.5 text-left text-sm text-foreground transition-colors',
               i === selected ? 'bg-muted' : 'hover:bg-muted/60'
@@ -185,34 +187,30 @@ function PendingApprovalCard({
             <span className="w-4 shrink-0 text-[13px] tabular-nums text-muted-foreground">{i + 1}.</span>
             <span className="shrink-0">{option.label}</span>
             {option.switcher === true ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] text-foreground hover:bg-accent-foreground/10"
-                    >
-                      <IconCircleCheckFilled className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                      {SWITCH_MODE_LABEL[switchMode]}
-                      <IconChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                    </span>
-                  }
-                  onClick={(event) => event.stopPropagation()}
-                />
-                <DropdownMenuContent align="start">
-                  {SWITCH_MODES.map((mode) => (
-                    <DropdownMenuItem key={mode} onClick={() => setSwitchMode(mode)}>
-                      <span className="flex items-center gap-1.5">
-                        {switchMode === mode && (
-                          <IconCircleCheckFilled className="size-3.5" aria-hidden="true" />
-                        )}
-                        {SWITCH_MODE_LABEL[mode]}
-                      </span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <SwitchModeDropdown
+                modes={SWITCH_MODES}
+                value={switchMode}
+                onSelect={(mode) => {
+                  if (mode === 'autonomous' || mode === 'auto') setSwitchMode(mode)
+                }}
+                onOpenChange={(open) => {
+                  // 开/关都锁所在行：弹层是 portal，鼠标移进去必触发行的
+                  // mouseLeave —— 不锁则高亮丢成 -1，之后的确认钮/Enter 静默
+                  // 无操作（2026-11-16 修复的交互根因）。关时焦点还卡容器：
+                  // Base UI 关菜单默认还焦点给 trigger，Enter 会重弹下拉而
+                  // 非确认该行
+                  switcherOpenRef.current = open
+                  setSelected(i)
+                  if (!open) cardRef.current?.focus()
+                }}
+                // 闸门即最终确认：确认启用 = 允许本次并切 auto 一步到位
+                //（二次修复 —— 原先只落本地 state，用户过完风险闸门以为
+                // 切完了，实际还悬着行级「确认」未按，模式根本没切）
+                onAutoApproved={() => {
+                  setSwitchMode('auto')
+                  respond(true, { switchMode: 'auto' })
+                }}
+              />
             ) : null}
             <span className="truncate text-[13px] text-muted-foreground">{option.desc}</span>
           </button>
@@ -249,9 +247,13 @@ function PendingApprovalCard({
         </span>
         {/* 确认主钮：深色石墨（发送钮同族）。反馈阶梯要拉到可感知 —— 原语
             hover:/90 在近黑 foreground 上只差 10% 透明度，肉眼无感（首验
-            「没 hover」的根因）；base-luma button 无 active 态，按压色阶自补 */}
+            「没 hover」的根因）；base-luma button 无 active 态，按压色阶自补。
+            无选中（selected = -1：附言框聚焦让位 / 高亮被清）置灰 —— 无可
+            确认项就不给确认（2026-11-16 用户定调，替代曾有的静默无响应），
+            键盘 Enter 同语义无动作 */}
         <Button
           size="sm"
+          disabled={selected === -1}
           className="h-8 rounded-lg bg-foreground px-4 text-background hover:bg-foreground/85 active:bg-foreground/70"
           onClick={() => execute(selected)}
         >

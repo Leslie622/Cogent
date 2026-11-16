@@ -1,44 +1,27 @@
 /**
  * 方案审批面板（交互座 4c-3）—— submit_plan 挂起时呈现方案并收裁决。
  * ApprovalPanel 母版：占输入区位置、竖排选项、键盘 ↑↓/Enter、附言输入。
- * 选项：批准并切换为（内嵌档位下拉，缺省 ask）/ 拒绝（附言 = 修改意见）。
+ * 选项：批准（= 关计划开关，权限档不动 —— 正交开关 v3 起无切档下拉，
+ * 原档自动恢复）/ 拒绝（附言 = 修改意见，开关保持开等修订重提）。
  */
 import { useEffect, useRef, useState } from 'react'
-import { IconChevronDown, IconCircleCheckFilled, IconInfoCircle, IconMap } from '@tabler/icons-react'
+import { IconInfoCircle, IconMap } from '@tabler/icons-react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { useChatStore, type PendingPlan } from '@/stores/chat'
-
-/** 批准后的执行档（收紧档 plan 不列 —— 批准即出 plan，切回收紧档走权限菜单） */
-const SWITCH_MODES = ['ask', 'auto', 'autonomous'] as const
-type SwitchMode = (typeof SWITCH_MODES)[number]
-const SWITCH_MODE_LABEL: Record<SwitchMode, string> = { ask: '变更前确认', auto: '完全访问', autonomous: '自主模式' }
 
 function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFocus: boolean }) {
   const respondPlan = useChatStore((s) => s.respondPlan)
   const [selected, setSelected] = useState(0)
-  const [switchMode, setSwitchMode] = useState<SwitchMode>('ask')
   const [note, setNote] = useState('')
   const cardRef = useRef<HTMLDivElement>(null)
 
-  const options: Array<{
-    label: string
-    desc: string
-    run: () => void
-    switcher?: boolean
-  }> = [
+  const options: Array<{ label: string; desc: string; run: () => void }> = [
     {
-      label: '批准，并切换为',
-      desc: '按所选模式开始执行',
-      run: () => void respondPlan(pending.requestId, true, { switchMode }),
-      switcher: true
+      label: '批准',
+      desc: '退出计划模式，按当前权限档开始执行',
+      run: () => void respondPlan(pending.requestId, true)
     },
     { label: '拒绝', desc: '这次先不执行', run: () => void respondPlan(pending.requestId, false) }
   ]
@@ -102,34 +85,6 @@ function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFoc
           >
             <span className="w-4 shrink-0 text-[13px] tabular-nums text-muted-foreground">{i + 1}.</span>
             <span className="shrink-0">{option.label}</span>
-            {option.switcher === true ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] text-foreground hover:bg-accent-foreground/10"
-                    >
-                      <IconCircleCheckFilled className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                      {SWITCH_MODE_LABEL[switchMode]}
-                      <IconChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                    </span>
-                  }
-                  onClick={(event) => event.stopPropagation()}
-                />
-                <DropdownMenuContent align="start">
-                  {SWITCH_MODES.map((mode) => (
-                    <DropdownMenuItem key={mode} onClick={() => setSwitchMode(mode)}>
-                      <span className="flex items-center gap-1.5">
-                        {switchMode === mode && <IconCircleCheckFilled className="size-3.5" aria-hidden="true" />}
-                        {SWITCH_MODE_LABEL[mode]}
-                      </span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
             <span className="truncate text-[13px] text-muted-foreground">{option.desc}</span>
           </button>
         ))}
@@ -161,8 +116,10 @@ function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFoc
           <IconInfoCircle className="size-3.5" />
           使用 ↑↓ 选择，回车确认
         </span>
+        {/* 无选中（selected = -1）置灰 —— 同 ApprovalPanel（2026-11-16 定调） */}
         <Button
           size="sm"
+          disabled={selected === -1}
           className="h-8 rounded-lg bg-foreground px-4 text-background hover:bg-foreground/85 active:bg-foreground/70"
           onClick={() => execute(selected)}
         >

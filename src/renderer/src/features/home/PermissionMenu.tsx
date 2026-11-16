@@ -1,12 +1,13 @@
 /**
- * 权限模式菜单（审批交互升级 D4/D5，对照图 2）—— ChatComposer 底部工具行的
- * 「完全访问」钮升级为下拉菜单：
- *   四档真选项（计划模式 / 变更前确认 / 自主模式 / 完全访问）；完全访问与
- *   前三档分隔线分组（危险组隔离，照图 2）。自主模式原为置灰占位，bash 落地
- *   后解灰（pi借鉴 D6，2026-11-11）。
+ * 权限模式菜单 + 计划开关项（正交开关 v3，docs/计划/计划模式正交开关.md）——
+ * ChatComposer 底部工具行的权限下拉：
+ *   顶部「计划模式」toggle 项（勾选 = 开关开启，与外置 PlanToggle chip 同源
+ *   同动作）；其下分割线隔开三个真档（计划是正交开关不占档位，线从原
+ *   「完全访问上面」挪来 —— 隔的是开关组与档位组两种交互语义，2026-11-16
+ *   用户定调）；三档单选（变更前确认 / 自主模式 / 完全访问，warning 琥珀保留）。
  *
- * 触发钮显当前模式名 + ⌄（D5）：完全访问态保持 warning 琥珀警示，其余态灰盾 +
- * 模式名。chat 态读写活动会话 permissionMode（引擎判定矩阵同一真源）；new
+ * 触发钮显当前档名 + ⌄：完全访问 warning 琥珀、自主模式 chrome-accent、
+ * 其余灰。chat 态读写活动会话 permissionMode（引擎判定矩阵同一真源）；new
  * 态读写 home store 暂存位（undefined = 未选 → 显设置页默认，物化时同链）。
  */
 import { useState } from 'react'
@@ -26,9 +27,10 @@ import { useHomeStore, type HomeSession } from '@/stores/home'
 import { useChatStore } from '@/stores/chat'
 import { FullAccessConfirm } from './FullAccessConfirm'
 
-/** 模式元数据：名称 / 图标 / 一行说明（菜单与触发钮共用） */
-const MODES: Record<PermissionMode, { label: string; icon: typeof IconClipboardList; desc: string }> = {
-  plan: { label: '计划模式', icon: IconClipboardList, desc: '只读：阅读与分析，不修改文件' },
+/** 档位元数据：名称 / 图标 / 一行说明 —— 全 app 档位呈现的单一视觉真源
+    （权限菜单本体 + 审批面板的 SwitchModeDropdown 档位下拉共用；计划是
+    正交开关不在此表，见 PlanItem） */
+export const MODES: Record<PermissionMode, { label: string; icon: typeof IconClipboardList; desc: string }> = {
   ask: { label: '变更前确认', icon: IconShieldQuestion, desc: '写入文件前询问你' },
   autonomous: {
     label: '自主模式',
@@ -38,8 +40,9 @@ const MODES: Record<PermissionMode, { label: string; icon: typeof IconClipboardL
   auto: { label: '完全访问', icon: IconShieldExclamation, desc: '无需确认，直接执行写操作' },
 }
 
-/** 菜单项：图标 + 名称 + 勾选（当前模式）+ 次行说明 */
-function ModeItem({
+/** 菜单项：图标 + 名称 + 勾选（当前模式）+ 次行说明 —— 导出给
+    SwitchModeDropdown 共用，档位呈现只此一份实现 */
+export function ModeItem({
   mode,
   current,
   onSelect,
@@ -78,18 +81,43 @@ function ModeItem({
   )
 }
 
+/** 计划开关项（菜单内入口，与外置 PlanToggle chip 同数据源同动作）：
+    勾选 = 开关开启（toggle 语义，非档位单选） */
+function PlanItem({ active, onToggle }: { active: boolean; onToggle: () => void }) {
+  return (
+    <DropdownMenuItem onClick={onToggle} className="gap-2.5 py-2">
+      <IconClipboardList className="size-4.5 shrink-0" strokeWidth={2.25} />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-[13px]">计划模式</span>
+        <span className="text-xs text-muted-foreground">
+          {active ? '开启中：只读约束生效' : '只读：阅读与分析，不修改文件'}
+        </span>
+      </div>
+      {active && <IconCheck className="size-4 shrink-0" />}
+    </DropdownMenuItem>
+  )
+}
+
 export function PermissionMenu({ session }: { session: HomeSession }) {
   const setPermission = useChatStore((s) => s.setPermission)
+  const setPlanMode = useChatStore((s) => s.setPlanMode)
   const sessionMode = useChatStore(
     (s) => s.sessions.find((x) => x.id === s.activeSessionId)?.permissionMode ?? 'ask'
   )
+  const sessionPlanOn = useChatStore(
+    (s) => s.sessions.find((x) => x.id === s.activeSessionId)?.planEnabled === true
+  )
   const stagingMode = useHomeStore((s) =>
     s.session.kind === 'new' ? (s.session.permissionMode ?? undefined) : undefined
+  )
+  const stagingPlanOn = useHomeStore((s) =>
+    s.session.kind === 'new' ? s.session.planEnabled === true : false
   )
   const defaultMode = useEngineStore((s) => s.defaultPermissionMode)
   // new 态显「暂存位 ?? 设置页默认」——未显式选择时菜单勾在默认档上，与物化
   // 链（chat store createSession）同一优先序，所见即所落
   const current: PermissionMode = session.kind === 'new' ? (stagingMode ?? defaultMode) : sessionMode
+  const planOn = session.kind === 'new' ? stagingPlanOn : sessionPlanOn
 
   /** 完全访问确认弹窗开合（2026-11-11 用户验收定调）：选 auto 先过危险确认闸门 */
   const [confirmingFullAccess, setConfirmingFullAccess] = useState(false)
@@ -106,12 +134,27 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
   }
 
   const select = (mode: PermissionMode) => {
-    // 已是完全访问再点它 = 无操作，不弹闸门
-    if (mode === 'auto' && current !== 'auto') {
+    // 点当前档 = 无操作（含已是完全访问再点：不弹闸门也不发幂等 IPC）
+    if (mode === current) return
+    // 切完全访问先过危险确认闸门
+    if (mode === 'auto') {
       setConfirmingFullAccess(true)
       return
     }
     applyMode(mode)
+  }
+
+  /** 计划开关（toggle 语义）：与外置 PlanToggle chip 完全同路 —— chat 态走
+      引擎 setPlanMode（session.summaryChanged 回流即联动），new 态翻暂存位 */
+  const togglePlan = () => {
+    const activeId = useChatStore.getState().activeSessionId
+    if (session.kind === 'chat' && activeId !== null) {
+      void setPlanMode(activeId, !planOn)
+      return
+    }
+    useHomeStore.setState((s) =>
+      s.session.kind === 'new' ? { session: { ...s.session, planEnabled: !planOn } } : s
+    )
   }
 
   const TriggerIcon = MODES[current].icon
@@ -120,14 +163,17 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
       <DropdownMenuTrigger
         render={
             /* 触发钮无常态背景（含完全访问 —— 2026-11-11 用户定调，曾用红胶囊
-            常驻底被推翻），仅 hover 出底；配色按模式区分（2026-11-11 用户定调）：
+            常驻底被推翻），仅 hover 出底；配色按档位区分（2026-11-11 用户定调）：
             完全访问 = warning 琥珀（警告），自主模式 = chrome-accent 蓝（链接
-            同款实色 token），计划/变更前确认 = 灰。文字色一律实色 token */
+            同款实色 token），变更前确认 = 灰；计划开关态由旁侧 PlanToggle chip
+            常显，触发钮不重复表达。文字色一律实色 token */
           <Button
             variant="ghost"
             size="xs"
             className={cn(
-              'ml-2 gap-1.5 px-2 text-[13px] has-[>svg]:px-2 hover:bg-accent-foreground/5',
+              // 内距压半（pl-2 pr-1 → 2026-11-16 三块紧凑定调）；ml 已删 ——
+              // 与 + 钮的间距由 addon 的 gap-1 统一接管（曾 ml-2+gap-2 双层叠加）
+              'gap-1.5 pl-2 pr-1 text-[13px] hover:bg-accent-foreground/5',
               current === 'auto'
                 ? 'text-warning hover:text-warning'
                 : current === 'autonomous'
@@ -144,14 +190,14 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
         <IconChevronDown className="size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="min-w-64">
-        <ModeItem mode="plan" current={current} onSelect={select} />
-        <ModeItem mode="ask" current={current} onSelect={select} />
-        {/* 自主模式（D6 定稿，2026-11-11 bash 落地即开）：文件写信任放行、
-            exec 类逐次询问 —— 置灰占位的"exec/network 落地后启用"已兑现（network
-            类工具落地后自动落进同一询问分支，无需再动这里） */}
-        <ModeItem mode="autonomous" current={current} onSelect={select} />
-        {/* 危险分组隔离（照图 2）：完全访问与前三档分隔线 */}
+        {/* 计划开关置顶（toggle 语义）；分割线隔开开关组与档位组 —— 线从原
+            「完全访问上面」挪来（2026-11-16 用户定调） */}
+        <PlanItem active={planOn} onToggle={togglePlan} />
         <DropdownMenuSeparator />
+        <ModeItem mode="ask" current={current} onSelect={select} />
+        {/* 自主模式（D6 定稿）：文件写信任放行、exec 类逐次询问 */}
+        <ModeItem mode="autonomous" current={current} onSelect={select} />
+        {/* 完全访问 warning 琥珀（颜色警示与分割线分家） */}
         <ModeItem mode="auto" current={current} onSelect={select} />
       </DropdownMenuContent>
       <FullAccessConfirm

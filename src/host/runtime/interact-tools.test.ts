@@ -21,18 +21,18 @@ import {
 } from './interact-tools'
 
 const ITEMS: TodoItem[] = [
-  { content: '实现存储层', status: 'in_progress', priority: 'high' },
-  { content: '写测试', status: 'pending', priority: 'medium' },
-  { content: '调研', status: 'completed', priority: 'low' }
+  { content: '实现存储层', status: 'in_progress' },
+  { content: '写测试', status: 'pending' },
+  { content: '调研', status: 'completed' }
 ]
 
 describe('formatTodoResult（模型 facing 结果文本）', () => {
   it('全量清单 + 计数', () => {
     const text = formatTodoResult(ITEMS)
     expect(text).toContain('共 3 项：1 进行中 / 1 待办 / 1 已完成')
-    expect(text).toContain('1. [进行中][高] 实现存储层')
-    expect(text).toContain('2. [待办][中] 写测试')
-    expect(text).toContain('3. [已完成][低] 调研')
+    expect(text).toContain('1. [进行中] 实现存储层')
+    expect(text).toContain('2. [待办] 写测试')
+    expect(text).toContain('3. [已完成] 调研')
   })
 
   it('空清单 = 清空文案', () => {
@@ -44,7 +44,18 @@ describe('todosSectionText（cogent_todos 段）', () => {
   it('非空清单 → 权威状态段（含条目行）', () => {
     const section = todosSectionText(ITEMS)
     expect(section).toContain('任务清单（当前权威状态）')
-    expect(section).toContain('[进行中][高] 实现存储层')
+    expect(section).toContain('[进行中] 实现存储层')
+  })
+
+  it('未全完成 → 不带清空催促（引导只在全完成态出现）', () => {
+    expect(todosSectionText(ITEMS)).not.toContain('清空清单')
+  })
+
+  it('全部完成 → 段尾追加空数组清空指令（防清单赖着不消）', () => {
+    const allDone = ITEMS.map((t) => ({ ...t, status: 'completed' as const }))
+    const section = todosSectionText(allDone)
+    expect(section).toContain('清单已全部完成')
+    expect(section).toContain('todos: []')
   })
 
   it('空清单 → null（撤段语义）', () => {
@@ -193,7 +204,7 @@ describe('planSectionText（cogent_plan 段）', () => {
 })
 
 describe('createEnterPlanTool（工具实例）', () => {
-  it('无参切档 + 结果带工作流指引', async () => {
+  it('无参开开关 + 结果带工作流指引与档位不变说明', async () => {
     const calls: string[] = []
     const tool = createEnterPlanTool({
       enterPlan: () => {
@@ -203,21 +214,22 @@ describe('createEnterPlanTool（工具实例）', () => {
     const result = await tool.execute('c1', {}, undefined, undefined, {} as never)
     expect(calls).toEqual(['plan'])
     const text = (result.content[0] as { text: string }).text
-    expect(text).toContain('plan（只读）模式')
+    expect(text).toContain('计划模式（只读）')
+    expect(text).toContain('权限档保持不变')
     expect(text).toContain('submit_plan')
   })
 })
 
 describe('createSubmitPlanTool（工具实例三路裁决）', () => {
-  it('非 plan 档 → isError 指引（不挂起）', async () => {
-    const tool = createSubmitPlanTool({ submitPlan: () => new Promise(() => undefined) }, () => 'ask')
+  it('开关未开 → isError 指引（不挂起）', async () => {
+    const tool = createSubmitPlanTool({ submitPlan: () => new Promise(() => undefined) }, () => false)
     const result = await tool.execute('c1', { plan: PLAN_TEXT }, undefined, undefined, {} as never)
     expect(result.isError).toBe(true)
-    expect((result.content[0] as { text: string }).text).toContain('不在 plan 模式')
+    expect((result.content[0] as { text: string }).text).toContain('未开启计划模式')
   })
 
-  it('批准 → 结果含切换档说明与方案全文', async () => {
-    let release: (v: { approved: true; switchMode?: string }) => void = () => undefined
+  it('批准 → 结果含退出计划与档位不变说明 + 方案全文', async () => {
+    let release: (v: { approved: true }) => void = () => undefined
     const tool = createSubmitPlanTool(
       {
         submitPlan: () =>
@@ -225,15 +237,15 @@ describe('createSubmitPlanTool（工具实例三路裁决）', () => {
             release = resolve
           })
       },
-      () => 'plan'
+      () => true
     )
     const pending = tool.execute('c2', { plan: PLAN_TEXT }, undefined, undefined, {} as never)
-    release({ approved: true, switchMode: 'auto' })
+    release({ approved: true })
     const result = await pending
     expect(result.isError).toBeUndefined()
     const text = (result.content[0] as { text: string }).text
     expect(text).toContain('已批准')
-    expect(text).toContain('完全访问')
+    expect(text).toContain('权限档保持不变')
     expect(text).toContain(PLAN_TEXT)
   })
 
@@ -246,7 +258,7 @@ describe('createSubmitPlanTool（工具实例三路裁决）', () => {
             release = resolve
           })
       },
-      () => 'plan'
+      () => true
     )
     const pending = tool.execute('c3', { plan: PLAN_TEXT }, undefined, undefined, {} as never)
     release({ approved: false })
@@ -265,7 +277,7 @@ describe('createSubmitPlanTool（工具实例三路裁决）', () => {
             release = resolve
           })
       },
-      () => 'plan'
+      () => true
     )
     const pending = tool.execute('c4', { plan: PLAN_TEXT }, undefined, undefined, {} as never)
     release({ approved: false, message: '第二步先做测试' })

@@ -176,23 +176,22 @@ describe('审批集成（S1–S6 场景流，17 项断言）', () => {
     await engine.waitEvent('run.completed', (p) => p.sessionId === s4)
     check('12. nonce 文件未落主目录', !existsSync(join(homedir(), `cogent-smoke-nonce-${process.pid}.txt`)))
 
-    // ———— S5 plan block ————
-    const s5 = await engine.send('session.create', { cwd: ws, permissionMode: 'plan' })
+    // ———— S5 plan block（正交开关：planEnabled 物化，permissionMode 不动）———
+    const s5 = await engine.send('session.create', { cwd: ws, planEnabled: true })
     if (s5.result?.id === undefined) throw new Error('plan 会话物化失败')
-    check('13. plan 物化（摘要回带）', s5.result.permissionMode === 'plan')
+    check('13. 计划开关物化（摘要回带）', s5.result.planEnabled === true)
     await engine.send('agent.submit', { sessionId: s5.result.id, text: 'plan 模式写文件', model: 'mock' })
     const toolEnd5 = await engine.waitEvent('tool.completed', (p) => p.sessionId === s5.result?.id)
     await engine.assertNoEvent('approval.request', (p) => p.sessionId === s5.result?.id)
-    check('14. plan 写被拦（error 含原因，零审批）', toolEnd5.params.isError === true && (toolEnd5.params.summary ?? '').includes('plan'))
+    check('14. 计划开关拦写（error 含原因，零审批）', toolEnd5.params.isError === true && (toolEnd5.params.summary ?? '').includes('计划模式'))
     check('15. plan-me.txt 未落盘', !existsSync(join(ws, 'plan-me.txt')))
     await engine.waitEvent('run.completed', (p) => p.sessionId === s5.result?.id)
 
     // ———— S6 权限通告与时效 ————
     // 经 before_agent_start 扩展设 cogent_permission section —— pi 对
     // sections「变更才追加 patch、回放按名替换」，切换下一轮即生效且不堆积。
-    // 四档全设正向文案（切回 ask 只移除段，但历史里 plan 拦截的工具 error
-    // 还在，模型会据历史推断"仍只读"连试都不试 —— 四档全给当下状态，
-    // 切换 = 内容替换）
+    // 三档全设正向文案 + 计划开关独立段 cogent_plan_active（正交开关 v3：
+    // 开关不占档位，权限段与计划段各自替换互不干扰）
     const s6 = await engine.send<{ id: string }>('session.create', { cwd: ws, permissionMode: 'auto' })
     if (s6.result?.id === undefined) throw new Error('auto 会话物化失败')
     // 收窄提为 const：下方 waitEvent 闭包里 s6.result 的属性收窄会失效（TS 只
@@ -215,13 +214,16 @@ describe('审批集成（S1–S6 场景流，17 项断言）', () => {
       bodyB.includes('<cogent_permission>') && bodyB.includes('变更前确认模式') && !bodyB.includes('完全访问模式'),
       bodyB.slice(0, 160)
     )
-    await engine.send('session.setPermission', { sessionId: s6id, mode: 'plan' })
+    await engine.send('session.setPlanMode', { sessionId: s6id, enabled: true })
     await engine.send('agent.submit', { sessionId: s6id, text: 'once more', model: 'mock' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s6id)
     const bodyC = JSON.stringify(requestBodies[requestBodies.length - 1])
     check(
-      '16c. 切 plan（段换为 plan 文案；旧 ask 文案被替换不残留）',
-      bodyC.includes('<cogent_permission>') && bodyC.includes('plan（只读）模式') && !bodyC.includes('变更前确认模式'),
+      '16c. 开计划开关（权限段保持 ask 文案 + 新增计划段，正交互不替换）',
+      bodyC.includes('<cogent_permission>') &&
+        bodyC.includes('变更前确认模式') &&
+        bodyC.includes('cogent_plan_active') &&
+        bodyC.includes('计划模式（只读）'),
       bodyC.slice(0, 160)
     )
 

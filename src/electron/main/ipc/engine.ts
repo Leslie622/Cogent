@@ -28,6 +28,7 @@ const ALLOWED_METHODS = new Set<string>([
   'session.archive',
   'session.listArchived',
   'session.setPermission',
+  'session.setPlanMode',
   'session.compact',
   'session.continue',
   'project.list',
