@@ -10,6 +10,42 @@ import { cn } from "cn"
 import { Button } from "@/components/ui/button"
 import { ArrowDownIcon } from "lucide-react"
 
+/**
+ * 流式吸底的预绘制同步（库 autoScroll 的补帧，docs/计划/对话过程呈现打磨.md
+ * §3.4 后续实测）：库的跟随链路是 ResizeObserver → rAF 下一帧 → scrollTo
+ * —— 内容增长的那一帧先绘制"滚动未跟上"的中间态（流底内容下探），下一帧
+ * 才弹回底部，逐 delta 高频触发即观感"工作中行闪动"。本钩子把修正搬进 RO
+ * 回调内（浏览器在布局后、绘制前回调 RO），增长当帧直接 scrollTop 贴底，
+ * 中间态不上屏。跟随判定 = 增长前是否贴底（scroll 事件持续记账，2px 容差
+ * 同库的 J 常量）：用户上翻即停止跟随，库的 rAF 补帧与本钩子不冲突（其后
+ * 变为空转）。
+ */
+function useStreamingBottomPin(viewportRef: React.RefObject<HTMLDivElement | null>) {
+  React.useEffect(() => {
+    const viewport = viewportRef.current
+    if (viewport === null || typeof ResizeObserver === "undefined") return
+    // 增长前的贴底记账：用户滚离底部（含程序化 scrollToMessage）即 false
+    let atBottom = true
+    const onScroll = () => {
+      atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 2
+    }
+    const observer = new ResizeObserver(() => {
+      if (atBottom) {
+        viewport.scrollTop = viewport.scrollHeight
+        atBottom = true // 贴底后距离恒 0，scroll 事件会再确认
+      } else {
+        onScroll()
+      }
+    })
+    observer.observe(viewport)
+    viewport.addEventListener("scroll", onScroll, { passive: true })
+    return () => {
+      observer.disconnect()
+      viewport.removeEventListener("scroll", onScroll)
+    }
+  }, [viewportRef])
+}
+
 function MessageScrollerProvider(
   props: React.ComponentProps<typeof MessageScrollerPrimitive.Provider>
 ) {
@@ -36,8 +72,13 @@ function MessageScrollerViewport({
   className,
   ...props
 }: React.ComponentProps<typeof MessageScrollerPrimitive.Viewport>) {
+  const viewportRef = React.useRef<HTMLDivElement | null>(null)
+  useStreamingBottomPin(viewportRef)
   return (
     <MessageScrollerPrimitive.Viewport
+      ref={(node) => {
+        viewportRef.current = node
+      }}
       data-slot="message-scroller-viewport"
       className={cn(
         "size-full min-h-0 min-w-0 scroll-fade-b scrollbar-thin scrollbar-gutter-stable overflow-y-auto overscroll-contain contain-content data-autoscrolling:scrollbar-thumb-transparent data-autoscrolling:scrollbar-track-transparent data-pending-scroll:invisible",
