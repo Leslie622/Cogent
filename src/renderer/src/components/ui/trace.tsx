@@ -133,13 +133,19 @@ function TraceCollapsibleContent({
   return (
     <CollapsibleContent
       data-slot="trace-collapsible-content"
-      className="h-(--collapsible-panel-height) min-w-0 overflow-hidden transition-[height] duration-200 data-ending-style:h-0 data-starting-style:h-0"
+      /* 高度动画走 grid 轨道 0fr↔1fr（fr 可插值，无需测量）—— 此前
+         h-(--collapsible-panel-height) 依赖 Base UI 首测高度，视口边缘条目
+         被 content-visibility 跳过渲染时量到 10rem 估值，一行内容也按
+         ~160px 展开动画再回落（闪烁/高度跳变的主源）。grid 子项必须
+         min-h-0 + overflow-hidden 才能被轨道连续裁切；间距用 padding 不用
+         margin —— margin 不随轨道裁切，收起后会残留空隙 */
+      className="grid min-w-0 grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out data-open:grid-rows-[1fr] data-starting-style:grid-rows-[0fr] data-ending-style:grid-rows-[0fr] motion-reduce:transition-none"
       {...props}
     >
       <div
         data-slot="trace-collapsible-content-inner"
         className={cn(
-          "mt-2 mb-1 ml-[calc(--spacing(2)-1px)] min-w-0 border-l pr-1 pl-4 leading-relaxed wrap-break-word text-muted-foreground",
+          "min-h-0 overflow-hidden pt-2 pb-1 pl-[calc(--spacing(2)-1px)] min-w-0 border-l pr-1 leading-relaxed wrap-break-word text-muted-foreground",
           className
         )}
       >

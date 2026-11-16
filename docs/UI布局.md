@@ -347,6 +347,17 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   聊天产品口径）。**坑**：Tailwind v4 自动扫描不进 node_modules，包内类必须
   `@source '../../../node_modules/streamdown/dist'` 显式声明才生成 CSS。代码等宽
   = JetBrains Mono 随包（可变字重）+ `--font-mono` token（CJK 注释回落鸿蒙）
+- **过程行（2026-11-16，zcode 形态）**：工具行 = 图标（**静态**）+ 类别词 +
+  主文案（mono text-xs truncate）+ diff 尾标（`+N` 绿 `-M` 红 text-[11px]）+
+  状态词 —— 类别词双形（正在读取/已读取…，tool-display.ts），运行态挂
+  `.shimmer` 扫光（**全线无旋转 spinner**：图标静态 + 文案扫光，旋转图标
+  长期占用渲染资源）；失败 = 行尾「执行失败」destructive 点状下划线 + hover
+  Tooltip（原因 line-clamp-3 + 复制钮，shadcn tooltip），整行不变红；思考行
+  默认收起单行 + 末行摘要横向滚动（`scroll-fade-x` 渐隐）+「持续了 Xs」；
+  bash 运行中 = 定高两行尾行 + `.progress-sweep` 扫光细条（globals.css，
+  reduced-motion 降级）；折叠体动画 = grid 轨道 `0fr↔1fr`（免高度测量，
+  此前 Base UI 首测高度被 content-visibility 10rem 估值污染 → 闪烁/高度
+  跳变），间距用 padding 不用 margin（margin 不随轨道裁切）
 - **滚动渐隐** `.scroll-fade-b/-y/-x`（mask 两端 24px 渐变，ChatGPT 同款不硬截；
   base-nova 组件引用了这组类，已补定义）
 - **危险确认弹窗**（FullAccessConfirm，2026-11-11 照用户参考图）：alert-dialog +
@@ -455,8 +466,10 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
    （非 inset）Indicator=value% 直出、拇指中心恰在 P% 且不走实测管线 —— 填充
     需要精确到轨道边缘的滑杆用 center。ui/slider 已加 thumbAlignment 透传
     （默认 edge-client-only 保 ThinkingSlider 既有行为；marks 定位公式
-    `calc(6px + …)` 按 inset 几何推导 —— 6px/12px 对应 base-nova 拇指
-    size-3 的半径/全宽，center 模式下会偏）
+    `calc(thumbSizePx/2 + …)` 按 inset 几何推导 —— 两端各缩半个拇指宽 =
+    拇指中心停靠行程极限，调用处覆写拇指尺寸后必须以 thumbSizePx 下发
+    真实宽（思考力度拇指 size-6 → 24），否则端点定位点落在行程外贴住
+    轨道圆角端部；center 模式下该公式同样会偏）
 13. **base-ui Slider 键盘接管口（不等距档位必须用）**：Thumb 接受 onKeyDown
    （落在内部 input 上）；mergeProps 让用户 handler **先于**内置步进执行，
    且内置 keydown 开头就检查 `event.defaultPrevented` —— 用户先

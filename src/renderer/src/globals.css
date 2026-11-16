@@ -281,6 +281,27 @@
   color: inherit;
 }
 
+/* ── bash 进度尾行的 indeterminate 扫光细条（tool.tsx ProgressTail）──
+   高光滑块在轨道内往复（zcode tool-call-progress-indeterminate 同款，
+   styles.css:1008-1020）：spinner 退场后运行中工具的"活着"信号 */
+@keyframes progress-sweep {
+  from {
+    left: -33%;
+  }
+  to {
+    left: 100%;
+  }
+}
+.progress-sweep {
+  animation: progress-sweep 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-sweep {
+    animation: none;
+    left: 0;
+  }
+}
+
 /* ── 思考力度滑杆的渐变端点色（HomeChat 的 ThinkingSlider 使用）──
    未注册的自定义属性不参与 transition：linear-gradient(90deg, var(--think-from),
    var(--think-to)) 在档位切换时会整体跳色。注册为 <color> 后，在滑杆根元素上

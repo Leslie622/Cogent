@@ -2,7 +2,8 @@
  * 回合分组与容器（ZCode 式两态呈现的装配层，见 docs/计划/回合过程折叠.md）：
  * store 的消息列表保持平铺（事件流逻辑不动），本件在渲染期按相邻关系分组 ——
  * 用户消息到下一用户消息 = 一个回合（run）。回合内两态：
- *   进行中：过程项（思考块/工具卡/中间正文）摊开直播 + 底部 WorkingLine；
+ *   进行中：过程项（思考块/工具卡/中间正文）逐条直播（各行单行化，上方高度
+ *   恒定）+ 底部 WorkingLine —— run 全程一个结构，无模式翻转；
  *   终态：过程收进 RunTrace 头条（已工作 Xs/已停止/出错了），末条有正文段 =
  *   终答常驻头条之下，用量聚合一行（过程展开时各段仍带自己的用量小字）。
  * 无过程回合（单段纯文本）也恒挂头条（D8 修订 2026-11-11，ZCode 对齐：
@@ -124,8 +125,8 @@ function splitTurn(
       ...answerRaw,
       id: `${answerRaw.id}-thinking`,
       content: '',
-      usage: undefined,
-      durationMs: undefined
+      usage: undefined
+      // durationMs 保留：思考行的「持续了 Xs」尾标数据源
     })
   }
   return {
@@ -275,7 +276,7 @@ function ProcessItem({ item }: { item: MessageItem }) {
     return <CompactionBar message={item} />
   }
   if (item.content === '' && item.thinking !== undefined) {
-    return <Reasoning text={item.thinking} running={false} />
+    return <Reasoning text={item.thinking} running={false} durationMs={item.durationMs} />
   }
   return <MessageRow message={item} />
 }
@@ -304,28 +305,6 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
   }
   const split = splitTurn(turn.items, phase === 'live')
   const { process, answer, answerOriginal } = split
-  // live 切分增量（2026-11-10 用户定调：结果出来了就直接折叠，不等终态事件）：
-  // 终答正文一开流，本轮思考即收进过程（与终态结构同构，收尾翻转零位移）
-  let liveProcess = split.process
-  let liveAnswer = split.answer
-  if (liveAnswer !== undefined && liveAnswer.content !== '' && liveAnswer.thinking !== undefined) {
-    liveProcess = [
-      ...liveProcess,
-      {
-        ...liveAnswer,
-        id: `${liveAnswer.id}-thinking`,
-        content: '',
-        usage: undefined,
-        durationMs: undefined
-      }
-    ]
-    liveAnswer = { ...liveAnswer, thinking: undefined }
-  }
-  // 终答开流且有过程可收 → 头条模式（过程即时折叠，工作中态头条）；否则过程
-  // 摊开直播 + 底部工作中行（等首轮 delta / 思考直播 / 工具执行 / 轮间往返）。
-  // 若正文后又来工具调用（正文其实是中间段），占位被封段 → 回到直播态重新摊开
-  const answerStarted = liveAnswer !== undefined && liveAnswer.content !== ''
-  const headerMode = phase === 'live' && answerStarted && liveProcess.length > 0
   // 零内容组的 done 相位不渲染过程件（D9 截断的副产物：压缩条把回合拆成
   // [user|空组] + [续组]，空组只剩用户泡 —— D8"纯文本恒挂头条"落在它头上
   // 就是凭空的「已工作」空壳，验收实测双头条）。live 例外：乐观消息刚上屏
@@ -345,23 +324,11 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
           <MessageRow message={turn.user} />
         </MessageScrollerItem>
       )}
-      {headerMode ? (
-        <>
-          <RunTrace phase="live" startTs={turn.user?.timestamp ?? turn.startedAt ?? Date.now()}>
-            {liveProcess.map((item) => (
-              <MessageScrollerItem key={item.id} messageId={item.id}>
-                <ProcessItem item={item} />
-              </MessageScrollerItem>
-            ))}
-          </RunTrace>
-          {liveAnswer !== undefined && (
-            <MessageScrollerItem messageId={liveAnswer.id}>
-              <MessageRow message={liveAnswer} />
-            </MessageScrollerItem>
-          )}
-        </>
-      ) : phase === 'live' ? (
-        // 进行中（D3）：过程摊开直播，流式占位在输出位置，底部常驻工作中行
+      {phase === 'live' ? (
+        // 进行中：过程摊开直播（思考行默认收起单行、工具行单行 —— 上方高度
+        // 恒定，工作中行钉在流底不被推挤，docs/计划/对话过程呈现打磨.md §3.4；
+        // 此前「终答开流即折叠」的 headerMode 翻转是流中跳变源，已废），
+        // 流式占位在输出位置，底部常驻工作中行
         <>
           {process.map((item) => (
             <MessageScrollerItem key={item.id} messageId={item.id}>

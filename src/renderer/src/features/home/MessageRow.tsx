@@ -130,8 +130,9 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
   return (
     <Message align="start">
       <MessageContent className="gap-1 px-0.5">
-        {/* 思考流：流式占位且正文未开始 = 还在思考阶段（自动展开）；正文一来自动收起。
-            交错思考（commentary）的精确信号属 content blocks 件，当前模型思考都先于正文 */}
+        {/* 思考流：流式占位且正文未开始 = 还在思考阶段（收起单行 + 末行摘要
+            滚动，docs/计划/对话过程呈现打磨.md §3.4）；交错思考（commentary）
+            的精确信号属 content blocks 件，当前模型思考都先于正文 */}
         {message.thinking && (
           <Reasoning
             text={message.thinking}
