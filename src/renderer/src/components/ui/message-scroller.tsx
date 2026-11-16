@@ -10,20 +10,33 @@ import { cn } from "cn"
 import { Button } from "@/components/ui/button"
 import { ArrowDownIcon } from "lucide-react"
 
+/** Root/Viewport/Content 三层间的 ref 共享（useStreamingBottomPin 接线用） */
+const ScrollerRefsContext = React.createContext<{
+  viewportRef: React.RefObject<HTMLDivElement | null>
+  contentRef: React.RefObject<HTMLDivElement | null>
+} | null>(null)
+
 /**
  * 流式吸底的预绘制同步（库 autoScroll 的补帧，docs/计划/对话过程呈现打磨.md
  * §3.4 后续实测）：库的跟随链路是 ResizeObserver → rAF 下一帧 → scrollTo
  * —— 内容增长的那一帧先绘制"滚动未跟上"的中间态（流底内容下探），下一帧
- * 才弹回底部，逐 delta 高频触发即观感"工作中行闪动"。本钩子把修正搬进 RO
- * 回调内（浏览器在布局后、绘制前回调 RO），增长当帧直接 scrollTop 贴底，
- * 中间态不上屏。跟随判定 = 增长前是否贴底（scroll 事件持续记账，2px 容差
- * 同库的 J 常量）：用户上翻即停止跟随，库的 rAF 补帧与本钩子不冲突（其后
- * 变为空转）。
+ * 才弹回底部，逐 delta 高频触发即观感"工作中行位置跳动"。本钩子把修正搬进
+ * RO 回调内（浏览器在布局后、绘制前回调 RO），增长当帧直接 scrollTop 贴底，
+ * 中间态不上屏。
+ * RO 必须挂**内容元素**（MessageScrollerContent）：流式增长时变的是内容的
+ * scrollHeight，viewport 盒子尺寸不变 —— 首版挂 viewport 导致回调从不触发
+ * （测得"零抖动"的轮次恰无内容增长，测量无效）。跟随判定 = 增长前是否贴底
+ * （scroll 事件持续记账，2px 容差同库的 J 常量）：用户上翻即停止跟随，库的
+ * rAF 补帧与本钩子不冲突（其后变为空转）。
  */
-function useStreamingBottomPin(viewportRef: React.RefObject<HTMLDivElement | null>) {
+function useStreamingBottomPin(
+  viewportRef: React.RefObject<HTMLDivElement | null>,
+  contentRef: React.RefObject<HTMLDivElement | null>
+) {
   React.useEffect(() => {
     const viewport = viewportRef.current
-    if (viewport === null || typeof ResizeObserver === "undefined") return
+    const content = contentRef.current
+    if (viewport === null || content === null || typeof ResizeObserver === "undefined") return
     // 增长前的贴底记账：用户滚离底部（含程序化 scrollToMessage）即 false
     let atBottom = true
     const onScroll = () => {
@@ -37,13 +50,13 @@ function useStreamingBottomPin(viewportRef: React.RefObject<HTMLDivElement | nul
         onScroll()
       }
     })
-    observer.observe(viewport)
+    observer.observe(content)
     viewport.addEventListener("scroll", onScroll, { passive: true })
     return () => {
       observer.disconnect()
       viewport.removeEventListener("scroll", onScroll)
     }
-  }, [viewportRef])
+  }, [viewportRef, contentRef])
 }
 
 function MessageScrollerProvider(
@@ -56,15 +69,22 @@ function MessageScroller({
   className,
   ...props
 }: React.ComponentProps<typeof MessageScrollerPrimitive.Root>) {
+  // viewport/content ref 在根组件创建（Root/Viewport/Content 三层的公共祖先），
+  // 经 context 下发 —— 兄弟组件（Viewport/Content）间传递，多实例互不串扰
+  const viewportRef = React.useRef<HTMLDivElement | null>(null)
+  const contentRef = React.useRef<HTMLDivElement | null>(null)
+  useStreamingBottomPin(viewportRef, contentRef)
   return (
-    <MessageScrollerPrimitive.Root
-      data-slot="message-scroller"
-      className={cn(
-        "group/message-scroller relative flex size-full min-h-0 flex-col overflow-hidden",
-        className
-      )}
-      {...props}
-    />
+    <ScrollerRefsContext.Provider value={{ viewportRef, contentRef }}>
+      <MessageScrollerPrimitive.Root
+        data-slot="message-scroller"
+        className={cn(
+          "group/message-scroller relative flex size-full min-h-0 flex-col overflow-hidden",
+          className
+        )}
+        {...props}
+      />
+    </ScrollerRefsContext.Provider>
   )
 }
 
@@ -72,12 +92,11 @@ function MessageScrollerViewport({
   className,
   ...props
 }: React.ComponentProps<typeof MessageScrollerPrimitive.Viewport>) {
-  const viewportRef = React.useRef<HTMLDivElement | null>(null)
-  useStreamingBottomPin(viewportRef)
+  const refs = React.useContext(ScrollerRefsContext)
   return (
     <MessageScrollerPrimitive.Viewport
       ref={(node) => {
-        viewportRef.current = node
+        if (refs) refs.viewportRef.current = node
       }}
       data-slot="message-scroller-viewport"
       className={cn(
@@ -93,8 +112,12 @@ function MessageScrollerContent({
   className,
   ...props
 }: React.ComponentProps<typeof MessageScrollerPrimitive.Content>) {
+  const refs = React.useContext(ScrollerRefsContext)
   return (
     <MessageScrollerPrimitive.Content
+      ref={(node) => {
+        if (refs) refs.contentRef.current = node
+      }}
       data-slot="message-scroller-content"
       className={cn("flex h-max min-h-full flex-col gap-6", className)}
       {...props}
