@@ -43,6 +43,7 @@
 | [token 用量统计](token用量统计.md) | pi Usage 投影 + 消息级统计行 + 上下文估算与窗口指示器 |
 | [思考（Reasoning）流式呈现](思考流式呈现.md) | thinking 半边（流式分流/档位/预算钳制） |
 | [Markdown 渲染](Markdown渲染.md) | Streamdown + Shiki + CJK 插件 |
+| [流式呈现动效](流式呈现动效.md) | 工作行扫光（渐变淡带扫停）+ 正文逐词淡入（排期时钟 / zcode 移植与三条适配） |
 | [凭据存储与模型目录](凭据存储与模型目录.md) | safeStorage 凭据存取 + 模型目录 |
 | [自定义 Provider 与模型目录管理](自定义Provider与模型目录.md) | createProvider/setProvider 机制与双注册 |
 | [项目/工作区模型与存储根](项目工作区模型与存储根.md) | ~/.cogent 根 + 项目域 + 工作区注入 |

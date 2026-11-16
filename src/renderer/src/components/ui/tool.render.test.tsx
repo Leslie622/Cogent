@@ -5,7 +5,8 @@
  * - 失败：行尾「执行失败」+ 整行不变红（TraceLine 无 data-status=error），
  *   hover 出 Tooltip 看原因（zcode 图 2 形态）；
  * - bash 运行中进度尾行定高两行槽（流稳定化 §3.4）。
- * 折叠体（Base UI Panel 关闭即卸载）默认不渲染，CodeBlock/展开路径不在本钉范围。
+ * 折叠体 keepMounted 收起常驻（trace.render.test.tsx 钉），CodeBlock/展开
+ * 路径不在本钉范围。
  */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'

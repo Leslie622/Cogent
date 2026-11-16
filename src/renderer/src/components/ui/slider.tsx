@@ -89,9 +89,18 @@ function Slider<Value extends number | readonly number[]>({
           data-slot="slider-track"
           className="relative grow overflow-hidden rounded-full bg-muted select-none data-[orientation=horizontal]:h-1 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1"
         >
+          {/* 填充条宽度与拇指（inset-inline-start）必须同参数过渡（同为 Tailwind
+              默认 150ms + 默认缓动，两者才逐帧重合）：inset 几何下填充端恒等于
+              拇指中心、顶格时轨道末端恒差半个拇指宽且全程由拇指右半盖住 ——
+              拇指滑 150ms 而填充瞬跳的话，向高变档填充先冲过拇指、末端灰头在
+              拇指到达前裸露；向低变档填充先缩、拇指左侧漏一段底色（2026-11-16
+              思考力度滑杆两个方向的瞬态露灰踩响）。对照 zcode 参考实现
+              composer-thought-slider.css:17-25：fill(width)/thumb(left) 同
+              duration 同 ease 成对过渡即此意。竖直滑杆（当前无消费者）应过渡
+              height，届时按 orientation 补。 */}
           <SliderPrimitive.Indicator
             data-slot="slider-range"
-            className={cn('bg-primary select-none data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full', fillClassName)}
+            className={cn('bg-primary transition-[width] select-none data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full', fillClassName)}
           />
           {marks?.map((mark) => (
             <span

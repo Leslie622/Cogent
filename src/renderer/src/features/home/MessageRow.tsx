@@ -83,7 +83,9 @@ export function UsageLine({
     }
   }
   if (parts.length === 0) return null
-  return <div className="text-[11px] text-muted-foreground tabular-nums">{parts.join(' · ')}</div>
+  // select-none：统计行是 chrome（消息流容器放开的 select-text 只该落在
+  // 正文上，UI 方针 5）—— 拖划正文不把数字行蓝选成片
+  return <div className="text-[11px] text-muted-foreground tabular-nums select-none">{parts.join(' · ')}</div>
 }
 
 /** 单条消息：用户 = 灰气泡右挂 + 时间戳/复制/编辑（纯文本，主流一致）；助手 =
@@ -103,7 +105,8 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
             <BubbleContent>{message.content}</BubbleContent>
           </Bubble>
           <MessageFooter className="gap-1 px-0">
-            <span className="text-[11px] text-muted-foreground">{formatTime(message.timestamp)}</span>
+            {/* 时间戳是 chrome：select-none（气泡正文保持可选，zcode 时间戳同款） */}
+            <span className="text-[11px] text-muted-foreground select-none">{formatTime(message.timestamp)}</span>
             <Button
               variant="ghost"
               size="icon-xs"

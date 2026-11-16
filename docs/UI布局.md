@@ -51,13 +51,16 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
 - **文字色一律实色 token**（AGENTS.md 方针 3，禁 text-x/75）：次级 muted-foreground、
   placeholder 专用 `--placeholder`(0.71)、层级靠实色深浅；透明度只用于背景/hover 底
 - 语义色：destructive（错误红）/ **warning**（琥珀 oklch(0.666 0.155 70)，权限风险类，
-  如"完全访问"）/ chrome-accent（唯一品牌蓝 #0231fa：分屏光带 + 文内链接）
+  如"完全访问"）/ chrome-accent（唯一品牌蓝 #0231fa：分屏光带；文内链接已归正文
+  主题令牌接管，决定 19）
 - 圆角：大卡 24px（rounded-3xl）/ 设置组卡 12px（rounded-xl）/ 行 6px（rounded-md）/
   信息区条只圆上两角（rounded-t-xl）
 - 字号阶梯：页面标题 24 semibold / 侧栏标题 16 semibold / 行标题 14 medium /
   列表行与正文 13 / 说明文字 13 灰 / 时间戳 11-12；**小号中文不上 500**（13px 用 400）
 - UI 文字默认不可选中（body `user-select: none`，拖窗/划列表不蓝底成片）；
-  正文类内容在容器上 `select-text` 放开（消息流已放开），input/textarea 不受影响
+  正文类内容在容器上 `select-text` 放开（消息流已放开）—— 放开区里的
+  chrome 行（TraceLine 轨迹行族/用量行/时间戳）在行上收回 `select-none`
+  （放开的是正文，不是行头），input/textarea 不受影响
 
 ## 关键组件配方
 
@@ -371,13 +374,17 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   不渲染（流式态天然没有，随 run.completed 出现）；
   **assistant 正文 Markdown 渲染**（2026-11-10）：Streamdown 封装
   `components/ui/markdown.tsx`（包内样式按 shadcn token 写，自动吃主题；正文
-  容器层 text-sm 定基调）。链接 = chrome-accent 实色（此前裸变量已补
-  `--color-chrome-accent` 映射）+ **点击 preventDefault 后 window.open** ——
+  容器层 text-sm 定基调）。链接点击 **preventDefault 后 window.open** ——
   主进程只有 setWindowOpenHandler 守卫，裸 `<a>` 窗口内导航无人拦会把应用窗口
-  带到外链（Electron 特有坑）。lineNumbers/animated/linkSafety 弹窗均关（主流
-  聊天产品口径）。**坑**：Tailwind v4 自动扫描不进 node_modules，包内类必须
-  `@source '../../../node_modules/streamdown/dist'` 显式声明才生成 CSS。代码等宽
-  = JetBrains Mono 随包（可变字重）+ `--font-mono` token（CJK 注释回落鸿蒙）
+  带到外链（Electron 特有坑）；链接颜色/字重/下划线归正文主题令牌
+  （globals.css「聊天正文主题」消费表，决定 19）。lineNumbers/animated/
+  linkSafety 弹窗均关（主流聊天产品口径）。**坑**：Tailwind v4 自动扫描不进
+  node_modules，包内类必须 `@source '../../../node_modules/streamdown/dist'`
+  显式声明才生成 CSS。代码等宽 = JetBrains Mono 随包（可变字重）+
+  `--font-mono` token（CJK 注释回落鸿蒙）。**正文主题**（2026-11-16）：外观
+  设置导入 Themd 主题包（.themd.json），令牌经 `lib/theme/compile.ts` 编译为
+  `--t-*` 变量挂消息流容器（ChatTheme.ts 单点），globals.css 消费表映射到
+  Streamdown DOM；「默认」主题 = 空令牌 = 原生观感
 - **过程行（2026-11-16，zcode 形态）**：工具行 = 图标（**静态**）+ 类别词 +
   主文案（mono text-xs truncate）+ diff 尾标（`+N` 绿 `-M` 红 text-[11px]）+
   状态词 —— 类别词双形（正在读取/已读取…，tool-display.ts），运行态挂
@@ -391,6 +398,15 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   跳变），间距用 padding 不用 margin（margin 不随轨道裁切）
 - **滚动渐隐** `.scroll-fade-b/-y/-x`（mask 两端 24px 渐变，ChatGPT 同款不硬截；
   base-nova 组件引用了这组类，已补定义）
+- **文字扫光** `.shimmer`（globals.css，**@utility 注册**——trace 组件用
+  Tailwind 变体引用它，普通类名作变体目标 v4 零输出、扫光从未生效过）：
+  background-clip:text，文字恒 foreground 实色（muted 基色的淡带对比不足
+  扫不动），渐变嵌 22% 透明淡带周期扫过（300% 底，扫 2s 停 2s 的呼吸节奏，
+  非匀速）；will-change 提层防流式期掉帧；`.shimmer-none` = reduced-motion
+  出口。消费 = trace 家族运行态标题（工作中 / 思考中）+ 工具行类别词运行形。
+  **流式正文逐词淡入**（stream-reveal 插件 + 30ms 合帧）：单元 span 逐个
+  淡入（300ms + 自适应排期延迟），尾部渐隐尾巴，机制见
+  [消息呈现.md](模块/消息呈现.md)
 - **悬停提示 Hint**（components/Hint.tsx，2026-11-16 全量换装）：原生 `title`
   属性全 app 禁用，统一走本件（shadcn tooltip 四件套的单组件包装，自带
   Provider 零样板；`<Hint tip="文案" side>…</Hint>`）。文案纪律 = 简洁准确：
@@ -510,7 +526,12 @@ lucide 仅存于 shadcn 原语内部小图标，不动。
     `calc(thumbSizePx/2 + …)` 按 inset 几何推导 —— 两端各缩半个拇指宽 =
     拇指中心停靠行程极限，调用处覆写拇指尺寸后必须以 thumbSizePx 下发
     真实宽（思考力度拇指 size-6 → 24），否则端点定位点落在行程外贴住
-    轨道圆角端部；center 模式下该公式同样会偏）
+    轨道圆角端部；center 模式下该公式同样会偏）。该几何的另一半：
+    **填充条宽度必须与拇指同参数过渡**（同为默认 150ms + 默认缓动）——
+    填充端恒等于拇指中心，拇指滑填充跳就会瞬态脱节：向高变档填充先冲过
+    拇指、顶格前末端灰头裸露；向低变档填充先缩、拇指左侧漏底色
+    （2026-11-16 思考力度滑杆踩响；基类 Indicator 已加
+    `transition-[width]`，StopSlider 自带 280ms 版本经 tailwind-merge 覆写不受影响）
 13. **base-ui Slider 键盘接管口（不等距档位必须用）**：Thumb 接受 onKeyDown
    （落在内部 input 上）；mergeProps 让用户 handler **先于**内置步进执行，
    且内置 keydown 开头就检查 `event.defaultPrevented` —— 用户先

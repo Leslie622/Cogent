@@ -16,8 +16,13 @@ import type { ChatTurn } from './TurnGroup'
 import { TurnGroup } from './TurnGroup'
 import type { MessageItem, PrunedItem } from '@/stores/chat'
 
+// mock 忠实带 data-slot / data-message-id（折叠体条目摘除包装的回归钉要查它）
 vi.mock('@/components/ui/message-scroller', () => ({
-  MessageScrollerItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>
+  MessageScrollerItem: ({ children, messageId }: { children: React.ReactNode; messageId?: string }) => (
+    <div data-slot="message-scroller-item" data-message-id={messageId}>
+      {children}
+    </div>
+  )
 }))
 vi.mock('./MessageRow', () => ({
   MessageRow: ({ message }: { message: ChatMessage }) => <div data-testid={`msg-${message.id}`}>{message.content}</div>,
@@ -130,5 +135,36 @@ describe('TurnGroup 终态头条（已工作时长口径）', () => {
     const turn: ChatTurn = { items: [assistantMsg('a1', 5_100)], startedAt: 1_000 }
     render(<TurnGroup turn={turn} phase="done" />)
     expect(screen.getByText('已工作 4.10s')).toBeInTheDocument()
+  })
+})
+
+describe('TurnGroup 已工作头条下分割线常驻（决定 18：不随折叠收起）', () => {
+  it('divider 存在且在折叠面板外 —— 放回面板内则收起态 hidden，常驻即破', () => {
+    // 两条 assistant：末条为终答，前条进过程体 —— 有过程才有折叠机构与分割线
+    const turn: ChatTurn = { user: userMsg('u1'), items: [assistantMsg('a1', 3_000), assistantMsg('a2', 5_100)] }
+    const { container } = render(<TurnGroup turn={turn} phase="done" />)
+    const divider = container.querySelector('[data-slot=run-trace-divider]')
+    expect(divider).not.toBeNull()
+    expect(divider?.closest('[data-slot=trace-collapsible-content]')).toBeNull()
+  })
+})
+
+describe('TurnGroup 终态折叠体条目摘除 scroller item（收起动画卡顿根因回归钉）', () => {
+  it('折叠体内工具卡不套 MessageScrollerItem（content-visibility 扰动开合轨道分母）；user/终答顶层包装保留', () => {
+    const tool: MessageItem = {
+      id: 't1',
+      type: 'tool',
+      name: 'read',
+      toolKind: 'read',
+      summary: 'read(a.ts)',
+      status: 'ok'
+    }
+    const turn: ChatTurn = { user: userMsg('u1'), items: [tool, assistantMsg('a1', 5_100)] }
+    const { container } = render(<TurnGroup turn={turn} phase="done" />)
+    const wrapped = Array.from(container.querySelectorAll('[data-slot=message-scroller-item]'))
+    // 收起态折叠体（keepMounted 常驻）里的工具卡不在任何 scroller item 内
+    expect(wrapped.some((el) => el.textContent.includes('已读取'))).toBe(false)
+    // 顶层定位包装不受影响：刻度/scrollToMessage 的目标（user 与终答）
+    expect(wrapped.map((el) => el.getAttribute('data-message-id'))).toEqual(['u1', 'a1'])
   })
 })

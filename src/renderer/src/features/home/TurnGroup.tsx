@@ -329,15 +329,14 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
         // 恒定，工作中行钉在流底不被推挤，docs/计划/对话过程呈现打磨.md §3.4；
         // 此前「终答开流即折叠」的 headerMode 翻转是流中跳变源，已废），
         // 流式占位在输出位置，底部常驻工作中行。
-        // 过程项套**导线容器**（ml-7px + border-l + pl-16px，与终态折叠体
-        // TraceCollapsibleContent 内层同款）：ask_user 挂起会把 live 阶段拉得
-        // 很长，上一回合展开的导线行与本轮 live 平铺行左缘差 23px，相邻回合
-        // 同屏即「图标没对齐」（2026-11-16 用户实测截图）。同导线后 live 与
-        // 收尾折叠横向零位移；终答与 WorkingLine 留在体外（x=0，对应终态的
-        // 常驻终答与头条位）。中间正文段随之呈过程灰（text-muted-foreground
-        // 继承）—— 过程语义本就如此，与终态折叠体内一致
+        // 容器与终态折叠体**平级同款**（无导线缩进，2026-11-16 用户定调）：
+        // ask_user 挂起会把 live 阶段拉得很长，相邻回合同屏时两态左缘必须
+        // 逐像素一致（曾差 23px 即「图标没对齐」）—— 导线退役后两侧一同
+        // 归 0，收尾翻折叠横向零位移的约束不变。中间正文段随之呈过程灰
+        // （text-muted-foreground 继承）—— 过程语义本就如此，与终态折叠
+        // 体内一致
         <>
-          <div className="ml-[calc(--spacing(2)-1px)] flex min-w-0 flex-col gap-3 border-l pr-1 pl-4">
+          <div className="flex min-w-0 flex-col gap-3 pr-1">
             {process.map((item) => (
               <MessageScrollerItem key={item.id} messageId={item.id}>
                 <ProcessItem item={item} />
@@ -370,11 +369,15 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
         // 并存（2026-11-11 用户定调）：头条墙钟 = 用户等了多久；统计行接口时长
         // = 模型净耗时（不含排队/引擎处理），两个数不冲突
         <>
+          {/* 折叠体条目**不套** MessageScrollerItem：那会给每条挂
+              content-visibility:auto —— 开合动画期间条目随裁切边缘进出
+              渲染态、10rem 占位翻真实高度，grid 轨道分母（= 内容自然高度）
+              被中途改动，收起动画肉眼卡顿（2026-11-16 用户实测，决定 17；
+              zcode 折叠体同为纯 div）。定位/刻度无消费方：scrollToMessage
+              只有索引刻度在调、目标恒为 user 消息（顶层另有包装） */}
           <RunTrace phase={phase} durationMs={turnDurationMs(turn)}>
             {process.map((item) => (
-              <MessageScrollerItem key={item.id} messageId={item.id}>
-                <ProcessItem item={item} />
-              </MessageScrollerItem>
+              <ProcessItem key={item.id} item={item} />
             ))}
           </RunTrace>
           {answer !== undefined && (

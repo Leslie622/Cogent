@@ -64,8 +64,8 @@ function Elapsed({ startTs }: { startTs: number }) {
 }
 
 /** 回合过程轨迹：终态头条 + 折叠体（children = 过程项，间距在此统一 ——
- *  Trace 家族内容区自带左轨与内边距）。children 为空（无过程回合）=
- *  单行头条不可展开（D8 修订） */
+ *  Trace 家族内容区已平级无导线，只带纵向内边距；头条下常驻分割线在此挂）。
+ *  children 为空（无过程回合）= 单行头条不可展开（D8 修订） */
 export function RunTrace({
   phase,
   durationMs,
@@ -96,6 +96,12 @@ export function RunTrace({
   return (
     <TraceCollapsible open={open ?? phase === 'stopped'} onOpenChange={setOpen}>
       <TraceCollapsibleTrigger>{header}</TraceCollapsibleTrigger>
+      {/* 分割线**常驻**（2026-11-16 用户定调）：不随折叠体收起 —— 收起态
+          也是「头条 + 线」的完整行。挂在触发器与面板之间（折叠机构外，
+          不参与开合动画）：线到头条间距 mt-2 恒定，线到条目间距 = 折叠体
+          内层 pt（决定 17 既定，随开合收拢）。进面板内则收起即 hidden，
+          常驻语义即破（回归钉 turn-group.render.test.tsx） */}
+      <div data-slot="run-trace-divider" className="mt-2 border-t" />
       <TraceCollapsibleContent>
         <div className="flex flex-col gap-3">{children}</div>
       </TraceCollapsibleContent>

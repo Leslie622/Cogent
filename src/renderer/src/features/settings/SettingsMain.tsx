@@ -5,6 +5,7 @@
  */
 import type { ComponentType } from 'react'
 import { GeneralSection } from './GeneralSection'
+import { AppearanceSection } from './AppearanceSection'
 import { ModelsSection } from './ModelsSection'
 import { ArchivedChatsSection } from './ArchivedChatsSection'
 import { McpSection } from './McpSection'
@@ -15,6 +16,7 @@ import { useSettingsStore, type SettingsSectionId } from '@/stores/settings'
 /** 分区 → 内容组件注册表：新分区落地时在此挂入口（占位分区不登记） */
 const SECTIONS: Partial<Record<SettingsSectionId, ComponentType>> = {
   general: GeneralSection,
+  appearance: AppearanceSection,
   models: ModelsSection,
   'archived-chats': ArchivedChatsSection,
   connections: McpSection,

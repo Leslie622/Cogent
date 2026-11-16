@@ -17,17 +17,22 @@ const ScrollerRefsContext = React.createContext<{
 } | null>(null)
 
 /**
- * 流式吸底的预绘制同步（库 autoScroll 的补帧，docs/计划/对话过程呈现打磨.md
- * §3.4 后续实测）：库的跟随链路是 ResizeObserver → rAF 下一帧 → scrollTo
- * —— 内容增长的那一帧先绘制"滚动未跟上"的中间态（流底内容下探），下一帧
- * 才弹回底部，逐 delta 高频触发即观感"工作中行位置跳动"。本钩子把修正搬进
- * RO 回调内（浏览器在布局后、绘制前回调 RO），增长当帧直接 scrollTop 贴底，
- * 中间态不上屏。
- * RO 必须挂**内容元素**（MessageScrollerContent）：流式增长时变的是内容的
- * scrollHeight，viewport 盒子尺寸不变 —— 首版挂 viewport 导致回调从不触发
- * （测得"零抖动"的轮次恰无内容增长，测量无效）。跟随判定 = 增长前是否贴底
- * （scroll 事件持续记账，2px 容差同库的 J 常量）：用户上翻即停止跟随，库的
- * rAF 补帧与本钩子不冲突（其后变为空转）。
+ * 流式吸底（唯一跟随源）：贴底必须在"引起增长的那个渲染帧"内完成 ——
+ * 内容长 N px 而滚动未跟的帧会先把中间态绘制上屏（流底内容下探 N px），
+ * 下一帧弹回，逐 delta 高频往复即"工作中行上下抖动"。真机 CDP 逐帧采样
+ * （真机数据为本注释依据）：库 autoScroll 的 RO→rAF→scrollTo 慢一帧；而
+ * **ResizeObserver 的交付在 paint 之后**（旧版以为"布局后绘制前"），RO 回调
+ * 里贴底同样晚一帧、中间态照样上屏。所以主贴底走 **MutationObserver 微任务**：
+ * React commit 改完 DOM 的微任务检查点同步执行，读 scrollHeight（强制同步
+ * 布局拿到新值）后立即赋 scrollTop —— 布局/绘制发生时滚动已就位，中间态
+ * 不上屏。RO 留作兜底（不经 DOM 变化的纯高度变化，幂等）。
+ * atBottom 记账是**用户意图驱动**，不是位置反推：旧版"scroll 事件按 2px 容差
+ * 判定"会被程序滚动击穿 —— 贴底（scrollTop=scrollHeight）触发的 scroll 事件
+ * 异步派发时内容又长了几 px，dist>2px 即误判"用户滚走"，一次性击穿后钩子
+ * 永久退出、抖动回归（真机采样实锤：RO 时刻 dist 从 0.8 一路涨到 1000+）。
+ * 现只有用户输入（滚轮/触摸/滚动键）产生的滚动才改记账；程序向上滚
+ * （scrollToMessage 锚点定位 = 显式离开底部）同样灭跟随；程序向下滚
+ * （贴底/scrollToEnd）不动记账。
  */
 function useStreamingBottomPin(
   viewportRef: React.RefObject<HTMLDivElement | null>,
@@ -36,25 +41,56 @@ function useStreamingBottomPin(
   React.useEffect(() => {
     const viewport = viewportRef.current
     const content = contentRef.current
-    if (viewport === null || content === null || typeof ResizeObserver === "undefined") return
-    // 增长前的贴底记账：用户滚离底部（含程序化 scrollToMessage）即 false
+    if (viewport === null || content === null) return
     let atBottom = true
-    const onScroll = () => {
-      atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 2
+    let userDriven = false
+    let lastTop = viewport.scrollTop
+    const SCROLL_KEYS = new Set([
+      "PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " ",
+    ])
+    const markUser = () => {
+      userDriven = true
     }
-    const observer = new ResizeObserver(() => {
-      if (atBottom) {
-        viewport.scrollTop = viewport.scrollHeight
-        atBottom = true // 贴底后距离恒 0，scroll 事件会再确认
-      } else {
-        onScroll()
+    const onScroll = () => {
+      const dist = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+      const went = viewport.scrollTop - lastTop
+      lastTop = viewport.scrollTop
+      // 程序向上滚 = scrollToMessage 类显式离开；小幅回缩（边界回弹）忽略
+      const programLeave = !userDriven && went < -8
+      if (userDriven || programLeave) {
+        atBottom = dist <= 2
+        // 用户滚回底部 = 回到跟随态；programLeave 保持离开直到用户/显式回底
+        if (atBottom) userDriven = false
       }
-    })
-    observer.observe(content)
+    }
+    const pinToBottom = () => {
+      if (atBottom) viewport.scrollTop = viewport.scrollHeight
+    }
+    const mutations = new MutationObserver(pinToBottom)
+    mutations.observe(content, { childList: true, subtree: true, characterData: true })
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            pinToBottom()
+            // 不跟随时刷新基准：防把后续程序贴底误判成基准跳变
+            lastTop = viewport.scrollTop
+          })
+    observer?.observe(content)
     viewport.addEventListener("scroll", onScroll, { passive: true })
+    viewport.addEventListener("wheel", markUser, { passive: true, capture: true })
+    viewport.addEventListener("touchstart", markUser, { passive: true, capture: true })
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (SCROLL_KEYS.has(event.key)) markUser()
+    }
+    document.addEventListener("keydown", onKeyDown)
     return () => {
-      observer.disconnect()
+      mutations.disconnect()
+      observer?.disconnect()
       viewport.removeEventListener("scroll", onScroll)
+      viewport.removeEventListener("wheel", markUser, { capture: true })
+      viewport.removeEventListener("touchstart", markUser, { capture: true })
+      document.removeEventListener("keydown", onKeyDown)
     }
   }, [viewportRef, contentRef])
 }

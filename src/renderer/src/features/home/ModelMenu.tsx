@@ -6,7 +6,7 @@
  * chat store；思考力度滑杆（ThinkingSlider）嵌在面板末段。
  */
 import { useEffect, useMemo } from 'react'
-import { IconCheck, IconChevronDown } from '@tabler/icons-react'
+import { IconCheck, IconChevronDown, IconCube, IconSettingsAi } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import { ProviderLogo } from '@/components/ProviderLogo'
 import {
@@ -162,6 +162,10 @@ function ModelMenuPanel() {
               setSection('models')
             }}
           >
+            {/* 齿轮+AI 字样 = "管理 AI 模型"双语义合一，与侧栏普通齿轮拉开
+                区分（2026-11-16 定稿）；16px 与上方厂商标同槽位，行文本左缘
+                对齐 */}
+            <IconSettingsAi className="size-4" />
             管理模型
           </DropdownMenuItem>
         </DropdownMenuSubContent>
@@ -170,7 +174,12 @@ function ModelMenuPanel() {
           「模型」标签套 DropdownMenuGroup 提供 Group 语境（base-ui
           MenuGroupLabel 的硬要求：标签必须在 Group/RadioGroup 里） */}
       <DropdownMenuGroup>
-        <DropdownMenuLabel>模型</DropdownMenuLabel>
+        {/* 立方体 = 单个模型单元（2026-11-16 定稿）；随标签 text-xs 降 14px，
+            色随标签 muted */}
+        <DropdownMenuLabel className="flex items-center gap-1.5">
+          <IconCube className="size-3.5" />
+          模型
+        </DropdownMenuLabel>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <span className="min-w-0 flex-1 truncate">

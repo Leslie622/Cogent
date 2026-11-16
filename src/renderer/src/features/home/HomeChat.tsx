@@ -71,6 +71,7 @@ import { findActiveModel, useEngineStore } from '@/stores/engine'
 import { ConversationIndex } from './ConversationIndex'
 import { ModelMenu } from './ModelMenu'
 import { ContextIndicator } from './ContextIndicator'
+import { useChatTheme } from './ChatTheme'
 import type { MessageLike } from './MessageRow'
 import { groupTurns, TurnGroup, type TurnPhase } from './TurnGroup'
 
@@ -201,6 +202,9 @@ function ChatMessages() {
   const messages = useChatStore(
     (s) => s.messagesBySession[s.activeSessionId ?? ''] ?? EMPTY_MESSAGES
   )
+  // 正文主题：亮色令牌变量挂消息流容器（单点），暗色/extraCss 由 hook 内部
+  // <style> 管理 —— 见 ChatTheme.ts
+  const themeVars = useChatTheme()
   const running = useChatStore(selectRunning)
   const stopping = useChatStore(selectStopping)
   const truncated = useChatStore(selectTruncated)
@@ -224,12 +228,19 @@ function ChatMessages() {
     <MessageScroller className="min-h-0 flex-1">
       <MessageScrollerViewport>
         {/* select-text：对话正文是正文类内容（AGENTS.md 方针 5 的首个放开点）。
+            放开区里的 chrome 行在行上收回 select-none（TraceLine 轨迹行族 /
+            用量行 / 时间戳）—— 放开的是正文，不是行头。
             内边距给索引轨道留固定 gutter：pl-16 = 轨道(左 12px + 刻度最宽 24px)
             + 28px 呼吸间隙（此前 pl-11 只剩 8px，刻度紧贴文字，用户反馈太近）
             —— 面板窄时（列宽顶到 max-w-3xl）文字也不会贴轨道/边缘。
-            回合 = 视觉单元：外层 gap-6 隔回合，回合内 gap-3 紧凑成组；条目仍
-            逐个挂 scroller item（TurnGroup 内包）—— 刻度/定位按 messageId 查表 */}
-        <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 py-6 pr-6 pl-16 select-text">
+            回合 = 视觉单元：外层 gap-6 隔回合，回合内 gap-3 紧凑成组。顶层
+            条目（user/终答/live 过程行）挂 scroller item 供刻度/定位按
+            messageId 查表；终态折叠体内的过程条目不挂 —— content-visibility
+            会扰动开合动画的轨道分母（见 TurnGroup 终态分支） */}
+        <MessageScrollerContent
+          style={themeVars}
+          className="mx-auto w-full max-w-3xl gap-6 py-6 pr-6 pl-16 select-text"
+        >
           {turns.map((turn) => (
             // key：user 有则用 user；无 user 头组取首项 id（D9 保留式下压缩条
             // 原位成组、可多条并存，静态 'head' 会撞 key；无 user 的组结构上
@@ -530,11 +541,12 @@ export function HomeChat({
         tabsCollapsed={tabsCollapsed}
         onToggleTabs={onToggleTabs}
       />
-      {/* autoScroll = 吸底跟随流式输出（库的官方开关，默认关）：在底部时回复增长
-          即跟随，滚走自动释放（不拽人），滚回底部或点悬浮钮恢复跟随。
-          Provider 包到 Composer 外层：发送是"回到底部"的用户意图（主流产品语义），
-          Composer 发送时调 scrollToEnd 恢复跟随，翻历史/锚点定位后发送照样吸底 */}
-      <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+      {/* 吸底跟随不走库 autoScroll（已关）：其 RO→rAF→scrollTo 链路慢一帧，
+          流式期间"增长帧推下、下一帧拉回"即工作中行抖动；跟随由
+          message-scroller 的 useStreamingBottomPin 独占（增长当帧贴底），
+          滚走释放/滚回恢复同样在彼处。defaultScrollPosition（初始定位）、
+          发送时 scrollToEnd（显式 API）不受影响；悬浮钮显隐由库按位置自判 */}
+      <MessageScrollerProvider defaultScrollPosition="end">
         {/* 内容区主体（relative 供 TodoStrip absolute 挂靠）：清单浮在消息流
             右上角（2026-11-16 用户定调），不再占输入区上方布局位 —— 跨回合的
             "进行中"状态与"当下"输入（下方的面板/输入框）彻底分离 */}

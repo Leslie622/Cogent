@@ -247,45 +247,109 @@
   );
 }
 
-/* ── 文字 shimmer（"思考中"标题流光，trace 运行态引用）──
-   base-luma trace 组件类名里引用了 shimmer / shimmer-none 但样式表未定义
-   （空引用，同 scroll-fade 当初的情况），在此补齐。手法 = 渐变高光扫过文字
-   （background-clip: text，ChatGPT 思考标题同款）：可见字形由渐变 stop 的
-   实色承担（muted-foreground 底 + foreground 高光），不走透明度文字色 ——
-   方针 3 的"文字实色"对 clip 文字同样成立。shimmer-none = 动效降级出口
-   （trace 标题在 motion-reduce 下引用），恢复继承色、去掉动画。 */
+/* ── 文字 shimmer（"思考中/工作中"标题淡带扫光，trace 运行态引用）──
+   必须用 @utility 注册而非普通类：trace 组件用 Tailwind 变体引用它
+   （data-[status=running]:*:data-[slot=trace-title]:shimmer 与
+   motion-reduce:shimmer-none），v4 只为认识 的 utility 生成变体规则 ——
+   普通类名作为变体目标零输出，首版即栽在这（.shimmer 定义完好但从未挂上，
+   运行中 title 的 animationName 恒 none）。
+   形态 = zcode animated-gradient-text 同款（styles.css:957-1004，其
+   ChatLoading 用 -foreground 变体）：文字恒为 foreground 实色（运行态比
+   静态行深一档，"正在工作"的强调），渐变中间嵌一条 22% 透明度的"淡带"
+   周期性扫过 —— 基色必须用 foreground：muted-foreground 本身浅，再 22%
+   透明化的淡带几乎融进背景，扫不动（实测不可见）。节奏扫 2s 停 2s
+   （keyframes 0%→50% 平移、50%→100% 钉住）：匀速循环观感是"进度条在跑"，
+   扫停才是"活着"。shimmer-none = 动效降级出口（motion-reduce），恢复
+   继承色、去掉动画。 */
 @keyframes shimmer-sweep {
-  from {
-    background-position: 200% 0;
+  0% {
+    background-position: 100% 0;
   }
-  to {
-    background-position: -200% 0;
+  50% {
+    background-position: 0% 0;
+  }
+  100% {
+    background-position: 0% 0;
   }
 }
-.shimmer {
+@utility shimmer {
   background-image: linear-gradient(
     90deg,
-    var(--color-muted-foreground) 35%,
-    var(--color-foreground) 50%,
-    var(--color-muted-foreground) 65%
+    var(--color-foreground) 0%,
+    var(--color-foreground) 34%,
+    color-mix(in srgb, var(--color-foreground) 22%, transparent) 50%,
+    var(--color-foreground) 66%,
+    var(--color-foreground) 100%
   );
-  background-size: 200% 100%;
+  /* 底 3 倍宽：淡带完全移出文字区后仍留在渐变内，钉住时段文字整条实色 */
+  background-size: 300% 100%;
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  animation: shimmer-sweep 2.2s linear infinite;
-  /* 合成层提示（zcode animated-gradient-text 同款）：background-position 逐帧
-     变更走主线程重绘，流式期间主线程被 delta/码表打满时动画掉帧 → 文字在
-     实色与渐变间跳变，观感即"工作中行闪动"。will-change 提前升层 + 平移
-     强制合成，动画帧不再与流式重绘争主线程 */
+  animation: shimmer-sweep 4s linear infinite;
+  /* 合成层提示（zcode 同款）：background-position 逐帧变更走主线程重绘，
+     流式期间主线程被 delta/码表打满时动画掉帧 → 文字在实色与渐变间跳变，
+     观感即"工作中行闪动"。will-change 提前升层 + 平移强制合成，动画帧
+     不再与流式重绘争主线程 */
   will-change: background-position;
   transform: translateZ(0);
   backface-visibility: hidden;
 }
-.shimmer-none {
+@utility shimmer-none {
   animation: none;
   background-image: none;
   color: inherit;
+}
+
+/* ── 流式正文逐词浮现（stream-reveal.ts 的消费层，计划/流式呈现动效.md）──
+   用 transition + @starting-style，不用 @keyframes：单元在下一帧就从 new 变
+   settled，keyframes 选择器失配动画即被移除、只播一帧；transition 只要
+   transition-property 仍含 opacity 就会跑完，@starting-style 只作用于首次
+   挂载、已挂载元素上的 new 不会重播（zcode 关键教训）。时长固定 300ms
+   ease-out：能不能看出淡入只取决于单字有几帧处在渐变，急起曲线首帧即 69%
+   不透明 = 直接出现；时长随吐字速度缩放会把每字压到 2-3 帧渐变 = 无动画
+   —— 速度只影响 stream-reveal 排的起跳延迟。
+   刻意不加 will-change：每个单元一个 span，提层反而拖垮长消息。只动
+   opacity：文字首帧即占满最终位置，高度恒定，不触发 ResizeObserver（不撞
+   虚拟滚动测高与底部跟随）。 */
+:root {
+  --reveal-duration: 300ms;
+  --reveal-ease: ease-out;
+}
+[data-reveal] {
+  transition: opacity var(--reveal-duration) var(--reveal-ease) var(--reveal-delay, 0ms);
+}
+@starting-style {
+  [data-reveal='new'] {
+    opacity: 0;
+  }
+}
+/* 列表圆点 / 序号是 li::marker 伪元素，包不到 span；::marker 不支持 opacity
+   （只少数属性可用），所以过渡 color。延迟用单独的变量名：li 上的值不能被
+   里面 settled 的字继承。 */
+[data-reveal-marker]::marker {
+  transition: color var(--reveal-duration) var(--reveal-ease) var(--reveal-marker-delay, 0ms);
+}
+@starting-style {
+  [data-reveal-marker='new']::marker {
+    color: transparent;
+  }
+}
+/* 动效降级：transition 归零的同时必须把起步态也放开 —— 只关 transition 的话
+   starting-style 的 opacity:0 会把新字永久钉在透明。 */
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal],
+  [data-reveal-marker]::marker {
+    transition: none;
+  }
+  @starting-style {
+    [data-reveal='new'] {
+      opacity: 1;
+    }
+    [data-reveal-marker='new']::marker {
+      color: inherit;
+    }
+  }
 }
 
 /* ── bash 进度尾行的 indeterminate 扫光细条（tool.tsx ProgressTail）──
@@ -433,4 +497,224 @@
       'Microsoft YaHei',
       sans-serif;
   }
+}
+
+/* ============================================================
+   聊天正文主题层 —— 消费表（令牌 → Streamdown DOM 的映射）。
+   变量不在此定义：主题包（.themd.json）经 lib/theme 的
+   compile.ts 编译，由 ChatTheme.ts 运行时注入消息流容器，
+   CSS 变量沿 DOM 继承被下面的 var() 消费（计划/聊天正文主题化.md D2/D3）。
+   未注入变量 = 全部走回落值 = Streamdown 原生观感（「默认」主题即此）。
+
+   为什么必须放非 layer 区：Streamdown 的默认样式是烤进组件的
+   Tailwind 工具类，经 @source 生成于 @layer utilities；cascade
+   规则「非 layer 恒胜 layer 内规则（与优先级无关）」，故此处
+   无需 !important 即可整体压过包默认样式——唯一例外是 Shiki
+   写在 pre 上的内联 background-color（见代码块段）。
+
+   两类规则，按「拆壳」与否分治（2026-11-16 默认态断层修复的教训）：
+   ① 平滑属性（字体/色/内边距/圆角值）—— 无条件规则 + 原生等值回落，
+      令牌缺席时观感与原生逐像素一致；
+   ② 结构切换（代码块三层卡片壳 ↔ 语言条+灰板、表格 wrapper 卡 ↔ 裸表）
+      —— [style*='--t-code-'] / [style*='--t-table'] 属性选择器门控
+      （匹配挂着变量注入的祖先容器 style 属性，Themd del 自绘线同款
+      手法）：令牌组注入才整组切换，缺席时 CSS 完全不触碰原生结构。
+      CSS 无法表达「变量存在与否」的分支，var() 回落只对属性值有效，
+      拆壳是结构性增删不能靠回落表达——这是门控存在的根因。
+      代码块门内 bg 回落 Themd 极简灰（与 Themd「code-bg 恒有默认」
+      语义对齐，只设字体的主题同样切灰板）；表格门内单元边框回落值
+      是 Themd 极简（横线无竖线）。
+
+   覆盖面 = 消费表已映射的令牌组；未映射组（标题梯度/列表 marker/
+   callout/p.* 等）导入后存而未用，映射一段即生效一段。
+   不消费的令牌：root.width（正文列宽归布局层管，不属于内容样式）。
+
+   暗色：主题包的 dark 令牌套由 ChatTheme 编译为 .dark 作用域
+   变量块待命——Cogent 暗色切换未上线（.dark 块休眠），上线即生效。
+   ============================================================ */
+
+/* 正文根：字体栈/字号/行高。回落值 = 现状口径（text-sm 对话流正文
+   基调 + 全局 font-sans），令牌未注入时观感不变 */
+.md-body {
+  font-family: var(
+    --t-root-font,
+    Inter,
+    'HarmonyOS Sans SC',
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    'Microsoft YaHei',
+    sans-serif
+  );
+  font-size: var(--t-root-size, 0.875rem);
+  line-height: var(--t-root-leading, 1.625);
+}
+
+/* 链接：基础态回落正文色（Themd 极简默认——色未设 = inherit，
+   组件覆盖件不再硬编码 chrome-accent，行为 window.open 保留）；
+   hover 色与过渡属性集照 Themd 消费端语义 */
+.md-body a {
+  color: var(--t-a-color, inherit);
+  font-weight: var(--t-a-weight, inherit);
+  text-decoration-line: var(--t-a-underline-line, underline);
+  text-decoration-color: var(--t-a-underline-color, currentColor);
+  text-decoration-thickness: var(--t-a-underline-height, auto);
+  text-underline-offset: 0.2em;
+  border-radius: 4px;
+  transition:
+    color var(--t-a-transition, 0s),
+    text-decoration-color var(--t-a-transition, 0s),
+    background-color var(--t-a-transition, 0s);
+}
+.md-body a:hover {
+  color: var(--t-a-hover-color, var(--t-a-color, inherit));
+  text-decoration-line: var(--t-a-hover-underline, underline);
+  text-decoration-color: var(
+    --t-a-hover-line-color,
+    var(--t-a-underline-color, currentColor)
+  );
+}
+
+/* 删除线加粗：原生 text-decoration 路线 —— Themd 的自绘线
+   （background-image）只在同时设离线距离/颜色时才必要 */
+.md-body del {
+  text-decoration-thickness: var(--t-del-thickness, auto);
+}
+
+/* 行内代码（字体令牌经 --t-inline-code-font 生效，回落等宽栈继承） */
+.md-body [data-streamdown='inline-code'] {
+  font-family: var(--t-inline-code-font, inherit);
+  padding: var(--t-inline-code-padding, 2px 6px);
+}
+
+/* 任务列表勾选框（GFM task 的 <input> 无专用 data-streamdown
+   钩子，按标签+类型命中） */
+.md-body input[type='checkbox'] {
+  accent-color: var(--t-task-accent, currentColor);
+}
+
+/* 引用块：卡片观感；左边框仍走 Streamdown 的 border-l-4，
+   主题设 quote.borderWidth/Color 时才接管 */
+.md-body [data-streamdown='blockquote'] {
+  border-left: var(--t-quote-border-width, 4px) solid
+    var(--t-quote-border-color, color-mix(in oklab, var(--muted-foreground) 30%, transparent));
+  background: var(--t-quote-bg, transparent);
+  border-radius: var(--t-quote-radius, 0);
+  padding: var(--t-quote-padding, 0 0 0 1rem);
+}
+
+/* 代码块：卡片壳拆不拆跟着令牌走 —— [style*='--t-code-'] 匹配挂着
+   变量注入的消息流容器（ChatTheme 的 style 属性，属性选择器可跨任意
+   祖先，Themd del 自绘线同款手法）。没注入 = 默认主题：完全不碰，
+   Streamdown 原生白卡（border + bg-sidebar + rounded-xl + p-2）原样
+   保留（回落值 = 原生观感，本表总原则）；注入了任意 codeBlock.* 令牌
+   （含只设字体的主题，如 Theme-Leslie）即整体切到 Themd 观感：外层
+   容器归零，语言条 + 滚动容器（内层 body 盒）同底色拼成一块灰板
+   （滚动条 gutter 随容器同色），bg 未设时回落 Themd 极简灰
+   oklch(0.97 0 0)——与 Themd「code-bg 恒有默认值」的语义对齐 */
+[style*='--t-code-'] .md-body [data-streamdown='code-block'] {
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  gap: 0;
+}
+/* 内层 body 盒（Streamdown 在 pre 外再套的滚动容器，overflow-auto）——
+   它才是滚动条占位（13px gutter）所在的层：灰板底色/边框/下圆角放这里，
+   gutter 区域随容器同色，不再透出页面白底（原生白卡时代 gutter 白贴白
+   隐形，灰板上就露馅）；border-radius 裁切溢出内容，滚动时圆角不破 */
+[style*='--t-code-'] .md-body [data-streamdown='code-block-body'] {
+  background: var(--t-code-bg, oklch(0.97 0 0));
+  border: var(--t-code-border-width, 0) solid var(--t-code-border-color, var(--border));
+  border-radius: 0 0 var(--t-code-radius, 8px) var(--t-code-radius, 8px);
+  padding: 0;
+}
+[style*='--t-code-'] .md-body [data-streamdown='code-block-header'] {
+  background: var(--t-code-bg, oklch(0.97 0 0));
+  color: color-mix(in oklch, currentColor 45%, transparent);
+  border-radius: var(--t-code-radius, 8px) var(--t-code-radius, 8px) 0 0;
+  padding: 0.45em 0.9em;
+  /* 2.5rem 让语言标签中心（20px）精确对齐按钮浮层中心（absolute top-2
+     + 药丸高 24px = 20px）；原生 h-8 条中心 16px 与浮层差 4px，卡片上
+     药丸同色隐形看不出，灰板上就显成「标签偏上」 */
+  height: auto;
+  min-height: 2.5rem;
+}
+/* 按钮浮层药丸归零：原生 border-sidebar + bg-sidebar/80 + 毛玻璃是叠在
+   bg-sidebar 卡上「同色隐形」的设计，拆壳换灰底后露出 Cogent 侧栏的
+   薄荷绿（--sidebar #eef7f2）成一块突兀色斑 —— 归成纯图标，hover 态
+   （bg-muted）保留 */
+[style*='--t-code-'] .md-body [data-streamdown='code-block-actions'] {
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+}
+/* pre 本体：底色 transparent !important 是全表唯一一处 !important ——
+   Shiki 把 background-color 写成 pre 的内联样式，压掉它让灰板统一由
+   滚动容器（code-block-body）承担（含滚动条 gutter 区）；内边距/字体
+   令牌留在这层 */
+[style*='--t-code-'] .md-body [data-streamdown='code-block'] pre {
+  background: transparent !important;
+  padding: var(--t-code-padding, 1em 1.25em);
+  margin: 0;
+  font-family: var(--t-code-font, inherit);
+}
+
+/* 表格：同款门控 —— 没注入 table.* 令牌 = 原生卡（wrapper 边框卡 +
+   表头 bg-muted/80 + divide-y 网格）原样保留；注入了才切 Themd 形态
+   （卡片壳归零、border-collapse: separate 配圆角裁切、单元边框体系
+   落到表格自身）。横向滚动（wrapper 的 overflow-x-auto）不受影响 */
+[style*='--t-table'] .md-body [data-streamdown='table-wrapper'] {
+  border: none;
+  border-radius: var(--t-table-radius, 0);
+  padding: 0;
+  background: transparent;
+}
+[style*='--t-table'] .md-body [data-streamdown='table-header'] {
+  background: transparent;
+}
+[style*='--t-table'] .md-body [data-streamdown='table'] {
+  border-collapse: var(--t-table-collapse, collapse);
+  border-spacing: 0;
+  border-radius: var(--t-table-radius, 0);
+}
+[style*='--t-table'] .md-body [data-streamdown='table-header-cell'],
+[style*='--t-table'] .md-body [data-streamdown='table-cell'] {
+  border-top: var(--t-cell-border-width, 1px) var(--t-cell-row-line, solid) var(--border);
+  border-right: var(--t-cell-border-width, 1px) var(--t-cell-col-line, none) var(--border);
+}
+/* 表头行不吃上边框（首行贴圆角），末列不吃右边框（贴右缘）——
+   与 Themd theme-base 的 th/td 裁边同款 */
+[style*='--t-table'] .md-body [data-streamdown='table-header-cell'] {
+  border-top: none;
+}
+[style*='--t-table'] .md-body [data-streamdown='table-cell']:last-child,
+[style*='--t-table'] .md-body [data-streamdown='table-header-cell']:last-child {
+  border-right: none;
+}
+[style*='--t-table'] .md-body [data-streamdown='table-body'] [data-streamdown='table-row']:nth-child(2n) {
+  background: var(--t-table-stripe, transparent);
+}
+
+/* 分割线：高度路线（border 归零改用 height，避免粗细叠在
+   border-top 上与主题厚度语义打架）；线色回落全局 border 令牌 */
+.md-body [data-streamdown='horizontal-rule'] {
+  border: none;
+  height: var(--t-hr-thickness, 1px);
+  background: var(--t-hr-color, var(--border));
+}
+
+/* 图片：圆角在 img；留白/水平对齐在包装层（wrapper）。为什么分层：
+   hover 蒙版与下载钮是 inset:0 挂在 wrapper（inline-block）上的，img 的
+   margin 会被算进 wrapper 高度 → 蒙版盖出图片上下（首版实病）；间距
+   挪到 wrapper 后蒙版贴着图片。align 令牌 = wrapper 的 margin-inline
+   （0 = 左对齐，auto = 居中，inline-block 的 auto 侧边距在行内居中）；
+   留白/圆角回落 = 原生（my-4 = 1rem / rounded-lg = 8px） */
+.md-body [data-streamdown='image-wrapper'] {
+  margin-block: var(--t-img-margin, 1rem);
+  margin-inline: var(--t-img-align, 0);
+}
+.md-body [data-streamdown='image'] {
+  border-radius: var(--t-img-radius, 8px);
 }
