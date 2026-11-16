@@ -328,13 +328,22 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
         // 进行中：过程摊开直播（思考行默认收起单行、工具行单行 —— 上方高度
         // 恒定，工作中行钉在流底不被推挤，docs/计划/对话过程呈现打磨.md §3.4；
         // 此前「终答开流即折叠」的 headerMode 翻转是流中跳变源，已废），
-        // 流式占位在输出位置，底部常驻工作中行
+        // 流式占位在输出位置，底部常驻工作中行。
+        // 过程项套**导线容器**（ml-7px + border-l + pl-16px，与终态折叠体
+        // TraceCollapsibleContent 内层同款）：ask_user 挂起会把 live 阶段拉得
+        // 很长，上一回合展开的导线行与本轮 live 平铺行左缘差 23px，相邻回合
+        // 同屏即「图标没对齐」（2026-11-16 用户实测截图）。同导线后 live 与
+        // 收尾折叠横向零位移；终答与 WorkingLine 留在体外（x=0，对应终态的
+        // 常驻终答与头条位）。中间正文段随之呈过程灰（text-muted-foreground
+        // 继承）—— 过程语义本就如此，与终态折叠体内一致
         <>
-          {process.map((item) => (
-            <MessageScrollerItem key={item.id} messageId={item.id}>
-              <ProcessItem item={item} />
-            </MessageScrollerItem>
-          ))}
+          <div className="ml-[calc(--spacing(2)-1px)] flex min-w-0 flex-col gap-3 border-l pr-1 pl-4">
+            {process.map((item) => (
+              <MessageScrollerItem key={item.id} messageId={item.id}>
+                <ProcessItem item={item} />
+              </MessageScrollerItem>
+            ))}
+          </div>
           {answer !== undefined && (
             <MessageScrollerItem messageId={answer.id}>
               <MessageRow message={answer} />

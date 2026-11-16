@@ -145,7 +145,11 @@ function TraceCollapsibleContent({
       <div
         data-slot="trace-collapsible-content-inner"
         className={cn(
-          "min-h-0 overflow-hidden pt-2 pb-1 pl-[calc(--spacing(2)-1px)] min-w-0 border-l pr-1 leading-relaxed wrap-break-word text-muted-foreground",
+          /* 导线结构 = ml-7px（悬出）+ border-l + pl-4（文字缩进），内容缩进
+             23px —— 与 live 过程流的导线容器（TurnGroup）逐像素同款，收尾
+             翻折叠横向零位移。纵向间距 pt/pb 不用 mt/mb：margin 不随轨道
+             裁切，收起后会残留空隙；横向 ml 不参与纵向裁切，安全 */
+          "ml-[calc(--spacing(2)-1px)] min-h-0 min-w-0 overflow-hidden border-l pt-2 pb-1 pr-1 pl-4 leading-relaxed wrap-break-word text-muted-foreground",
           className
         )}
       >
