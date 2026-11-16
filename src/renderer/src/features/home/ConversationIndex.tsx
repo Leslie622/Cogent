@@ -93,10 +93,12 @@ export function ConversationIndex({ messages }: { messages: MessageLike[] }) {
                   ? ['w-3.5', 'bg-foreground/40']
                   : ['w-2.5', 'bg-foreground/25']
         return (
+          /* 刻度条 3px 太窄不包 Hint（tooltip trigger 会给 button 挂事件与
+             data 属性行为同源，但 3px 目标上弹气泡遮相邻刻度）—— 原生 title
+             同样删除：悬停预览已有阶梯剖面 + aria-label 承载定位语义 */
           <button
             key={message.id}
             type="button"
-            title={message.content.slice(0, 20)}
             aria-label={`定位消息：${message.content.slice(0, 12)}`}
             onMouseEnter={() => setHoverIndex(index)}
             onClick={() => scrollToMessage(message.id, { align: 'center', behavior: 'smooth' })}

@@ -8,6 +8,7 @@ import { IconArrowBarToDown, IconPlayerPause } from '@tabler/icons-react'
 import type { InspectEntrySummary } from '@/env.d'
 import { useConsoleStore } from '@/stores/console'
 import { KINDS, layerDot, summarizeOverview } from './kinds'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 
 /** 时刻 → HH:mm:ss.mmm（毫秒是观学习重点：分片节奏/耗时都要看得到） */
@@ -161,24 +162,26 @@ function EntryRow({
 
   return (
     <li>
-      <button
-        type="button"
-        className={`flex h-8 w-full items-center gap-2 border-b px-2.5 text-left last:border-b-0 ${
-          selected ? 'bg-foreground/5' : 'hover:bg-foreground/5'
-        }`}
-        title={`${entry.title}${summary !== '' ? ` · ${summary}` : ''}`}
-        onClick={() => void onSelect(entry.seq)}
-      >
-        <span className="w-[86px] shrink-0 text-[11px] tabular-nums text-muted-foreground">
-          {formatTime(entry.ts)}
-        </span>
-        <span className={`size-1.5 shrink-0 rounded-full ${dot}`} />
-        <Icon className="size-[15px] shrink-0 text-muted-foreground" />
-        <span className="min-w-0 truncate text-[13px]">{entry.title}</span>
-        {summary !== '' && (
-          <span className="min-w-0 truncate text-[12px] text-muted-foreground">{summary}</span>
-        )}
-      </button>
+      {/* Hint 覆写 button render：行内已 truncate 截断，悬停气泡看全标题 + 概要 */}
+      <Hint tip={`${entry.title}${summary !== '' ? ` · ${summary}` : ''}`} side="right">
+        <button
+          type="button"
+          className={`flex h-8 w-full items-center gap-2 border-b px-2.5 text-left last:border-b-0 ${
+            selected ? 'bg-foreground/5' : 'hover:bg-foreground/5'
+          }`}
+          onClick={() => void onSelect(entry.seq)}
+        >
+          <span className="w-[86px] shrink-0 text-[11px] tabular-nums text-muted-foreground">
+            {formatTime(entry.ts)}
+          </span>
+          <span className={`size-1.5 shrink-0 rounded-full ${dot}`} />
+          <Icon className="size-[15px] shrink-0 text-muted-foreground" />
+          <span className="min-w-0 truncate text-[13px]">{entry.title}</span>
+          {summary !== '' && (
+            <span className="min-w-0 truncate text-[12px] text-muted-foreground">{summary}</span>
+          )}
+        </button>
+      </Hint>
     </li>
   )
 }

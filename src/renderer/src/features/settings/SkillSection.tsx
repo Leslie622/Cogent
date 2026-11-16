@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { Hint } from '@/components/Hint'
 import {
   Dialog,
   DialogContent,
@@ -387,9 +388,13 @@ export function SkillSection() {
                   {!userScope && s.scope === 'project' && <span className={BADGE}>项目定义</span>}
                   {s.override !== undefined && <span className={BADGE}>项目覆盖</span>}
                 </div>
-                <div className="mt-0.5 truncate text-[13px] text-muted-foreground" title={s.path}>
-                  {s.description}
-                </div>
+                {/* 描述行截断时悬停看全文（Hint = shadcn Tooltip；原 title 是
+                    路径但行显描述，语义错位已纠正 —— 路径在编辑弹窗看） */}
+                <Hint tip={s.description} side="top">
+                  <div className="mt-0.5 min-w-0 truncate text-[13px] text-muted-foreground">
+                    {s.description}
+                  </div>
+                </Hint>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <Switch

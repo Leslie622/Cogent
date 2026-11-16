@@ -10,6 +10,7 @@
  */
 import { IconClipboardList, IconX } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import { useHomeStore, type HomeSession } from '@/stores/home'
 import { useChatStore } from '@/stores/chat'
@@ -46,23 +47,25 @@ export function PlanToggle({ session }: { session: HomeSession }) {
   return (
     <>
       <span aria-hidden className="h-4 w-px shrink-0 self-center bg-border" />
-      <Button
-        variant="ghost"
-        size="xs"
-        title="计划模式开启中：写入与命令被拒绝（点击 × 关闭）"
-        onClick={close}
-        className={cn(
-          // pl-1：左内距压半（8→4px）—— 与分隔线/权限钮组的收紧（三块紧凑）
-          'group gap-1.5 pl-1 pr-2 text-[13px] text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground'
-        )}
-      >
-        <IconClipboardList className="size-4.5" strokeWidth={2.25} />
-        计划
-        <IconX
-          className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100"
-          aria-label="关闭计划模式"
-        />
-      </Button>
+      <Hint tip="计划模式开启中" side="top">
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={close}
+          className={cn(
+            // pl-1：左内距压半（8→4px）—— 与分隔线/权限钮组的收紧（三块紧凑）；
+            // h-7：工具行统一 28px 高（2026-11-16 定调），圆角走 xs 档原生不覆写
+            'group h-7 gap-1.5 pl-1 pr-2 text-[13px] text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground'
+          )}
+        >
+          <IconClipboardList className="size-4.5" strokeWidth={2.25} />
+          计划
+          <IconX
+            className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100"
+            aria-label="关闭计划模式"
+          />
+        </Button>
+      </Hint>
     </>
   )
 }

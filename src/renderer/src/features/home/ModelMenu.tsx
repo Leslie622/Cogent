@@ -61,7 +61,7 @@ export function ModelMenu() {
           <Button
             variant="ghost"
             size="xs"
-            className="gap-1.5 px-2 text-[13px] text-muted-foreground has-[>svg]:px-2 hover:bg-accent-foreground/5 hover:text-foreground"
+            className="h-7 gap-1.5 px-2 text-[13px] text-muted-foreground has-[>svg]:px-2 hover:bg-accent-foreground/5 hover:text-foreground"
             aria-label="选择模型"
           />
         }
@@ -70,7 +70,10 @@ export function ModelMenu() {
             （2026-11-10 定调）：目录营销名与 API id 不对应，所见即所传 */}
         {active ? (
           <>
-            <ProviderLogo providerId={active.provider} name={providerDisplayName(active.provider, customProviders)} size={18} />
+            {/* 触发钮厂商标 17px（2026-11-16 定稿，与权限钮档位图标同步调 17；
+                18 曾显小是 Button svg 兜底钉 16 的假象，ProviderLogo 本体修复后
+                才真正生效）。菜单内行标仍 16 不动，只调工具行这处 */}
+            <ProviderLogo providerId={active.provider} name={providerDisplayName(active.provider, customProviders)} size={17} />
             {active.id}
           </>
         ) : usable.length > 0 ? (
@@ -80,8 +83,10 @@ export function ModelMenu() {
         )}
         <IconChevronDown className="size-3.5" />
       </DropdownMenuTrigger>
-      {/* w-auto 覆写原语的 w-(--anchor-width)（锚点是小圆钮，菜单会被压窄裁行） */}
-      <DropdownMenuContent align="end" className="w-auto min-w-52 max-w-80">
+      {/* w-auto 覆写原语的 w-(--anchor-width)（锚点是小圆钮，菜单会被压窄裁行）；
+          size=lg：内容型菜单放大档（原语本体，2026-11-16 —— 曾在调用点逐项
+          补 py-1.5/my-0.5 打补丁，lg 档落地后撤除） */}
+      <DropdownMenuContent align="end" size="lg" className="w-auto min-w-64 max-w-96">
         <ModelMenuPanel />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -128,13 +133,14 @@ function ModelMenuPanel() {
       {/* 厂商行：钻入厂商子列表（配了 key 的厂商 + 管理模型）。点选厂商 = 活动模型
           切到该厂商的第一个模型，模型列表随之更新 */}
       <DropdownMenuSub>
-        <DropdownMenuSubTrigger className="gap-2">
+        <DropdownMenuSubTrigger>
           {activeProviderEntry && (
             <ProviderLogo providerId={activeProviderEntry[0]} name={activeProviderName} size={16} />
           )}
           <span className="min-w-0 flex-1 truncate">{activeProviderName}</span>
         </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent>
+        {/* 行高/行距由原语 lg 档接管（py-1.5 + gap-2），面板放宽撑下限 */}
+        <DropdownMenuSubContent className="min-w-56">
           {groups.map(([providerId, list]) => (
             // closeOnClick=false：选厂商只是中途步，用户紧接着要挑该厂商下的具体
             // 模型，不关菜单（模型行/管理模型才关）。子列表保持打开，悬停到下方
@@ -149,7 +155,7 @@ function ModelMenuPanel() {
               {shownProviderId === providerId && <IconCheck className="ml-auto size-3.5" />}
             </DropdownMenuItem>
           ))}
-          {groups.length > 0 && <DropdownMenuSeparator />}
+          {groups.length > 0 && <DropdownMenuSeparator className="mx-1.5" />}
           <DropdownMenuItem
             onClick={() => {
               setView('settings')
@@ -160,24 +166,32 @@ function ModelMenuPanel() {
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
-      <DropdownMenuSeparator />
-      {/* 模型行：钻入选当前厂商的模型（厂商先行，模型列表跟着厂商走） */}
-      <DropdownMenuSub>
-        <DropdownMenuSubTrigger className="gap-2">
-          <span className="min-w-0 flex-1 truncate">
-            {active?.id ?? (groups.length > 0 ? '选择模型' : '配置模型')}
-          </span>
-        </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent>
-          {(activeProviderEntry?.[1] ?? []).map((model) => (
-            <DropdownMenuItem key={model.id} onClick={() => setActiveModel(model.id, model.provider)}>
-              <span className="min-w-0 flex-1 truncate">{model.id}</span>
-              {model.id === activeModelId && <IconCheck className="ml-auto size-3.5" />}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuSubContent>
-      </DropdownMenuSub>
-      <DropdownMenuSeparator />
+      {/* 模型行：钻入选当前厂商的模型（厂商先行，模型列表跟着厂商走）。
+          「模型」标签套 DropdownMenuGroup 提供 Group 语境（base-ui
+          MenuGroupLabel 的硬要求：标签必须在 Group/RadioGroup 里） */}
+      <DropdownMenuGroup>
+        <DropdownMenuLabel>模型</DropdownMenuLabel>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <span className="min-w-0 flex-1 truncate">
+              {active?.id ?? (groups.length > 0 ? '选择模型' : '配置模型')}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-60">
+            {(activeProviderEntry?.[1] ?? []).map((model) => (
+              <DropdownMenuItem
+                key={model.id}
+                onClick={() => setActiveModel(model.id, model.provider)}
+              >
+                <span className="min-w-0 flex-1 truncate">{model.id}</span>
+                {model.id === activeModelId && <IconCheck className="ml-auto size-3.5" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      </DropdownMenuGroup>
+      {/* 分割线收边距：原语 -mx-1 出血贴面板边，本菜单收进 mx-1.5 有呼吸感 */}
+      <DropdownMenuSeparator className="mx-1.5" />
       {/* 思考力度：会话级 thinkingLevel，渐变滑杆（对标参考稿）。
           标签值文字色与滑杆填充同取坡道色（实色，无透明度文字） */}
       <DropdownMenuGroup>

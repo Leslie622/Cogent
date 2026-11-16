@@ -24,6 +24,7 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties
@@ -54,19 +55,21 @@ export function AppHeader({
       style={{ WebkitAppRegion: 'drag' } as CSSProperties}
     >
       <div className="flex items-center gap-2 pl-2" style={NO_DRAG}>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={CHROME_HOVER}
-          aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-          onClick={onToggleSidebar}
-        >
-          {sidebarCollapsed ? (
-            <IconLayoutSidebarLeftExpand className="size-[19px]" />
-          ) : (
-            <IconLayoutSidebarLeftCollapse className="size-[19px]" />
-          )}
-        </Button>
+        <Hint tip={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'} side="bottom">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={CHROME_HOVER}
+            aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
+            onClick={onToggleSidebar}
+          >
+            {sidebarCollapsed ? (
+              <IconLayoutSidebarLeftExpand className="size-[19px]" />
+            ) : (
+              <IconLayoutSidebarLeftCollapse className="size-[19px]" />
+            )}
+          </Button>
+        </Hint>
         <nav className="flex items-center gap-1">
           {MENUS.map((label) => (
             <Button
@@ -81,59 +84,69 @@ export function AppHeader({
         </nav>
         {/* 运行时控制台（帮助右侧，用户定入口）：开独立 DevTools 窗口，
             单例 —— 已开则聚焦 */}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={cn(CHROME_HOVER, 'ml-1')}
-          aria-label="打开运行时控制台"
-          title="运行时控制台"
-          onClick={() => void window.cogent.openConsole()}
-        >
-          <IconTerminal2 className="size-[18px]" />
-        </Button>
+        {/* Hint = shadcn Tooltip 包装（原生 title 全量换装，文案沿用 aria-label） */}
+        <Hint tip="运行时控制台">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={cn(CHROME_HOVER, 'ml-1')}
+            aria-label="运行时控制台"
+            onClick={() => void window.cogent.openConsole()}
+          >
+            <IconTerminal2 className="size-[18px]" />
+          </Button>
+        </Hint>
         {/* 内嵌页面 demo（阶段 3a）：webview 沙箱 + preload 小 SDK 的首个
             页面消费者，开独立窗口 */}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={cn(CHROME_HOVER, 'ml-1')}
-          aria-label="打开内嵌页面 demo"
-          title="内嵌页面 demo"
-          onClick={() => void window.cogent.openEmbedded()}
-        >
-          <IconWindow className="size-[18px]" />
-        </Button>
+        <Hint tip="内嵌页面">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={cn(CHROME_HOVER, 'ml-1')}
+            aria-label="打开内嵌页面 demo"
+            onClick={() => void window.cogent.openEmbedded()}
+          >
+            <IconWindow className="size-[18px]" />
+          </Button>
+        </Hint>
       </div>
 
-      <div className="ml-auto flex items-center gap-0.5" style={NO_DRAG}>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={CHROME_HOVER}
-          aria-label="最小化"
-          onClick={() => void window.cogent.minimizeWindow()}
-        >
-          <IconMinus />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={CHROME_HOVER}
-          aria-label={maximized ? '还原' : '最大化'}
-          onClick={() => void window.cogent.toggleMaximizeWindow()}
-        >
-          {/* 最大化显示"两层方块"（还原语义），普通显示单方块 —— 与折叠开关同规则 */}
-          {maximized ? <IconCopy className="size-[14px]" /> : <IconSquare className="size-[14px]" />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="hover:bg-destructive hover:text-white"
-          aria-label="关闭"
-          onClick={() => void window.cogent.closeWindow()}
-        >
-          <IconX />
-        </Button>
+      {/* 窗口控制三钮：gap-1.5（2026-11-16 用户定调两轮拉开：0.5→1→1.5）+ Hint */}
+      <div className="ml-auto flex items-center gap-1.5" style={NO_DRAG}>
+        <Hint tip="最小化" side="bottom">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={CHROME_HOVER}
+            aria-label="最小化"
+            onClick={() => void window.cogent.minimizeWindow()}
+          >
+            <IconMinus />
+          </Button>
+        </Hint>
+        <Hint tip={maximized ? '还原' : '最大化'} side="bottom">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={CHROME_HOVER}
+            aria-label={maximized ? '还原' : '最大化'}
+            onClick={() => void window.cogent.toggleMaximizeWindow()}
+          >
+            {/* 最大化显示"两层方块"（还原语义），普通显示单方块 —— 与折叠开关同规则 */}
+            {maximized ? <IconCopy className="size-[14px]" /> : <IconSquare className="size-[14px]" />}
+          </Button>
+        </Hint>
+        <Hint tip="关闭" side="bottom">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="hover:bg-destructive hover:text-white"
+            aria-label="关闭"
+            onClick={() => void window.cogent.closeWindow()}
+          >
+            <IconX />
+          </Button>
+        </Hint>
       </div>
     </header>
   )

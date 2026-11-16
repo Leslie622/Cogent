@@ -21,6 +21,7 @@ import {
   IconArrowUp,
   IconDeviceDesktop,
   IconDots,
+  IconFolder,
   IconLayoutSidebarRightCollapse,
   IconLayoutSidebarRightExpand,
   IconPlayerPlayFilled,
@@ -29,6 +30,7 @@ import {
   IconStack2Filled,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import {
   InputGroup,
@@ -75,36 +77,54 @@ export type { MessageLike } from './MessageRow'
 /** 白底行/钮 hover：黑 5% 软叠（全局配方，同 content-sidebar 行） */
 const HOVER = 'hover:bg-accent-foreground/5 hover:text-foreground'
 
-/** 头部：会话标题 + [更多 / 标签页区折叠开关]（标题来自 chat store 的活动会话） */
+/** 头部：会话标题 + [更多 / 标签页区折叠开关]（标题来自 chat store 的活动会话）。
+    项目会话标题左侧带文件夹图标（hover 气泡显项目名，2026-11-16 用户定调）——
+    图标只是归属标记不可点，包 span 不包 Button */
 function ChatHeader({
   title,
+  projectName,
   tabsCollapsed,
   onToggleTabs,
 }: {
   title: string
+  /** 项目会话的归属项目名；undefined = 非项目会话不显图标 */
+  projectName?: string
   tabsCollapsed: boolean
   onToggleTabs: () => void
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
-      <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
-      <Button variant="ghost" size="icon-sm" className={cn(HOVER, 'text-muted-foreground')} aria-label="更多">
-        <IconDots className="size-4" />
-      </Button>
-      {/* 标签页区折叠开关：系列图标两态，同 AppHeader 的 content-sidebar 开关 */}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className={cn(HOVER, 'text-muted-foreground')}
-        aria-label={tabsCollapsed ? '展开标签页区' : '折叠标签页区'}
-        onClick={onToggleTabs}
-      >
-        {tabsCollapsed ? (
-          <IconLayoutSidebarRightExpand className="size-[19px]" />
-        ) : (
-          <IconLayoutSidebarRightCollapse className="size-[19px]" />
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        {projectName !== undefined && (
+          <Hint tip={projectName} side="bottom">
+            <span className="shrink-0 cursor-help" aria-label={`项目：${projectName}`}>
+              <IconFolder className="size-4.5 text-muted-foreground" />
+            </span>
+          </Hint>
         )}
-      </Button>
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
+      </span>
+      <Hint tip="更多" side="bottom">
+        <Button variant="ghost" size="icon-sm" className={cn(HOVER, 'text-muted-foreground')} aria-label="更多">
+          <IconDots className="size-4" />
+        </Button>
+      </Hint>
+      {/* 标签页区折叠开关：系列图标两态，同 AppHeader 的 content-sidebar 开关 */}
+      <Hint tip={tabsCollapsed ? '展开标签页区' : '折叠标签页区'} side="bottom">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={cn(HOVER, 'text-muted-foreground')}
+          aria-label={tabsCollapsed ? '展开标签页区' : '折叠标签页区'}
+          onClick={onToggleTabs}
+        >
+          {tabsCollapsed ? (
+            <IconLayoutSidebarRightExpand className="size-[19px]" />
+          ) : (
+            <IconLayoutSidebarRightCollapse className="size-[19px]" />
+          )}
+        </Button>
+      </Hint>
     </header>
   )
 }
@@ -300,15 +320,17 @@ function ChatComposer({
                 }}
               />
             ) : primaryCwd ? (
-              <Button
-                variant="ghost"
-                size="xs"
-                className="gap-1.5 px-1 font-normal text-[13px] text-foreground hover:bg-accent-foreground/5"
-                title={primaryCwd}
-              >
-                <IconDeviceDesktop className="size-4.5 text-muted-foreground" />
-                {cwdBasename}
-              </Button>
+              /* 目录胶囊：basename 为主显示，悬停看全路径（shadcn Tooltip） */
+              <Hint tip={primaryCwd} side="top">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="gap-1.5 px-1 font-normal text-[13px] text-foreground hover:bg-accent-foreground/5"
+                >
+                  <IconDeviceDesktop className="size-4.5 text-muted-foreground" />
+                  {cwdBasename}
+                </Button>
+              </Hint>
             ) : null}
           </div>
         )}
@@ -337,11 +359,11 @@ function ChatComposer({
           {/* gap-1：工具行三块（+ / 权限钮 / 计划 chip）紧凑（2026-11-16 用户
               定调，曾 gap-2 偏松）；分隔线自身 mx 已归零由本 gap 接管间距 */}
           <InputGroupAddon align="block-end" className="gap-1 p-2">
-            {/* + 号：icon-xs 的 size-6 定宽改成 h-6 w-auto + px-2（与右侧文字钮
-                同为 8px 水平内距，行内对齐） */}
+            {/* + 号：icon-xs 的 size-6 定宽改成 h-7 w-auto + px-2（与右侧文字钮
+                同为 8px 水平内距，行内对齐）；圆角走 xs 档原生，不覆写 */}
             <InputGroupButton
               size="icon-xs"
-              className="h-6 w-auto rounded-xl px-2 text-muted-foreground has-[>svg]:px-2 hover:bg-accent-foreground/5 hover:text-foreground"
+              className="h-7 w-auto px-2 text-muted-foreground has-[>svg]:px-2 hover:bg-accent-foreground/5 hover:text-foreground"
               aria-label="添加附件"
             >
               <IconPlus className="size-4.5" />
@@ -356,26 +378,36 @@ function ChatComposer({
               <ModelMenu />
               {/* 发送/停止双态：流式中变方块停止钮（abort 后 store 由 run.* 事件复位）。
                   发送 28px 石墨灰圆 + 白箭头（视觉 diff 定稿：低饱和石墨灰、比
-                  36px 小一档），空输入置灰 */}
+                  36px 小一档），空输入置灰；cursor-pointer（2026-11-16 用户定调，
+                  Button 原语默认 cursor-default）；Hint 文案按双态切换 */}
               {running ? (
-                <Button
-                  size="icon-sm"
-                  className="size-7 rounded-full bg-foreground/85 hover:bg-foreground"
-                  aria-label="停止"
-                  onClick={() => void abort()}
-                >
-                  <IconSquare className="size-3 fill-current" />
-                </Button>
+                <Hint tip="停止" side="top">
+                  <Button
+                    size="icon-sm"
+                    className="size-7 cursor-pointer rounded-full bg-foreground/85 hover:bg-foreground"
+                    aria-label="停止"
+                    onClick={() => void abort()}
+                  >
+                    <IconSquare className="size-3 fill-current" />
+                  </Button>
+                </Hint>
               ) : (
-                <Button
-                  size="icon-sm"
-                  className="size-7 rounded-full bg-foreground/85 hover:bg-foreground"
-                  aria-label="发送"
-                  disabled={!value.trim()}
-                  onClick={send}
-                >
-                  <IconArrowUp className="size-3.5" />
-                </Button>
+                <Hint tip="发送" side="top">
+                  <Button
+                    size="icon-sm"
+                    /* 禁用态 cursor-not-allowed（2026-11-16 用户定调）：原语
+                       disabled:pointer-events-none 会把光标回落成父层的 default
+                       （Hint 外层接住 pointer 事件），显式声明禁用光标；允许
+                       pointer 事件穿透到钮上是安全的 —— button disabled 属性
+                       本身就不派发 click */
+                    className="size-7 cursor-pointer rounded-full bg-foreground/85 hover:bg-foreground disabled:pointer-events-auto disabled:cursor-not-allowed disabled:hover:bg-foreground/85"
+                    aria-label="发送"
+                    disabled={!value.trim()}
+                    onClick={send}
+                  >
+                    <IconArrowUp className="size-3.5" />
+                  </Button>
+                </Hint>
               )}
             </div>
           </InputGroupAddon>
@@ -396,6 +428,14 @@ export function HomeChat({
   const title = useChatStore(
     (s) => s.sessions.find((x) => x.id === s.activeSessionId)?.title ?? '新聊天'
   )
+  // 项目会话归属项目名（头部图标气泡用）：已有会话按 projectId 反查 project
+  // store；"新聊天进行中"态无会话标题语义，不显图标（与头部标题同生灭）
+  const projects = useProjectStore((s) => s.projects)
+  const projectName = useChatStore((s) => {
+    if (session.kind !== 'chat') return undefined
+    const pid = s.sessions.find((x) => x.id === s.activeSessionId)?.projectId
+    return pid !== undefined ? projects.find((p) => p.id === pid)?.name : undefined
+  })
   // 待审批 = ApprovalPanel **替换**输入区（2026-11-11 用户定调：审批卡覆盖
   // 输入位、待审批不支持输入）。草稿提升到本层持有，Composer 卸载不丢字。
   // 挂起提问（4c-2）同款占位（QuestionPanel 与审批面板互斥呈现 —— 都是
@@ -412,7 +452,12 @@ export function HomeChat({
   const [draft, setDraft] = useState('')
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <ChatHeader title={title} tabsCollapsed={tabsCollapsed} onToggleTabs={onToggleTabs} />
+      <ChatHeader
+        title={title}
+        projectName={projectName}
+        tabsCollapsed={tabsCollapsed}
+        onToggleTabs={onToggleTabs}
+      />
       {/* autoScroll = 吸底跟随流式输出（库的官方开关，默认关）：在底部时回复增长
           即跟随，滚走自动释放（不拽人），滚回底部或点悬浮钮恢复跟随。
           Provider 包到 Composer 外层：发送是"回到底部"的用户意图（主流产品语义），

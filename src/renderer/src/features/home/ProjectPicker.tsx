@@ -21,6 +21,7 @@ import {
   IconXFilled,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { Hint } from '@/components/Hint'
 import {
   Popover,
   PopoverContent,
@@ -163,55 +164,62 @@ export function ProjectPicker({
             —— button 嵌 button 非法，点 X 时 stopPropagation 拦住冒泡（拦
             pointerdown + click 两路，base-ui 触发器两处都可能挂打开），只解绑
             不弹菜单 */}
-        <PopoverTrigger
-          render={
-            <Button
-              variant="ghost"
-              size="xs"
-              className={cn(
-                'group gap-1.5 px-1.5 font-normal text-[13px] text-foreground',
-                ROW_HOVER
+        {/* Hint 必须包在 PopoverTrigger **外层**（base-ui 组合规则）：塞进 render
+            里 Hint 不转发 children，胶囊图标/文字会被整个吞掉（实测翻车）；包在
+            外层则 tooltip props 经 render 合并到触发钮上，两套触发行为共存 */}
+        <Hint tip={projectId !== undefined ? '更换项目' : '选择项目'} side="top">
+          <PopoverTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="xs"
+                className={cn(
+                  'group gap-1.5 px-1.5 font-normal text-[13px] text-foreground',
+                  ROW_HOVER
+                )}
+              />
+            }
+          >
+            {/* 图标位 16px 定宽：span 包 svg 后 xs 变体的 has-[>svg]:px-1.5 不再
+                命中（无直接 svg 子元素），padding 显式 px-1.5 保持原胶囊宽度 */}
+            <span className="relative flex size-4 shrink-0 items-center justify-center">
+              <IconFolder
+                className={cn(
+                  'absolute inset-0 size-4 text-muted-foreground transition-opacity duration-150',
+                  projectId !== undefined && 'group-hover:opacity-0'
+                )}
+              />
+              {projectId !== undefined && (
+                /* X 圆徽嵌在触发钮里（button 嵌 button 非法，见下方文件头注释），
+                   内嵌 span 不能再包 Hint（tooltip trigger render 换元素会破坏
+                   外层 popover 触发结构）—— 语义已由 aria-label 承载，悬停提示
+                   不另加（hover 首帧 X 才浮现，弹气泡反而抢戏） */
+                <span
+                  role="button"
+                  aria-label="移除该项目"
+                  className="absolute inset-0 flex items-center justify-center rounded-full bg-muted-foreground text-background opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void unbindProject()
+                  }}
+                >
+                  {/* 实心 X（IconXFilled）12px：① 描边 IconX 缩到 10px 笔画仅
+                      0.83px，两条对角线抗锯齿落点不对称（\ 向碎成断点），视觉上
+                      "不居中"（实心 fill 栅格化干净）；② 10px 下 IconXFilled 的
+                      path 只覆盖 viewBox 56%，墨迹仅 6px 占圆 30% 太小——12px
+                      墨迹占圆 38%（参考图 44%），且 12 设备像素（125% 缩放下
+                      15px）栅格对称性实测完美（canvas 逐像素验证，中心与圆心
+                      严格重合） */}
+                  <IconXFilled className="size-3" />
+                </span>
               )}
-              title={projectId !== undefined ? '更换项目' : '选择项目'}
-            />
-          }
-        >
-          {/* 图标位 16px 定宽：span 包 svg 后 xs 变体的 has-[>svg]:px-1.5 不再
-              命中（无直接 svg 子元素），padding 显式 px-1.5 保持原胶囊宽度 */}
-          <span className="relative flex size-4 shrink-0 items-center justify-center">
-            <IconFolder
-              className={cn(
-                'absolute inset-0 size-4 text-muted-foreground transition-opacity duration-150',
-                projectId !== undefined && 'group-hover:opacity-0'
-              )}
-            />
-            {projectId !== undefined && (
-              <span
-                role="button"
-                aria-label="移除该项目"
-                title="移除该项目"
-                className="absolute inset-0 flex items-center justify-center rounded-full bg-muted-foreground text-background opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  void unbindProject()
-                }}
-              >
-                {/* 实心 X（IconXFilled）12px：① 描边 IconX 缩到 10px 笔画仅
-                    0.83px，两条对角线抗锯齿落点不对称（\ 向碎成断点），视觉上
-                    "不居中"（实心 fill 栅格化干净）；② 10px 下 IconXFilled 的
-                    path 只覆盖 viewBox 56%，墨迹仅 6px 占圆 30% 太小——12px
-                    墨迹占圆 38%（参考图 44%），且 12 设备像素（125% 缩放下
-                    15px）栅格对称性实测完美（canvas 逐像素验证，中心与圆心
-                    严格重合） */}
-                <IconXFilled className="size-3" />
-              </span>
-            )}
-          </span>
-          {projectId !== undefined
-            ? (projects.find((p) => p.id === projectId)?.name ?? '')
-            : '选择项目'}
-        </PopoverTrigger>
+            </span>
+            {projectId !== undefined
+              ? (projects.find((p) => p.id === projectId)?.name ?? '')
+              : '选择项目'}
+          </PopoverTrigger>
+        </Hint>
         {/* w-auto 覆写原语 w-72（锚点是小胶囊，菜单不必那么宽）；对齐参考稿圆角 */}
         <PopoverContent
           align="start"

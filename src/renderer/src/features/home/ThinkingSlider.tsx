@@ -5,7 +5,7 @@
  * agent.submit）由 engine store 的 thinkingLevel 持有，经 value/onChange 单向流过。
  * thinkingVisuals 一并导出：菜单标签文字色需与滑杆填充同取坡道色（ModelMenu 用）。
  */
-import { useEffect, useMemo, useRef, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { cn } from 'cn'
 import { Slider } from '@/components/ui/slider'
 import type { ThinkingLevel } from '@/env.d'
@@ -156,6 +156,14 @@ export function ThinkingSlider({
   const { options, index, t, vars } = thinkingVisuals(value, supportedLevels)
   const wrapRef = useRef<HTMLDivElement>(null)
   const animRef = useRef<Animation | null>(null)
+  // 白色圆拇指的挂载动画抑制开关（2026-11-16）：slider 原语基类的过渡清单
+  // 含 inset-inline-start/transform，菜单每次打开全新挂载时白圆从 0% 滑到
+  // 目标档、scale 从初始值过渡 —— 即用户指认的"进度条动画每次执行一次"。
+  // steered 挂在 onValueChange 上是确定性的：初始渲染拇指整类 transition-none
+  // （直接就位零动画），用户操作过后才恢复基类过渡（拖档滑动 + hover/active
+  // scale 反馈）。填充条（slider-range）无需处理：宽度和拇指位置同步出现，
+  // 拇指不动它就不闪。
+  const [steered, setSteered] = useState(false)
 
   /* 血流粒子：挂载时随机一批（依赖 []，拖档中途不重抽），粒子层 + 血管
      底色以内联 background-* 叠到填充条上（覆写 .think-cells 类的纯血管），
@@ -194,7 +202,7 @@ export function ThinkingSlider({
   }, [t])
 
   return (
-    <div ref={wrapRef} className="px-3 pb-3 pt-1">
+    <div ref={wrapRef} className="px-3.5 pb-3.5 pt-1.5">
       {/* 用项目的 shadcn Slider 封装；它内部完整保留 Base UI 的 Control，
           因此点击、拖拽和键盘操作都落在同一个可访问控件上。 */}
       <Slider
@@ -203,10 +211,14 @@ export function ThinkingSlider({
         max={options.length - 1}
         step={1}
         marks={options.map((_, i) => i)}
+        /* 拇指在下方覆写为 size-6（24px），定位点公式必须同步真实拇指宽，
+           否则端点圆点落在拇指停靠行程外、贴住轨道圆角端部 */
+        thumbSizePx={24}
         filledThrough={index}
         thumbAriaLabel="思考力度"
         getThumbAriaValueText={() => options[index].label}
         onValueChange={(next) => {
+          setSteered(true)
           onChange(options[next[0]].id)
         }}
         style={vars}
@@ -221,9 +233,9 @@ export function ThinkingSlider({
           '[animation:var(--think-pulse-anim)] motion-reduce:[animation:none]',
           /* 轨道底色混入档位色（未填充段也随力度微微"升温"） */
           '[&_[data-slot=slider-track]]:h-5 [&_[data-slot=slider-track]]:bg-[color-mix(in_srgb,var(--think-to)_14%,#e5e7eb)] [&_[data-slot=slider-track]]:transition-colors [&_[data-slot=slider-track]]:duration-200 [&_[data-slot=slider-track]]:shadow-[inset_0_1px_1px_rgb(15_23_42/0.06)]',
-          /* 填充条宽度过渡：随拇指滑过去（离散跳档不杀过渡，理由同拇指）；
-             粒子层与流动动画在上方 effect 里以内联样式 + WAAPI 挂载 */
-          '[&_[data-slot=slider-range]]:transition-[width] [&_[data-slot=slider-range]]:duration-150',
+          /* 填充条样式（粒子层与流动动画在上方 effect 里以内联样式 + WAAPI
+             挂载）；width 过渡保持默认（无额外声明）—— 挂载动画的源头在
+             拇指（见上方 steered 注释），填充条随拇指同步就位不单独闪 */
           /* 定位点：激活/熄灭带 300ms 颜色+缩放过渡 —— 拖动时点亮沿档位
              逐个泛起（涟漪般尾随拇指），替代硬切换；hover（放大 1.5 + 颜色
              提亮一档）也定义在此（原语 marks 不带外观，见 slider.tsx）。
@@ -235,8 +247,15 @@ export function ThinkingSlider({
           '[&_[data-slot=slider-track]>span]:scale-100 [&_[data-slot=slider-track]>span]:bg-[#aeb3ba] [&_[data-slot=slider-track]>span]:transition-[background-color,scale] [&_[data-slot=slider-track]>span]:duration-300 [&_[data-slot=slider-track]>span]:ease-out [&_[data-slot=slider-track]>span]:hover:scale-150 [&_[data-slot=slider-track]>span]:hover:bg-white/70 [&_[data-slot=slider-track]>span[data-active]]:scale-125 [&_[data-slot=slider-track]>span[data-active]]:bg-white/55 [&_[data-slot=slider-track]>span[data-active]]:hover:scale-150 [&_[data-slot=slider-track]>span[data-active]]:hover:bg-white/80',
           /* 拇指必须是轨道之上的不透明层；此前未显式设层级，端点的轨道色会
              从圆点下方透出来，视觉上像圆点没有盖住条。光晕色由通道变量 +
-             呼吸中的 --think-glow-alpha 现场组出（think-pulse 驱动）。 */
-          '[&_[data-slot=slider-thumb]]:z-10 [&_[data-slot=slider-thumb]]:size-6 [&_[data-slot=slider-thumb]]:border [&_[data-slot=slider-thumb]]:border-border [&_[data-slot=slider-thumb]]:bg-white',
+             呼吸中的 --think-glow-alpha 现场组出（think-pulse 驱动）。
+             steered 前拇指整体 transition-none（2026-11-16 用户指认的"白色圆
+             动画"即此）：原语基类的过渡清单含 inset-inline-start/transform，
+             挂载时位置从 0%、scale 从初始值过渡到目标 —— 白圆滑过去/弹一下。
+             注意 transition-none 是整类覆写（同属性组 tailwind-merge 后写者胜），
+             steered 后才恢复 hover/active 的 scale 反馈与位置滑动 */
+          steered
+            ? '[&_[data-slot=slider-thumb]]:z-10 [&_[data-slot=slider-thumb]]:size-6 [&_[data-slot=slider-thumb]]:border [&_[data-slot=slider-thumb]]:border-border [&_[data-slot=slider-thumb]]:bg-white'
+            : '[&_[data-slot=slider-thumb]]:z-10 [&_[data-slot=slider-thumb]]:size-6 [&_[data-slot=slider-thumb]]:border [&_[data-slot=slider-thumb]]:border-border [&_[data-slot=slider-thumb]]:bg-white [&_[data-slot=slider-thumb]]:transition-none',
           '[&_[data-slot=slider-thumb]]:shadow-[0_1px_4px_rgb(15_23_42/0.18),0_0_var(--think-glow-blur)_rgb(var(--think-r)_var(--think-g)_var(--think-b)/var(--think-glow-alpha))] [&_[data-slot=slider-thumb]]:hover:scale-105 [&_[data-slot=slider-thumb]]:active:scale-95',
           '[&_[data-slot=slider-thumb]]:focus-visible:ring-2 [&_[data-slot=slider-thumb]]:focus-visible:ring-[#3498f4] [&_[data-slot=slider-thumb]]:focus-visible:ring-offset-2'
         )}

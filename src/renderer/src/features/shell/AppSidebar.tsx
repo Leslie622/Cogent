@@ -19,6 +19,7 @@ import {
   IconSettingsFilled,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -60,18 +61,18 @@ export function AppSidebar() {
         {ITEMS.map(({ view: itemView, label, icon: Icon, iconActive: IconFilled }) => {
           const active = view === itemView
           return (
-            <Button
-              key={itemView}
-              variant="ghost"
-              size="icon"
-              className={railButton(active)}
-              title={label}
-              aria-label={label}
-              aria-current={active ? 'page' : undefined}
-              onClick={() => setView(itemView)}
-            >
-              {active ? <IconFilled className="size-[19px]" /> : <Icon className="size-[19px]" />}
-            </Button>
+            <Hint key={itemView} tip={label} side="right">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={railButton(active)}
+                aria-label={label}
+                aria-current={active ? 'page' : undefined}
+                onClick={() => setView(itemView)}
+              >
+                {active ? <IconFilled className="size-[19px]" /> : <Icon className="size-[19px]" />}
+              </Button>
+            </Hint>
           )
         })}
       </nav>
@@ -79,25 +80,32 @@ export function AppSidebar() {
       <div className="mt-auto">
         <DropdownMenu>
           {/* base-ui 触发器无 asChild，用 render 挂到我们的 Button 上 */}
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon"
-                className={railButton(view === 'settings')}
-                title="设置"
-                aria-label="设置"
-              />
-            }
-          >
-            {view === 'settings' ? (
-              <IconSettingsFilled className="size-[19px]" />
-            ) : (
-              <IconSettings className="size-[19px]" />
-            )}
-          </DropdownMenuTrigger>
-          {/* 50px 窄栏贴左缘，菜单向右弹出、底端对齐；菜单项带左侧图标 */}
-          <DropdownMenuContent side="right" align="end" sideOffset={4}>
+          {/* Hint 包在 DropdownMenuTrigger **外层**（同 ProjectPicker 教训：塞进
+              render 里 children 被吞）；base-ui 嵌套触发器（tooltip → menu）
+              官方支持，hover 出气泡、点击出菜单 */}
+          <Hint tip="设置" side="right">
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={railButton(view === 'settings')}
+                  aria-label="设置"
+                />
+              }
+            >
+              {view === 'settings' ? (
+                <IconSettingsFilled className="size-[19px]" />
+              ) : (
+                <IconSettings className="size-[19px]" />
+              )}
+            </DropdownMenuTrigger>
+          </Hint>
+          {/* 50px 窄栏贴左缘，菜单向右弹出、底端对齐；菜单项带左侧图标。
+              size=lg：与模型菜单同放大档（2026-11-16 定调，菜单统一大气形态）；
+              w-auto 覆写原语 w-(--anchor-width)（锚点是图标钮，不覆写则菜单
+              钉在 min-w-32 地板压窄） */}
+          <DropdownMenuContent side="right" align="end" sideOffset={4} size="lg" className="w-auto min-w-36">
             <DropdownMenuItem onClick={() => setView('settings')}>
               <IconSettings className="size-[17px]" />
               设置

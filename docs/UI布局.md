@@ -80,7 +80,11 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
 - **输入区**（HomeChat.ChatComposer）：白卡 rounded-3xl border-foreground/10，
   无投影、聚焦无任何反馈（has-[focus-visible] 反制掉组件默认 ring）；上方项目
   会话信息区 mx-5 h-9 rounded-t-xl bg-muted —— **新聊天限定**（无项目 = "选择项目"
-  单钮；项目内发起 = 回显项目/本地/main；已有对话的会话不显示）。项目胶囊
+  单钮；项目内发起 = 回显项目/本地/main；已有对话的会话不显示）。**底部工具行**
+  五钮（+ / 权限 / 计划 chip / 上下文 / 模型）统一 **h-7（28px，与右侧发送圆钮
+  同高）**、圆角走 Button xs 档原生（`min(var(--radius-md),10px)`）不覆写
+  （2026-11-16 定调：曾 h-6 偏扁、rounded-xl/8px 混用）；档位图标与模型
+  厂商标同 **17px**。项目胶囊
   （ProjectPicker）已选态 hover：左侧文件夹图标**原位**交叉渐变成灰底白 X 圆徽
   （16px 定宽 span 内两图标 absolute 叠放换透明度，同侧栏文件夹开/合手法）——
   X 是嵌在触发钮里的 role=button span（button 嵌 button 非法），pointerdown +
@@ -235,6 +239,15 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   排除（原语已补 `variant="warning"`，照 destructive 的
   `data-[variant=…]:text-*` + `not-data-[variant=…]:focus:**:` 排除链同款），
   叠子元素类是对抗不了通配选择器优先级的
+  **坑 3（`[[data-size=lg]_&]:` 祖先变体产物缺失）**：任意变体以 `[` 开头的
+  候选（`[[…]_&]:py-1.5` 形态）经 Tailwind compile API 直喂**有效**，但 vite
+  管线的 oxide 提取器扫 TSX 源串时**实际不生成**，产物静默缺规则（touch /
+  清 node_modules/.vite 均不恢复，2026-11-16 dropdown lg 档首版实测）；
+  解法 = Context 下发尺寸、原语内按条件拼**字面类**（字面类提取百分百可靠）。
+  dropdown-menu 原语已内置 `size="lg"` 放大档（MenuSizeContext：面板
+  rounded-xl + p-1.5，行/标签/分割线随 context 放大；size 不传 = 继承外层，
+  子菜单 portal 不断 context 自动跟随）—— 内容型菜单（模型菜单）用 lg，
+  普通动作菜单保持默认紧凑档
 - **侧栏等待确认 tag**（HomeSidebar ChatRow，2026-11-11 升级第 4 步；当日用户
   定调修订形态）：**占行尾动作钮簇的位置**（有挂起审批时置顶/归档钮整簇不
   渲染 —— 待审批是行当前的唯一状态；首版「标题右侧小字 + hover 淡出避让」
@@ -308,7 +321,14 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   Grok/ZAI）走 currentColor 随文字色，彩色用 `.Color` 变体（Gemini/DeepSeek/
   OpenRouter 等，OpenRouter 官方色即荧光绿 #C8FF00 非黑）；自定义 provider =
   黑底首字方标。坑：查找表值类型必须显式 `| undefined`（Record 索引访问默认非
-  可空，`if (表值)` 会撞 no-unnecessary-condition；`?? 兜底` 则合法）
+  可空，`if (表值)` 会撞 no-unnecessary-condition；`?? 兜底` 则合法）。
+  **坑 2（放进 Button 时被 svg 兜底钉 16px）**：Button 基类
+  `[&_svg:not([class*='size-'])]:size-4` 对后代 svg 生效 —— 品牌标尺寸写在
+  width/height **属性**上（无 Tailwind size 类），CSS 必压属性，size prop 落在
+  按钮里被无声钉成 16px（TodoStrip 折叠钮同坑）；解法 = 本体经
+  `[&>svg]:size-[var(--provider-logo-size)]!` 变量 + `!` 钉死（同文件字色
+  `text-background!` 打赢 menu item 通配染色的先例），任意值类吃不进动态数字，
+  尺寸走 CSS 变量下发
 - **通用档位滑杆 StopSlider**（components/，2026-11-10 参考稿 slider-main
   换装）：块状轨道值域选择器，档位模式（stops 吸附 + 键盘相邻档步进 + 选中
   标签加粗）/ 自由模式（无 stops，step 连续滑）两用。视觉规格：25px 轨道
@@ -360,6 +380,16 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   跳变），间距用 padding 不用 margin（margin 不随轨道裁切）
 - **滚动渐隐** `.scroll-fade-b/-y/-x`（mask 两端 24px 渐变，ChatGPT 同款不硬截；
   base-nova 组件引用了这组类，已补定义）
+- **悬停提示 Hint**（components/Hint.tsx，2026-11-16 全量换装）：原生 `title`
+  属性全 app 禁用，统一走本件（shadcn tooltip 四件套的单组件包装，自带
+  Provider 零样板；`<Hint tip="文案" side>…</Hint>`）。文案纪律 = 简洁准确：
+  图标钮给名词（「运行时控制台」「刷新模型目录」），内容件给一句话/全文
+  （截断路径给全路径、Toggle 给 API id）；rich 内容（多行 + 交互钮）不用本件、
+  直接 tooltip 原语（tool.tsx 失败原因同款）。三处例外有因：对话索引刻度
+  （3px 目标弹气泡遮相邻刻度，删 title 留 aria-label）、ProjectPicker 内嵌
+  X 圆徽（嵌在 popover 触发钮里不能再包 trigger，aria-label 承载）、
+  ConversationIndex 同前。组件 `title` prop（SectionHeader/SettingsRow 等
+  分组标题文字）不是 tooltip，不在换装范围
 - **危险确认弹窗**（FullAccessConfirm，2026-11-11 照用户参考图）：alert-dialog +
   checkbox 经 base-nova registry 安装；结构 = 警告三角图标 + 标题「要启用完全访问
   吗？」/ 说明 / 权限项卡片（`rounded-xl bg-muted` 内每行 图标 size-5 muted + 名称

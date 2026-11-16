@@ -243,7 +243,7 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
           <Button
             variant="ghost"
             size="xs"
-            className="gap-1.5 rounded-xl px-2 text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
+            className="h-7 gap-1.5 px-2 text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
             aria-label="上下文窗口用量"
           />
         }

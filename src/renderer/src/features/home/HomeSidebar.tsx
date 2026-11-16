@@ -34,6 +34,7 @@ import {
   IconTrash,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -172,12 +173,15 @@ const ChatRow = memo(function ChatRow({
         }
       >
         {/* active 只用底色区分不加粗（字重变化引起抖动）；文字一律近黑，层级靠
-            底色/分区标题灰；pr-12 给 hover 钮簇让位（待审批时钮簇不在，收窄） */}
+            底色/分区标题灰。pr 让位随 hover 钮簇显形（2026-11-16 用户定调）：
+            平时 pr-2 标题占满整行（钮簇 absolute 不占文档流，无 hover 时右侧
+            空白不该压窄省略点），hover/菜单开着钮簇现身时标题收缩避让 */}
         <button
           type="button"
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-foreground',
-            waitingApproval ? 'pr-2' : 'pr-12'
+            'flex min-w-0 flex-1 items-center gap-1.5 pr-2 text-[13px] text-foreground transition-[padding] duration-100',
+            'group-hover:pr-12 group-focus-within:pr-12 group-data-popup-open:pr-12 group-has-[[data-popup-open]]:pr-12',
+            waitingApproval && 'pr-2!'
           )}
           aria-current={active ? 'true' : undefined}
           onClick={() => onSelect(chat.id)}
@@ -195,33 +199,38 @@ const ChatRow = memo(function ChatRow({
           <div className={ACTIONS}>
             {actions ?? (
               <>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className={ACTION_BUTTON}
-                  aria-label={chat.pinnedAt ? '取消置顶' : '置顶聊天'}
-                  onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}
-                >
-                  {chat.pinnedAt ? <IconPinFilled className="size-4" /> : <IconPin className="size-4" />}
-                </Button>
+                <Hint tip={chat.pinnedAt ? '取消置顶' : '置顶'} side="top">
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className={ACTION_BUTTON}
+                    aria-label={chat.pinnedAt ? '取消置顶' : '置顶聊天'}
+                    onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}
+                  >
+                    {chat.pinnedAt ? <IconPinFilled className="size-4" /> : <IconPin className="size-4" />}
+                  </Button>
+                </Hint>
                 {/* 归档 = 回收站语义（软删）：会话从主列表消失，设置页「已归档的
                     聊天」可恢复/彻底删除 */}
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className={ACTION_BUTTON}
-                  aria-label="归档聊天"
-                  onClick={() => onArchive(chat.id)}
-                >
-                  <IconArchive className="size-4" />
-                </Button>
+                <Hint tip="归档" side="top">
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className={ACTION_BUTTON}
+                    aria-label="归档聊天"
+                    onClick={() => onArchive(chat.id)}
+                  >
+                    <IconArchive className="size-4" />
+                  </Button>
+                </Hint>
               </>
             )}
           </div>
         )}
       </ContextMenuTrigger>
-      {/* 右键菜单项 = hover 钮同权动作（置顶/归档），主入口一个不少 */}
-      <ContextMenuContent>
+      {/* 右键菜单项 = hover 钮同权动作（置顶/归档），主入口一个不少；size=lg
+          全 app 菜单统一放大档（2026-11-16） */}
+      <ContextMenuContent size="lg">
         <ContextMenuItem onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}>
           {chat.pinnedAt ? <IconPinFilled className="size-[17px]" /> : <IconPin className="size-[17px]" />}
           {chat.pinnedAt ? '取消置顶' : '置顶'}
@@ -347,12 +356,19 @@ const ProjectRow = memo(function ProjectRow({
                 会话落回"最近"，见 docs/计划/工作区与会话真实化.md 第 4 步）。
                 菜单项来自上方 actions 数据源（与右键菜单同权同项） */}
             <DropdownMenu>
-              <DropdownMenuTrigger
-                render={<Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多" />}
-              >
-                <IconDots className="size-4" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" sideOffset={2}>
+              {/* Hint 包外层（塞 render 里 children 被吞，ProjectPicker 同教训） */}
+              <Hint tip="更多" side="top">
+                <DropdownMenuTrigger
+                  render={<Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多" />}
+                >
+                  <IconDots className="size-4" />
+                </DropdownMenuTrigger>
+              </Hint>
+              {/* size=lg：内容型菜单放大档（2026-11-16，与模型菜单/设置菜单统一）。
+                  w-auto 覆写原语 w-(--anchor-width)（锚点是 16px 小圆钮，不覆写
+                  则菜单钉在 min-w-32 地板、长项折行）；min-w-36 与右键菜单地板
+                  对齐 —— 双入口同项同宽 */}
+              <DropdownMenuContent align="start" sideOffset={2} size="lg" className="w-auto min-w-36">
                 {actions.map(({ key, icon, label, onClick }) => (
                   <DropdownMenuItem key={key} onClick={onClick}>
                     {icon}
@@ -361,19 +377,22 @@ const ProjectRow = memo(function ProjectRow({
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className={ACTION_BUTTON}
-              aria-label="新建聊天"
-              onClick={() => onStartChat(projectId)}
-            >
-              <IconMessagePlus className="size-4" />
-            </Button>
+            <Hint tip="新建聊天" side="top">
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={ACTION_BUTTON}
+                aria-label="新建聊天"
+                onClick={() => onStartChat(projectId)}
+              >
+                <IconMessagePlus className="size-4" />
+              </Button>
+            </Hint>
           </div>
         </ContextMenuTrigger>
-        {/* 右键菜单：与「更多」dropdown 同一组动作（actions 数据源），双入口同权 */}
-        <ContextMenuContent>
+        {/* 右键菜单：与「更多」dropdown 同一组动作（actions 数据源），双入口同权；
+            size=lg 与 dropdown 入口同形态（放大档） */}
+        <ContextMenuContent size="lg">
           {actions.map(({ key, icon, label, onClick }) => (
             <ContextMenuItem key={key} onClick={onClick}>
               {icon}
@@ -578,14 +597,16 @@ export function HomeSidebar() {
       {/* 头部：路由标题（首页 = 应用名）+ 搜索钮（行为空位） */}
       <div className="flex h-12 shrink-0 items-center justify-between pl-4 pr-2.5">
         <span className="text-[16px] font-semibold">Cogent</span>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="size-7 text-muted-foreground hover:bg-accent-foreground/7 hover:text-foreground"
-          aria-label="搜索"
-        >
-          <IconSearch className="size-4" />
-        </Button>
+        <Hint tip="搜索" side="bottom">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="size-7 text-muted-foreground hover:bg-accent-foreground/7 hover:text-foreground"
+            aria-label="搜索"
+          >
+            <IconSearch className="size-4" />
+          </Button>
+        </Hint>
       </div>
 
       {/* scrollbar-gutter-stable：内容超/不超一屏时滚动条空间常驻预留 —— 项目

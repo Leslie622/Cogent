@@ -25,6 +25,7 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -282,10 +283,12 @@ export function ProjectDialog({
                     className="group flex h-11 items-center gap-2.5 px-4 text-[13px] text-foreground"
                   >
                     <IconFolder className="size-4 shrink-0 text-muted-foreground" />
-                    {/* basename 为主显示（参考图样式），title 悬停看全路径 */}
-                    <span className="min-w-0 flex-1 truncate" title={dir}>
-                      {dir.split(/[\\/]/).filter(Boolean).at(-1) ?? dir}
-                    </span>
+                    {/* basename 为主显示（参考图样式），悬停看全路径（Hint） */}
+                    <Hint tip={dir} side="top">
+                      <span className="min-w-0 flex-1 truncate">
+                        {dir.split(/[\\/]/).filter(Boolean).at(-1) ?? dir}
+                      </span>
+                    </Hint>
                     <button
                       type="button"
                       aria-label={`移除 ${dir}`}
@@ -365,9 +368,9 @@ function TrustConfirmDialog({
         </DialogHeader>
         <div className="flex flex-col items-center gap-1">
           {cwds.map((dir) => (
-            <div key={dir} className="max-w-full truncate text-[13px] text-foreground" title={dir}>
-              {dir}
-            </div>
+            <Hint key={dir} tip={dir} side="top">
+              <div className="max-w-full truncate text-[13px] text-foreground">{dir}</div>
+            </Hint>
           ))}
         </div>
         <p className="text-center text-[13px] leading-relaxed text-muted-foreground">

@@ -22,7 +22,7 @@
  *   100% 顶格不出轨道右缘（2026-11-10 用户定稿偏移量）。
  * - 填充 width 与拇指位置 280ms ease-out：档位间跳变时"滑过去"的磁吸手感。
  */
-import type { KeyboardEvent } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { Slider } from '@/components/ui/slider'
 import { cn } from 'cn'
 
@@ -75,10 +75,19 @@ export function StopSlider({
   const activeIndex = stops !== undefined ? nearestStopIndex(stops, value) : -1
   const displayValue = stops !== undefined ? stops[activeIndex] : Math.min(Math.max(value, min), max)
 
+  // 拇指的挂载动画抑制开关（2026-11-16）：slider 原语基类的过渡清单含
+  // inset-inline-start/transform，弹窗每次打开全新挂载时拇指（竖条）从 0%
+  // 滑到目标档位、填充条随之从 0 长出 —— 即"初始动画总执行一次"。steered
+  // 挂在 onValueChange 上是确定性的：初始渲染拇指整类 transition-none（直接
+  // 就位零动画，填充条宽度随拇指位置同步出现、同样不闪），用户操作过后才
+  // 恢复基类过渡（拖档磁吸手感照常）。
+  const [steered, setSteered] = useState(false)
+
   // 档位模式：指针交互（拖拽/点击轨道）产生的连续值 → 吸附最近档；受控值
   // 永远只落档位，拖拽中值逐档跳变（配合 280ms 缓动 = 磁吸手感）。
   // 自由模式：直通。
   const handleValueChange = (next: readonly number[]): void => {
+    setSteered(true)
     onChange(stops !== undefined ? stops[nearestStopIndex(stops, next[0])] : next[0])
   }
 
@@ -106,7 +115,9 @@ export function StopSlider({
         onValueChange={handleValueChange}
         thumbOnKeyDown={handleKeyDown}
         /* 填充条：全高继承轨道，min-width 5px 保底残条，全圆角 + 黑 20% 软叠
-           （比轨道深一档的灰，亮暗两态自动成立），280ms ease-out 缓动手感 */
+           （比轨道深一档的灰，亮暗两态自动成立），280ms ease-out 缓动手感；
+           width 过渡保持默认（无额外声明）—— 挂载动画源头在拇指位置
+           （见上方 steered 注释），填充条随拇指同步就位不单独闪 */
         fillClassName="min-w-[5px] rounded-[5px] bg-foreground/20 transition-[width] duration-[280ms] ease-out"
         className={cn(
           /* 块状轨道：25px 高 5px 圆角，覆写原语 h-2/rounded-full/bg-input/90
@@ -124,7 +135,13 @@ export function StopSlider({
           '[&_[data-slot=slider-thumb]]:shadow-none',
           '[&_[data-slot=slider-thumb]]:ring-0 [&_[data-slot=slider-thumb]]:hover:ring-0',
           '[&_[data-slot=slider-thumb]]:-ms-[8px]',
-          '[&_[data-slot=slider-thumb]]:duration-[280ms] [&_[data-slot=slider-thumb]]:ease-out',
+          /* steered 前拇指整类 transition-none（原语基类过渡清单含
+             inset-inline-start/transform，挂载时位置从 0% 滑到目标档）；
+             操作后恢复基类过渡（磁吸手感）。duration-0 那版只压时长不删
+             过渡属性，同帧竞态下仍可能瞬发 —— 整类覆盖才是零竞态口子 */
+          steered
+            ? '[&_[data-slot=slider-thumb]]:duration-[280ms] [&_[data-slot=slider-thumb]]:ease-out'
+            : '[&_[data-slot=slider-thumb]]:transition-none',
           /* 抓握光标只落拖拽区（Control = 25px 轨道行），按下变 grabbing */
           '[&_[data-slot=slider-control]]:cursor-grab',
           '[&_[data-slot=slider-control]]:active:cursor-grabbing'

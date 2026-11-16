@@ -22,6 +22,7 @@
 import { useEffect, useState } from 'react'
 import { IconPlus, IconRefresh } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import { ProviderLogo } from '@/components/ProviderLogo'
 import { useEngineStore } from '@/stores/engine'
@@ -161,19 +162,20 @@ export function ModelsSection() {
             管理自定义模型供应商与密钥配置，配置后可在聊天时选择使用。
           </p>
           <div className="flex shrink-0 items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              className="rounded-full"
-              title="重新拉取密钥状态与模型目录"
-              aria-label="刷新"
-              onClick={() => {
-                void refreshKeys()
-                void refreshModels()
-              }}
-            >
-              <IconRefresh className="size-4" />
-            </Button>
+            <Hint tip="刷新模型目录" side="bottom">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                className="rounded-full"
+                aria-label="刷新"
+                onClick={() => {
+                  void refreshKeys()
+                  void refreshModels()
+                }}
+              >
+                <IconRefresh className="size-4" />
+              </Button>
+            </Hint>
             <Button size="sm" className="gap-1 rounded-lg text-[13px]" onClick={addProvider}>
               <IconPlus className="size-4" />
               添加供应商

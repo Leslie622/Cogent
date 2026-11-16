@@ -1,7 +1,17 @@
 import * as React from "react"
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu"
+import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { ChevronRightIcon, CheckIcon } from "lucide-react"
+
+/**
+ * 菜单尺寸档（2026-11-16 加 lg，与 dropdown-menu 同款手法）：Content 下发
+ * ContextMenuSizeContext，行/标签/分割线按 context 拼字面类 —— 不用 data-*
+ * 祖先变体（[[data-size=lg]_&]: 形态经 vite 管线提取实际不生成，见
+ * UI布局.md 坑 3）。size 不传 = 继承外层（context 沿 React 树传播、portal
+ * 不断 —— 子菜单自动跟随主面板）。
+ */
+const ContextMenuSizeContext = React.createContext<"default" | "lg">("default")
 
 function ContextMenu({ ...props }: ContextMenuPrimitive.Root.Props) {
   return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />
@@ -32,30 +42,53 @@ function ContextMenuContent({
   alignOffset = 4,
   side = "right",
   sideOffset = 0,
+  size,
   ...props
 }: ContextMenuPrimitive.Popup.Props &
   Pick<
     ContextMenuPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
-  >) {
+  > &
+  VariantProps<typeof contextMenuContentVariants>) {
+  const inherited = React.useContext(ContextMenuSizeContext)
+  const resolved = size ?? inherited
   return (
-    <ContextMenuPrimitive.Portal>
-      <ContextMenuPrimitive.Positioner
-        className="isolate z-50 outline-none"
-        align={align}
-        alignOffset={alignOffset}
-        side={side}
-        sideOffset={sideOffset}
-      >
-        <ContextMenuPrimitive.Popup
-          data-slot="context-menu-content"
-          className={cn("z-50 max-h-(--available-height) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
-          {...props}
-        />
-      </ContextMenuPrimitive.Positioner>
-    </ContextMenuPrimitive.Portal>
+    <ContextMenuSizeContext.Provider value={resolved}>
+      <ContextMenuPrimitive.Portal>
+        <ContextMenuPrimitive.Positioner
+          className="isolate z-50 outline-none"
+          align={align}
+          alignOffset={alignOffset}
+          side={side}
+          sideOffset={sideOffset}
+        >
+          <ContextMenuPrimitive.Popup
+            data-slot="context-menu-content"
+            className={cn(contextMenuContentVariants({ size: resolved }), className)}
+            {...props}
+          />
+        </ContextMenuPrimitive.Positioner>
+      </ContextMenuPrimitive.Portal>
+    </ContextMenuSizeContext.Provider>
   )
 }
+
+const contextMenuContentVariants = cva(
+  "z-50 max-h-(--available-height) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+  {
+    variants: {
+      size: {
+        // lg = 放大档（同 dropdown-menu lg）：面板 rounded-xl + p-1.5，行/标签/
+        // 分割线的 lg 形态在各自原语按 context 拼字面类
+        default: "",
+        lg: "rounded-xl p-1.5",
+      },
+    },
+    defaultVariants: {
+      size: "default",
+    },
+  }
+)
 
 function ContextMenuGroup({ ...props }: ContextMenuPrimitive.Group.Props) {
   return (
@@ -70,12 +103,14 @@ function ContextMenuLabel({
 }: ContextMenuPrimitive.GroupLabel.Props & {
   inset?: boolean
 }) {
+  const size = React.useContext(ContextMenuSizeContext)
   return (
     <ContextMenuPrimitive.GroupLabel
       data-slot="context-menu-label"
       data-inset={inset}
       className={cn(
         "px-1.5 py-1 text-xs font-medium text-muted-foreground data-inset:pl-7",
+        size === "lg" && "px-2 py-1.5",
         className
       )}
       {...props}
@@ -92,6 +127,7 @@ function ContextMenuItem({
   inset?: boolean
   variant?: "default" | "destructive"
 }) {
+  const size = React.useContext(ContextMenuSizeContext)
   return (
     <ContextMenuPrimitive.Item
       data-slot="context-menu-item"
@@ -99,6 +135,7 @@ function ContextMenuItem({
       data-variant={variant}
       className={cn(
         "group/context-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 focus:*:[svg]:text-accent-foreground data-[variant=destructive]:*:[svg]:text-destructive",
+        size === "lg" && "gap-2 rounded-lg px-2 py-1.5",
         className
       )}
       {...props}
@@ -120,12 +157,14 @@ function ContextMenuSubTrigger({
 }: ContextMenuPrimitive.SubmenuTrigger.Props & {
   inset?: boolean
 }) {
+  const size = React.useContext(ContextMenuSizeContext)
   return (
     <ContextMenuPrimitive.SubmenuTrigger
       data-slot="context-menu-sub-trigger"
       data-inset={inset}
       className={cn(
         "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:pl-7 data-open:bg-accent data-open:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        size === "lg" && "gap-2 rounded-lg px-2 py-1.5",
         className
       )}
       {...props}
@@ -222,10 +261,11 @@ function ContextMenuSeparator({
   className,
   ...props
 }: ContextMenuPrimitive.Separator.Props) {
+  const size = React.useContext(ContextMenuSizeContext)
   return (
     <ContextMenuPrimitive.Separator
       data-slot="context-menu-separator"
-      className={cn("-mx-1 my-1 h-px bg-border", className)}
+      className={cn("-mx-1 my-1 h-px bg-border", size === "lg" && "my-1.5", className)}
       {...props}
     />
   )

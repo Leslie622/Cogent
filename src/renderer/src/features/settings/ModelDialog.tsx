@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import { IconCheck, IconChevronDown } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
@@ -231,21 +232,21 @@ export function ModelDialog({
               <label className={FIELD_LABEL}>思考等级</label>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {THINKING_LEVELS.map((level) => (
-                  <Toggle
-                    key={level.id}
-                    variant="outline"
-                    size="sm"
-                    title={level.id}
-                    pressed={thinkingLevels.includes(level.id)}
-                    onPressedChange={(on) =>
-                      setThinkingLevels((levels) =>
-                        on ? [...levels, level.id] : levels.filter((l) => l !== level.id)
-                      )
-                    }
-                    className={cn(CHIP_BASE, CHIP_PRESSED)}
-                  >
-                    {level.label}
-                  </Toggle>
+                  <Hint key={level.id} tip={level.id} side="bottom">
+                    <Toggle
+                      variant="outline"
+                      size="sm"
+                      pressed={thinkingLevels.includes(level.id)}
+                      onPressedChange={(on) =>
+                        setThinkingLevels((levels) =>
+                          on ? [...levels, level.id] : levels.filter((l) => l !== level.id)
+                        )
+                      }
+                      className={cn(CHIP_BASE, CHIP_PRESSED)}
+                    >
+                      {level.label}
+                    </Toggle>
+                  </Hint>
                 ))}
               </div>
             </div>

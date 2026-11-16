@@ -102,7 +102,8 @@ function ErrorStatus({ message }: { message?: string }) {
     return <TraceDescription className="text-destructive">执行失败</TraceDescription>
   }
   return (
-    <TooltipProvider>
+    /* delay 与 Hint 同口径（400ms）：消息流快速划过时不闪气泡 */
+    <TooltipProvider delay={400}>
       <Tooltip>
         <TooltipTrigger
           render={

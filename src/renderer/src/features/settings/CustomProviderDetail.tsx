@@ -7,6 +7,7 @@
 import { useMemo, useState } from 'react'
 import { IconChevronDown, IconDots, IconTrash } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
@@ -173,28 +174,28 @@ export function CustomProviderDetail({
             <label className={FIELD_LABEL}>思考预算字段名</label>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {BUDGET_FIELD_OPTIONS.map((option) => (
-                <Toggle
-                  key={option.value ?? 'none'}
-                  variant="outline"
-                  size="sm"
-                  title={option.value ?? '不下发预算字段'}
-                  pressed={def.compat?.thinkingTokenBudgetField === option.value}
-                  onPressedChange={(on) =>
-                    on &&
-                    patch({
-                      compat:
-                        option.value === undefined
-                          ? undefined
-                          : { ...def.compat, thinkingTokenBudgetField: option.value }
-                    })
-                  }
-                  className={cn(
-                    'text-[13px] font-normal',
-                    'aria-pressed:bg-foreground/10 aria-pressed:text-foreground'
-                  )}
-                >
-                  {option.label}
-                </Toggle>
+                <Hint key={option.value ?? 'none'} tip={option.label} side="bottom">
+                  <Toggle
+                    variant="outline"
+                    size="sm"
+                    pressed={def.compat?.thinkingTokenBudgetField === option.value}
+                    onPressedChange={(on) =>
+                      on &&
+                      patch({
+                        compat:
+                          option.value === undefined
+                            ? undefined
+                            : { ...def.compat, thinkingTokenBudgetField: option.value }
+                      })
+                    }
+                    className={cn(
+                      'text-[13px] font-normal',
+                      'aria-pressed:bg-foreground/10 aria-pressed:text-foreground'
+                    )}
+                  >
+                    {option.label}
+                  </Toggle>
+                </Hint>
               ))}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">

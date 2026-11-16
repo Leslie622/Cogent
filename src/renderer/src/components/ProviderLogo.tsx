@@ -35,12 +35,41 @@ export function ProviderLogo({
   className?: string
 }) {
   const brand = BRAND_ICONS[providerId]
-  if (brand) return <span className={cn('shrink-0 leading-none', className)}>{brand(size)}</span>
+  if (brand) {
+    return (
+      <span
+        /* 品牌 svg 尺寸经 CSS 变量 + ! 钉死：Button 基类有
+           [&_svg:not([class*='size-'])]:size-4 后代兜底（TodoStrip 同坑）——
+           品牌 svg 的尺寸写在 width/height 属性上、没有 Tailwind size 类，
+           CSS 必压属性，size prop 落在 Button 里会被无声钉成 16px（模型
+           触发钮调大不生效即此）。任意值类吃不进动态数字，尺寸走变量下发；
+           ! 是打赢该后代规则的唯一稳口子（同下方字色钉死的处境） */
+        className={cn(
+          '[&>svg]:size-[var(--provider-logo-size)]!',
+          'shrink-0 leading-none',
+          className
+        )}
+        style={
+          {
+            width: size,
+            height: size,
+            '--provider-logo-size': `${size}px`,
+          } as React.CSSProperties
+        }
+      >
+        {brand(size)}
+      </span>
+    )
+  }
 
   const letter = (name ?? providerId).trim().slice(0, 1).toUpperCase() || 'P'
   return (
     <span
-      className={cn('flex shrink-0 items-center justify-center rounded-md bg-foreground font-semibold text-background', className)}
+      /* 字色钉死不跟 hover：菜单 item 聚焦态有 `focus:**:text-accent-foreground`
+         （全部后代染文字色，为单色品牌标跟色而设），特异性压过本元素的
+         text-background —— 首字变黑没入黑底方标（模型菜单 hover 自定义
+         provider 时踩响）。!important 是唯一能赢过该后代规则的口子。 */
+      className={cn('flex shrink-0 items-center justify-center rounded-md bg-foreground font-semibold text-background!', className)}
       style={{ width: size, height: size, fontSize: Math.round(size * 0.45) }}
     >
       {letter}
