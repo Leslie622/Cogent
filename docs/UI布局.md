@@ -91,6 +91,17 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   click 双路 stopPropagation 拦 base-ui 触发器，点 X = 解绑项目（删绑定空
   脚手架会话防串归属）而非弹菜单；胶囊旁另起独立 X 钮的方案被否
   （2026-11-10 用户定稿：融进胶囊，不是两个按钮）
+- **会话头部信息卡**（HomeChat.ChatHeader，2026-11-16 对标 zcode，替代先前
+  的项目名 tooltip）：**项目会话 hover 标题区**（文件夹图标 + 标题整体，非交互
+  span 触发）出 hover-card（components/ui/hover-card = base-nova 装的
+  base-ui preview-card 包装，delay 400 同 Hint 口径）—— 卡内三段：**标题
+  全文**（头部行截断，卡里看全）+ 项目行（名称 13px + 主根路径 muted 12px，
+  多根项目其余目录在工作区面板，同信息区口径）+ 最近活动行（同项目各会话
+  updatedAt 的 max 派生，relativeTime 相对文案，selector 返回原始数字防
+  重渲染抖动）；非项目会话不显图标不出卡。**坑**：触发区必须 `render={<span>}`
+  整体承载（tooltip/HoverCard trigger 嵌别的 trigger 要包外层，塞 render
+  里 children 被吞 —— ProjectPicker 同教训）。**git 分支行暂缺**：引擎协议
+  与壳桥均无分支数据通道（env.d.ts 全查无），属工作区面板后续件范围
 - **审批确认面板**（features/home/ApprovalPanel.tsx，2026-11-11 审批交互升级
   D1/D2；**布局定稿 = 完全模仿用户参考图**的竖排选项列表形态）：**待审批时
   替换输入区**（HomeChat 底部条件切换 hasPendingApproval ? Panel : Composer，

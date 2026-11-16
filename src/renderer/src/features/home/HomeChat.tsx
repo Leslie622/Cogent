@@ -19,6 +19,7 @@
 import { useState } from 'react'
 import {
   IconArrowUp,
+  IconClock,
   IconDeviceDesktop,
   IconDots,
   IconFolder,
@@ -32,6 +33,7 @@ import {
 import { cn } from 'cn'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import {
   InputGroup,
   InputGroupAddon,
@@ -56,6 +58,7 @@ import {
   useChatStore,
 } from '@/stores/chat'
 import type { MessageItem } from '@/stores/chat'
+import type { ProjectSummary } from '@/env.d'
 import { useProjectStore } from '@/stores/project'
 import { ProjectPicker } from './ProjectPicker'
 import { ApprovalPanel } from './ApprovalPanel'
@@ -77,33 +80,91 @@ export type { MessageLike } from './MessageRow'
 /** 白底行/钮 hover：黑 5% 软叠（全局配方，同 content-sidebar 行） */
 const HOVER = 'hover:bg-accent-foreground/5 hover:text-foreground'
 
+/** 相对时间文案（信息卡「最近活动」行用）：刚刚 / N 分钟前 / N 小时前 /
+    N 天前，更久落本地日期 —— 会话 updatedAt 随消息推进（chat store），
+    项目级无现成字段，由调用方以同项目会话的 max(updatedAt) 下发 */
+function relativeTime(ms: number): string {
+  const delta = Date.now() - ms
+  if (delta < 60_000) return '刚刚'
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)} 分钟前`
+  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)} 小时前`
+  if (delta < 30 * 86_400_000) return `${Math.floor(delta / 86_400_000)} 天前`
+  return new Date(ms).toLocaleDateString()
+}
+
 /** 头部：会话标题 + [更多 / 标签页区折叠开关]（标题来自 chat store 的活动会话）。
-    项目会话标题左侧带文件夹图标（hover 气泡显项目名，2026-11-16 用户定调）——
-    图标只是归属标记不可点，包 span 不包 Button */
+    项目会话 hover 标题区（图标+标题整体）出信息卡（zcode 同款，2026-11-16
+    定调替代先前的项目名 tooltip）：标题全文（头部行截断，卡里看全）+ 项目
+    名称/主根路径 + 最近活动；git 分支行暂缺 —— 引擎协议与壳桥均无分支通道
+    （UI布局.md 已记录），留工作区面板后续件。触发区是非交互 span 不包 Button */
 function ChatHeader({
   title,
-  projectName,
+  project,
+  lastActiveAt,
   tabsCollapsed,
   onToggleTabs,
 }: {
   title: string
-  /** 项目会话的归属项目名；undefined = 非项目会话不显图标 */
-  projectName?: string
+  /** 项目会话的归属项目；undefined = 非项目会话不显图标不出卡 */
+  project?: ProjectSummary
+  /** 同项目各会话的最近更新时间（毫秒）；无记录不显活动行 */
+  lastActiveAt?: number
   tabsCollapsed: boolean
   onToggleTabs: () => void
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
-      <span className="flex min-w-0 flex-1 items-center gap-1.5">
-        {projectName !== undefined && (
-          <Hint tip={projectName} side="bottom">
-            <span className="shrink-0 cursor-help" aria-label={`项目：${projectName}`}>
-              <IconFolder className="size-4.5 text-muted-foreground" />
-            </span>
-          </Hint>
-        )}
+      {project !== undefined ? (
+        <HoverCard>
+          {/* delay/closeDelay 是 preview-card Trigger 的 prop（Root 没有）；
+              400 同 Hint 口径 —— 划过标题不闪卡 */}
+          <HoverCardTrigger
+            delay={400}
+            closeDelay={0}
+            render={
+              <span
+                className="flex min-w-0 flex-1 cursor-default items-center gap-1.5"
+                aria-label={`项目：${project.name}`}
+              />
+            }
+          >
+            {/* 图标是按钮（同「更多」钮 ghost 同款，hover 出底）；点击行为空位
+                —— 同头部「更多」钮先占位后接线的惯例 */}
+            <Button variant="ghost" size="icon-sm" className={cn(HOVER, 'text-muted-foreground')} aria-label={`项目：${project.name}`}>
+              <IconFolder className="size-4.5" />
+            </Button>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
+          </HoverCardTrigger>
+          {/* 排版对照 ContextIndicator 的 PopoverContent（13px 主文案 + muted
+              次行 + border-t 分组）；卡片纯展示无动作行。align=start：触发区
+              是整行标题（flex-1），默认居中对齐会让卡片飘到内容区中部 ——
+              左对齐到触发区左缘（图标处）即 zcode 位置 */}
+          <HoverCardContent side="bottom" align="start" sideOffset={8} className="w-72 gap-0 p-3">
+            <div className="flex items-center gap-2">
+              <IconFolder className="size-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
+            </div>
+            <div className="mt-3 flex items-center gap-2 border-t pt-3">
+              <IconFolder className="size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] text-foreground">{project.name}</div>
+                {/* 主根路径（多根项目其余目录在工作区面板看，同信息区口径） */}
+                <div className="truncate text-xs text-muted-foreground">{project.cwds[0]}</div>
+              </div>
+            </div>
+            {lastActiveAt !== undefined && (
+              <div className="mt-3 flex items-center gap-2">
+                <IconClock className="size-4 shrink-0 text-muted-foreground" />
+                <span className="truncate text-[13px] text-foreground">
+                  最近活动 {relativeTime(lastActiveAt)}
+                </span>
+              </div>
+            )}
+          </HoverCardContent>
+        </HoverCard>
+      ) : (
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
-      </span>
+      )}
       <Hint tip="更多" side="bottom">
         <Button variant="ghost" size="icon-sm" className={cn(HOVER, 'text-muted-foreground')} aria-label="更多">
           <IconDots className="size-4" />
@@ -428,13 +489,23 @@ export function HomeChat({
   const title = useChatStore(
     (s) => s.sessions.find((x) => x.id === s.activeSessionId)?.title ?? '新聊天'
   )
-  // 项目会话归属项目名（头部图标气泡用）：已有会话按 projectId 反查 project
-  // store；"新聊天进行中"态无会话标题语义，不显图标（与头部标题同生灭）
-  const projects = useProjectStore((s) => s.projects)
-  const projectName = useChatStore((s) => {
-    if (session.kind !== 'chat') return undefined
-    const pid = s.sessions.find((x) => x.id === s.activeSessionId)?.projectId
-    return pid !== undefined ? projects.find((p) => p.id === pid)?.name : undefined
+  // 项目会话归属项目（头部信息卡用）：已有会话按 projectId 反查 project
+  // store；"新聊天进行中"态无会话标题语义，不显图标（与头部标题同生灭）。
+  // lastActiveAt = 同项目各会话 updatedAt 的 max（项目级无现成字段，派生），
+  // selector 返回原始值数字，引用稳定不引起额外重渲染
+  const activeProjectId = useChatStore((s) =>
+    session.kind === 'chat' ? s.sessions.find((x) => x.id === s.activeSessionId)?.projectId : undefined
+  )
+  const project = useProjectStore((s) =>
+    activeProjectId !== undefined ? s.projects.find((p) => p.id === activeProjectId) : undefined
+  )
+  const lastActiveAt = useChatStore((s) => {
+    if (activeProjectId === undefined) return undefined
+    let max = 0
+    for (const x of s.sessions) {
+      if (x.projectId === activeProjectId && x.updatedAt > max) max = x.updatedAt
+    }
+    return max > 0 ? max : undefined
   })
   // 待审批 = ApprovalPanel **替换**输入区（2026-11-11 用户定调：审批卡覆盖
   // 输入位、待审批不支持输入）。草稿提升到本层持有，Composer 卸载不丢字。
@@ -454,7 +525,8 @@ export function HomeChat({
     <div className="flex h-full min-w-0 flex-col">
       <ChatHeader
         title={title}
-        projectName={projectName}
+        project={project}
+        lastActiveAt={lastActiveAt}
         tabsCollapsed={tabsCollapsed}
         onToggleTabs={onToggleTabs}
       />
