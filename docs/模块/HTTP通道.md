@@ -68,7 +68,10 @@ zcode 同款 —— HTTP server.close() 不收敛已 upgrade 的连接）。
 - 事件广播无按会话过滤（所有在线连接收全部事件；session 绑定档留阶段 3
   webview 消费者）；无 WS 心跳 ping（loopback 稳定；远程 UI 实用化时再加）；
 - main 侧已接线（`HostManager.getHttpPort()` / `issueCapability()`），
-  renderer/webview 消费者 = 阶段 3（调试 UI 改造为首个内嵌页面）。
+  renderer/webview 消费者 = 阶段 3（调试 UI 改造为首个内嵌页面）；
+  **对外 MCP server 是第三个消费者**（5a）：main 在 Host 启动后走同一
+  签票链铸 token 写 mcp-access.json（凭据链与拓扑见
+  [对外MCP.md](对外MCP.md)），token 随 Host 生死对它同样成立。
 
 验收：`COGENT_HTTP_RPC=1` 拉起 Host 后 —— stdio `capability.issue` → curl
 `/auth/exchange` 换 token → Bearer 调 `session.list` 200；readonly 越档

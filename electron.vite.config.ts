@@ -9,13 +9,16 @@ export default defineConfig({
   // Node 拉起（自带 resources/runtime 官方 node22，三级链见
   // src/electron/main/host/runtime.ts），与 Electron 内置 Node 无关。
   // pi 依赖保持 external：provider SDK 是懒加载的，打进 bundle 会破坏该机制。
+  // mcp = 对外 MCP Server（阶段 5a）：外部 MCP 客户端 stdio spawn 的独立
+  // 入口（out/main/mcp.js），与 host 同管线同 node22 —— 不经 Electron。
   main: {
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
         input: {
           index: resolve('src/electron/main/index.ts'),
-          host: resolve('src/host/index.ts')
+          host: resolve('src/host/index.ts'),
+          mcp: resolve('src/host/mcp-server/main.ts')
         }
       }
     }

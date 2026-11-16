@@ -21,4 +21,5 @@
 | [凭据与模型目录](凭据与模型目录.md) | key 存取链路、自定义 provider、override 合并、显示口径、思考档位 |
 | [用量与成本](用量与成本.md) | usage 采集投影、统计行格式、contextEstimate、窗口指示器与明细 |
 | [运行时控制台](运行时控制台.md) | inspect 域协议、观测记录器、JSONL 落盘、控制台窗口 |
+| [对外MCP](对外MCP.md) | 出口座（5a）：cogent-mcp stdio 独立入口、mcp-access.json 凭据链、cogent_* 工具面（默认 plan 档、写组按 scope 过滤）、方言翻译与错误投影、三层审批 |
 | [测试](测试.md) | 三层 project 布局、global-setup、CI 四关、测试原则与跑法 |

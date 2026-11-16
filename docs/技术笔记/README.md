@@ -55,3 +55,4 @@
 | [MCP 座](mcp-seat.md) | Host 管配置 + pi 管连接；实施期两坑（SDK 须自调 bindExtensions 才有 session_start / tools 显式列表过滤 direct MCP 工具）与 annotations 不可得验证 |
 | [技能座](skill-seat.md) | Host 管目录 + 段钩子管注入 + read 即加载器；热刷新走 before_agent_start 段 diff（非 reload）、/skill: 展开搬家防脱节、同名优先级取舍 |
 | [交互座](interact-seat.md) | customTools 注入 + 挂起/回填三次实例化（todo/ask_user/plan 闭环）；defineTool 保推断、白名单过滤、terminate 停轮位、before_agent_start 的 run 级语义、段双通道防失忆 |
+| [对外 MCP](external-mcp.md) | agent-as-server 形态学：拓扑/凭据/审批/异步四题四家对比（Pi-meme 回执体系、dsh elicitation 生态实测、zcode 消费者画像）；annotations 是运行时审批数据源、「默认安全+放开显式」共识、事件不重放的订阅顺序 |

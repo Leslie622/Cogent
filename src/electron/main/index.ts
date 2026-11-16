@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import { HostManager } from './host/manager'
+import { refreshMcpAccessFile } from './host/mcp-access'
 import { resolveEngineNode } from './host/runtime'
 import { CredentialStore } from './credentials/store'
 import { CustomProvidersStore } from './custom-providers/store'
@@ -128,10 +129,14 @@ void app.whenReady().then(() => {
   const startedHost = host
   void startedHost.start().then(
     // bin 来源一并打出：三级链是否吃到自带 node，dev 一眼可判（不再靠版本号倒推）
-    () =>
+    () => {
       console.log(
         `[main] host ready (node ${startedHost.getStatus().nodeVersion}, bin ${engineNodeBin})`
-      ),
+      )
+      // 对外 MCP 凭据刷新（阶段 5a）：Host 起来才知道端口；内部再判
+      // settings.externalMcp.enabled，未启用时只做遗留文件清除
+      void refreshMcpAccessFile(startedHost)
+    },
     (error: unknown) => console.error('[main] host start failed:', error)
   )
 

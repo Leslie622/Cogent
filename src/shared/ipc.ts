@@ -108,4 +108,8 @@ export interface SettingsFile {
   /** 新会话默认权限（审批交互升级 D6：开关两态 —— 开 = auto、关/缺省 = ask；
       plan 不进默认，plan 是临时切入的工作方式而非开局常态，2026-11-11 拍板） */
   defaultPermissionMode?: 'ask' | 'auto'
+  /** 对外 MCP Server（阶段 5a）：enabled = main 在 Host 启动后铸凭据写
+      mcp-access.json；allowWrites 决定凭据档位（write = 写组工具注册）。
+      文件级配置（手编 settings.json），首发不做设置页 UI */
+  externalMcp?: { enabled: boolean; allowWrites: boolean }
 }

@@ -35,12 +35,25 @@ function readAll(): SettingsFile {
       activeModelId: raw.activeModelId,
       activeProviderId: raw.activeProviderId,
       thinkingLevel: raw.thinkingLevel,
-      defaultPermissionMode: raw.defaultPermissionMode === 'auto' ? 'auto' : 'ask'
+      defaultPermissionMode: raw.defaultPermissionMode === 'auto' ? 'auto' : 'ask',
+      // externalMcp 是文件级配置（手编），形状不对按缺省关（持久化读取边界）
+      externalMcp:
+        raw.externalMcp !== undefined &&
+        typeof raw.externalMcp === 'object' &&
+        typeof raw.externalMcp.enabled === 'boolean' &&
+        typeof raw.externalMcp.allowWrites === 'boolean'
+          ? { enabled: raw.externalMcp.enabled, allowWrites: raw.externalMcp.allowWrites }
+          : undefined
     }
   } catch (error) {
     console.warn(`[main] settings.json 损坏，按默认处理（${filePath()}）: ${(error as Error).message}`)
     return { version: 1 }
   }
+}
+
+/** main 内部消费（对外 MCP 凭据写入读配置用；IPC 之外的只读出口） */
+export function readSettingsFile(): SettingsFile {
+  return readAll()
 }
 
 function writeAll(settings: SettingsFile): void {
