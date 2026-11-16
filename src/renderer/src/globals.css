@@ -274,6 +274,13 @@
   -webkit-background-clip: text;
   color: transparent;
   animation: shimmer-sweep 2.2s linear infinite;
+  /* 合成层提示（zcode animated-gradient-text 同款）：background-position 逐帧
+     变更走主线程重绘，流式期间主线程被 delta/码表打满时动画掉帧 → 文字在
+     实色与渐变间跳变，观感即"工作中行闪动"。will-change 提前升层 + 平移
+     强制合成，动画帧不再与流式重绘争主线程 */
+  will-change: background-position;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 .shimmer-none {
   animation: none;
