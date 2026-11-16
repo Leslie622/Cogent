@@ -117,6 +117,20 @@ export function summarizeTodoWriteArgs(args: unknown): string {
   return `todo_write(${todoCounts(todos as TodoItem[])})`
 }
 
+/**
+ * tool-meta 的参数摘要：ask_user(questions 数组) → 问题计数。引擎有全量参数，
+ * 不走 summarizeArgs 的 60 字符截断 —— JSON 塞进摘要会让 UI 主文案变成裸
+ * JSON（2026-11-16 用户实测截图），这里直接给友好文本 `ask_user(N 个问题)`，
+ * UI 侧（askUserSummary）对此形状原样透传；旧转录里的截断 JSON 由 UI 的
+ * 正则计数兜底。
+ */
+export function summarizeAskUserArgs(args: unknown): string {
+  const questions =
+    typeof args === 'object' && args !== null ? (args as { questions?: unknown }).questions : undefined
+  const n = Array.isArray(questions) ? questions.length : 1
+  return `ask_user(${n} 个问题)`
+}
+
 // ———— ask_user（4c-2）————
 
 /** ask_user 的问题/选项形状（schema Static 的手工镜像，协议层共用） */

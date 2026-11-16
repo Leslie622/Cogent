@@ -46,17 +46,30 @@ describe('mcpDisplayName', () => {
 })
 
 describe('askUserSummary', () => {
-  it('questions 数组数问题数（zcode「已询问 1 个问题」的参数侧）', () => {
-    expect(askUserSummary('ask_user([{"question":"q1","options":["a"]}] )')).toBe('1 个问题')
+  it('引擎新摘要（非 JSON 友好文本）原样透传', () => {
+    expect(askUserSummary('ask_user(2 个问题)')).toBe('2 个问题')
+    expect(askUserSummary('ask_user(1 个问题)')).toBe('1 个问题')
+  })
+
+  it('旧转录完整 JSON：数 questions 数组长', () => {
+    expect(askUserSummary('ask_user([{"question":"q1","options":["a"]}])')).toBe('1 个问题')
     expect(
       askUserSummary('ask_user([{"question":"q1"},{"question":"q2"},{"question":"q3"}])')
     ).toBe('3 个问题')
   })
 
-  it('空数组/非 JSON/截断回退：空参给「1 个问题」，截断 JSON 透传剥壳文本', () => {
+  it('旧转录截断 JSON（60 字符截断无尾括号）：regex 数 question 字段，下限 1', () => {
+    const truncated =
+      'ask_user([{"question":"这次你想让我帮你做什么? ","header":"任务类型","options":[{"lab…'
+    expect(askUserSummary(truncated)).toBe('1 个问题')
+    const twoThenCut =
+      'ask_user([{"question":"q1"},{"question":"q2"},{"header":"任务类型","options":[{"lab…'
+    expect(askUserSummary(twoThenCut)).toBe('2 个问题')
+  })
+
+  it('空参给「1 个问题」；括号不配对回退原文', () => {
     expect(askUserSummary('ask_user()')).toBe('1 个问题')
-    // 括号配对但 JSON 解析失败（截断）→ inner 原样透传
-    expect(askUserSummary('ask_user([{"question":"截断…")')).toBe('[{"question":"截断…"')
+    expect(askUserSummary('ask_user([{"question":"截断…")')).toBe('1 个问题')
   })
 })
 

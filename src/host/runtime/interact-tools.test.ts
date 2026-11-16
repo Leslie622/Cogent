@@ -13,6 +13,7 @@ import {
   formatAskResult,
   formatTodoResult,
   planSectionText,
+  summarizeAskUserArgs,
   summarizeTodoWriteArgs,
   todosSectionText,
   validateAskQuestions,
@@ -71,6 +72,18 @@ describe('summarizeTodoWriteArgs（tool.completed 摘要）', () => {
   it('非数组形状 → 裸名（与 summarizeArgs 同契约）', () => {
     expect(summarizeTodoWriteArgs(undefined)).toBe('todo_write()')
     expect(summarizeTodoWriteArgs({ todos: 'x' })).toBe('todo_write()')
+  })
+})
+
+describe('summarizeAskUserArgs（tool.completed 摘要，2026-11-16 裸 JSON 呈现修）', () => {
+  it('questions 数组 → 问题计数（引擎有全量参数，不受 summarizeArgs 60 字截断）', () => {
+    const questions = [{ question: 'q1', options: [{ label: 'a' }] }, { question: 'q2', options: [{ label: 'b' }] }]
+    expect(summarizeAskUserArgs({ questions })).toBe('ask_user(2 个问题)')
+  })
+
+  it('异形/缺参 → 下限 1（工具被调用即至少问了一问）', () => {
+    expect(summarizeAskUserArgs(undefined)).toBe('ask_user(1 个问题)')
+    expect(summarizeAskUserArgs({ questions: 'x' })).toBe('ask_user(1 个问题)')
   })
 })
 

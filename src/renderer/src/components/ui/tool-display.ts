@@ -64,20 +64,31 @@ export function parseToolSummary(name: string, summary: string): string {
 }
 
 /**
- * ask_user 的主文案：参数是 questions 数组（JSON），裸剥壳会给用户看原始
- * JSON —— 数问题数（zcode 形态「已询问 1 个问题」的参数侧）。非数组/解析
- * 失败回退通用剥壳。questions 元素形如 { question: string, ... }（兼容纯串）。
+ * ask_user 的主文案。三形状全覆盖：
+ * - 引擎新摘要 `ask_user(2 个问题)`（summarizeAskUserArgs，非 JSON）→ 内文
+ *   原样透传；
+ * - 旧转录完整 JSON `ask_user([{...},...])` → 解析数组长 →「N 个问题」；
+ * - 旧转录截断 JSON（summarizeArgs 60 字符截断，解析必失败）→ 数
+ *   `"question":` 字段出现次数（截断安全的下限），至少 1。
+ * 壳剥离不要求闭合括号（截断形态无尾括号）。
  */
 export function askUserSummary(summary: string): string {
-  const inner = parseToolSummary('ask_user', summary)
+  let inner = summary.startsWith('ask_user(') ? summary.slice('ask_user('.length) : summary
+  if (inner.endsWith(')')) inner = inner.slice(0, -1)
+  inner = inner.trim()
+  if (inner === '') return '1 个问题'
+  if (!inner.startsWith('[') && !inner.startsWith('{')) return inner
+  let parsed: unknown
   try {
-    const parsed: unknown = JSON.parse(inner)
-    if (Array.isArray(parsed)) {
-      const n = parsed.length
-      return n === 1 ? '1 个问题' : `${n} 个问题`
-    }
-  } catch { /* 非 JSON（含截断），走兜底 */ }
-  return inner === '' ? '1 个问题' : inner
+    parsed = JSON.parse(inner)
+  } catch {
+    parsed = undefined
+  }
+  if (Array.isArray(parsed)) {
+    return `${parsed.length} 个问题`
+  }
+  const hits = inner.match(/"question"\s*:/g)?.length ?? 0
+  return `${Math.max(hits, 1)} 个问题`
 }
 
 /**

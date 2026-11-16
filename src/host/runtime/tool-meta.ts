@@ -22,7 +22,7 @@ import {
   createReadTool,
   createWriteTool
 } from '@earendil-works/pi-coding-agent'
-import { interactToolDeclarations, summarizeTodoWriteArgs } from './interact-tools'
+import { interactToolDeclarations, summarizeAskUserArgs, summarizeTodoWriteArgs } from './interact-tools'
 import type { ToolKind } from '../../protocol'
 
 /** 当前平台的 shell 工具名（allowlist 与元数据表共用） */
@@ -89,7 +89,7 @@ const TOOL_METAS: Record<string, { kind: ToolKind; summarize: (args: unknown) =>
   // plan 档可用 —— 清单维护/澄清提问/方案提交正是 plan 工作流的组成；挂起
   // 交互的"审批"是工具自身的面板，不走工具执行审批）
   todo_write: { kind: 'read', summarize: summarizeTodoWriteArgs },
-  ask_user: { kind: 'read', summarize: (a) => summarizeArgs('ask_user', a) },
+  ask_user: { kind: 'read', summarize: summarizeAskUserArgs },
   enter_plan: { kind: 'read', summarize: () => 'enter_plan()' },
   submit_plan: { kind: 'read', summarize: () => 'submit_plan(方案)' },
   // 历史名（v1 旧转录）：glob，kind 同只读

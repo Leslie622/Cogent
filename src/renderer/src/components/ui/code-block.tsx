@@ -17,8 +17,10 @@ const codeBlockVariants = cva(
   {
     variants: {
       variant: {
-        default:
-          "border border-input text-foreground has-[>[data-slot=code-block-content]:focus-visible]:border-ring dark:bg-input/30",
+        // 无边框（2026-11-16 用户定调：工具卡折叠体里的输出盒不带框 —— 与
+        // 思考行/进度尾行同族的轻量呈现；CodeBlock 现仅 tool.tsx 消费，
+        // 改本体即全量生效。dark:bg-input/30 保留：暗色下轻微底色维持可读性）
+        default: "text-foreground dark:bg-input/30",
         destructive:
           "border border-destructive/30 text-destructive dark:border-destructive/40",
       },
