@@ -8,6 +8,7 @@ function Slider<Value extends number | readonly number[]>({
   min = 0,
   max = 100,
   marks,
+  thumbSizePx = 12,
   filledThrough,
   fillClassName,
   thumbAriaLabel,
@@ -20,6 +21,12 @@ function Slider<Value extends number | readonly number[]>({
    * 缩放、hover 反馈）全由调用处决定 —— 调用处的 [&_*] 覆写特异性更高，
    * 原语侧若自带 hover: 变体会被压死（定位点 hover 放大失效即踩过此坑）。 */
   marks?: readonly number[]
+  /** 拇指宽（px），marks 端点对齐用：定位点 center = 拇指停靠行程的极限位
+   *  （两端各缩半个拇指宽）。inset（edge-client-only）模式下该行程由拇指
+   *  实宽决定，而原语拇指默认 size-3（12px），调用处覆写拇指尺寸后公式必须
+   *  跟着换，否则端点圆点落在行程外、贴住轨道圆角端部（思考力度拇指 size-6
+   *  时踩过）。仅影响 marks 定位；拇指自身的尺寸仍归调用处覆写。 */
+  thumbSizePx?: number
   /** 小于等于该值的定位点落在已选区内；调用处可用 data-active 单独着色。 */
   filledThrough?: number
   /** 填充条（Indicator）的样式覆写口：默认只有 bg-primary 实色，复杂填充
@@ -93,14 +100,14 @@ function Slider<Value extends number | readonly number[]>({
               key={mark}
               data-active={filledThrough !== undefined && mark <= filledThrough ? "" : undefined}
               /* 标记跟随可停靠范围而非轨道边缘，避免端点圆点被 overflow 裁半。
-                 6px 对应拇指半径（nova 拇指 size-3 = 12px 宽，inset 模式下
-                 拇指中心行程 = 两端各缩半个拇指宽）。
+                 两端各缩半个拇指宽 = inset 模式下拇指中心的行程极限（默认
+                 12px 拇指即 6px）；thumbSizePx 由调用处按真实拇指宽下发。
                  命中区：6px 圆点太小，用不可见 ::before 各向外扩 8px（22×22，
                  相邻档位间距 ~40px 不至于互相覆盖）参与命中测试 —— 伪元素盒
                  属于宿主元素，hover/click 落上面即落在点上；上下越出轨道的
                  部分被 Track overflow-hidden 裁掉各 1px，无碍。 */
               style={{
-                left: `calc(6px + (100% - 12px) * ${((mark - min) / (max - min)).toFixed(4)})`,
+                left: `calc(${thumbSizePx / 2}px + (100% - ${thumbSizePx}px) * ${((mark - min) / (max - min)).toFixed(4)})`,
               }}
             />
           ))}
