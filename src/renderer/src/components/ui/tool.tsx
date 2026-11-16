@@ -12,9 +12,11 @@
  */
 import { useState } from 'react'
 import {
+  CircleHelpIcon,
   FileDiffIcon,
   FileTextIcon,
   FolderSearchIcon,
+  ListChecksIcon,
   SearchIcon,
   TerminalIcon,
   WrenchIcon,
@@ -31,7 +33,7 @@ import {
 import { CodeBlock, CodeBlockContent } from '@/components/ui/code-block'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { diffCount, mcpDisplayName, parseToolSummary, toolKindLabel, type ToolDisplayStatus } from './tool-display'
+import { askUserSummary, diffCount, mcpDisplayName, parseToolSummary, toolKindLabel, type ToolDisplayStatus } from './tool-display'
 
 export type ToolStatus = ToolDisplayStatus
 
@@ -42,7 +44,9 @@ const TOOL_ICON: Record<string, React.ReactNode> = {
   grep: <SearchIcon />,
   ls: <FolderSearchIcon />,
   write: <WrenchIcon />,
-  edit: <FileDiffIcon />
+  edit: <FileDiffIcon />,
+  ask_user: <CircleHelpIcon />,
+  todo_write: <ListChecksIcon />
 }
 
 /** edit 的展示 diff 行染色：+ 增 / - 删 / 其余（行号上下文）灰 */
@@ -163,8 +167,10 @@ export function ToolCard({
   const [open, setOpen] = useState(false)
   const toolIcon = TOOL_ICON[name] ?? <TerminalIcon />
   const kindLabel = toolKindLabel(name, status)
-  // 主文案：MCP 显示 server.tool（裸工具名无识别量），其余剥 summary 壳
-  const primary = mcpDisplayName(name) ?? parseToolSummary(name, summary)
+  // 主文案：MCP 显示 server.tool（裸工具名无识别量），ask_user 数问题数
+  // （参数是 questions 数组，裸剥壳会给用户看原始 JSON），其余剥 summary 壳
+  const primary =
+    mcpDisplayName(name) ?? (name === 'ask_user' ? askUserSummary(summary) : parseToolSummary(name, summary))
   const counts = diff !== undefined ? diffCount(diff) : undefined
 
   /** 头行（icon + 类别词 + 主文案 + 尾标）；running 的扫光由 TraceLine

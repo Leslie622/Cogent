@@ -64,6 +64,23 @@ export function parseToolSummary(name: string, summary: string): string {
 }
 
 /**
+ * ask_user 的主文案：参数是 questions 数组（JSON），裸剥壳会给用户看原始
+ * JSON —— 数问题数（zcode 形态「已询问 1 个问题」的参数侧）。非数组/解析
+ * 失败回退通用剥壳。questions 元素形如 { question: string, ... }（兼容纯串）。
+ */
+export function askUserSummary(summary: string): string {
+  const inner = parseToolSummary('ask_user', summary)
+  try {
+    const parsed: unknown = JSON.parse(inner)
+    if (Array.isArray(parsed)) {
+      const n = parsed.length
+      return n === 1 ? '1 个问题' : `${n} 个问题`
+    }
+  } catch { /* 非 JSON（含截断），走兜底 */ }
+  return inner === '' ? '1 个问题' : inner
+}
+
+/**
  * edit/write 的 diff 尾标计数：带行号 diff 的 +/- 行数（+++ / --- 文件头不算）。
  * 无增删行（纯上下文）返回 undefined —— 尾标整枚不显示，不出「+0 -0」。
  */
