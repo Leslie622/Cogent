@@ -13,7 +13,8 @@
 | [工具系统](工具系统.md) | pi 内置 8 选 7（win=powershell）、glob→find 映射、fd/rg 依赖与降级、ToolKind 投影、fd/rg 获取链与降级 |
 | [MCP座](MCP座.md) | 两级 mcp.json 配置（user 定义 + 项目仅 override）、createMcpExtension 装配（快照语义）、mcp.list/sync 协议方法、mcp__ 工具 exec 档审批投影 |
 | [技能座](技能座.md) | 两级技能目录（同名 project 胜）、skillsOverride+段钩子注入（回合边界热刷新）、read 渐进加载、/skill: 活展开、清单预算 |
-| [交互座](交互座.md) | todo_write / ask_user / plan 闭环三件套：customTools 注入 + 挂起/回填（pendingApprovals 同款骨架）+ 三面板；todo 与已批准 plan 的段双通道防失忆、批准切档、拒绝停轮（terminate） |
+| [交互座](交互座.md) | todo_write / ask_user / plan 闭环三件套：customTools 注入 + 挂起/回填（pendingApprovals 同款骨架）+ 三面板；todo 与已批准 plan 的段双通道防失忆、批准关计划开关（不切档）、拒绝停轮（terminate） |
+| [钩子座](钩子座.md) | Host 干预统一装配：cogent-hooks 具名扩展（段注入）+ 审批链式包裹（signal 兜底）+ 厂商标量观测（AgentOptions 口）+ context 预留缝；审批审计对 approval.asked/decided 全路径进 inspect 流（放行也留痕，read 无条目） |
 | [审批与权限](审批与权限.md) | 判定矩阵与优先序、挂起收尾、工作区规则表、权限通告、确认面板与 tag |
 | [上下文压缩](上下文压缩.md) | 触发公式、checkpoint 摘要、L1 裁剪、溢出恢复、保留式转录表示 |
 | [工作区与项目](工作区与项目.md) | ~/.cogent 存储根、项目域多根、侧栏分区语义、工作区注入、信任与归档 |

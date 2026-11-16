@@ -505,11 +505,17 @@ export class SessionManager implements CogentKernel {
    * 挂起中的审批（D4/D5）：approval.request 发出 → 链式 beforeToolCall 的
    * Promise 悬着等 approval.respond。value 存 sessionId（会话删除/退出时按会话
    * 批量收尾 —— 不 resolve 则 pi 的 await 永悬、该 run 永不结束）+ 工具类别
-   * （respond 的 always='workspace' 落规则时要知道落哪类，审批交互升级 D3）。
+   * （respond 的 always='workspace' 落规则时要知道落哪类，审批交互升级 D3）
+   * + 工具名（approval.decided 审计条目的主文案，钩子座 4d）。
    */
   private pendingApprovals = new Map<
     string,
-    { sessionId: string; kind: ToolKind; resolve: (result: { block: boolean; reason?: string }) => void }
+    {
+      sessionId: string
+      kind: ToolKind
+      toolName: string
+      resolve: (result: { block: boolean; reason?: string }) => void
+    }
   >()
   /**
    * 挂起中的提问（交互座 4c-2，pendingApprovals 同款骨架）：ask_user 的
@@ -1190,6 +1196,14 @@ export class SessionManager implements CogentKernel {
         ? `用户拒绝了本次操作。用户指示：${message.trim().slice(0, APPROVAL_MESSAGE_MAX_CHARS)}`
         : '用户拒绝了本次操作'
     pending.resolve(approved ? { block: false } : { block: true, reason: denyReason })
+    // 审计对的 decided 半边（钩子座 4d）：与 approval.asked 同 requestId 配对，
+    // 三种用户裁决分词（放行也留痕的 zcode 口径）
+    this.ensureInspector(session).approvalDecided({
+      toolName: pending.toolName,
+      requestId,
+      verdict: approved ? (always === 'workspace' ? 'always-workspace-user' : 'user-allow') : 'user-deny',
+      ...(!approved ? { reason: denyReason } : {})
+    })
     return { ok: true, ...(summary !== undefined && { summary }) }
   }
 
@@ -1247,14 +1261,21 @@ export class SessionManager implements CogentKernel {
     // 未知名字兜底 read：与事件转译同口径（pi 只执行注册过的工具，未知 =
     // 注册表 bug，stderr 已在转译层留诊断，这里按无害的只读放行）
     const kind = meta?.kind ?? 'read'
+    // 审计纪律（钩子座 4d）：read 类不经审批域，零条目；其余每条判定路径
+    // 都落 approval.decided（放行也留痕），ask 路径另有 approval.asked 成对
+    const audit = this.ensureInspector(session)
     if (kind === 'read') return Promise.resolve({ block: false })
     // 计划开关短路优先于档位放行（zcode permission/service.ts:148 同序）：
     // 「完全访问 + 计划开着」= 只读 —— 开关语义不受档位影响
     if (session.summary.planEnabled === true) {
+      audit.approvalDecided({ toolName, verdict: 'plan' })
       return Promise.resolve({ block: true, reason: '计划模式（只读）下写类与执行类工具被禁止' })
     }
     const mode = session.summary.permissionMode ?? 'ask'
-    if (mode === 'auto') return Promise.resolve({ block: false })
+    if (mode === 'auto') {
+      audit.approvalDecided({ toolName, verdict: 'auto' })
+      return Promise.resolve({ block: false })
+    }
     // 写类根内判定（软边界瘦身为"规则适用域"）：越界与否不再决定放拦，
     // 只决定 ask 是否可吃「始终允许」规则 —— 信任记忆的范围 = 根内写
     const roots = this.toolRoots(session)
@@ -1264,32 +1285,39 @@ export class SessionManager implements CogentKernel {
         : typeof args.path !== 'string' || resolveWithinRoots(args.path, roots) !== null
     // 自主模式（D6 定稿）：文件写信任放行（不限根内 —— 越界也放，F6 定稿），
     // exec 等风险类照旧走询问（落到下方 ask 流程）
-    if (mode === 'autonomous' && (kind === 'write' || kind === 'edit')) return Promise.resolve({ block: false })
+    if (mode === 'autonomous' && (kind === 'write' || kind === 'edit')) {
+      audit.approvalDecided({ toolName, verdict: 'autonomous' })
+      return Promise.resolve({ block: false })
+    }
     // ask（含 autonomous 的 exec）：根内（或非写类）先查规则表 —— 会话工作
     // 区根与某条同类别规则任一根命中即放行；无绑定根天然不命中，无根会话
     // 不落规则的 UI 语义在引擎侧自洽
     if (withinRoots && this.approvals.allows(this.workspaceRoots(session), kind)) {
+      audit.approvalDecided({ toolName, verdict: 'always-workspace' })
       return Promise.resolve({ block: false })
     }
     // 弹审批面板并挂起（D5：无超时 —— 用户不点就一直等，宿主输入框变停止
     // 钮可 abort；signal abort 兜底 resolve）
     const requestId = `appr-${crypto.randomUUID()}`
     const sessionId = session.summary.id
+    const summary = meta !== undefined ? meta.summarize(args) : `${toolName}(?)`
     return new Promise((resolve) => {
       // 先登记再发事件：respondApproval 走这张表找 resolver，时序上不存在
       // 「事件未到、respond 先行」的窗口（宿主是收到事件才可能裁决）
-      this.pendingApprovals.set(requestId, { sessionId, kind, resolve })
+      this.pendingApprovals.set(requestId, { sessionId, kind, toolName, resolve })
+      audit.approvalAsked({ requestId, toolName, kind, summary, mode, outsideRoots: !withinRoots })
       this.notify('approval.request', {
         sessionId,
         requestId,
         toolName,
         kind,
-        summary: meta !== undefined ? meta.summarize(args) : `${toolName}(?)`,
+        summary,
         ...(!withinRoots && { outsideRoots: true })
       })
       signal?.addEventListener('abort', () => {
         // 已被 respondApproval 消费则不动（用户裁决与中止竞态，先到先得）
         if (this.pendingApprovals.delete(requestId)) {
+          audit.approvalDecided({ toolName, verdict: 'aborted', requestId })
           resolve({ block: true, reason: '已中止' })
         }
       })
@@ -1301,6 +1329,12 @@ export class SessionManager implements CogentKernel {
     for (const [requestId, pending] of this.pendingApprovals) {
       if (pending.sessionId !== sessionId) continue
       this.pendingApprovals.delete(requestId)
+      // 兜底收尾也落审计（尽力语义：非抛查找 —— 会话已出表时跳过记录，
+      // resolve 必须照常发生，审计不许拦兜底收尾）
+      const target = this.sessions.get(sessionId)
+      if (target !== undefined) {
+        this.ensureInspector(target).approvalDecided({ toolName: pending.toolName, requestId, verdict: 'settled', reason })
+      }
       pending.resolve({ block: true, reason })
     }
   }

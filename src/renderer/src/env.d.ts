@@ -395,6 +395,8 @@ export type InspectEntryKind =
   | 'api.stream'
   | 'tool.started'
   | 'tool.completed'
+  | 'approval.asked'
+  | 'approval.decided'
 
 export interface InspectEntrySummary {
   seq: number

@@ -35,7 +35,8 @@ import {
   type ModelRuntime,
   type ToolDefinition
 } from '@earendil-works/pi-coding-agent'
-import type { Agent, AgentMessage, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
+import type { Agent, AgentMessage } from '@earendil-works/pi-agent-core'
+import { createCogentHooks, wrapApprovalChain } from '../runtime/hook-seat'
 import type { Usage } from '@earendil-works/pi-ai'
 import { adaptCompactionToWindow } from '../runtime/compaction'
 import type { McpSettingsPatch } from '../runtime/mcp-config'
@@ -214,21 +215,9 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
             })
           ]
         : []),
-      (pi) => {
-        pi.on('before_agent_start', (event) => {
-          // 段表每回合活算（权限通告 / 技能清单 / 任务清单 / 已批准计划）：
-          // null = 撤段（缺键语义，diff 对转录回放的旧段产出补丁撤下）；
-          // diff 只在内容变时追加 patch，树内不堆积（技能座 4b 验证的机制）
-          const wanted = opts.sections?.()
-          if (wanted === undefined || Object.keys(wanted).length === 0) return
-          const sections = { ...event.systemPromptOptions.sections }
-          for (const [name, text] of Object.entries(wanted)) {
-            if (text === null) delete sections[name]
-            else sections[name] = text
-          }
-          event.systemPromptOptions.sections = sections
-        })
-      }
+      // 钩子座（4d）：段注入（before_agent_start）等 Host 干预的具名注册地
+      // （装配形状与「审批为何不走扩展」的墙见 runtime/hook-seat.ts 头注）
+      createCogentHooks({ sections: opts.sections })
     ]
   })
   await resourceLoader.reload()
@@ -264,20 +253,11 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
   // 活到 Host 进程退出（与 pi print-mode 同语义，session 删除不回收）。
   await session.bindExtensions({ mode: 'rpc' })
 
-  // 审批链（D8）：包住 pi 的 beforeToolCall（构造时已被 AgentSession 装成扩展
-  // 分发器，agent-session.ts:714）。裁决放行时委托原链 —— 未来任何挂 tool_call
-  // 的扩展不失联；裁决阻止时返回 block（reason 进模型可见的工具错误结果）。
-  const piBeforeToolCall = session.agent.beforeToolCall
-  session.agent.beforeToolCall = async (context, signal) => {
-    const verdict = await opts.approval.decide(
-      context.toolCall.name,
-      context.toolCall.id,
-      context.args as Record<string, unknown>,
-      signal
-    )
-    if (verdict.block) return { block: true, reason: verdict.reason } satisfies BeforeToolCallResult
-    return piBeforeToolCall?.(context, signal)
-  }
+  // 审批链（D8）：链式包裹 pi 的 beforeToolCall（构造时已被 AgentSession 装成
+  // 扩展分发器）。包裹器本体在钩子座（runtime/hook-seat.ts 的
+  // wrapApprovalChain —— 为什么是包裹而非 tool_call 扩展事件：分发器丢
+  // abort signal，挂起审批遇停止永悬，见该文件头注）
+  session.agent.beforeToolCall = wrapApprovalChain(session.agent.beforeToolCall, opts.approval)
 
   // 观测三钩直挂（官方先例手法：pi 不占这些字段；inspector 惰性由调用方闭包）
   opts.observe(session.agent)

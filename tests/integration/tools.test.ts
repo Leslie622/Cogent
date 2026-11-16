@@ -489,13 +489,19 @@ describe('工具循环集成（S1–S11 场景流，断言对象 = pi 内置工�
     const s9e = await bashSession()
     await engine.send('agent.submit', { sessionId: s9e, text: 'B6 abort', model: 'mock' })
     await engine.waitEvent('tool.started', (p) => p.sessionId === s9e && p.callId === 'b6', 15_000)
-    await sleep(1500) // 心跳积累几拍
+    // 心跳先真落盘再 abort：按效果等 ≥3 行而非固定 sleep —— Windows 上
+    // powershell→node 启动链可达秒级，tool.started 只代表工具开始跑（进程
+    // 还在起），固定 1.5s 窗口会在一拍未出时就 abort，断言沦为启动竞速
+    // （2026-11-16 干净基线连续红 beat1=2 实证）
+    const beatPath = join(ws, 'beat.txt')
+    // 心跳进程未出首拍时文件不存在（轮询期常态），缺文件按 0 行
+    const beatLines = (): number => (existsSync(beatPath) ? readFileSync(beatPath, 'utf-8').split('\n').length : 0)
+    for (let i = 0; i < 150 && beatLines() < 3; i += 1) await sleep(100)
     await engine.send('agent.abort', { sessionId: s9e })
     await engine.waitEvent('run.failed', (p) => p.sessionId === s9e, 15_000)
+    const beat1 = beatLines()
     await sleep(2000) // 若有孤儿，此刻仍在追加
-    const beat1 = readFileSync(join(ws, 'beat.txt'), 'utf-8').split('\n').length
-    await sleep(1200)
-    const beat2 = readFileSync(join(ws, 'beat.txt'), 'utf-8').split('\n').length
+    const beat2 = beatLines()
     check('26. abort 杀树无孤儿（心跳文件停止增长）', beat1 === beat2 && beat1 >= 3, `beat1=${beat1} beat2=${beat2}`)
 
     // ———— S10 自主模式（D6：写信任 / exec 询问） ————

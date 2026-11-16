@@ -14,6 +14,8 @@ import {
   IconPlayerStop,
   IconPlayerTrackNext,
   IconPrompt,
+  IconShield,
+  IconShieldCheck,
   IconTool,
   IconWaveSine,
 } from '@tabler/icons-react'
@@ -107,7 +109,19 @@ export const KINDS: Record<InspectEntryKind, KindPresentation> = {
     icon: IconFileText,
     layer: 'tool',
     label: '工具 · 完成',
-    explain: '工具执行收尾，结果将作为下一轮请求的上下文发回模型（工具循环的闭环）。Cogent 暂未注册工具，此层记录是给后续路线预留的。',
+    explain: '工具执行收尾，结果将作为下一轮请求的上下文发回模型（工具循环的闭环）。',
+  },
+  'approval.asked': {
+    icon: IconShield,
+    layer: 'tool',
+    label: '审批 · 询问',
+    explain: '工具调用被审批链拦下并弹面板等你裁决（ask 路径专属）。此刻引擎循环挂起 —— 模型的这次"想动手"停在这里，直到你允许、拒绝或点停止。',
+  },
+  'approval.decided': {
+    icon: IconShieldCheck,
+    layer: 'tool',
+    label: '审批 · 裁决',
+    explain: '审批判定落地：可能是档位/计划开关/工作区规则的自动裁决（放行也留痕），也可能是你对面板的点击，或停止/收尾的中止。read 类不经审批域，不产生审批条目。',
   },
 }
 

@@ -39,6 +39,23 @@ const MAX_DETAILS = 150
 /** 单个详情块截断上限（字符）。超长上下文的请求体到此为止，尾部标记截断 */
 const MAX_BLOCK_CHARS = 300_000
 
+/**
+ * 审批裁决词 → 时间线文案（approvalDecided 用）。词表是 session.ts 判定
+ * 分支的枚举面，呈现映射收在这里 —— 加分支时同步补词（缺词回退原词，
+ * 不炸时间线）。
+ */
+const VERDICT_LABELS: Record<string, string> = {
+  plan: '拦截（计划模式）',
+  auto: '放行（auto 档）',
+  autonomous: '放行（自主档）',
+  'always-workspace': '放行（工作区规则）',
+  'user-allow': '用户允许',
+  'user-deny': '用户拒绝',
+  'always-workspace-user': '用户允许并记工作区规则',
+  aborted: '中止',
+  settled: '收尾'
+}
+
 /** 摘要产出回调：SessionManager 注入（包成 notify('inspect.event')） */
 export type InspectEmit = (entry: InspectEntrySummary) => void
 
@@ -299,7 +316,7 @@ export class SessionInspector {
     )
   }
 
-  // ———— 工具层（Cogent 暂未注册工具，先接线占位）————
+  // ———— 工具层 ————
 
   toolStarted(toolName: string, args: unknown): void {
     this.record(
@@ -319,6 +336,54 @@ export class SessionInspector {
         ...(durationMs !== undefined ? [{ label: '耗时', value: `${durationMs} ms` }] : [])
       ],
       [{ name: '执行结果', format: 'json', content: safeStringify(result) }]
+    )
+  }
+
+  // ———— 审批层（钩子座 4d：asked/decided 审计对，docs/计划/钩子座实现.md §3.2）————
+
+  /**
+   * 审批询问：面板已弹出、挂起等用户裁决。只有走到 ask 的调用有此条目 ——
+   * 放行类判定（read/plan/auto/规则）不询问，只落 decided（「放行也留痕」
+   * 的 zcode 口径；read 类不经审批域，两类条目都没有）。
+   */
+  approvalAsked(info: {
+    requestId: string
+    toolName: string
+    kind: string
+    summary: string
+    mode: string
+    outsideRoots: boolean
+  }): void {
+    this.record(
+      'approval.asked',
+      `审批询问 · ${info.toolName}`,
+      [
+        { label: '类别', value: info.kind },
+        { label: '摘要', value: info.summary },
+        { label: '权限档', value: info.mode },
+        ...(info.outsideRoots ? [{ label: '根外', value: '是' }] : [])
+      ],
+      [{ name: '请求标识', format: 'text', content: info.requestId }]
+    )
+  }
+
+  /**
+   * 审批裁决：全路径记录（放行/拦截/用户裁决/中止/收尾）。verdict 词表：
+   * plan / auto / autonomous / always-workspace（规则放行）/ user-allow /
+   * user-deny / always-workspace-user（本次允许并落规则）/ aborted /
+   * settled。requestId 仅 ask 路径有（快路无询问，靠 toolName+时刻对账）。
+   */
+  approvalDecided(info: { toolName: string; verdict: string; requestId?: string; reason?: string }): void {
+    this.record(
+      'approval.decided',
+      `审批${VERDICT_LABELS[info.verdict] ?? info.verdict} · ${info.toolName}`,
+      [
+        { label: '裁决', value: VERDICT_LABELS[info.verdict] ?? info.verdict },
+        ...(info.reason !== undefined ? [{ label: '原因', value: info.reason.slice(0, 120) }] : [])
+      ],
+      info.requestId !== undefined
+        ? [{ name: '请求标识', format: 'text', content: info.requestId }]
+        : undefined
     )
   }
 

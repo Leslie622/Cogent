@@ -11,6 +11,8 @@
  *  S5 plan block：permissionMode=plan 物化 → 写工具被拦（零 approval）
  *  S6 通告时效：auto 物化 → 请求 system 含「已授予完全访问」；切 ask 后无残留；
  *              切 plan 后含「plan（只读）」
+ *  S8 审计对（钩子座 4d）：只读回查既有场景会话的 inspect 流 ——
+ *     asked/decided 成对、放行也留痕（规则/计划拦截各有 decided）、read 无条目
  *
  * mock 分流：动作按请求顺序弹队列；重启后 actionIndex 接续。
  */
@@ -286,5 +288,49 @@ describe('审批集成（S1–S6 场景流，17 项断言）', () => {
     // S7e：项目外新会话不受影响（cwd 不在任何 cwds 内 → ask 缺省，不带字段）
     const s7eResp = await engine.send<{ id: string; permissionMode?: string }>('session.create', { cwd: outside })
     check('22. 项目外会话不吃项目默认（缺省不带 = ask）', s7eResp.result?.id !== undefined && s7eResp.result.permissionMode === undefined)
+
+    // ———— S8 审批审计对（钩子座 4d：只读回查，复用上面各场景的会话）————
+    // decided 词表见 inspector.ts VERDICT_LABELS；read 类不经审批域（S6 的纯
+    // 文本会话无工具，天然不涉及）
+    const inspectOf = async (sessionId: string): Promise<Array<{ kind: string; title: string }>> => {
+      const r = await engine.send<{ entries: Array<{ kind: string; title: string }> }>('inspect.entries', { sessionId })
+      return r.result?.entries ?? []
+    }
+    const s1Entries = await inspectOf(s1)
+    check(
+      '23. S1 拒绝附言落审计对（asked + decided「用户拒绝」）',
+      s1Entries.some((e) => e.kind === 'approval.asked' && e.title.includes('write')) &&
+        s1Entries.some((e) => e.kind === 'approval.decided' && e.title.includes('用户拒绝')),
+      JSON.stringify(s1Entries.filter((e) => e.kind.startsWith('approval')))
+    )
+    const s2Entries = await inspectOf(s2)
+    check(
+      '24a. S2 always 裁决落 decided「用户允许并记工作区规则」',
+      s2Entries.some((e) => e.kind === 'approval.decided' && e.title.includes('用户允许并记工作区规则')),
+      JSON.stringify(s2Entries.filter((e) => e.kind.startsWith('approval')))
+    )
+    const s2bEntries = await inspectOf(s2b)
+    check(
+      '24b. S2b 规则放行也留痕（decided「放行（工作区规则）」且无 asked —— 放行不询问）',
+      s2bEntries.some((e) => e.kind === 'approval.decided' && e.title.includes('放行（工作区规则）')) &&
+        !s2bEntries.some((e) => e.kind === 'approval.asked'),
+      JSON.stringify(s2bEntries.filter((e) => e.kind.startsWith('approval')))
+    )
+    // 181 行的 throw 守卫已收窄 s5.result.id（同 scope 直用；闭包里才失效，S6 注）
+    const s5id = s5.result.id
+    const s5Entries = await inspectOf(s5id)
+    check(
+      '25. S5 计划拦截落 decided「拦截（计划模式）」（零 asked）',
+      s5Entries.some((e) => e.kind === 'approval.decided' && e.title.includes('拦截（计划模式）')) &&
+        !s5Entries.some((e) => e.kind === 'approval.asked'),
+      JSON.stringify(s5Entries.filter((e) => e.kind.startsWith('approval')))
+    )
+    const s7Entries = await inspectOf(s7)
+    check(
+      '26. S7 越界手许落审计对（asked + decided「用户允许」）',
+      s7Entries.some((e) => e.kind === 'approval.asked') &&
+        s7Entries.some((e) => e.kind === 'approval.decided' && e.title.includes('用户允许')),
+      JSON.stringify(s7Entries.filter((e) => e.kind.startsWith('approval')))
+    )
   })
 })

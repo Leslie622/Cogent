@@ -935,12 +935,14 @@ export interface InspectEntryParams {
 // 尽可能原始的底层形状 —— 两者数据同源但形态不同，不共用事件。
 
 /**
- * 观测条目类型。四层结构（UI 据此分色/过滤，也是学习路径的解剖层次）：
+ * 观测条目类型。五层结构（UI 据此分色/过滤，也是学习路径的解剖层次）：
  * - 会话层 run.*：一次 agent.submit 的完整生命周期；
  * - 提示词 system.prompt：本轮请求实际生效的系统提示词全文；
  * - 引擎层 turn.*：pi Agent 循环的轮次边界（一 run 内可多轮 = 工具循环）；
  * - 接口层 api.*：pi→厂商的原始 HTTP 往返（请求体 / 响应头 / SSE 分片聚合）；
- * - 工具层 tool.*：工具执行的参数与结果（Cogent 暂未注册工具，先占位）。
+ * - 工具层 tool.*：工具执行的参数与结果；
+ * - 审批层 approval.*：审批往返审计对（asked/decided 成对，放行也留痕，
+ *   钩子座 4d —— read 类不经审批域，不产生条目）。
  */
 export type InspectEntryKind =
   | 'run.started'
@@ -955,6 +957,8 @@ export type InspectEntryKind =
   | 'tool.started'
   | 'tool.completed'
   | 'tool.progress'
+  | 'approval.asked'
+  | 'approval.decided'
 
 /**
  * 观测条目摘要（时间线一行）。刻意小体积：控制台未打开时引擎也在实时推送，
