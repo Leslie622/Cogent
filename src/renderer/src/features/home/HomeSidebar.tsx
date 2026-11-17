@@ -6,9 +6,8 @@
  *
  * 数据源全部真实：会话 = chat store（引擎 session.list），
  * 项目 = project store（引擎 project.list）。行点击 = chat.selectSession（高亮看
- * activeSessionId，行与内容不再错位）；发起入口 startNew = chat.createSession
- * （真建引擎会话防串话，见 docs/技术笔记/会话隔离与受理语义.md）+
- * home.startNewChat（视图态）。
+ * activeSessionId，行与内容不再错位）；发起入口 startNew 优先看主体视图：
+ * 已是新聊天只更新视图，否则按需创建/复用空会话；首条消息由 submit 物化。
  * 分区标题带折叠箭头（折叠态常显、展开态 hover 显现）；标题行 hover 浮现
  * [更多 ⋯ + 创建类] 双钮（项目=创建项目弹窗、最近=新建聊天）；项目行 hover
  * 浮现 [更多 + 新建聊天]；聊天行动作 [置顶 + 归档]（置顶真接线 setPinned，
@@ -37,6 +36,7 @@ import {
 import { cn } from 'cn'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,24 +81,20 @@ const ROW_ACTIVE = 'bg-accent-foreground/5'
 function SectionHeader({
   title,
   open,
-  onToggle,
   actions
 }: {
   title: string
   open: boolean
-  onToggle: () => void
   actions?: ReactNode
 }) {
   return (
     <div className={cn('group relative flex h-7 items-center rounded-md px-2', ROW_HOVER)}>
-      <button
-        type="button"
+      <CollapsibleTrigger
+        render={<button type="button" />}
         className={cn(
           'flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground',
           actions && 'pr-12'
         )}
-        aria-expanded={open}
-        onClick={onToggle}
       >
         <span>{title}</span>
         {/* 折叠箭头：折叠态常显（折叠了 = 有藏起的内容）；展开态纯 hover 显形 ——
@@ -111,7 +107,7 @@ function SectionHeader({
             !open && '-rotate-90'
           )}
         />
-      </button>
+      </CollapsibleTrigger>
       {actions && <div className={ACTIONS}>{actions}</div>}
     </div>
   )
@@ -322,16 +318,14 @@ const ProjectRow = memo(function ProjectRow({
   ]
 
   return (
-    <>
+    <Collapsible open={expanded} onOpenChange={() => onToggle(projectId)}>
       <ContextMenu>
         <ContextMenuTrigger
           render={<div className={cn('group relative flex h-8 items-center rounded-md px-2', ROW_HOVER)} />}
         >
-          <button
-            type="button"
+          <CollapsibleTrigger
+            render={<button type="button" />}
             className="flex min-w-0 flex-1 items-center gap-2 pr-12 text-[13px] text-foreground"
-            aria-expanded={expanded}
-            onClick={() => onToggle(projectId)}
           >
             {/* 文件夹开/合两形态（IconFolder/IconFolderOpen，恢复此前语义）+
                 CrossFade：两个 svg 叠放，透明度交叉渐变 150ms —— 不回到三元
@@ -351,7 +345,7 @@ const ProjectRow = memo(function ProjectRow({
               />
             </span>
             <span className="truncate">{projectName}</span>
-          </button>
+          </CollapsibleTrigger>
           <div className={ACTIONS}>
             {/* 更多：项目级菜单；「移除项目」只删项目不级联删会话（引擎 delete 语义，
                 会话落回"最近"，见 docs/计划/工作区与会话真实化.md 第 4 步）。
@@ -402,14 +396,7 @@ const ProjectRow = memo(function ProjectRow({
           ))}
         </ContextMenuContent>
       </ContextMenu>
-      {/* 展开子区：单一容器条件渲染（内部才变），不做三元结构跳变 —— 此前
-          chats.map(...) ↔ EmptyHint 两种结构在 Fragment 同一位置互换，React 按
-          "不同类型"整棵卸载重建，点击展开/收起时列表闪一下（用户实测）。另：
-          文件夹图标开/合用 CSS 旋转过渡而非换组件 —— IconFolder/IconFolderOpen
-          是两个组件实例，三元切换 = svg 元素替换，也参与闪动。收起态旋转
-          -90°（icon 语义同分区折叠箭头：闭=指右，开=指下） */}
-      {expanded && (
-        <div className="flex flex-col gap-0.5">
+      <CollapsibleContent variant="navigation" inert={!expanded}>
           {chats.length > 0 ? (
             chats.map((chat) => (
               <ChatRow
@@ -426,9 +413,8 @@ const ProjectRow = memo(function ProjectRow({
           ) : (
             <EmptyHint text="暂无聊天" />
           )}
-        </div>
-      )}
-    </>
+      </CollapsibleContent>
+    </Collapsible>
   )
 })
 
@@ -545,7 +531,8 @@ export function HomeSidebar() {
         (state.bySession[active.id]?.messages.length ?? 0) === 0 &&
         active.title === '新会话' && // 双保险：转录空 + 标题未命名（防投影延迟误判）
         (projectId === undefined ? active.projectId === undefined : active.projectId === projectId)
-      if (!activeIsEmpty) {
+      // new 视图里的 activeSessionId 可能仍指向旧聊天，不能据此重复建会话。
+      if (useHomeStore.getState().session.kind !== 'new' && !activeIsEmpty) {
         void createSession(projectId !== undefined ? { projectId } : undefined)
       }
       startNewChat(projectId)
@@ -637,16 +624,14 @@ export function HomeSidebar() {
             无置顶项时整节不渲染（用户 2026-11-13）：空着还占一行标题 +
             "暂无置顶"是纯噪音，首个置顶动作落地时分区自然出现 */}
         {pinnedProjects.length + pinnedChats.length > 0 && (
-        <section className="mt-4 flex flex-col gap-0.5">
+        <Collapsible render={<section className="mt-4" />} open={pinnedOpen} onOpenChange={setPinnedOpen}>
           {/* 无 actions：置顶分区无分区级操作（"更多"钮本就没接线，纯占位噪音，
               用户 2026-11-13 要求去掉）；折叠箭头仍在，行内动作在各自行上 */}
           <SectionHeader
             title="置顶"
             open={pinnedOpen}
-            onToggle={() => setPinnedOpen((v) => !v)}
           />
-          {pinnedOpen && (
-            <>
+          <CollapsibleContent variant="navigation" inert={!pinnedOpen}>
               {pinnedProjects.map((project) => (
                 <ProjectRow
                   key={project.id}
@@ -678,17 +663,15 @@ export function HomeSidebar() {
                   waitingApproval={isWaitingApproval(chat.id)}
                 />
               ))}
-            </>
-          )}
-        </section>
+          </CollapsibleContent>
+        </Collapsible>
         )}
 
         {/* 项目分区：project store 真数据 + 「创建项目」弹窗入口 */}
-        <section className="mt-4 flex flex-col gap-0.5">
+        <Collapsible render={<section className="mt-4" />} open={projectsOpen} onOpenChange={setProjectsOpen}>
           <SectionHeader
             title="项目"
             open={projectsOpen}
-            onToggle={() => setProjectsOpen((v) => !v)}
             actions={
               <>
                 <Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多">
@@ -706,8 +689,8 @@ export function HomeSidebar() {
               </>
             }
           />
-          {projectsOpen &&
-            (listedProjects.length > 0 ? (
+          <CollapsibleContent variant="navigation" inert={!projectsOpen}>
+            {listedProjects.length > 0 ? (
               listedProjects.map((project) => (
                 <ProjectRow
                   key={project.id}
@@ -729,15 +712,15 @@ export function HomeSidebar() {
               ))
             ) : (
               <EmptyHint text="暂无项目" />
-            ))}
-        </section>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* 最近分区：无归属且未置顶的会话（移动语义，置顶的不重复出现） */}
-        <section className="mt-4 flex flex-col gap-0.5">
+        <Collapsible render={<section className="mt-4" />} open={recentOpen} onOpenChange={setRecentOpen}>
           <SectionHeader
             title="最近"
             open={recentOpen}
-            onToggle={() => setRecentOpen((v) => !v)}
             actions={
               <>
                 <Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多">
@@ -756,8 +739,8 @@ export function HomeSidebar() {
               </>
             }
           />
-          {recentOpen &&
-            (recent.length > 0 ? (
+          <CollapsibleContent variant="navigation" inert={!recentOpen}>
+            {recent.length > 0 ? (
               recent.map((chat) => (
                 <ChatRow
                   key={chat.id}
@@ -772,8 +755,9 @@ export function HomeSidebar() {
               ))
             ) : (
               <EmptyHint text="无聊天" />
-            ))}
-        </section>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
       </div>
 
       {/* 创建项目（两步流）。创建成功 → 主体落该项目下的新会话（startNew 自带

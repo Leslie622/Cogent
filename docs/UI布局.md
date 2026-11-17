@@ -262,6 +262,12 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   rounded-xl + p-1.5，行/标签/分割线随 context 放大；size 不传 = 继承外层，
   子菜单 portal 不断 context 自动跟随）—— 内容型菜单（模型菜单）用 lg，
   普通动作菜单保持默认紧凑档
+- **侧栏列表折叠**：置顶 / 项目 / 最近分区、项目子列表统一用
+  `CollapsibleContent variant="navigation"`，原语内定义 200ms ease-out 的
+  grid `minmax(0,0fr)↔minmax(0,1fr)` 与透明度过渡；2px 顶间距用内层
+  padding 同步收拢，列表行间距仍为 2px。内容 keepMounted，收起时 inert，
+  动画结束由原语 hidden；系统 reduced-motion 禁用过渡。样式只匹配面板
+  直接子层，避免分区展开态覆盖内嵌项目的收起态。
 - **侧栏等待确认 tag**（HomeSidebar ChatRow，2026-11-11 升级第 4 步；当日用户
   定调修订形态）：**占行尾动作钮簇的位置**（有挂起审批时置顶/归档钮整簇不
   渲染 —— 待审批是行当前的唯一状态；首版「标题右侧小字 + hover 淡出避让」
