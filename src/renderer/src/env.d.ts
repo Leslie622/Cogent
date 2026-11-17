@@ -303,7 +303,7 @@ export type EngineEvent =
       params: {
         sessionId: string
         message?: ChatMessage
-        /** 分段终态（工具循环 text/工具卡交错保真）；优先于 message 消费 */
+        /** 完整显示分段（工具循环保序，手动续写含旧前缀）；优先于 message 消费 */
         messages?: ChatMessage[]
         /** length = 输出被 token 上限截断 */
         stopReason?: string
@@ -311,7 +311,14 @@ export type EngineEvent =
     }
   | {
       method: 'run.failed'
-      params: { sessionId: string; message: string; messages?: ChatMessage[] }
+      params: {
+        sessionId: string
+        message: string
+        /** 明确的 run 终态原因；旧事件缺省按 error，不从按钮状态推断 */
+        reason?: 'aborted' | 'error'
+        /** Host完整显示分段（含中止尾段/续写旧前缀）；空数组有效，缺席走旧事件收尾 */
+        messages?: ChatMessage[]
+      }
     }
   | {
       /** 轮终实报（工具循环每轮 turn_end）：指示器 run 内实时跟随；终态后以
@@ -439,6 +446,8 @@ export interface ChatMessage {
    *  content = checkpoint 摘要全文，折叠条展开可读；summaryUsage = 摘要调用
    *  自身的账（不进回合统计，折叠条小字呈现；旧引擎投影无此字段） */
   compaction?: { tokensBefore: number; tokensAfter?: number; summaryUsage?: MessageUsage }
+  /** renderer 事件落账时记录归属；历史投影没有该字段，仍按相邻工作项推断。 */
+  compactionInRun?: boolean
   timestamp: number
 }
 

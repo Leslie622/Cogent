@@ -7,9 +7,8 @@
  * 一律按 sessionId 分桶（同 console store 的分域手法）。此前是全局单例：
  * 会话 A 流式中切到 B 发消息，A 完成会把全局 running 置 false → B 的停止钮
  * 错变发送；反向则 B 的输入框被 A 的 running 锁死；错误/截断文案也会串会话。
- * 组件侧用 selectRunning / selectStopping / selectLastError / selectTruncated
- * （selectors.ts）取活动会话的视图。stopping = 用户点了停止的前置位
- * （回合头条「已停止」与「出错了」的判别依据，见 docs/计划/回合过程折叠.md D6）。
+ * 组件侧经 selectors.ts 取活动会话视图。stopping 只表示本窗停止请求窗口，
+ * lastRunOutcome 独立保存引擎终态；操作错误不改回合结果。
  *
  * 桶化（2026-11-17 会话状态重构 P1，docs/计划/会话状态重构.md）：此前 12 个
  * XxxBySession 平行 map，deleteSession 手抄逐项清除、编译器不兜底；现并为
@@ -24,7 +23,8 @@ import { useEngineStore } from '@/stores/engine'
 import { useProjectStore } from '@/stores/project'
 import { unwrapIpcError } from '@/lib/ipc'
 import { flattenSegments } from './flatten'
-import type { ApprovalItem, ChatState, PendingApproval, SessionBucket } from './types'
+import { createDeltaBatcher } from './delta-batcher'
+import type { ApprovalItem, ChatState, PendingApproval, RunOutcome, SessionBucket } from './types'
 
 /**
  * 项目级默认权限模式（F6「允许，并切换为」落位）：projectId 直配，否则 cwd
@@ -57,10 +57,14 @@ export function projectDefaultMode(projectId?: string, cwd?: string): Permission
 export function emptyBucket(): SessionBucket {
   return {
     messages: [],
+    turnOutcomes: {},
     todos: [],
     runtime: {
       running: false,
       stopping: false,
+      stopRequestId: null,
+      runRequestId: null,
+      lastRunOutcome: null,
       compacting: false,
       truncated: false,
       lastError: null,
@@ -83,6 +87,32 @@ export function patchBucket(
   const bucket = state.bySession[sessionId] ?? emptyBucket()
   return { bySession: { ...state.bySession, [sessionId]: patch(bucket) } }
 }
+
+/** 终态属于最后user定义的显示回合；无输出同样记录，同user续写覆盖其最新结果。 */
+export function recordTurnOutcome(bucket: SessionBucket, outcome: RunOutcome): SessionBucket['turnOutcomes'] {
+  const user = bucket.messages.findLast((item) => item.type === undefined && item.role === 'user')
+  if (user === undefined) return bucket.turnOutcomes
+  return { ...bucket.turnOutcomes, [user.id]: outcome }
+}
+
+export const messageDeltas = createDeltaBatcher((sessionId, deltas) => {
+  useChatStore.setState((state) => patchBucket(state, sessionId, (bucket) => {
+    const messages = [...bucket.messages]
+    for (const { delta, kind } of deltas) {
+      const last = messages.at(-1)
+      const thinking = kind === 'thinking'
+      if (last !== undefined && last.type === undefined && last.role === 'assistant' && last.id === 'streaming') {
+        messages[messages.length - 1] = thinking
+          ? { ...last, thinking: (last.thinking ?? '') + delta }
+          : { ...last, content: last.content + delta }
+      } else {
+        messages.push({ id: 'streaming', role: 'assistant', content: thinking ? '' : delta,
+          thinking: thinking ? delta : undefined, timestamp: Date.now() })
+      }
+    }
+    return { ...bucket, messages }
+  }))
+})
 
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
@@ -115,12 +145,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   selectSession: async (sessionId) => {
+    messageDeltas.flushAll()
     set({ activeSessionId: sessionId })
     // 按需拉历史建桶（盘上转录已持久化，切换时重拉一次拿最新；本地缓存优化属后续件）。
     // 展平：段化消息里的 toolCalls → 独立工具卡行（与流式期事件路径同一形状）；
     // todos 字段 = TodoStrip 种子（运行中增量走 todos.updated 事件）
     if (get().bySession[sessionId] === undefined) {
       const { messages, todos } = await window.cogent.engineRequest('session.messages', { sessionId })
+      messageDeltas.discard(sessionId)
       set((state) => ({
         bySession: {
           ...state.bySession,
@@ -195,6 +227,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   deleteSession: async (sessionId) => {
     await window.cogent.engineRequest('session.delete', { sessionId })
+    messageDeltas.discard(sessionId)
     const wasActive = get().activeSessionId === sessionId
     set((state) => {
       const bySession = { ...state.bySession }
@@ -227,6 +260,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       home.kind === 'new'
         ? await get().createSession(home.projectId !== undefined ? { projectId: home.projectId } : undefined)
         : (get().activeSessionId ?? (await get().createSession(undefined)))
+    messageDeltas.flush(sessionId)
+    const runRequestId = Symbol('submit')
     // 乐观上屏用户消息；assistant 回复由引擎事件流驱动
     const userMessage: ChatMessage = {
       id: `u-${crypto.randomUUID()}`,
@@ -241,8 +276,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         runtime: {
           ...bucket.runtime,
           running: true,
-          // 上一回合若停在「已停止」，新 run 开启即回落正常（停止位随 run 消费）
+          // 新 run 消费上次结果与停止请求身份，旧 IPC 回调不能再回写这一轮。
           stopping: false,
+          stopRequestId: null,
+          runRequestId,
+          lastRunOutcome: null,
           lastError: null,
           truncated: false
         }
@@ -252,7 +290,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 只传 id 引擎全局查找有歧义（详见 protocol AgentSubmitParams.provider 注释）
     try {
       await window.cogent.engineRequest('agent.submit', { sessionId, text, model, thinkingLevel, provider })
+      return true
     } catch (error) {
+      // IPC回包晚于终态/新run/删桶时，旧请求没有队列、消息或输入区的回写权。
+      if (get().bySession[sessionId]?.runtime.runRequestId !== runRequestId) return false
+      messageDeltas.discard(sessionId)
       // renderer→引擎边界（合法设防位）：引擎进程退出/未就绪时 main 拒绝在途请求，
       // 事件流的终态（run.failed）不会来 —— 必须自己收尾运行态，否则输入框永久
       // 锁死。乐观上屏的用户消息一并撤回（没提交成功，留着会在重发时出现双条），
@@ -260,8 +302,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       useChatStore.setState((state) =>
         patchBucket(state, sessionId, (bucket) => ({
           ...bucket,
-          messages: bucket.messages.slice(0, -1),
-          runtime: { ...bucket.runtime, running: false, lastError: unwrapIpcError(error) }
+          messages: bucket.messages.filter((message) => message.id !== userMessage.id),
+          runtime: {
+            ...bucket.runtime,
+            running: false,
+            stopping: false,
+            stopRequestId: null,
+            runRequestId: null,
+            lastRunOutcome: 'failed',
+            lastError: unwrapIpcError(error)
+          }
         }))
       )
       throw error
@@ -270,37 +320,83 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   abort: async () => {
     const sessionId = get().activeSessionId
-    if (!sessionId) return
-    // 先置停止位再发 abort：run.failed 事件回来看这位区分「已停止」（半截正文
-    // 封存保留、清错误条）与「出错了」（真失败，错误条照旧）—— D6
+    if (sessionId === null) return
+    messageDeltas.flush(sessionId)
+    // 终态已经到达时不再产生停止请求；最终结果始终由事件给出。
+    if (get().bySession[sessionId]?.runtime.running !== true) return
+    const stopRequestId = Symbol('abort')
     set((state) =>
       patchBucket(state, sessionId, (bucket) => ({
         ...bucket,
-        runtime: { ...bucket.runtime, stopping: true }
+        runtime: { ...bucket.runtime, stopping: true, stopRequestId }
       }))
     )
-    await window.cogent.engineRequest('agent.abort', { sessionId })
+    // IPC 是外部边界：拒绝只收本次操作，run 继续等待权威终态。身份随终态、
+    // 新 run 或删桶失效，晚到响应不能覆盖新运行，也不能把删掉的桶补回来。
+    const settleRequest = (error: string | null): void => {
+      set((state) => {
+        const bucket = state.bySession[sessionId]
+        if (bucket === undefined || bucket.runtime.stopRequestId !== stopRequestId) return state
+        return patchBucket(state, sessionId, () => ({
+          ...bucket,
+          runtime: {
+            ...bucket.runtime,
+            stopping: false,
+            stopRequestId: null,
+            lastError: error === null ? bucket.runtime.lastError : error
+          }
+        }))
+      })
+    }
+    try {
+      const { aborted } = await window.cogent.engineRequest('agent.abort', { sessionId })
+      if (!aborted) settleRequest(null)
+    } catch (error) {
+      settleRequest(unwrapIpcError(error))
+    }
   },
 
   continueGeneration: async () => {
     const sessionId = get().activeSessionId
     if (sessionId === null) return
-    // 乐观置运行态（事件流的 run.started 随后到，双保险）；无用户泡 —— 续写
+    messageDeltas.flush(sessionId)
+    const runRequestId = Symbol('continue')
+    // 运行位由本地动作持有（chat 不处理 run.started）；无用户泡 —— 续写
     // 指令由引擎注入并在投影层并入相邻段，这里不往列表里塞任何东西
     set((state) =>
       patchBucket(state, sessionId, (bucket) => ({
         ...bucket,
-        runtime: { ...bucket.runtime, running: true, truncated: false }
+        runtime: {
+          ...bucket.runtime,
+          running: true,
+          stopping: false,
+          stopRequestId: null,
+          runRequestId,
+          lastRunOutcome: null,
+          lastError: null,
+          truncated: false
+        }
       }))
     )
     try {
       await window.cogent.engineRequest('session.continue', { sessionId })
     } catch (error) {
+      if (get().bySession[sessionId]?.runtime.runRequestId !== runRequestId) return
+      messageDeltas.discard(sessionId)
       // 引擎侧拒绝（忙/末条非截断）或边界失败：回落运行态，错误落会话错误条
       useChatStore.setState((state) =>
         patchBucket(state, sessionId, (bucket) => ({
           ...bucket,
-          runtime: { ...bucket.runtime, running: false, lastError: unwrapIpcError(error) }
+          turnOutcomes: recordTurnOutcome(bucket, 'failed'),
+          runtime: {
+            ...bucket.runtime,
+            running: false,
+            stopping: false,
+            stopRequestId: null,
+            runRequestId: null,
+            lastRunOutcome: 'failed',
+            lastError: unwrapIpcError(error)
+          }
         }))
       )
     }
@@ -314,16 +410,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // 成功的折叠条/回落走既有 compaction 事件路径（completed 做列表手术）
     } catch (error) {
       // 无可压缩/引擎拒绝：手动动作要明确结果 —— 落会话错误条
-      useChatStore.setState((state) =>
-        patchBucket(state, sessionId, (bucket) => ({
+      useChatStore.setState((state) => {
+        // 准备链可能在会话删除后才拒绝；操作错误不能把已删桶重新建出来。
+        const bucket = state.bySession[sessionId]
+        if (bucket === undefined) return state
+        return patchBucket(state, sessionId, () => ({
           ...bucket,
           runtime: { ...bucket.runtime, lastError: unwrapIpcError(error) }
         }))
-      )
+      })
     }
   },
 
   respondApproval: async (requestId, approved, options) => {
+    messageDeltas.flushAll()
     // 乐观收面板 + 落痕迹行：requestId 全局唯一但不知落在哪个会话（多窗口广播
     // 下非活动窗口也可能裁决），全表线性扫 —— 审批是人手点击级低频路径。
     // 痕迹行插到对应工具卡**之前**（时序：先裁决、后执行 —— 卡虽因
@@ -428,3 +528,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   }
 }))
+
+// 整桶替换、清空和外部快照写入是失效边界；常规事件先 flush，故这里不会吞在途增量。
+// 订阅只随模块/store 存活，无 timer；App 的 bind 清理负责队列排空。
+useChatStore.subscribe((state, previous) => {
+  messageDeltas.discardChanged((sessionId) =>
+    state.bySession[sessionId]?.messages !== previous.bySession[sessionId]?.messages
+  )
+})

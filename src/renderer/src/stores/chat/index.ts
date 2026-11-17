@@ -6,7 +6,7 @@
  */
 export { useChatStore, projectDefaultMode, emptyBucket, patchBucket } from './store'
 export { bindEngineEvents } from './events'
-export { selectRunning, selectStopping, selectLastError, selectTruncated, selectCompacting, EMPTY_MESSAGES } from './selectors'
+export { selectRunning, selectStopping, selectLastRunOutcome, selectLastError, selectTruncated, selectCompacting, EMPTY_MESSAGES } from './selectors'
 export { flattenSegments, flatWithApprovals, flatWithCompaction, replaceRunTerminal } from './flatten'
 export type {
   ToolItem,

@@ -118,6 +118,9 @@ export interface PrunedItem {
     （ApprovalItem）或裁剪副行（PrunedItem） */
 export type MessageItem = ChatMessage | ToolItem | ApprovalItem | PrunedItem
 
+/** 一次执行的最终结果；显示回合可由同一user发起手动续写而更新结果。 */
+export type RunOutcome = 'completed' | 'stopped' | 'failed'
+
 /**
  * 会话运行标志（run 生命周期的瞬态）：此前是 7 个 XxxBySession 平行 map，
  * 2026-11-17 桶化并入 —— 删会话 = 删桶一键，编译器保证不再漏清某一项。
@@ -125,13 +128,19 @@ export type MessageItem = ChatMessage | ToolItem | ApprovalItem | PrunedItem
 export interface SessionRuntime {
   /** 流式中（发送/停止钮切换；分桶防跨会话互踩） */
   running: boolean
-  /** 用户点了停止（run 终态事件消费后回落 —— 回合头条「已停止」与「出错了」的判别位） */
+  /** 本窗停止请求在途；终态消费后清除，不作为回合结果 */
   stopping: boolean
+  /** 本地停止请求身份；晚到的 IPC 响应只能收口自己，不能改写下一次请求或 run */
+  stopRequestId: symbol | null
+  /** 本次submit/continue调用身份；终态后其迟到拒绝不再拥有错误回写权 */
+  runRequestId: symbol | null
+  /** 最近一次 run 的权威终态；新 run 清空，历史水合没有该事实 */
+  lastRunOutcome: RunOutcome | null
   /** 压缩进行中（compaction.started→completed 窗口）：消息流内状态条呈「正在压缩上下文」 */
   compacting: boolean
   /** 最近一次回复被 token 上限截断（stopReason=length） */
   truncated: boolean
-  /** 最近一次 run.failed 的错误文案（会话尾部错误条）；null = 无 */
+  /** 运行或操作错误文案（会话尾部错误条），操作失败不改变 lastRunOutcome；null = 无 */
   lastError: string | null
   /** 最近一次 L1 prune 账目：completed 折叠条配对呈现「已裁剪 N 处」，取后即清 */
   pruned: PrunedEntry[] | null
@@ -148,6 +157,8 @@ export interface SessionRuntime {
 export interface SessionBucket {
   /** 消息流（含流式中的 assistant 占位与工具卡行） */
   messages: MessageItem[]
+  /** 已加载消息的user.id -> 已知终态；后续提交不能把旧回合重标为完成。 */
+  turnOutcomes: Partial<Record<string, RunOutcome>>
   /** 任务清单（交互座 4c，TodoStrip 数据源）：todo_write 全量快照 + 历史种子 */
   todos: TodoItem[]
   runtime: SessionRuntime
@@ -193,7 +204,8 @@ export interface ChatState {
   deleteSession: (sessionId: string) => Promise<void>
   setPinned: (sessionId: string, pinned: boolean) => Promise<void>
   archive: (sessionId: string, archived: boolean) => Promise<void>
-  submit: (text: string, model?: string, thinkingLevel?: string, provider?: string) => Promise<void>
+  /** true = 引擎受理；false = 旧调用已失效，输入区不执行成功后续；当次拒绝仍抛错 */
+  submit: (text: string, model?: string, thinkingLevel?: string, provider?: string) => Promise<boolean>
   abort: () => Promise<void>
   /** 审批裁决（专属 IPC 通道）：先收面板/落痕迹行（乐观），引擎侧竞态失败不回滚；
       options.message = 拒绝附言（「告诉模型接下来怎么做」），options.always =

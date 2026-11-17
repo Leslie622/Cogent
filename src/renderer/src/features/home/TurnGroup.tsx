@@ -3,7 +3,7 @@
  * store 的消息列表保持平铺（事件流逻辑不动），本件在渲染期按相邻关系分组 ——
  * 用户消息到下一用户消息 = 一个回合（run）。回合内两态：
  *   进行中：过程项（思考块/工具卡/中间正文）逐条直播（各行单行化，上方高度
- *   恒定）+ 底部 WorkingLine —— run 全程一个结构，无模式翻转；
+ *   恒定）+ 流内 WorkingLine；溢出时仅复制视觉内容，业务源全程不卸载；
  *   终态：过程收进 RunTrace 头条（已工作 Xs/已停止/出错了），末条有正文段 =
  *   终答常驻头条之下，用量聚合一行（过程展开时各段仍带自己的用量小字）。
  * 无过程回合（单段纯文本）也恒挂头条（D8 修订 2026-11-11，ZCode 对齐：
@@ -68,7 +68,7 @@ export function groupTurns(items: MessageItem[]): ChatTurn[] {
           break
         }
       }
-      if (!hasWorkInTurn) {
+      if (!(item.compactionInRun ?? hasWorkInTurn)) {
         turns.push({ items: [item] })
         continue
       }
@@ -84,7 +84,7 @@ export function groupTurns(items: MessageItem[]): ChatTurn[] {
   return turns
 }
 
-/** 回合相位（live = 进行中；stopped/failed 由 chat store 的停止位/错误位区分） */
+/** 回合相位：live覆盖当前运行，stopped/failed来自所属用户回合的已知终态。 */
 export type TurnPhase = 'live' | 'done' | 'stopped' | 'failed'
 
 /**
@@ -250,7 +250,7 @@ function sumToolMs(items: MessageItem[]): number | undefined {
 
 /** 过程项渲染：工具卡 / 审批卡 / 纯思考段（终答思考剥出的伪段）/ 中间正文段
  *  （后者带自己的用量小字 —— 展开过程的逐段透明度） */
-function ProcessItem({ item }: { item: MessageItem }) {
+const ProcessItem = memo(function ProcessItem({ item }: { item: MessageItem }) {
   if (item.type === 'tool') {
     return (
       <ToolCard
@@ -279,9 +279,9 @@ function ProcessItem({ item }: { item: MessageItem }) {
     return <Reasoning text={item.thinking} running={false} durationMs={item.durationMs} />
   }
   return <MessageRow message={item} />
-}
+})
 
-function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
+function TurnGroupImpl({ turn, phase, stopping = false }: { turn: ChatTurn; phase: TurnPhase; stopping?: boolean }) {
   // 回合外压缩条独立行（手动「立即压缩」/idle，groupTurns 按「bar 之后
   // 无工作项」判出）：不套「已工作」头条/统计行 —— 那是一个 run 的语义，
   // 压缩不是 run，且它是用户的显式动作、要直接可见。组内可带 L1 prune
@@ -326,9 +326,8 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
       )}
       {phase === 'live' ? (
         // 进行中：过程摊开直播（思考行默认收起单行、工具行单行 —— 上方高度
-        // 恒定，工作中行钉在流底不被推挤，docs/计划/对话过程呈现打磨.md §3.4；
-        // 此前「终答开流即折叠」的 headerMode 翻转是流中跳变源，已废），
-        // 流式占位在输出位置，底部常驻工作中行。
+        // 恒定）；工作中行留在内容流，短回复紧跟正文，阅读态也保留业务与布局源。
+        // 此前「终答开流即折叠」的 headerMode 翻转是流中跳变源，已废。
         // 容器与终态折叠体**平级同款**（无导线缩进，2026-11-16 用户定调）：
         // ask_user 挂起会把 live 阶段拉得很长，相邻回合同屏时两态左缘必须
         // 逐像素一致（曾差 23px 即「图标没对齐」）—— 导线退役后两侧一同
@@ -348,7 +347,9 @@ function TurnGroupImpl({ turn, phase }: { turn: ChatTurn; phase: TurnPhase }) {
               <MessageRow message={answer} />
             </MessageScrollerItem>
           )}
-          <WorkingLine startTs={turn.user?.timestamp ?? turn.startedAt ?? Date.now()} />
+          <div data-slot="live-working-line-source">
+            <WorkingLine startTs={turn.user?.timestamp ?? turn.startedAt ?? Date.now()} stopping={stopping} />
+          </div>
         </>
       ) : phase === 'done' && process.length === 0 ? (
         // 无过程回合（D8 修订 2026-11-11）：纯文本也恒挂「已工作」头条（ZCode
@@ -402,6 +403,7 @@ export const TurnGroup = memo(
   TurnGroupImpl,
   (prev, next) =>
     prev.phase === next.phase &&
+    prev.stopping === next.stopping &&
     prev.turn.user === next.turn.user &&
     prev.turn.items.length === next.turn.items.length &&
     prev.turn.items.every((item, i) => item === next.turn.items[i])

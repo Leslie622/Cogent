@@ -354,13 +354,15 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   center 对齐模式（坑 12）+ 键盘接管（坑 13）。上下文窗口滑杆
   （ContextWindowSlider）= 它的域适配（100K/200K/400K/1M + formatContext；
   100K 档 2026-11-12 为压缩验证补入）
-- **对话流**：message-scroller（吸底/滚到底悬浮钮库自带；Provider 开 `autoScroll`
-  才会跟随流式增长，Item **不标 `scrollAnchor`** —— 官方语义是"回合起始行"专用，
-  标了会在追加时把该行钉到视口顶且流式不跟随，ChatGPT 式吸底两者都不要）；
-  **发送即回底**（主流产品语义）：Provider 包到 Composer 外层，send 时调
-  `scrollToEnd()` —— 库的 autoScroll 只在"本来就在底部"时跟随（翻上去看历史
-  会释放跟随），发送这个动作本身就是回底意图，翻历史/索引刻度跳转后发送
-  照样吸底并恢复跟随；
+- **对话流**：message-scroller 保留库的布局与悬浮钮形态，Provider 关闭库
+  autoScroll；Item 不标 scrollAnchor（不把追加项钉到视口顶部）。发送与悬浮钮
+  都走本地统一回底接口恢复跟随；贴底补偿不修改正文行高，机制与验收见
+  [消息呈现.md](模块/消息呈现.md)。reduced-motion 下运行标题静态显示，
+  非 layer 规则覆盖 running 高特异性扫光 utility。WorkingLine = 16px 静态 Clock +
+  标题扫光 + tabular-nums 码表；停止请求在途时源与副本同显「正在停止」。短内容时整行紧跟正文，溢出跟随时由同一消息流根内
+  absolute 视觉副本锚定视口下缘。流内源保留高度与读屏文本，副本仅视觉显示；
+  上滚输入即撤副本、源复显，底部向下滚保持副本；不以 root 的 normal-flow sibling
+  占用固定底部空间。微小上滚及终态收起不能把阅读位置拉回，机制见消息呈现模块。
   对话索引轨道自绘
   （每消息一颗刻度，激活项**自算**：视口顶边压着的消息 + 真实 scrollHeight 口径
   吸底点亮末条 —— 库的 visibility/scrollable 快照挂载后为空且受 content-visibility
@@ -393,7 +395,8 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   Tooltip（原因 line-clamp-3 + 复制钮，shadcn tooltip），整行不变红；思考行
   默认收起单行 + 末行摘要横向滚动（`scroll-fade-x` 渐隐）+「持续了 Xs」；
   bash 运行中 = 定高两行尾行 + `.progress-sweep` 扫光细条（globals.css，
-  reduced-motion 降级）；折叠体动画 = grid 轨道 `0fr↔1fr`（免高度测量，
+  reduced-motion 降级）；所有终态详情缺省收起，点击开合保留用户选择，末条正文仍常驻；
+  折叠体动画 = grid 轨道 `0fr↔1fr`（免高度测量，
   此前 Base UI 首测高度被 content-visibility 10rem 估值污染 → 闪烁/高度
   跳变），间距用 padding 不用 margin（margin 不随轨道裁切）
 - **滚动渐隐** `.scroll-fade-b/-y/-x`（mask 两端 24px 渐变，ChatGPT 同款不硬截；
@@ -404,9 +407,11 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   扫不动），渐变嵌 22% 透明淡带周期扫过（300% 底，扫 2s 停 2s 的呼吸节奏，
   非匀速）；will-change 提层防流式期掉帧；`.shimmer-none` = reduced-motion
   出口。消费 = trace 家族运行态标题（工作中 / 思考中）+ 工具行类别词运行形。
-  **流式正文逐词淡入**（stream-reveal 插件 + 30ms 合帧）：单元 span 逐个
-  淡入（300ms + 自适应排期延迟），尾部渐隐尾巴，机制见
-  [消息呈现.md](模块/消息呈现.md)
+  **流式正文渐显**（stream-reveal 插件 + renderer 入口30ms合帧，Markdown无二次计时）：短批单元逐个
+  淡入（300ms + 自适应排期延迟），大批普通正文的单个连续文本片段压成最多32组
+  （8ms为组间目标，多片段/多块同批服从250ms排期上限）；代码与表格保持
+  静态结构，避免高亮/列宽与大量过渡互撞。终态头和工作行交接立即完成，正文已有淡入
+  自然播完；机制见 [消息呈现.md](模块/消息呈现.md)
 - **悬停提示 Hint**（components/Hint.tsx，2026-11-16 全量换装）：原生 `title`
   属性全 app 禁用，统一走本件（shadcn tooltip 四件套的单组件包装，自带
   Provider 零样板；`<Hint tip="文案" side>…</Hint>`）。文案纪律 = 简洁准确：

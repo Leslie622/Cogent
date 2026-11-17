@@ -243,7 +243,9 @@ describe('交互座集成（customTools 注入 + todo_write 全链）', () => {
     })
     await engine.send('agent.abort', { sessionId })
     const failed = await engine.waitEvent('run.failed', (p) => p.sessionId === sessionId, 30_000).catch(() => undefined)
-    check('9. abort 后 run 落终态（挂起提问已取消，不永悬）', failed !== undefined, 'run.failed 未到')
+    check('9. abort 后 run 明确中止且带完整分段快照（挂起提问已取消，不永悬）',
+      failed !== undefined && failed.params.reason === 'aborted' && Array.isArray(failed.params.messages),
+      JSON.stringify(failed?.params ?? 'run.failed 未到'))
 
     // 重复回答已收口的请求 → InvalidParams（防静默成功）
     const stale = await engine.send('question.respond', { requestId: asked.params.requestId, answers: ['SQLite'] })

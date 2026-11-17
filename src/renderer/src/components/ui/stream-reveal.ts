@@ -12,17 +12,18 @@
  * 本文件零 streamdown 依赖（纯 hast 变换 + 纯函数），挂载在 markdown.tsx。
  * 与 zcode 的实现差异：streamdown 2.7 的 block 解析在 render 期 useMemo 同步完成
  * （2.5 走 effect + startTransition），所以 commit 放本帧渲染后的 effect 即可，
- * 不需要像 zcode 那样落后一帧 —— 下一帧插件读到的就是最新进度。
+ * 每个真实 Block 的 effect 提交本块边界，消息 effect 再提交共享节奏。
  */
 
-/** 跳过的高亮 / 图形元素：代码块高亮是异步的，逐字会与高亮结果打架；svg 同理。
-    zcode 还跳过 math（rehype-katex 会整个替换公式节点）；Cogent 未装 math 插件，
-    管线里不会出现 math 元素，装时在此补上。 */
-const REVEAL_SKIP_TAGS = new Set(['pre', 'svg'])
+/** 跳过的高亮 / 图形 / 结构元素：代码块高亮是异步的，逐字会与高亮结果打架；
+    表格的列宽会随流式单元格内容反复重算，把每个 td/th 文字拆成动画 span 已在
+    压测中制造上千个过渡对象。本批普通正文改为有界组浮现，代码与表格保持完整
+    静态内容，待拿到可靠行身份后再做专门的行级过渡；svg 同理。zcode 还跳过 math
+    （rehype-katex 会整个替换公式节点）；Cogent 未装 math 插件，装时在此补上。 */
+const REVEAL_SKIP_TAGS = new Set(['pre', 'svg', 'table'])
 /** 相邻两个单元开始淡入的最大间隔：吐得慢时按这个节奏逐字出现。 */
 const REVEAL_MAX_INTERVAL_MS = 40
-/** 最大滞后：任何单元最晚在到达后这么久开始淡入。也封住单帧大批量的累计延迟 ——
-    Streamdown 内置动画正是栽在没有封顶：stagger 40ms × 1000 词 = 末尾 40 秒后才可见。 */
+/** 最大滞后：任何单元最晚在到达后这么久开始淡入，跨块也不能无限累计延迟。 */
 const REVEAL_MAX_LAG_MS = 250
 /** 快模型的目标滞后下限：再小就没有缓冲，突发会挤成一块。 */
 const REVEAL_MIN_LAG_MS = 80
@@ -38,15 +39,16 @@ const REVEAL_PAUSE_MS = 300
 const REVEAL_RATE_ALPHA = 0.3
 /** 两轮提交挨得太近时，按这个间隔估速，避免瞬时速度虚高。 */
 const REVEAL_MIN_GAP_MS = 10
-/** 还没有速度参照时，按一帧估这批单元的到达间隔（zcode 桌面端 30ms 合帧的
-    估值；Cogent 无合帧、每 delta 直达，首批后即由 EWMA 接管，此值只影响首拍）。 */
+/** 还没有速度参照时，按入口30ms发布窗口估这批单元的到达间隔，首批后由EWMA接管。 */
 const REVEAL_FIRST_WINDOW_MS = 30
-/** 单帧源文本增量超过它就不是 live delta，而是挂载 / 回填 / 切会话，整条消息
-    不动画。护栏放消息级：进度按 block 记录后，单 block 上限挡不住「多个段落
-    各自不超限」的整段重播。 */
-const REVEAL_MAX_DELTA_CHARS = 600
-/** 前面的 block 被 Streamdown 的 memo 冻结、不再跑插件，只记最近若干条 block。 */
-const REVEAL_COMMITTED_BLOCK_CAP = 16
+/** 细粒度逐字/词的上限：超过后按连续文本组浮现。总延迟仍由既有排期器封在
+    250ms 起跳窗口 + 300ms opacity 内，因此一批最后一组最迟约 550ms 完全可见。 */
+export const REVEAL_FINE_UNIT_LIMIT = 96
+/** 单个连续文本片段同时进入 opacity 过渡的新组上限；内联标签会拆出多个片段。组内文字首帧完整占位，
+    不靠第二份 visibleText 撑高度；大批只减少动画对象，不延迟业务正文。 */
+export const REVEAL_MAX_ANIMATED_GROUPS = 32
+/** 大批优先以8ms组间隔铺开；跨块/富文本同时到达时服从250ms上限压缩间隔。 */
+export const REVEAL_GROUP_MIN_INTERVAL_MS = 8
 /** 同一个 block 的下一版可能改写旧文本末尾的几个字符（尾随空白被裁、remend
  *  补全的标点），允许这么长的尾部分叉；分叉里只能是空白和标点。 */
 const REVEAL_TAIL_SLACK_CHARS = 8
@@ -68,10 +70,6 @@ interface HastNode {
 export type StreamRevealPlugin = () => (tree: HastNode) => void
 
 export interface StreamingRevealState {
-  /** 已提交的最近 block 渲染文本；插件在 render 期间只读它。 */
-  committed: string[]
-  /** 本轮渲染里各 block 的渲染文本，由挂载组件的 effect 提交给 committed。 */
-  pending: string[]
   /** 浮现时钟：最后一个已排定单元的开始时间（performance.now 时间线），跨帧接续节奏。 */
   clock: number
   /** 到达速度（单元 / ms）的 EWMA；还没有参照时为 undefined。commit 后更新。 */
@@ -80,13 +78,29 @@ export interface StreamingRevealState {
   gap: number | undefined
   /** 上一轮新单元到达的时间。 */
   arrival: number
-  /** 本轮渲染里各 block 的排期，按 block 渲染文本索引；commit 后并入时钟与速度。 */
-  pendingSchedules: Map<string, RevealPlan>
-  /** 本帧是否是纯追加的 live delta；非追加或增量过大时整条消息不动画。 */
+  /** 本轮排期按真实块实例索引；同文块不能合并或删除彼此的候选。 */
+  pendingSchedules: Map<symbol, RevealPlan>
+  /** 本帧是否是纯追加的 live delta。 */
   incremental: boolean
+  /** 原生 parser 的上次提交与本次候选；只观察，不改变分块结果。 */
+  committedBlocks: readonly string[]
+  pendingBlocks: readonly string[] | undefined
+  /** 链接定义/脚注等让旧稳定块重组时，本次重解析直接 settled。 */
+  restructured: boolean
+}
+
+/** 生命周期跟随真实 BlockComponent；文本只比较本块自己的版本。 */
+export interface StreamingRevealBlockState {
+  id: symbol
+  committed: string
+  pending: string | undefined
+  /** 文本组在本块渲染文本中的结束偏移，包含纯空白组。 */
+  boundaries: readonly number[]
+  pendingBoundaries: readonly number[] | undefined
 }
 
 interface RevealPlan {
+  text: string
   /** 排期时刻，也就是这批单元的到达时间。 */
   now: number
   start: number
@@ -97,25 +111,121 @@ interface RevealPlan {
 
 export function createStreamingRevealState(): StreamingRevealState {
   return {
-    committed: [],
-    pending: [],
     clock: Number.NEGATIVE_INFINITY,
     rate: undefined,
     gap: undefined,
     arrival: Number.NEGATIVE_INFINITY,
     pendingSchedules: new Map(),
     incremental: false,
+    committedBlocks: [],
+    pendingBlocks: undefined,
+    restructured: false,
+  }
+}
+
+export function createStreamingRevealBlockState(): StreamingRevealBlockState {
+  return { id: Symbol(), committed: '', pending: undefined, boundaries: [], pendingBoundaries: undefined }
+}
+
+/** 只比较原生分块的结构；尾块增长和新段落仍走追加，旧稳定前缀改动则重置视觉边界。 */
+export function prepareStreamingRevealBlocks(state: StreamingRevealState, blocks: readonly string[]): void {
+  const previous = state.committedBlocks
+  const pending = state.pendingBlocks
+  // 被丢弃的渲染还没提交；输入换版后清掉它的候选，同版重试仍可复用原排期。
+  if (pending !== undefined && (pending.length !== blocks.length || pending.some((text, index) => blocks[index] !== text))) {
+    state.pendingSchedules.clear()
+  }
+  state.restructured = blocks.length < previous.length || previous.slice(0, -1).some((text, index) => blocks[index] !== text)
+  state.pendingBlocks = blocks
+}
+
+export function commitStreamingRevealBlock(block: StreamingRevealBlockState): void {
+  if (block.pending !== undefined) {
+    block.committed = block.pending
+    block.boundaries = block.pendingBoundaries!
+    block.pending = undefined
+    block.pendingBoundaries = undefined
   }
 }
 
 /** 非前缀变化意味着回填、切会话或模型重写。此时整段按已稳定处理，绝不能按旧
     进度裁剪正文 —— zcode「切回来开头被吞掉」就是这么来的。 */
 export function isIncrementalRevealSource(previous: string, next: string): boolean {
-  return (
-    next.length > previous.length &&
-    next.length - previous.length <= REVEAL_MAX_DELTA_CHARS &&
-    next.startsWith(previous)
-  )
+  return next.length > previous.length && next.startsWith(previous)
+}
+
+/** 新到的普通文本单元分成有限连续组。短批沿用逐字/词：保持用户已经验收的尾巴；
+ * 大批只让有限组进入 opacity 过渡，组内文本仍在首帧完整上屏，避免 600+ 时整片
+ * settled 或数千个 span 同时过渡。空白挂在相邻实词组里，正文文本守恒。 */
+export function groupRevealUnits(units: readonly string[]): string[][] {
+  const nonBlank = units.reduce((count, unit) => count + (unit.trim().length > 0 ? 1 : 0), 0)
+  if (nonBlank <= REVEAL_FINE_UNIT_LIMIT) return units.map((unit) => [unit])
+  const groupCount = Math.min(REVEAL_MAX_ANIMATED_GROUPS, nonBlank)
+  const unitsPerGroup = Math.ceil(nonBlank / groupCount)
+  const groups: string[][] = []
+  let group: string[] = []
+  let groupUnits = 0
+  for (const unit of units) {
+    group.push(unit)
+    if (unit.trim().length > 0) groupUnits += 1
+    if (groupUnits === unitsPerGroup) {
+      groups.push(group)
+      group = []
+      groupUnits = 0
+    }
+  }
+  if (group.length > 0) {
+    if (group.every((unit) => unit.trim().length === 0) && groups.length > 0) groups.at(-1)!.push(...group)
+    else groups.push(group)
+  }
+  return groups
+}
+
+function buildTextRevealGroups(
+  units: readonly string[],
+  start: number,
+  revealedLength: number,
+  boundaries: readonly number[]
+): TextRevealGroup[] {
+  const settled: string[] = []
+  const fresh: string[] = []
+  let cursor = start
+  for (const unit of units) {
+    // 模型可能把一个拉丁词拆在两帧送达；跨进度的那个单元已有 DOM，归旧组以免重播。
+    if (cursor < revealedLength) settled.push(unit)
+    else fresh.push(unit)
+    cursor += unit.length
+  }
+  const toGroups = (source: readonly string[], animate: boolean): TextRevealGroup[] => {
+    if (source.length === 0) return []
+    const fineGrained = source.filter((unit) => unit.trim().length > 0).length <= REVEAL_FINE_UNIT_LIMIT
+    return groupRevealUnits(source).map((group) => {
+      const text = group.join('')
+      return {
+        text,
+        animate: animate && text.trim().length > 0,
+        grouped: !fineGrained,
+        ...(fineGrained && text.trim().length === 0 && { plain: true })
+      }
+    })
+  }
+  // 已提交的组保留原边界；把旧字重新压组会让新字复用旧 span，@starting-style 因而不启动。
+  const previousEnds = boundaries.filter((end) => end > start && end <= cursor)
+  const stable: TextRevealGroup[] = []
+  let group = ''
+  let endIndex = 0
+  let position = start
+  for (const unit of settled) {
+    group += unit
+    position += unit.length
+    if (endIndex < previousEnds.length && position >= previousEnds[endIndex]) {
+      stable.push({ text: group, animate: false, ...(group.trim().length === 0 && { plain: true }) })
+      group = ''
+      while (endIndex < previousEnds.length && position >= previousEnds[endIndex]) endIndex += 1
+    }
+  }
+  if (group.length > 0) stable.push(...toGroups([group], false))
+  return [...stable, ...toGroups(fresh, true)]
 }
 
 function commonPrefixLength(left: string, right: string): number {
@@ -144,15 +254,6 @@ export function revealPredecessorLength(text: string, entry: string): number {
   return tail.length <= REVEAL_TAIL_SLACK_CHARS && !REVEAL_WORD_CHAR_RE.test(tail) ? prefix : 0
 }
 
-/** 当前 block 已浮现的长度：与最近已提交 block 文本取最长的可信前缀 */
-export function resolveRevealedLength(blockText: string, committed: readonly string[]): number {
-  let revealed = 0
-  for (const entry of committed) {
-    revealed = Math.max(revealed, revealPredecessorLength(blockText, entry))
-  }
-  return revealed
-}
-
 interface RevealSchedule {
   now: number
   start: number
@@ -178,22 +279,20 @@ function clampRevealMs(value: number, min: number, max: number): number {
  */
 export function planRevealSchedule(
   state: StreamingRevealState,
+  block: StreamingRevealBlockState,
   blockText: string,
-  count: number
+  count: number,
+  grouped = false
 ): RevealSchedule {
   const now = performance.now()
   // 同一个 block 内容在提交前又渲染了一次（StrictMode 双渲染 / 丢弃重来），
   // 沿用已排的期；否则它会接在自己后面再排一遍，延迟翻倍。
-  const planned = state.pendingSchedules.get(blockText)
-  if (planned) return { now, start: planned.start, interval: planned.interval }
-  // 同一轮渲染里后面的 block 接着前面的排。当前文本的前缀版本是同一个 block
-  // 被打断、丢弃的那次渲染，它的单元从未上屏：不能接在它后面（凭空多段延迟），
-  // 提交时也不能把它的单元数计入到达速度。
+  const planned = state.pendingSchedules.get(block.id)
+  if (planned?.text === blockText) return { now, start: planned.start, interval: planned.interval }
+  // 同实例的未提交版本被替换，不拿文本前缀猜身份；其它块的候选全部保留。
+  state.pendingSchedules.delete(block.id)
   let clock = state.clock
-  for (const [key, entry] of state.pendingSchedules) {
-    if (blockText.startsWith(key)) state.pendingSchedules.delete(key)
-    else clock = Math.max(clock, entry.end)
-  }
+  for (const entry of state.pendingSchedules.values()) clock = Math.max(clock, entry.end)
   // 每个单元的到达间隔；还没有速度参照时，把这批当作一帧内到达。
   const perUnit = state.rate !== undefined ? 1 / state.rate : REVEAL_FIRST_WINDOW_MS / count
   const lag = clampRevealMs(
@@ -205,9 +304,20 @@ export function planRevealSchedule(
   const tail = Math.max(clock, now)
   const ceiling = Math.max(0, now + REVEAL_MAX_LAG_MS - tail)
   const available = Math.min(ceiling, Math.max(now + lag - tail, REVEAL_MIN_SPREAD_MS))
-  const interval = Math.min(REVEAL_MAX_INTERVAL_MS, available / count)
+  // 首组接在旧队尾之后也占一个间隔；首拍无旧队尾则只有 count-1 段间隔。
+  // 8ms 是正常批次的目标，不能让同帧第二段或多个富文本片段突破总滞后预算。
+  const intervals = count - 1 + (clock >= now ? 1 : 0)
+  const budgetInterval = intervals > 0 ? ceiling / intervals : REVEAL_MAX_INTERVAL_MS
+  const interval = Math.min(
+    REVEAL_MAX_INTERVAL_MS,
+    budgetInterval,
+    grouped
+      ? Math.max(REVEAL_GROUP_MIN_INTERVAL_MS, available / count)
+      : available / count
+  )
   const start = Math.max(now, clock + interval)
-  state.pendingSchedules.set(blockText, {
+  state.pendingSchedules.set(block.id, {
+    text: blockText,
     now,
     start,
     interval,
@@ -219,7 +329,7 @@ export function planRevealSchedule(
 
 /**
  * 提交本帧进度（挂载组件每帧渲染后的 effect 调用）：排期并入浮现时钟与到达
- * 速度，pending block 文本转正 committed。幂等：pending 清空后再调是 no-op
+ * 速度，原生分块候选转正。块内文本另由块自身提交，不跨块去重。
  * （StrictMode 双 effect 安全）。
  */
 export function commitStreamingReveal(state: StreamingRevealState): void {
@@ -242,19 +352,10 @@ export function commitStreamingReveal(state: StreamingRevealState): void {
     }
     state.arrival = arrival
   }
-  if (state.pending.length === 0) return
-  let committed = state.committed
-  for (const text of state.pending) {
-    if (text.length === 0) continue
-    // 同一个 block 的新文本覆盖它的旧版本：旧条目去掉，免得日后被误认成别的
-    // block 的旧版本。判定与 resolveRevealedLength 用同一条规则（不是严格前缀
-    // —— 尾随换行被改写就不是前缀了，zcode 曾因此误判）。StrictMode 双渲染
-    // 重复推入的同一段文本也在这里去重。
-    committed = committed.filter((entry) => revealPredecessorLength(text, entry) === 0)
-    committed.push(text)
+  if (state.pendingBlocks !== undefined) {
+    state.committedBlocks = state.pendingBlocks
+    state.pendingBlocks = undefined
   }
-  state.committed = committed.slice(-REVEAL_COMMITTED_BLOCK_CAP)
-  state.pending = []
 }
 
 let streamRevealPluginSeq = 0
@@ -263,6 +364,14 @@ type RevealSlot =
   | { kind: 'text'; parent: HastNode; index: number; start: number; units: string[] }
   | { kind: 'element'; node: HastNode; start: number }
   | { kind: 'marker'; node: HastNode; start: number }
+
+type TextRevealGroup = {
+  text: string
+  animate: boolean
+  grouped?: boolean
+  /** 短批的纯空白保持文本节点，和原先 DOM 语义一致。 */
+  plain?: boolean
+}
 
 let cachedWordSegmenter: Intl.Segmenter | null | undefined
 
@@ -315,7 +424,7 @@ function collectHastText(node: HastNode): string {
  * state（zcode 2026-11-06 bugfix：启动后只有第一条消息有动画）。2.7.1 源码
  * （chunk generateCacheKey）核实此规则仍在。
  */
-export function createStreamingRevealPlugin(state: StreamingRevealState): StreamRevealPlugin {
+export function createStreamingRevealPlugin(state: StreamingRevealState, block: StreamingRevealBlockState): StreamRevealPlugin {
   const plugin = function streamRevealRehypePlugin() {
     return (tree: HastNode) => {
       const slots: RevealSlot[] = []
@@ -371,29 +480,40 @@ export function createStreamingRevealPlugin(state: StreamingRevealState): Stream
 
       const blockText = blockTexts.join('')
       // 即使本帧不动画也要记下进度，否则下一帧会把这整段当成新增。
-      state.pending.push(blockText)
+      block.pending = blockText
+      const pendingBoundaries: number[] = []
+      block.pendingBoundaries = pendingBoundaries
       if (slots.length === 0) return
-      // 非增量帧（挂载、回填、切会话）整段都算已浮现：用无穷大而不是文本长度，
+      // 非追加或结构重整帧整段都算已浮现：用无穷大而不是文本长度，
       // 否则末尾还没有文字的空 li 会被当成新单元，回填时圆点也跟着淡入。
-      const revealedLength = state.incremental
-        ? resolveRevealedLength(blockText, state.committed)
+      const predecessor = revealPredecessorLength(blockText, block.committed)
+      // 脚注定义等会改写同一块的已解析文字；这不是新增段落，不能从头重新排期。
+      const append = state.incremental && !state.restructured && (block.committed.length === 0 || predecessor > 0)
+      const revealedLength = append
+        ? predecessor
         : Number.POSITIVE_INFINITY
       /* 单元按开头是否越过进度判定新旧。跨过进度的单元是上一帧已挂载的同一个
          元素被延长（拉丁文 token 常把一个词拆成几段送达，key 按同级序号不变），
          @starting-style 不会对它重播，再标 new 只会白占一个排期位置。 */
+      const textGroups = new Map<RevealSlot, TextRevealGroup[]>()
       let fresh = 0
+      let grouped = false
       for (const slot of slots) {
         if (slot.kind !== 'text') {
           if (slot.start >= revealedLength) fresh += 1
           continue
         }
-        let cursor = slot.start
-        for (const unit of slot.units) {
-          if (cursor >= revealedLength && unit.trim().length > 0) fresh += 1
-          cursor += unit.length
+        const groups = buildTextRevealGroups(slot.units, slot.start, revealedLength, block.boundaries)
+        fresh += groups.filter((group) => group.animate).length
+        grouped ||= groups.some((group) => group.animate && group.grouped)
+        textGroups.set(slot, groups)
+        let end = slot.start
+        for (const group of groups) {
+          end += group.text.length
+          pendingBoundaries.push(end)
         }
       }
-      const schedule = fresh > 0 ? planRevealSchedule(state, blockText, fresh) : undefined
+      const schedule = fresh > 0 ? planRevealSchedule(state, block, blockText, fresh, grouped) : undefined
       let revealIndex = 0
       const nextRevealDelay = (): string => {
         const delay = schedule
@@ -408,11 +528,10 @@ export function createStreamingRevealPlugin(state: StreamingRevealState): Stream
         style: `--reveal-delay:${nextRevealDelay()}`,
       })
 
-      /* 每个非空白单元都包 span（含 settled）：hast-util-to-jsx-runtime 按
-         「标签 + 同级序号」生成 key，只包新单元时下一帧新词拿到的 span-0 正是
-         上一帧旧词的 DOM 元素，React 只改文字、动画不播（zcode 关键 bugfix）。
-         全包之后纯追加时旧单元的 span 位置不变、DOM 保留；新单元出现在末尾，
-         拿到新 key，一定是新挂载的元素。纯空白保留文本节点。 */
+      /* 短批仍是一字/词一 span，保留既有稳定 key 语义；大批压成连续文本组，
+         每组一个 span。组内空白仍与相邻文字同在一个节点，因此文本守恒且不会
+         在断词处多插空格。所有 settled 组也保留 span：纯追加时旧组的位置不变，
+         新组才挂载并播放 opacity。 */
       const replacements = new Map<HastNode, Map<number, HastNode[]>>()
       for (const slot of slots) {
         if (slot.kind === 'marker') {
@@ -437,24 +556,16 @@ export function createStreamingRevealPlugin(state: StreamingRevealState): Stream
           )
           continue
         }
-        let cursor = slot.start
-        const out: HastNode[] = []
-        for (const unit of slot.units) {
-          if (unit.trim().length === 0) {
-            out.push({ type: 'text', value: unit })
-          } else {
-            out.push({
-              type: 'element',
-              tagName: 'span',
-              properties:
-                cursor >= revealedLength
-                  ? nextRevealProperties()
-                  : { 'data-reveal': 'settled' },
-              children: [{ type: 'text', value: unit }],
-            })
-          }
-          cursor += unit.length
-        }
+        const out = textGroups.get(slot)!.map((group) =>
+          group.plain
+            ? { type: 'text', value: group.text }
+            : {
+                type: 'element',
+                tagName: 'span',
+                properties: group.animate ? nextRevealProperties() : { 'data-reveal': 'settled' },
+                children: [{ type: 'text', value: group.text }],
+              }
+        )
         if (out.length === 0) continue
         let perParent = replacements.get(slot.parent)
         if (!perParent) {

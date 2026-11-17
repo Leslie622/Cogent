@@ -8,49 +8,20 @@
  * 取错字段（当初形状 bug 的成因，见约定.md §1.2-7）。
  */
 import { replaceRunTerminal } from './flatten'
-import { emptyBucket, patchBucket, useChatStore } from './store'
+import { emptyBucket, messageDeltas, patchBucket, recordTurnOutcome, useChatStore } from './store'
 import type { ChatMessage } from '@/env.d'
 import type { ApprovalItem, MessageItem, SessionBucket, SessionRuntime, ToolItem } from './types'
 
 export function bindEngineEvents(): () => void {
-  return window.cogent.onEngineEvent((event) => {
+  const unsubscribe = window.cogent.onEngineEvent((event) => {
+    if (event.method === 'message.delta') {
+      messageDeltas.enqueue(event.params)
+      return
+    }
+    // 非连续 delta 不跨事件合并；摘要没有 sessionId，使用其明确的摘要身份。
+    if ('sessionId' in event.params) messageDeltas.flush(event.params.sessionId)
+    else if (event.method === 'session.summaryChanged') messageDeltas.flush(event.params.summary.id)
     switch (event.method) {
-      case 'message.delta': {
-        const { sessionId, delta, kind } = event.params
-        const isThinking = kind === 'thinking'
-        // 函数式更新：delta 是逐 token 高频路径，不依赖"回调间无并发更新"的
-        // 隐式前提（开头快照 + 非函数式 set 在事件合帧时会读到 stale state）
-        useChatStore.setState((state) =>
-          patchBucket(state, sessionId, (bucket) => {
-            const messages = bucket.messages
-            // 流式累积进最后一条 assistant 消息；首条 delta 时占位消息尚不存在，先建。
-            // kind 分流：thinking 进思考缓冲、text 进正文（同一条消息的两路，引擎保证同 messageId）
-            const last = messages.at(-1)
-            // 判别先过 type（联合窄化），再校验占位身份 —— 工具卡行（type 'tool'）
-            // 后到的 delta 要另起占位（封段接力见 tool.started 分支）
-            const next =
-              last !== undefined && last.type === undefined && last.role === 'assistant' && last.id === 'streaming'
-                ? [
-                    ...messages.slice(0, -1),
-                    isThinking
-                      ? { ...last, thinking: (last.thinking ?? '') + delta }
-                      : { ...last, content: last.content + delta }
-                  ]
-                : [
-                    ...messages,
-                    {
-                      id: 'streaming',
-                      role: 'assistant' as const,
-                      content: isThinking ? '' : delta,
-                      thinking: isThinking ? delta : undefined,
-                      timestamp: Date.now()
-                    }
-                  ]
-            return { ...bucket, messages: next }
-          })
-        )
-        return
-      }
       case 'tool.started': {
         const { sessionId, callId, name, kind, summary } = event.params
         useChatStore.setState((state) =>
@@ -279,6 +250,7 @@ export function bindEngineEvents(): () => void {
             // 位置 id，两路径不撞）
             id: `compaction-bar-${timestamp}`,
             role: 'compaction',
+            compactionInRun: bucket.runtime.running,
             content: summary ?? '',
             compaction: { tokensBefore: tokensBefore ?? 0, tokensAfter, summaryUsage },
             timestamp
@@ -334,6 +306,7 @@ export function bindEngineEvents(): () => void {
               [sessionId]: {
                 ...bucket,
                 messages: finalMessages,
+                turnOutcomes: recordTurnOutcome(bucket, 'completed'),
                 // 面板兜底清空（常态路径裁决时已收；防御 run 终态与裁决竞态的残留）
                 pendingApprovals: [],
                 runtime: {
@@ -341,6 +314,10 @@ export function bindEngineEvents(): () => void {
                   running: false,
                   // abort raced 完成（完成先到）：停止位一并消费
                   stopping: false,
+                  stopRequestId: null,
+                  runRequestId: null,
+                  lastRunOutcome: 'completed',
+                  lastError: null,
                   truncated: stopReason === 'length',
                   // 轮终 live 值随终态清除（segments 内 usage 为准）
                   contextLive: null
@@ -357,12 +334,11 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'run.failed': {
-        const { sessionId, message, messages } = event.params
+        const { sessionId, message, messages, reason } = event.params
         useChatStore.setState((state) => {
           const existing = state.bySession[sessionId]
-          // 停止位前置判别（D6）：用户点的停止 → 「已停止」不是错误（半截正文
-          // 封存保留、错误条清掉，回合头条表达状态）；真失败 → 错误条照旧
-          const wasStopped = existing?.runtime.stopping === true
+          // 引擎终态才是停止事实；本窗点过停止不代表错误一定由停止造成。
+          const wasStopped = reason === 'aborted'
           // 运行位复位对无桶会话也成立（多窗口广播：另一窗的会话在本窗失败，
           // 本窗无桶也落复位，防残留 running）。live 值随终态清除：有 messages
           // 时 usage 已落 segments；无时也不留旧值蒙指示器（终态后分子回落
@@ -374,28 +350,25 @@ export function bindEngineEvents(): () => void {
             ...reset.runtime,
             running: false,
             stopping: false,
+            stopRequestId: null,
+            runRequestId: null,
+            lastRunOutcome: wasStopped ? 'stopped' : 'failed',
             truncated: false,
             contextLive: null,
             lastError: wasStopped ? null : message
           }
-          const failedBase: SessionBucket = { ...reset, runtime: resetRuntime }
+          const failedBase: SessionBucket = {
+            ...reset,
+            runtime: resetRuntime,
+            turnOutcomes: recordTurnOutcome(reset, wasStopped ? 'stopped' : 'failed')
+          }
           const base = { bySession: { ...state.bySession, [sessionId]: failedBase } }
           if (existing === undefined) return base // 无本地消息：只复位运行位（原判定同款）
           const list = existing.messages
-          // 分段终态：引擎带已封存轮次（abort 前完成的轮，含
-          // usage）→ 与 completed 同款终态替换；中止时被截断的半截正文不在
-          // segments 里（那轮 turn_end 未发生）——从流式占位捞出改 id 续在
-          // 终态之后（保留既有「已停止封存半截」的验收行为）
-          if (messages !== undefined && messages.length > 0) {
-            const partial =
-              wasStopped
-                ? list.find((m): m is ChatMessage => m.type === undefined && m.id === 'streaming')
-                : undefined
-            const segments =
-              partial !== undefined && (partial.content !== '' || partial.thinking !== undefined)
-                ? [...messages, { ...partial, id: `live-${crypto.randomUUID()}` }]
-                : messages
-            const replaced = replaceRunTerminal(list, segments)
+          // pi 中止也会 turn_end；Host 快照已经含封存尾段，不能再拼本地占位。
+          // 空数组同样是权威结果；字段缺席才走下面的旧事件收尾。
+          if (messages !== undefined) {
+            const replaced = replaceRunTerminal(list, messages)
             // 挂起中的审批（会话桶面板态）收面板 + 落 cancelled 痕迹行（引擎侧
             // signal 已 resolve block）—— 不留永久等待面板/痕迹缺口
             return {
@@ -449,6 +422,10 @@ export function bindEngineEvents(): () => void {
         return
     }
   })
+  return () => {
+    unsubscribe()
+    messageDeltas.flushAll()
+  }
 }
 
 /** run.completed 后回查一次会话列表，让"首条消息生成标题"反映到侧栏 */

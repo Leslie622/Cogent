@@ -4,7 +4,8 @@
  * 职责：
  * - 每会话一个 pi AgentSession（经 kernel/pi-session-factory 装配，南缝唯一
  *   实现）；转录真源 = pi JSONL（message_end 逐条追加落盘），本层只管会话域
- *   summary（置顶/归档/项目绑定是 Cogent 的私域）；
+ *   summary（置顶/归档/项目绑定是 Cogent 的私域）。准备期中止且输入尚未交付时，
+ *   本层经公开appendMessage/refreshContext补存原始user，不启动模型；
  * - 用户文本（agent.submit）→ pi.prompt()，pi 事件流转译为协议事件（notify
  *   回调注入，本文件不直接碰 stdout）；
  * - pi AgentSession 全托管运行期恢复：provider 自动重试、溢出压缩重试、阈值
@@ -12,9 +13,11 @@
  *   AUTO_CONTINUE 续写（贴线 maxTokens 截断时注入显式 user 续写指令，上限
  *   3 次）与审批挂起（链式 beforeToolCall，见 factory）。
  *
- * 终态纪律：协议 run.completed/run.failed 的发射点在 **agent_settled**（pi
+ * 终态纪律：进入pi生命周期后的 run.completed/run.failed 发射点在 **agent_settled**（pi
  * 在 _startRun 的 finally 里每轮 prompt 恰发一次）—— 它晚于全部内聚恢复/
  * 重试，天然的单一权威终态（单一发射点消解溢出/续写窗口的终态竞态）。
+ * run 级中止读取该事件的 aborted；末条 assistant 已成功也不代表整个 run 正常结束。
+ * 未启动pi、handled与准备拒绝由Host收口，只有拥有本次账本的链能发终态。
  *
  * 惰性纪律：恢复的会话启动只读 summary（v2 盘上文档），pi 内核与观测记录器
  * 都在首次使用（submit/compact/inspect 读取）时才建。
@@ -329,6 +332,14 @@ function readGitBranch(cwd: string): string | null {
  */
 interface StreamingState {
   messageId: string
+  /** Host从受理起持有取消意图，早于pi建立自己的run控制器。 */
+  stopRequested: boolean
+  /** 手动续写保留旧回答；新增计费仍只进入segments/usage。 */
+  baseSegments: ChatMessage[]
+  /** 原始输入只在submit存在；尚未交付pi的早停仍须落入转录。 */
+  input: { text: string; timestamp: number } | null
+  inputDelivered: boolean
+  disposition: 'handled' | 'queued' | 'started' | undefined
   /** 已封存的段（turn_end 时 push） */
   segments: ChatMessage[]
   /** 当前轮正文缓冲（text_delta 累积；turn_end 清空） */
@@ -492,9 +503,9 @@ export class SessionManager implements CogentKernel {
    * 手动压缩进行中的会话（并发护栏）：pi.compact() 是 async RPC，窗口期
    * submit/continueSession 需同步拒绝（pi prompt 对压缩窗口的 throw 发生在
    * 异步段，落不到"受理即拒"的协议形态）。自动压缩（threshold/overflow）由
-   * pi 在 prompt 生命周期内自管，不经此集
+   * pi 在 prompt 生命周期内自管，不经此Map。对象身份保护迟到finally不释放新操作。
    */
-  private compacting = new Set<string>()
+  private compacting = new Map<string, { stopRequested: boolean }>()
   /**
    * length 续写剩余次数(按会话):submit/手动续写时重置为 3。
    * agent_settled(抑制终态)与 settleRun(注入续写)两处同读 —— 前者据此抑制
@@ -884,7 +895,7 @@ export class SessionManager implements CogentKernel {
   //   submit(同步段)          异步段（driveRun）                    终态（事件）
   //   ───────────────         ───────────────────────              ────────────
   //   requireSession          ensurePiSession（惰性+导入）          agent_settled
-  //   根目录复查              setModel/setThinkingLevel             ├ errorMessage→run.failed
+  //   根目录复查              setModel/setThinkingLevel             ├ aborted/errorMessage→run.failed
   //   busy 查 streaming/      pi.prompt(text)                      │   （pi 内聚恢复
   //     compacting            └→ pi 内聚：重试/溢出压缩             │    已全部消化完）
   //   模型目录解析(同步throw)     /阈值压缩（不外显）               ├ lengthContinuable
@@ -892,7 +903,9 @@ export class SessionManager implements CogentKernel {
   //   run.started             链（每段又是一个 prompt               └ 否则 → run.completed
   //   streaming.set           生命周期，逐段 agent_settled）
   //
-  //   streaming 的生灭窗口 ⊇ pi 的运行窗口（受理→终态），故 busy 判定只查它。
+  //   submit/continue在首await前预约StreamingState，manualcompact持有自己的操作对象。
+  //   abort先记stopRequested；每个await后查owner，started回调补交pi取消。
+  //   未prompt中止先保存user；handled无pi终态则Host收口；删除使旧owner失效。
 
   /**
    * 提交用户输入。同步校验（会话存在、会话空闲、模型已知）后立即受理返回，
@@ -941,20 +954,29 @@ export class SessionManager implements CogentKernel {
 
     this.notify('run.started', { sessionId })
     this.ensureInspector(session).runStarted(text, this.ensureSystemPrompt(session), thinkingLevel ?? 'off')
-    this.streaming.set(sessionId, {
+    const streaming: StreamingState = {
       messageId: `m-${crypto.randomUUID()}`,
+      stopRequested: false,
+      baseSegments: [],
+      input: { text, timestamp: Date.now() },
+      inputDelivered: false,
+      disposition: undefined,
       segments: [],
       text: '',
       thinking: '',
       tools: []
-    })
+    }
+    this.streaming.set(sessionId, streaming)
     this.continuationBudget.set(sessionId, AUTO_CONTINUE_LIMIT)
     // 异步段的三类失败（装配炸 / prompt 前置校验拒 / 续写链异常）都收口到
     // run.failed —— run.started 已发，宿主在等终态事件，不能让拒绝裸奔
-    void this.driveRun(session, text, target, thinkingLevel).catch((error: unknown) => {
+    void this.driveRun(session, text, target, thinkingLevel, streaming).catch((error: unknown) => {
+      // 终态已由 pi 事件收口或会话已删时，旧异步链不能再发第二份终态、更不能清新 run。
+      if (this.streaming.get(sessionId) !== streaming) return
       this.streaming.delete(sessionId)
       this.notify('run.failed', {
         sessionId,
+        reason: 'error',
         message: error instanceof Error ? error.message : String(error)
       })
     })
@@ -965,9 +987,11 @@ export class SessionManager implements CogentKernel {
     session: Session,
     text: string,
     model: Model<Api> | undefined,
-    thinkingLevel: string | undefined
+    thinkingLevel: string | undefined,
+    streaming: StreamingState
   ): Promise<void> {
     const pi = await this.ensurePiSession(session)
+    if (this.finishPreparingRun(session, pi, streaming)) return
     if (model !== undefined) {
       // setModel 判等：pi 为每次调用落 model_change 条目（空消息），重复 set
       // 同一模型会在树里堆空条目 —— 压缩切点的「空条目回退」（findProjected-
@@ -979,6 +1003,7 @@ export class SessionManager implements CogentKernel {
       const current = pi.model
       if (current === undefined || current.id !== model.id || current.provider !== model.provider) {
         await pi.setModel(model)
+        if (this.finishPreparingRun(session, pi, streaming)) return
       }
       // 思考预算跟随模型：预算是模型属性，切模型换预算。
       // pi 的预算消费在请求选项层（Agent.thinkingBudgets 逐 prompt 带进
@@ -993,8 +1018,74 @@ export class SessionManager implements CogentKernel {
     }
     // /skill: 活展开：pi 内建展开查 loader 静态集（agent-session.ts:2319），
     // 与段落钩子的回合热刷新会脱节 —— 统一由 skillStore 用活快照展开
-    await pi.prompt(this.skillStore.expandSkillCommand(text, this.workspaceRoots(session)[0]))
-    await this.settleRun(session, pi)
+    if (this.finishPreparingRun(session, pi, streaming)) return
+    await this.promptRun(session, pi, streaming, this.skillStore.expandSkillCommand(text, this.workspaceRoots(session)[0]))
+    await this.settleRun(session, pi, streaming)
+  }
+
+  /** 本次准备链只认捕获的对象；删除/退出或旧终态之后不得继续起跑。 */
+  private ownsRun(session: Session, streaming: StreamingState): boolean {
+    return this.sessions.get(session.summary.id) === session && this.streaming.get(session.summary.id) === streaming
+  }
+
+  private saveUnstartedInput(pi: AgentSession, streaming: StreamingState): void {
+    if (streaming.input === null || streaming.inputDelivered) return
+    pi.sessionManager.appendMessage({ role: 'user', content: streaming.input.text, timestamp: streaming.input.timestamp })
+    pi.refreshContext()
+    streaming.inputDelivered = true
+  }
+
+  private static displaySegments(streaming: StreamingState): ChatMessage[] {
+    // merge会原位并相邻文本；克隆片段，不能改写已保存的旧回答或重复累加其用量。
+    const source = [...streaming.baseSegments, ...streaming.segments]
+    const segments = SessionManager.mergeContinuedSegments(source.map((segment) => ({ ...segment })))
+    // 费用按全部显示段求和，上下文估算只描述末次请求后的转录，不能随费用累加丢失。
+    const contextEstimate = source.findLast((segment) => segment.usage !== undefined)?.usage?.contextEstimate
+    const last = segments.findLast((segment) => segment.usage !== undefined)
+    if (last?.usage !== undefined && contextEstimate !== undefined) last.usage = { ...last.usage, contextEstimate }
+    return segments
+  }
+
+  private finishPreparingRun(session: Session, pi: AgentSession, streaming: StreamingState): boolean {
+    if (!this.ownsRun(session, streaming)) return true
+    if (!streaming.stopRequested) return false
+    this.saveUnstartedInput(pi, streaming)
+    this.streaming.delete(session.summary.id)
+    session.inspector?.runFailed('已停止')
+    this.notify('run.failed', { sessionId: session.summary.id, reason: 'aborted', message: '已停止',
+      messages: SessionManager.displaySegments(streaming) })
+    return true
+  }
+
+  /** RPC分派回调横跨input/auth与core启动，不在started里抛错破坏pi的finally。 */
+  private async promptRun(session: Session, pi: AgentSession, streaming: StreamingState, text: string): Promise<void> {
+    streaming.disposition = undefined
+    // dispose会断开AgentSession自己的core监听，但它不能杀掉已进入的input异步准备。
+    // 直接订阅公开Agent，仅守住本次第一次启动；先退订再取消，不能误伤settled后的新run。
+    const unsubscribe = pi.agent.subscribe((event) => {
+      if (event.type !== 'agent_start') return
+      unsubscribe()
+      if (!this.ownsRun(session, streaming) || streaming.stopRequested) void pi.abort()
+    })
+    let disposition: StreamingState['disposition']
+    try {
+      disposition = await pi.prompt(text, { preflightResult: (disposition) => {
+        if (!this.ownsRun(session, streaming)) return
+        streaming.disposition = disposition
+        if (disposition === 'started' && streaming.stopRequested) void pi.abort()
+      } }).then(() => streaming.disposition)
+    } finally {
+      unsubscribe()
+    }
+    if (!this.ownsRun(session, streaming)) return
+    if (disposition === 'handled') {
+      // handled没有agent_settled；调用已收敛后才允许补输入/释放本次预约。
+      this.saveUnstartedInput(pi, streaming)
+      if (this.finishPreparingRun(session, pi, streaming)) return
+      this.streaming.delete(session.summary.id)
+      session.inspector?.runCompleted({ text: '', thinking: '' })
+      this.notify('run.completed', { sessionId: session.summary.id, messages: SessionManager.displaySegments(streaming) })
+    }
   }
 
   /**
@@ -1024,14 +1115,17 @@ export class SessionManager implements CogentKernel {
    * （成功 / 失败 / 预算尽后的截断）落定。agent_settled 只在链不再续跑的
    * 那一轮发射终态（见其分支）。
    */
-  private async settleRun(session: Session, pi: AgentSession): Promise<void> {
+  private async settleRun(session: Session, pi: AgentSession, streaming: StreamingState): Promise<void> {
     const sessionId = session.summary.id
     for (;;) {
-      // 失败/中止：终态已由 agent_settled 发出（errorMessage 留痕于 pi Agent）
-      if (pi.agent.state.errorMessage) return
+      // run 级中止不一定改写末条 length 或 errorMessage；终态释放的是本次账本。
+      // 捕获实例而非只查 has，避免旧 prompt 收尾时误认随后开始的新 run。
+      if (this.streaming.get(sessionId) !== streaming) return
+      if (this.finishPreparingRun(session, pi, streaming)) return
+      if (streaming.disposition === 'queued') return
       if (!this.lengthContinuable(pi.agent, sessionId)) return
       this.continuationBudget.set(sessionId, (this.continuationBudget.get(sessionId) ?? 0) - 1)
-      await pi.prompt(AUTO_CONTINUE_MESSAGE)
+      await this.promptRun(session, pi, streaming, AUTO_CONTINUE_MESSAGE)
     }
   }
 
@@ -1047,42 +1141,53 @@ export class SessionManager implements CogentKernel {
     if (this.streaming.has(sessionId) || this.compacting.has(sessionId)) {
       throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话正在回复中，无法续写')
     }
-    const pi = await this.ensurePiSession(session)
-    const last = pi.agent.state.messages.at(-1)
-    if (last === undefined || last.role !== 'assistant' || last.stopReason !== 'length') {
-      throw new ProtocolError(RpcErrorCode.InvalidRequest, '末条回复不是输出截断，无需续写')
-    }
-    // 空正文截断(room 耗尽)不受理续写:续了立即再截,白烧一次请求 —— 错误
-    // 文案直接指路(压缩腾地),比静默成功诚实
-    const hasText = last.content.some((block) => block.type === 'text' && block.text.trim() !== '')
-    if (!hasText) {
-      throw new ProtocolError(
-        RpcErrorCode.InvalidRequest,
-        '回复为空截断（输出预算已耗尽），续写无意义 —— 请先压缩上下文腾出空间'
-      )
-    }
     this.continuationBudget.set(sessionId, AUTO_CONTINUE_LIMIT)
     session.summary.updatedAt = Date.now()
     this.notify('run.started', { sessionId })
-    this.streaming.set(sessionId, {
+    const streaming: StreamingState = {
       messageId: `m-${crypto.randomUUID()}`,
+      stopRequested: false,
+      baseSegments: [],
+      input: null,
+      inputDelivered: false,
+      disposition: undefined,
       segments: [],
       text: '',
       thinking: '',
       tools: []
-    })
+    }
+    this.streaming.set(sessionId, streaming)
     try {
-      await pi.prompt(AUTO_CONTINUE_MESSAGE)
-      await this.settleRun(session, pi)
+      const pi = await this.ensurePiSession(session)
+      if (!this.ownsRun(session, streaming)) return { ok: true }
+      // 显示转录保留压缩影子区，不能只用模型上下文裁剪后的旧回答做替换。
+      const source = readPiTranscript(this.workspaceRoots(session)[0] ?? homedir(), this.hostRoot, sessionId) ?? pi.agent.state.messages
+      const projected = toChatMessages(source)
+      const userAt = projected.findLastIndex((message) => message.role === 'user')
+      streaming.baseSegments = projected.slice(userAt + 1).filter((message) => message.role === 'assistant')
+      if (this.finishPreparingRun(session, pi, streaming)) return { ok: true }
+      const last = pi.agent.state.messages.at(-1)
+      if (last === undefined || last.role !== 'assistant' || last.stopReason !== 'length') {
+        throw new ProtocolError(RpcErrorCode.InvalidRequest, '末条回复不是输出截断，无需续写')
+      }
+      if (!last.content.some((block) => block.type === 'text' && block.text.trim() !== '')) {
+        throw new ProtocolError(RpcErrorCode.InvalidRequest, '回复为空截断（输出预算已耗尽），续写无意义 —— 请先压缩上下文腾出空间')
+      }
+      await this.promptRun(session, pi, streaming, AUTO_CONTINUE_MESSAGE)
+      await this.settleRun(session, pi, streaming)
     } catch (error) {
       // pi.prompt 前置拒绝（鉴权/压缩窗口竞态等）：run.started 已发，宿主等
       // 终态 —— 清 streaming 补发 run.failed 后把错误照常交给 dispatch 转错
       // 误响应帧（手动动作要双通道显式反馈）
-      this.streaming.delete(sessionId)
-      this.notify('run.failed', {
-        sessionId,
-        message: error instanceof Error ? error.message : String(error)
-      })
+      if (this.streaming.get(sessionId) === streaming) {
+        this.streaming.delete(sessionId)
+        this.notify('run.failed', {
+          sessionId,
+          reason: 'error',
+          message: error instanceof Error ? error.message : String(error),
+          ...(streaming.baseSegments.length > 0 && { messages: SessionManager.displaySegments(streaming) })
+        })
+      }
       throw error
     }
     return { ok: true }
@@ -1100,9 +1205,14 @@ export class SessionManager implements CogentKernel {
     if (this.streaming.has(sessionId) || this.compacting.has(sessionId)) {
       throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话正在回复中，请等待完成后再压缩')
     }
-    this.compacting.add(sessionId)
+    const operation = { stopRequested: false }
+    this.compacting.set(sessionId, operation)
     try {
       const pi = await this.ensurePiSession(session)
+      if (this.sessions.get(sessionId) !== session || this.compacting.get(sessionId) !== operation) {
+        throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话已结束，压缩未启动')
+      }
+      if (operation.stopRequested) throw new ProtocolError(RpcErrorCode.InvalidRequest, '压缩已中止')
       const result = await pi.compact()
       return {
         tokensBefore: result.tokensBefore,
@@ -1119,13 +1229,17 @@ export class SessionManager implements CogentKernel {
       }
       throw error
     } finally {
-      this.compacting.delete(sessionId)
+      if (this.compacting.get(sessionId) === operation) this.compacting.delete(sessionId)
     }
   }
 
   abort(sessionId: string): boolean {
     const session = this.sessions.get(sessionId)
-    if (!session) return false
+    const streaming = this.streaming.get(sessionId)
+    const compacting = this.compacting.get(sessionId)
+    if (session === undefined || (streaming === undefined && compacting === undefined)) return false
+    if (streaming !== undefined) streaming.stopRequested = true
+    if (compacting !== undefined) compacting.stopRequested = true
     // pi.abort 是 async（等 run 收尾）；受理即返回（同步合同）。挂起审批经
     // signal listener 收尾（见 decideApproval），run 必然落地终态
     if (session.pi !== undefined) void session.pi.abort()
@@ -1415,6 +1529,11 @@ export class SessionManager implements CogentKernel {
     if (session.pi !== undefined) return Promise.resolve(session.pi)
     if (session.piBuilding !== undefined) return session.piBuilding
     const building = this.buildPiSession(session).then((pi) => {
+      // 装配本身不一定支持取消；删除/退出后归还的实例只能回收，不得挂回旧会话。
+      if (this.sessions.get(session.summary.id) !== session) {
+        pi.dispose()
+        return pi
+      }
       session.pi = pi
       session.piBuilding = undefined
       return pi
@@ -1538,6 +1657,10 @@ export class SessionManager implements CogentKernel {
       }
     })
 
+    // 删除/退出会使等待装配的owner失效，旧转录也不能在这里被重新导入；
+    // ensurePiSession的唯一接收点会dispose此实例。
+    if (this.sessions.get(sessionId) !== session) return pi
+
     // v1 旧转录一次性导入（只在 pi 树是新建时 —— 已有 JSONL 说明早前导入过，
     // 重导会整段重复）。compactionSummary → 压缩条（firstKeptEntryId=null 语义
     // 对齐），其余角色逐条 append；导入后清引用 + 盘上重写 v2（v2 文档不带
@@ -1599,7 +1722,8 @@ export class SessionManager implements CogentKernel {
    * 会话域落盘（summary 变更点调用）：v2 文档只含 summary —— 转录真源在 pi
    * JSONL（pi 自己逐条追加），本层不碰。尽力语义：失败只记诊断不抛 ——
    * 调用点多在受理/收尾路径上，抛出去等于让存储故障炸掉一次成功回合；
-   * summary 仍在内存，下次变更点重写补上。
+   * summary 仍在内存，下次变更点重写补上。准备期中止输入另经pi公开转录API保存，
+   * 不混入此会话域文档。
    */
   private persist(sessionId: string): void {
     const session = this.sessions.get(sessionId)
@@ -1661,8 +1785,14 @@ export class SessionManager implements CogentKernel {
    */
   private translateEvent(session: Session, event: AgentSessionEvent): void {
     const sessionId = session.summary.id
+    if (this.sessions.get(sessionId) !== session) return
 
     switch (event.type) {
+      case 'message_end': {
+        const streaming = this.streaming.get(sessionId)
+        if (streaming !== undefined && event.message.role === 'user') streaming.inputDelivered = true
+        return
+      }
       case 'message_update': {
         // 正文/思考两路增量各自转发（kind 分流）；toolcall 的 UI 呈现是后续路线项
         const delta = event.assistantMessageEvent
@@ -1812,6 +1942,8 @@ export class SessionManager implements CogentKernel {
       case 'compaction_start': {
         // pi 压缩启动（manual = session.compact；threshold/overflow = pi 自动路，
         // 后者发生在 run 生命周期内，宿主据此可呈"压缩中"状态）
+        const operation = this.compacting.get(sessionId)
+        if (event.reason === 'manual' && operation?.stopRequested === true) session.pi?.abortCompaction()
         this.notify('compaction.started', { sessionId, reason: event.reason })
         return
       }
@@ -1857,51 +1989,34 @@ export class SessionManager implements CogentKernel {
         // 终态（每轮 prompt 生命周期恰一次，晚于全部内聚恢复/重试 —— 见类头
         // "终态纪律"）。正/负路径都在此收口
         const streaming = this.streaming.get(sessionId)
-        if (!this.sessions.has(sessionId)) {
-          this.streaming.delete(sessionId)
-          return
-        }
+        if (streaming === undefined) return
         session.summary.updatedAt = Date.now()
 
-        // pi 约定：失败/中止在 Agent.state.errorMessage 留痕（stream error /
-        // abort 也汇于此）→ run.failed
-        if (session.pi?.agent.state.errorMessage) {
-          const message = session.pi.agent.state.errorMessage
+        // aborted 属于整个 run；收口钩子期间中止时，最后回答仍可成功且没有 errorMessage。
+        // 停止事实取公开终态字段，不能从一条消息或界面的停止按钮反推。
+        const pi = session.pi
+        const errorMessage = pi?.agent.state.errorMessage
+        if (event.aborted || errorMessage) {
+          const reason = event.aborted ? 'aborted' : 'error'
+          const message = errorMessage ?? '已停止'
           this.streaming.delete(sessionId)
           session.inspector?.runFailed(message)
-          // 分段终态：失败/中止前已封存的轮次照常投影 —— abort
-          // 场景此前只有 message，已完成轮的 usage 不落宿主消息流，指示器
-          // 在停止后停在旧值（数据其实在 pi 树，重开会话才回来）。已封存段
-          // 里可能有 running 工具卡（打断在工具处）→ 标 blocked 同 store 侧
-          // 失败收尾口径；相邻纯文本段并回（续写形态同 completed）
-          if (streaming !== undefined) {
-            if (streaming.usage) {
-              // 分支内 session.pi 已收窄非空（errorMessage 守卫），直取；
-              // systemPrompt getter 恒返 string（pi 渲染当前 options），无缺省路
-              const estimate = estimateContext(
-                session.pi.agent.state.messages,
-                session.pi.systemPrompt
-              )
-              streaming.usage.contextEstimate = estimate
-              const lastSegment = streaming.segments.at(-1)
-              if (lastSegment?.usage) lastSegment.usage.contextEstimate = { ...estimate }
-            }
-            const segments = SessionManager.mergeContinuedSegments(streaming.segments)
-            this.notify('run.failed', {
-              sessionId,
-              message,
-              ...(segments.length > 0 && { messages: segments })
-            })
-            return
+          // aborted/error 也会经过 turn_end，已封存段包含被打断那轮的正文与 usage。
+          // Host 给完整快照，宿主不可再补一份流式占位；相邻纯文本段按完成路径合并。
+          if (streaming.usage && pi !== undefined) {
+            const estimate = estimateContext(pi.agent.state.messages, pi.systemPrompt)
+            streaming.usage.contextEstimate = estimate
+            const lastSegment = streaming.segments.at(-1)
+            if (lastSegment?.usage) lastSegment.usage.contextEstimate = { ...estimate }
           }
-          this.notify('run.failed', { sessionId, message })
+          this.notify('run.failed', { sessionId, reason, message, messages: SessionManager.displaySegments(streaming) })
           return
         }
         // length 截断可续写：抑制终态、streaming 保活 ——
         // settleRun 注入显式 continue 消息接着跑;预算尽或续写完成时由下一轮
         // agent_settled 正常收尾。抑制意味着本轮转录不重写盘:续写中途崩溃
         // 丢当前段（pi JSONL 已逐条落盘的除外），与"尽力落盘"语义一致可接受
-        if (session.pi !== undefined && this.lengthContinuable(session.pi.agent, sessionId)) return
+        if (!streaming.stopRequested && session.pi !== undefined && this.lengthContinuable(session.pi.agent, sessionId)) return
         this.streaming.delete(sessionId)
 
         // 上下文明细估算挂到本回合 usage 上（turn_end 逐轮累加的 usage 已聚合；
@@ -1912,7 +2027,7 @@ export class SessionManager implements CogentKernel {
         // 快照，两处是独立对象不共享。盘上转录（pi 树）不带明细 —— 历史回查
         // 路径在 messages() 按需现算，两条路各自出同源数据（estimateContext
         // 纯转录函数，见其注释）
-        if (streaming?.usage) {
+        if (streaming.usage) {
           // system 段：piSession.systemPrompt = 当前完整渲染（自拼 + pi
           // 追加节），与请求组装同源；与历史回查路径（messages()）同表达式
           const estimate = estimateContext(
@@ -1926,21 +2041,22 @@ export class SessionManager implements CogentKernel {
 
         // 观测快照吃结构类型（顶层 text/thinking）—— 段化后顶层缓冲已清空，
         // 传各段聚合值（口径 = 拼接后总字符）
-        if (streaming) {
-          session.inspector?.runCompleted({
-            text: streaming.segments.map((s) => s.content).join(''),
-            thinking: streaming.segments.map((s) => s.thinking ?? '').join(''),
-            usage: streaming.usage,
-            durationMs: streaming.durationMs,
-            model: streaming.model,
-            stopReason: streaming.stopReason
-          })
-        }
+        session.inspector?.runCompleted({
+          text: streaming.segments.map((s) => s.content).join(''),
+          thinking: streaming.segments.map((s) => s.thinking ?? '').join(''),
+          usage: streaming.usage,
+          durationMs: streaming.durationMs,
+          model: streaming.model,
+          stopReason: streaming.stopReason
+        })
         // 相邻纯文本段合并（续写的呈现形态）：length 段 + 续写段
         // → 单段。run 内相邻纯文本段只可能来自续写注入（无工具的轮会终结
         // run，带工具的 length 轮段里必带工具卡），合并无歧义；正文无缝拼接
         // （续写指令就是"从截断处接着写"），用量/耗时相加 = 计费真相
-        const segments = SessionManager.mergeContinuedSegments(streaming?.segments ?? [])
+        const segments = SessionManager.displaySegments(streaming)
+        const displayUsage = segments.reduce<MessageUsage | undefined>((usage, segment) =>
+          segment.usage !== undefined ? accumulateUsage(usage, segment.usage) : usage, undefined)
+        const displayDuration = segments.reduce<number | undefined>((duration, segment) => sumOptional(duration, segment.durationMs), undefined)
         this.notify('run.completed', {
           sessionId,
           // 分段终态（优先消费）：text 段与工具段按发生序 —— 交错保真的代价是
@@ -1950,7 +2066,7 @@ export class SessionManager implements CogentKernel {
           // 都落消息（只有思考没有正文的极端截断也可见）；usage 三件套是
           // turn_end 的逐轮累计（计费口径，见 accumulateUsage）
           message:
-            streaming && segments.some((s) => s.content || s.thinking)
+            segments.some((s) => s.content || s.thinking)
               ? {
                   id: streaming.messageId,
                   role: 'assistant',
@@ -1961,13 +2077,13 @@ export class SessionManager implements CogentKernel {
                   toolCalls: segments.some((s) => (s.toolCalls ?? []).length > 0)
                     ? segments.flatMap((s) => s.toolCalls ?? [])
                     : undefined,
-                  usage: streaming.usage,
-                  durationMs: streaming.durationMs,
+                  usage: displayUsage,
+                  durationMs: displayDuration,
                   model: streaming.model,
                   timestamp: Date.now()
                 }
               : undefined,
-          stopReason: streaming?.stopReason
+          stopReason: streaming.stopReason
         })
         return
       }

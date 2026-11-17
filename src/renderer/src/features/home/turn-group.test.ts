@@ -51,6 +51,18 @@ describe('groupTurns 基础分组', () => {
 })
 
 describe('groupTurns 压缩条分组（D9 + D1 两轮修订）', () => {
+  it('直播压缩在后续工作尚未到达时就属于原回合，停止后归属不变', () => {
+    const items = [userMsg('u'), assistantMsg('a'), { ...compactionBar('bar'), compactionInRun: true }]
+    expect(groupTurns(items)).toHaveLength(1)
+    expect(groupTurns([...items, assistantMsg('next')])).toHaveLength(1)
+    expect(groupTurns(items)[0].items.map((item) => item.id)).toEqual(['a', 'bar'])
+  })
+
+  it('显式回合外压缩不因后续续写被并回', () => {
+    const turns = groupTurns([userMsg('u'), assistantMsg('a'), { ...compactionBar('bar'), compactionInRun: false }, assistantMsg('next')])
+    expect(turns).toHaveLength(2)
+    expect(turns[1].items.map((item) => item.id)).toEqual(['bar'])
+  })
   it('轮间自动压缩（bar 早于回合工作收尾）：行内过程行，回合不被截断，一条 user 恒一组', () => {
     const turns = groupTurns([
       userMsg('u1', 10),

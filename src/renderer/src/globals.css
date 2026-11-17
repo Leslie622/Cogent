@@ -287,10 +287,7 @@
   -webkit-background-clip: text;
   color: transparent;
   animation: shimmer-sweep 4s linear infinite;
-  /* 合成层提示（zcode 同款）：background-position 逐帧变更走主线程重绘，
-     流式期间主线程被 delta/码表打满时动画掉帧 → 文字在实色与渐变间跳变，
-     观感即"工作中行闪动"。will-change 提前升层 + 平移强制合成，动画帧
-     不再与流式重绘争主线程 */
+  /* 合成提示不保证 background-position 免于主线程重绘；是否获益须实测。 */
   will-change: background-position;
   transform: translateZ(0);
   backface-visibility: hidden;
@@ -338,6 +335,14 @@
 /* 动效降级：transition 归零的同时必须把起步态也放开 —— 只关 transition 的话
    starting-style 的 opacity:0 会把新字永久钉在透明。 */
 @media (prefers-reduced-motion: reduce) {
+  /* 非 layer 规则覆盖 running 标题的高特异性 utility，不能只靠 motion 变体。 */
+  [data-status='running'] > [data-slot='trace-title'] {
+    animation: none;
+    background-image: none;
+    color: inherit;
+    will-change: auto;
+    transform: none;
+  }
   [data-reveal],
   [data-reveal-marker]::marker {
     transition: none;

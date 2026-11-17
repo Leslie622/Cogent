@@ -265,10 +265,10 @@
     <p>LLM 循环以分钟计，请求-响应式会让宿主挂死在管道上。所以 <code>agent.submit</code> 受理即返回
     <code>{ accepted: true }</code>，执行进度全部经事件流（run.* / message.* / 将来的 tool.*）推送 ——
     受理与执行分离是整份协议最重要的设计决定。</p>
-    <p><b>受理 ≠ 收下就完</b>（2026-11-09 修复）：受理含<b>同步校验</b>（会话存在、会话空闲、模型已知），
-    校验失败同步 throw → dispatch 转错误响应帧（忙 = InvalidRequest，不存在 = InternalError）。
-    校验绝不能放进异步段 —— dispatch 的 try/catch 只包住 handler 同步步，异步拒绝会变成
-    unhandledRejection 直接崩掉引擎进程（全部会话随之丢失）。</p>
+    <p><b>受理 ≠ 收下就完</b>：agent.submit 在受理前同步校验会话、忙状态与模型，
+    失败转错误响应帧；受理后先预约运行，再异步装配，失败必须落唯一事件终态。
+    session.continue 则保留长 RPC：首 await 前预约并发 started，后续校验失败既发 failed
+    也返回 RPC 错误；取消正常返回，旧回包不能覆盖已到终态。</p>
   </div>
 
   <h3 id="s2-methods">方法一览（宿主 → 引擎）</h3>
@@ -280,10 +280,10 @@
     <tr><td><code>session.setPinned / archive / listArchived</code></td><td>置顶（pinnedAt 时间戳）/ 归档（软删，可恢复或彻底删除）/ 归档列表</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>session.setPermission</code></td><td>会话级权限切换（四档 ask/plan/auto/autonomous）；判定矩阵每次钩子触发读活值，运行中切换即生效</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>session.compact</code></td><td>手动压缩（→ pi AgentSession.compact）：会话回复中拒绝；无可压缩/刚压过 → InvalidRequest（手动动作要明确结果）。指示器悬浮卡「立即压缩上下文」是它的 UI 面</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>session.continue</code></td><td>手动续写：对末条 length 截断注入显式续写指令再跑（预算 ≤3 次）；忙/非截断 → InvalidRequest。截断动作条「继续生成」是它的 UI 面</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>session.continue</code></td><td>手动续写：首 await 前预约并发 run.started，对末条 length 注入续写（预算 ≤3 次）；保留长 RPC，取消正常返回，无效续写发失败终态并返回错误。显示快照保留旧前缀与新增尾段</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>project.list / create / rename / update / delete / setPinned</code></td><td>项目域（cwds[] 多根、默认权限模式、gitignore 语义）；删除不级联删会话（悬挂保留是有意的）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>agent.submit</code></td><td>提交输入：text + 可选 model / provider / thinkingLevel（provider = 同名模型消歧键；thinkingLevel 值域 = off + 六档）；受理（同步校验：会话存在/空闲，失败回错误帧）即返回，进度走事件流</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>agent.abort</code></td><td>中止某会话正在进行的流（直达 pi AgentSession.abort()；挂起审批由 abort signal 收口）</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><td><code>agent.abort</code></td><td>先给本次运行/手动压缩记停止意图，再交给已有 pi 取消；未完成准备返回后继续消费，等待收敛期间保留预约。无可停止操作或会话不存在时回 aborted:false</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>approval.respond</code></td><td>审批裁决回执：resolve 挂起中的 beforeToolCall；optional <code>message</code> = 拒绝附言（→ block reason → 工具 error 结果回灌模型）、<code>always: 'workspace'</code> = 允许本次 + 落工作区级「始终允许」规则（无绑定根会话 → InvalidParams）、<code>switchMode: 'auto'|'autonomous'</code> = 允许本次 + 切会话模式 + 记项目默认（result 回带切换后 summary）；未配对 requestId（重复裁决/已中止）→ InvalidParams</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>credentials.set / remove / list</code></td><td>运行中更新 key / 真删单条 key / 查各 provider 配置状态（只回布尔位，明文不出引擎）</td><td><span class="st ok">已实现</span></td></tr>
     <tr><td><code>models.list</code></td><td>pi 模型目录摘要（UI 下拉数据源）；回带 <code>defaultModel</code>（provider+id 双键）与 <code>compactionThresholdRatio</code>（pi 真实触发线，指示器预警线画它）</td><td><span class="st ok">已实现</span></td></tr>
@@ -294,10 +294,10 @@
   <h3 id="s2-events">事件一览（引擎 → 宿主）</h3>
   <table>
     <tr><th style="width:180px">event</th><th>语义</th><th style="width:96px">状态</th></tr>
-    <tr><td><code>run.started</code></td><td>一次执行开始（submit 受理后立刻发）</td><td><span class="st ok">已发射</span></td></tr>
+    <tr><td><code>run.started</code></td><td>一次执行开始（submit/continue 预约时发，包含装配与校验准备期，不代表模型请求已发出）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>message.delta</code></td><td>流式文本增量（<code>kind</code> 区分 text / thinking）；toolcall 无增量事件（工具起止走下方 tool.*）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>run.completed</code></td><td>执行正常结束：<code>messages</code> = 分段终态数组（text 段与工具卡交错保真）+ <code>message</code>（聚合兼容）+ stopReason（length = 被 token 上限截断）；段带 usage / durationMs / model（多轮累加 = 计费口径）</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>run.failed</code></td><td>执行失败：message + optional <code>messages</code> 分段终态（abort 前已封存轮次的投影 —— usage 照常落账，指示器停止后即真实值）。pi 内核的可恢复溢出（删失败轮 + 压缩 + continue 重试）内聚在 run 内，不对外发本事件；重试再溢出才失败</td><td><span class="st ok">已发射</span></td></tr>
+    <tr><td><code>run.failed</code></td><td>执行失败或中止：message + optional <code>reason</code>（aborted / error，缺省按 error）+ optional <code>messages</code>。agent_settled 的 messages 是完整终态分段，含中止/失败尾段与 usage；空数组也直接替换，不再续本地占位。pi 可恢复溢出内聚在 run 内，不对外发本事件；恢复失败才收口</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>context.updated</code></td><td>轮终实报：工具循环每个 turn_end 发一份本轮端点实报 usage —— 上下文指示器在 run 进行中实时跟随（此前 usage 只随 run.completed 落账，run 内多轮时指示器冻结在旧值）</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>compaction.started / completed</code></td><td>上下文压缩（pi 内核）：started（reason = threshold 自动 / manual 手动 / overflow 溢出恢复）；completed 带 summary 全文 / tokensBefore / <code>summarizedUntil</code> 锚 / summaryUsage（摘要调用自身的账）/ 失败 error。保留式呈现：宿主在锚处原位中插折叠条，被摘要区历史保留不删，重拉历史不因压缩消失</td><td><span class="st ok">已发射</span></td></tr>
     <tr><td><code>compaction.pruned</code></td><td>工具结果裁剪落账 —— 引擎已不再发射（裁剪随压缩归 pi 内核全量进摘要），协议字段兼容保留</td><td><span class="st plan">兼容保留</span></td></tr>
@@ -399,11 +399,11 @@
       <text x="423" y="583" text-anchor="middle" font-size="12.5" fill="#1c7a54">⑩ run.completed：分段终态 messages + stopReason（length = 被 token 上限截断）</text>
 
       <line x1="700" y1="642" x2="146" y2="642" stroke="#c2413f" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a-red)"/>
-      <text x="423" y="631" text-anchor="middle" font-size="12.5" fill="#a33634">⑪ 失败分支：run.failed（读 agent.state.errorMessage）</text>
+      <text x="423" y="631" text-anchor="middle" font-size="12.5" fill="#a33634">⑪ 失败/中止：run.failed（reason = error / aborted）</text>
 
       <rect x="235" y="676" width="650" height="44" rx="10" fill="#ffffff" stroke="#c2413f" stroke-dasharray="6 4"/>
-      <text x="560" y="694" text-anchor="middle" font-size="12.5" fill="#a33634" font-weight="600">随时中止：agent.abort → pi Agent.abort()，流立即终止</text>
-      <text x="560" y="711" text-anchor="middle" font-size="11" fill="#8a857f">UI：停止位 + 「已停止」回合头条；审批挂起中 abort 由引擎 signal listener 收口</text>
+      <text x="560" y="694" text-anchor="middle" font-size="12.5" fill="#a33634" font-weight="600">中止请求：agent.abort → pi AgentSession.abort()</text>
+      <text x="560" y="711" text-anchor="middle" font-size="11" fill="#8a857f">UI：准备收敛前「正在停止」；终态清请求位、保留结果</text>
     </svg>
   </div>
   <div class="figcaption">图 3-1 · 对话时序泳道图。四条泳道即四个代码位置：stores/chat → ipc/engine → SessionManager → pi。</div>
@@ -420,15 +420,20 @@
     <code>messageId</code> 在 submit 时就预生成（UUID），此后每个 text_delta / thinking_delta 都往同一个缓冲追加文本并推 delta 事件；
     <code>turn_end</code> 到达时把本轮 text/thinking/工具记录<b>封存成一段 ChatMessage</b>（工具循环段化），顺手记下 stopReason 与用量三件套（usage / durationMs / model，多轮累加）；
     <code>agent_settled</code>（pi 在 prompt 生命周期 finally 里每轮恰发一次，晚于全部内聚恢复 —— 单一权威终态）时整段数组
-    挂在 <code>run.completed.messages</code> 上 —— 所以 UI 流式渲染的是「半成品」，
-    最终以 completed 的分段终态为准替换，不怕 delta 乱序或丢失。
+    挂在 <code>run.completed.messages</code> 或 <code>run.failed.messages</code> 上。
+    先读 settled.aborted 判中止，再读 errorMessage 判失败；模型回答成功后在收口钩子中停止也属于中止。
+    UI 最终直接采用完整分段（含中止尾段，空数组也有效），不再重复追加本地流式占位；
+    stopping 只表示停止请求在途，用户回合头读取按 user.id 保存的 turnOutcomes；新提交不会改掉旧停止/失败头条。
+    准备期停止先记在 Host 操作对象，不能中断的 await 返回前仍保留预约；尚未交付 pi 的
+    原始 user 经公开 appendMessage + refreshContext 保存，不因零模型请求丢输入。
+    continue 的显示快照合并旧前缀与新增段，Inspector 只算本次新增工作。
   </p>
   <table>
     <tr><th style="width:150px">pi 事件</th><th>转译处置</th></tr>
     <tr><td><code>message_update</code></td><td>转译 <code>text_delta</code> / <code>thinking_delta</code> 增量 → <code>message.delta</code>（kind 区分）；toolcall 无增量事件</td></tr>
     <tr><td><code>tool_execution_start / end</code></td><td>转译 <code>tool.started</code>（kind/摘要取静态元数据表）/ <code>tool.completed</code>（resultSummary 截 200 字符 + 起止打点）；段化终态（run.completed.messages）按轮封存工具卡，交错保真</td></tr>
     <tr><td><code>turn_end</code></td><td>封存本轮一段 ChatMessage + 记 stopReason 与用量三件套（事件本身不带此信息，此处不摘即永久丢失；usage 多轮累加 = 计费口径）+ 发 <code>context.updated</code> 轮终实报（指示器 run 内实时跟随）</td></tr>
-    <tr><td><code>agent_settled</code></td><td>定案：run 失败/中止 → <code>run.failed</code>（带已封存轮次的 messages 分段终态，abort 前完成的轮 usage 照常落账）；否则 → <code>run.completed</code>。溢出压缩/provider 重试等恢复都发生在它之前（prompt 生命周期内聚），终态无竞态</td></tr>
+    <tr><td><code>agent_settled</code></td><td>定案：aborted 优先 → <code>run.failed(reason:aborted)</code>；其余有 errorMessage → <code>run.failed(reason:error)</code>；否则正常完成或进入 length 自动续写。失败/中止携带完整 messages（含尾段与 usage，允许 []）。恢复先于定案；已释放的 run 不再自动续写</td></tr>
     <tr><td><code>compaction_start / end</code></td><td>转译 <code>compaction.started / completed</code>（reason 含 overflow）；阈值压缩发生在触发回合 run 落定后的轮间检查点</td></tr>
     <tr><td>其余（agent_start / message_start / message_end / session_info_changed 等）</td><td>协议暂无对应事件，转译为空（需要时再扩展协议）</td></tr>
   </table>
@@ -450,9 +455,11 @@
     与上下文口径（pi 投影已裁影子区）分离）。</li>
     <li><b>submit</b>：可选换模型（先按 provider/model 精确找，再退化为全目录按 id 找；setModel/setThinkingLevel
     判等再调 —— pi 树对"每次调用落一条"的 API 要按需调用，空条目会干扰压缩切点）；
-    首条消息自动截 24 字作会话标题；忙判定单一账本（streaming map 覆盖 pi 恢复/续写链全程）。</li>
-    <li><b>终态纪律</b>：run.completed/run.failed 的发射点钉在 <code>agent_settled</code>（pi 每轮 prompt
-    finally 恰发一次，晚于溢出恢复/压缩/provider 重试）—— 单一权威终态，无抑制竞态。</li>
+    首条消息自动截 24 字作会话标题；streaming 与手动压缩操作 map 覆盖准备、恢复、续写全程。</li>
+    <li><b>准备期取消</b>：本次 owner 记录 stopRequested，await 后核对归属；prompt 的 started 回调补取消，
+    链式 prepareRequest 在原 hook 前后检查 signal。manual compaction_start 补压缩取消；删除后的迟到实例 dispose，已进入 pi 准备的调用另由一次性 core 启动监听补取消。</li>
+    <li><b>终态纪律</b>：已进入 pi 的 run 在 <code>agent_settled</code> 定案；未进入 run 的早停与 handled
+    由 Host 收口。装配失败仍报真实错误；没有 signal 的扩展 await 不能强制终止，需保留预约等待。</li>
     <li><b>AUTO_CONTINUE</b>：贴线 maxTokens 截断（pi 不恢复的场景）注入显式 user 续写指令，上限 3 次 ——
     Cogent 侧保留的唯一运行期干预。</li>
     <li><b>v1 旧会话</b>：架构重构前的盘上转录在首次装配时一次性导入 pi 树（<code>kernel/legacy-import.ts</code>），随后重写 v2。</li>

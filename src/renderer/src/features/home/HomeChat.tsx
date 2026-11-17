@@ -16,7 +16,7 @@
  * 内嵌思考力度滑杆 ThinkingSlider）、上下文指示器（ContextIndicator）。
  * 项目回显走 project store（真数据）。
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   IconArrowUp,
   IconClock,
@@ -54,9 +54,11 @@ import {
   selectLastError,
   selectRunning,
   selectStopping,
+  selectLastRunOutcome,
   selectCompacting,
   selectTruncated,
   useChatStore,
+  type SessionBucket,
 } from '@/stores/chat'
 import type { ProjectSummary } from '@/env.d'
 import { useProjectStore } from '@/stores/project'
@@ -80,6 +82,7 @@ export type { MessageLike } from './MessageRow'
 
 /** 白底行/钮 hover：黑 5% 软叠（全局配方，同 content-sidebar 行） */
 const HOVER = 'hover:bg-accent-foreground/5 hover:text-foreground'
+const EMPTY_TURN_OUTCOMES: SessionBucket['turnOutcomes'] = {}
 
 /** 相对时间文案（信息卡「最近活动」行用）：刚刚 / N 分钟前 / N 小时前 /
     N 天前，更久落本地日期 —— 会话 updatedAt 随消息推进（chat store），
@@ -198,27 +201,25 @@ function ChatMessages() {
   const messages = useChatStore(
     (s) => s.bySession[s.activeSessionId ?? '']?.messages ?? EMPTY_MESSAGES
   )
+  const turnOutcomes = useChatStore(
+    (s) => s.bySession[s.activeSessionId ?? '']?.turnOutcomes ?? EMPTY_TURN_OUTCOMES
+  )
   // 正文主题：亮色令牌变量挂消息流容器（单点），暗色/extraCss 由 hook 内部
   // <style> 管理 —— 见 ChatTheme.ts
   const themeVars = useChatTheme()
   const running = useChatStore(selectRunning)
   const stopping = useChatStore(selectStopping)
+  const lastRunOutcome = useChatStore(selectLastRunOutcome)
   const truncated = useChatStore(selectTruncated)
   // 压缩进行中（完备化 D8）：started→completed 窗口，消息流内状态条
   const compacting = useChatStore(selectCompacting)
   const lastError = useChatStore(selectLastError)
 
-  // 末回合相位从会话级运行位推导（docs/计划/回合过程折叠.md D6）：live 优先，其后
-  // 停止位（abort）→「已停止」、错误位 →「出错了」，正常完成落 done；
-  // 历史回合恒 done（flags 是会话级、不随回合持久化，见计划风险表）
+  // 结果属于用户回合；新提问只改变当前live，不能把旧中止/失败改成done。
+  // 仅末尾无user兜底组沿用会话最近结果，其他未知结果默认done。
   const turns = groupTurns(messages)
-  const lastPhase: TurnPhase = running
-    ? 'live'
-    : stopping
-      ? 'stopped'
-      : lastError !== null
-        ? 'failed'
-        : 'done'
+  const terminalPhase = (outcome: SessionBucket['runtime']['lastRunOutcome'] | undefined): TurnPhase =>
+    outcome === 'stopped' ? 'stopped' : outcome === 'failed' ? 'failed' : 'done'
 
   return (
     <MessageScroller className="min-h-0 flex-1">
@@ -242,7 +243,15 @@ function ChatMessages() {
             // 原位成组、可多条并存，静态 'head' 会撞 key；无 user 的组结构上
             // 必有首项 —— 压缩条组带 bar、尾部兜底组先 push 再填 items）
             <div key={turn.user?.id ?? turn.items[0].id} className="flex min-w-0 flex-col gap-3">
-              <TurnGroup turn={turn} phase={turn === turns.at(-1) ? lastPhase : 'done'} />
+              <TurnGroup
+                turn={turn}
+                phase={turn === turns.at(-1) && running
+                  ? 'live'
+                  : terminalPhase(turn.user !== undefined
+                    ? turnOutcomes[turn.user.id]
+                    : turn === turns.at(-1) ? lastRunOutcome : undefined)}
+                stopping={turn === turns.at(-1) && stopping}
+              />
             </div>
           ))}
           {/* 压缩中状态条（完备化 D8，Codex 两态的前态）：started→completed 窗口
@@ -310,7 +319,15 @@ function ChatComposer({
   value: string
   onValueChange: (next: string) => void
 }) {
-  const setValue = onValueChange
+  // 长回包不能清掉用户后来输入的草稿、另一会话，或新挂载输入区的内容。
+  const submission = useRef({ request: 0, edit: 0, value })
+  submission.current.value = value
+  useEffect(() => () => { submission.current.request++ }, [])
+  const setValue = (next: string): void => {
+    submission.current.edit++
+    submission.current.value = next
+    onValueChange(next)
+  }
   const running = useChatStore(selectRunning)
   const submit = useChatStore((s) => s.submit)
   const abort = useChatStore((s) => s.abort)
@@ -345,13 +362,18 @@ function ChatComposer({
   const send = () => {
     const text = value.trim()
     if (!text || running) return
+    const request = ++submission.current.request
+    const edit = submission.current.edit
+    const view = useHomeStore.getState().session
     // submit 可能要先按需建会话（空列表着陆页直发，chat store 内物化）——必须
     // await 之后再读 activeSessionId 翻视图态，否则建会话未落定时读到 null，
     // 消息进了新会话而视图还停在新聊天（串视图）。清空输入放在受理成功之后：
     // submit 失败（引擎不可用）会 rethrow，此时输入框保留原文供改后重发
     void (async () => {
       try {
-        await submit(text, activeModelId, thinkingLevel, activeProvider)
+        const accepted = await submit(text, activeModelId, thinkingLevel, activeProvider)
+        if (!accepted || request !== submission.current.request || edit !== submission.current.edit ||
+          submission.current.value !== value || useHomeStore.getState().session !== view) return
       } catch {
         return // 失败态已由 store 落（错误条 + 运行位复位），原文留在输入框
       }

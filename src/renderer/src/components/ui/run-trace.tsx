@@ -8,11 +8,12 @@
  * 空折叠体挂个开合箭头是噪音。
  * 底层 = ui/trace（与 Reasoning/ToolCard 同家族，视觉一套）；图标走 lucide
  * 同家族惯例（AGENTS 方针 2 的"原语内部小图标"例外，与 tool.tsx 同理）。
- * 开合语义：用户手动优先（open ?? 默认），缺省 = stopped 展开（半截正文别藏）、
- * 其余收起 —— 与 Reasoning 的「用户手动优先、缺省收起」同款，家族一致。
+ * 开合语义：所有终态缺省收起，用户手动选择优先；末条正文由外层常驻，
+ * 收起详情不会隐藏半截终答，与 Reasoning 的缺省收起语义一致。
  */
 import { Children, useEffect, useState } from 'react'
 import { CircleXIcon, ClockIcon, SquareIcon } from 'lucide-react'
+import { MessageScrollerDecoration } from '@/components/ui/message-scroller'
 import {
   TraceCollapsible,
   TraceCollapsibleContent,
@@ -41,13 +42,13 @@ function headerLabel(phase: RunPhase, durationMs: number | undefined): string {
   return durationMs !== undefined ? `已工作 ${formatDuration(durationMs)}` : '已工作'
 }
 
-/** 计时尾标：100ms 自持重渲染（只重渲染自身这个 span，不惊动外层流式树）。
+/** 工作行局部时钟：源与视觉副本共用一次取值，不惊动外层流式树。
  *  亚秒走字是刻意为之（2026-11-11「计时器卡住」排障定论）：1s 粒度的首跳在
  *  +1s，而快回合（预热后问候语 ~1s 跑完）全程只剩挂载零头「6ms」死数字 ——
  *  观感即秒表停走；码表式滚动（6ms→140ms→380ms→1s…）才与「计时中」语义
  *  相符。focus/visibility 即刻对齐：被环境节流的残余路径下，看向窗口瞬间
  *  数字就是准的 */
-function Elapsed({ startTs }: { startTs: number }) {
+function useElapsed(startTs: number): string {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 100)
@@ -60,7 +61,7 @@ function Elapsed({ startTs }: { startTs: number }) {
       document.removeEventListener('visibilitychange', refresh)
     }
   }, [startTs])
-  return <TraceDescription>{formatDuration(Math.max(now - startTs, 0))}</TraceDescription>
+  return formatDuration(Math.max(now - startTs, 0))
 }
 
 /** 回合过程轨迹：终态头条 + 折叠体（children = 过程项，间距在此统一 ——
@@ -94,7 +95,7 @@ export function RunTrace({
   // 无过程体（纯文本回合）：头条单行直出，不挂折叠机构（空折叠体 + 箭头是噪音）
   if (Children.count(children) === 0) return header
   return (
-    <TraceCollapsible open={open ?? phase === 'stopped'} onOpenChange={setOpen}>
+    <TraceCollapsible open={open ?? false} onOpenChange={setOpen}>
       <TraceCollapsibleTrigger>{header}</TraceCollapsibleTrigger>
       {/* 分割线**常驻**（2026-11-16 用户定调）：不随折叠体收起 —— 收起态
           也是「头条 + 线」的完整行。挂在触发器与面板之间（折叠机构外，
@@ -109,17 +110,17 @@ export function RunTrace({
   )
 }
 
-/** 进行中的常驻工作行（流底部）：静态 ClockIcon + 「工作中」标题扫光
- *  （TraceLine data-status=running 带出）+ 码表 —— 过程间隙（等首轮 delta /
- *  工具执行 / 轮间往返）的唯一活动信号。run 收尾由 RunTrace 终态头条接管 */
-export function WorkingLine({ startTs }: { startTs: number }) {
+/** 流内工作行是唯一业务与读屏源；溢出跟随时另画根内视觉副本。
+ * 时钟只在此处运行一份；收尾由流内 RunTrace 接棒，不等待视觉队列。 */
+export function WorkingLine({ startTs, stopping = false }: { startTs: number; stopping?: boolean }) {
+  const elapsed = useElapsed(startTs)
   return (
-    <TraceLine status="running">
-      <TraceIcon>
-        <ClockIcon />
-      </TraceIcon>
-      <TraceTitle>工作中</TraceTitle>
-      <Elapsed startTs={startTs} />
-    </TraceLine>
+    <MessageScrollerDecoration>
+      <TraceLine status="running">
+        <TraceIcon><ClockIcon /></TraceIcon>
+        <TraceTitle>{stopping ? '正在停止' : '工作中'}</TraceTitle>
+        <TraceDescription>{elapsed}</TraceDescription>
+      </TraceLine>
+    </MessageScrollerDecoration>
   )
 }

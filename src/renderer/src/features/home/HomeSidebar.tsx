@@ -18,6 +18,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import {
   IconArchive,
   IconChevronDown,
@@ -449,10 +450,12 @@ export function HomeSidebar() {
   // 等待确认 tag 的派生源（D7）：会话桶的 pendingApprovals 非空即显。函数签名
   // 下传（useCallback 稳定引用保 ProjectRow/ChatRow memo；pending 变化只让
   // 涉事行因 waitingApproval 布尔翻转而重渲染）
-  const bySession = useChatStore((s) => s.bySession)
+  const waitingIds = useChatStore(useShallow((s) =>
+    Object.entries(s.bySession).filter(([, bucket]) => bucket !== undefined && bucket.pendingApprovals.length > 0).map(([id]) => id)
+  ))
   const isWaitingApproval = useCallback(
-    (chatId: string): boolean => (bySession[chatId]?.pendingApprovals.length ?? 0) > 0,
-    [bySession]
+    (chatId: string): boolean => waitingIds.includes(chatId),
+    [waitingIds]
   )
   // 行点击真选中：selectSession 拉历史 + 置 activeSessionId（HomeChat 呈现源）——
   // 此前只切 home 视图态不选会话，行与内容错位（真实化要修的核心之一）

@@ -6,7 +6,7 @@
 ## 1. 问题
 
 Agent 宿主必须能在循环的关键时刻插手：工具执行前拦下来问用户（审批）、
-每轮开跑前改提示词（段注入）、旁观全部流量（审计）。关键是这些干预挂在哪里、
+每轮开跑前改提示词（段注入）、请求准备时检查取消、旁观全部流量（审计）。关键是这些干预挂在哪里、
 用什么形状挂 —— 挂错缝的代价具体得很：pi 的扩展 `tool_call` 事件拿不到
 abort signal，挂起审批遇「停止」就永悬。
 
@@ -26,6 +26,13 @@ abort signal，挂起审批遇「停止」就永悬。
 - **注册形状**：`InlineExtension = ExtensionFactory | { name, factory, ... }`
   （types.ts:1564）；`bindExtensions({ mode: 'rpc' })` 后扩展才收
   session_start（不调 = 挂它的扩展零初始化，Cogent 4a-1 实测）。
+- **请求准备的取消缝**：公开 `Agent.prepareRequest` 在每次请求前收到同一 signal
+  （本次实读 `reference/pi/packages/agent/src/agent-loop.ts:228-236`）。pi 的
+  input/auth preflight 早于 active run，Host 要先记停止意图，再用导出的
+  PromptOptions.preflightResult(started) 补原生取消；该回调在类型中标注为 RPC
+  internal，且在 core prompt 前同步调用，不能抛错破坏 finally
+  （`reference/pi/packages/coding-agent/src/core/agent-session.ts:325-339,1943-1969,2186-2195`）。
+  core 已收到取消也仍可能进入 prepareRequest，所以取消检查须放在这个实际边界。
 
 ## 3. 对比
 
@@ -53,6 +60,11 @@ abort signal，挂起审批遇「停止」就永悬。
   zcode/dsh 的分发器都带 signal —— pi 修了再迁，升级时重查。
 - **signal 竞速语义沿用 Cogent 既有实现**（早于本座）：session.ts 挂起时
   注册 abort listener、与 respondApproval 先到先得 —— 与 dsh 同构，没重造。
+- **请求取消也走链式包裹**：`wrapRequestCancellation` 在原 prepareRequest 前后
+  执行 signal.throwIfAborted，原 hook 的返回值与异常照常交回 pi，不另起取消循环。
+  不合作的 await 仍需返回；后续异步转换/鉴权也仍需 provider 遵守 signal，不能把
+  检查前已取消时的零入口外推为任意取消时点都零请求。准备期 owner 的三仓对照见
+  [pi 接入笔记](pi接入与会话管理.md#准备期取消与运行预约)。
 - **审计采 dsh 的配对纪律、不采它的 CI 守卫**：Cogent 钩子消费者全是
   Host 内部，三角色对账用文档表格就够（模块页）。
 - **厂商标量不迁扩展总线**：`onPayload(payload, model)` 带 model 上下文，
@@ -63,9 +75,10 @@ abort signal，挂起审批遇「停止」就永悬。
 ## 5. 在 Cogent 的落点
 
 - `src/host/runtime/hook-seat.ts`：createCogentHooks（具名扩展：段注入 +
-  context 预留缝）+ wrapApprovalChain（审批包裹器）；
+  context 预留缝）+ wrapApprovalChain（审批包裹器）+ wrapRequestCancellation
+  （请求准备取消检查）；
 - `src/host/kernel/pi-session-factory.ts`：extensionFactories 换具名工厂、
-  审批包裹一行挂装；
+  审批链与请求准备链包裹挂装；
 - `src/host/runtime/session.ts`：decideApproval 全路径审计点（plan/auto/
   autonomous/规则/ask 五路）+ respondApproval / abort listener /
   settleApprovals 三收尾；pendingApprovals 条目补 toolName；
@@ -73,4 +86,5 @@ abort signal，挂起审批遇「停止」就永悬。
   VERDICT_LABELS；`src/protocol/types.ts`：`approval.asked` /
   `approval.decided` 两 kind（additive）；renderer `kinds.ts` 呈现。
 - 测试：`inspector.test.ts`（单测 3）+ `approval-upgrade.test.ts` S8
-  （集成回查五条裁决路径）。
+  （集成回查五条裁决路径）；`hook-seat.test.ts` 核对请求准备原链与前后取消检查，
+  真实 pi 请求边界另见 `preparation-stop.integration.test.ts`。

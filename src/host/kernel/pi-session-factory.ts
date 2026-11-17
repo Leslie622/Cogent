@@ -36,7 +36,7 @@ import {
   type ToolDefinition
 } from '@earendil-works/pi-coding-agent'
 import type { Agent, AgentMessage } from '@earendil-works/pi-agent-core'
-import { createCogentHooks, wrapApprovalChain } from '../runtime/hook-seat'
+import { createCogentHooks, wrapApprovalChain, wrapRequestCancellation } from '../runtime/hook-seat'
 import type { Usage } from '@earendil-works/pi-ai'
 import { adaptCompactionToWindow } from '../runtime/compaction'
 import type { McpSettingsPatch } from '../runtime/mcp-config'
@@ -258,6 +258,9 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
   // wrapApprovalChain —— 为什么是包裹而非 tool_call 扩展事件：分发器丢
   // abort signal，挂起审批遇停止永悬，见该文件头注）
   session.agent.beforeToolCall = wrapApprovalChain(session.agent.beforeToolCall, opts.approval)
+
+  // 保留pi的请求准备钩子；已在启动交接时收到的取消，不再进入provider。
+  session.agent.prepareRequest = wrapRequestCancellation(session.agent.prepareRequest)
 
   // 观测三钩直挂（官方先例手法：pi 不占这些字段；inspector 惰性由调用方闭包）
   opts.observe(session.agent)

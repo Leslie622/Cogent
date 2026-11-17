@@ -1077,6 +1077,8 @@ export interface ProtocolEvents {
      * 逐段投影 —— 宿主用它替换流式占位可保真 text 与工具卡的交错顺序。
      * message 保持聚合形态（全轮 text 拼接 + toolCalls 合并）：老宿主只读
      * message 不破，新宿主优先 messages。
+     * 手动续写沿同一用户回合展示：快照也包含此前assistant前缀及其原用量，
+     * 避免宿主整段替换时丢旧回答；本run新增工作观测仍由Host单独记账。
      */
     messages?: ChatMessage[]
     /**
@@ -1089,12 +1091,13 @@ export interface ProtocolEvents {
   'run.failed': {
     sessionId: string
     message: string
+    /** run 级终态原因；缺省按 error 消费，不能用宿主停止按钮或错误文本猜中止。 */
+    reason?: 'aborted' | 'error'
     /**
-     * 分段终态（additive）：失败/中止前已完成轮次的投影 ——
-     * abort 场景此前只有 message，已完成轮的 usage 不落宿主消息流，上下文
-     * 指示器在停止后停在旧值（数据其实在 pi 树，重启回查才回来）。有已
-     * 封存轮次时携带，宿主做与 run.completed 同款的终态替换；无则缺省
-     * （首请求即失败等场景，宿主维持既有失败收尾）。
+     * 本次显示替换范围的完整终态分段快照，包含 aborted/error 封存尾段；
+     * 手动续写还包含此前assistant前缀，不能用空快照删除已有截断正文。
+     * 字段在场时直接替换，空数组也是权威结果，不再续接宿主流式占位以免重复；
+     * 装配/prompt 前置拒绝等未提供完整快照的路径缺省，宿主沿旧失败收尾。
      */
     messages?: ChatMessage[]
   }

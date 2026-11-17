@@ -10,6 +10,7 @@
  * 格式，单一实现避免两处口径漂移。
  */
 import { useMemo } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -118,8 +119,11 @@ function ContextBar({
  * MCP 工具/技能段明细待各自模块（主流对照见 技术笔记/token用量统计.md §6）。
  */
 export function ContextIndicator({ session }: { session: HomeSession }) {
-  const messages =
-    useChatStore((s) => (session.kind === 'chat' ? s.bySession[session.chatId]?.messages : undefined)) ?? EMPTY_MESSAGES
+  // 只订阅已落用量与压缩项；正文 delta 不使全会话用量聚合失效。
+  const messages = useChatStore(useShallow((s) => {
+    const items = (session.kind === 'chat' ? s.bySession[session.chatId]?.messages : undefined) ?? EMPTY_MESSAGES
+    return items.filter((item) => item.type === undefined && (item.usage !== undefined || item.role === 'compaction'))
+  }))
   // 轮终实报：run 进行中每轮 turn_end 落一份 —— 指示器实时跟随
   // （此前流式中冻结在上一 run 的值，run 内多轮工具触发的压缩看起来"远未
   // 到线"）。终态/压缩时引擎事件链清键，回落落盘口径

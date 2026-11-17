@@ -7,7 +7,7 @@
  * 挂载即 Maximum update depth exceeded）；此前 HomeChat 与 ContextIndicator
  * 各持一份本地副本，随拆分收敛为单一出处。
  */
-import type { ChatState, MessageItem } from './types'
+import type { ChatState, MessageItem, SessionRuntime } from './types'
 
 /** 空消息列表回退（见文件头：引用稳定是硬要求） */
 export const EMPTY_MESSAGES: MessageItem[] = []
@@ -17,9 +17,14 @@ export function selectRunning(state: ChatState): boolean {
   return state.bySession[state.activeSessionId ?? '']?.runtime.running === true
 }
 
-/** 活动会话是否处于「已点停止、终态未到」的窗口（回合头条判别用） */
+/** 活动会话是否处于本窗停止请求窗口；不代表最终已停止 */
 export function selectStopping(state: ChatState): boolean {
   return state.bySession[state.activeSessionId ?? '']?.runtime.stopping === true
+}
+
+/** 回合头消费最终结果，独立于停止按钮和操作错误 */
+export function selectLastRunOutcome(state: ChatState): SessionRuntime['lastRunOutcome'] {
+  return state.bySession[state.activeSessionId ?? '']?.runtime.lastRunOutcome ?? null
 }
 
 /** 活动会话的最近错误文案（无 = null） */

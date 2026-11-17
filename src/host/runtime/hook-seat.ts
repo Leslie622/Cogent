@@ -1,7 +1,7 @@
 /**
  * 钩子座（阶段 4d，docs/计划/钩子座实现.md）—— Host 干预内核循环的统一装配点。
  *
- * 三种形状各归其位，为什么不全走扩展事件（调研结论，2026-11-16）：
+ * 四种形状各归其位，为什么不全走扩展事件：
  * - **段注入**（sections）：`before_agent_start` 扩展事件 —— pi 官方缝，
  *   本文件工厂注册（Pi-meme session.ts:570-795 单工厂集中装配同款形状）；
  * - **审批包裹**（wrapApprovalChain）：链式包裹官方的 `agent.beforeToolCall`
@@ -14,6 +14,8 @@
  *   onProviderStreamEvent，session.attachInspector 挂装）—— 载荷带 model
  *   上下文而扩展事件版没有（before_provider_request 仅 payload），不等价
  *   故不迁（实现文档 §3.3）；它籍挂本座但物理上留在 inspector。
+ * - **请求取消**：链式包裹公开 agent.prepareRequest，原钩子前后检查signal，
+ *   接住Host保存并在pi启动时重放的停止意图；不覆盖原钩子或宣称强制打断任意await。
  *
  * 上下文注入（`context` 事件，每次 LLM 调用前可改 messages）：**预留缝未接线**
  * —— pi 自动注入 <cwd> 环境段 + Cogent 工作区注入走系统提示段，无未满足
@@ -85,5 +87,21 @@ export function wrapApprovalChain(
     )
     if (verdict.block) return { block: true, reason: verdict.reason } satisfies BeforeToolCallResult
     return piBeforeToolCall?.(context, signal)
+  }
+}
+
+/**
+ * pi在agent_start接到中止后仍会进入请求准备；在其原钩子前后检查同一signal，
+ * 让准备期已取消的工作在provider入口前收口。原钩子可能等待外部I/O，必须保留
+ * 并在返回后再查一次；此包装不声称能强制终止不合作的异步处理器。
+ */
+export function wrapRequestCancellation(
+  prepareRequest: Agent['prepareRequest']
+): NonNullable<Agent['prepareRequest']> {
+  return async (request, signal) => {
+    signal?.throwIfAborted()
+    const update = await prepareRequest?.(request, signal)
+    signal?.throwIfAborted()
+    if (update !== undefined) return update
   }
 }
