@@ -115,7 +115,8 @@ describe('TurnGroup 零内容组', () => {
     expect(screen.getAllByText('工作中')).toHaveLength(1)
     expect(source).not.toBeNull()
     expect(source).toContainElement(screen.getByText('工作中'))
-    expect(source).toContainElement(screen.getByText(/\d+\.\d\ds/))
+    // 码表秒粒度（2026-11-18）：工作中行整数秒，终态两位小数口径不变
+    expect(source).toContainElement(screen.getByText(/^\d+s$/))
     expect(source.closest('[aria-hidden="true"]')).toBeNull()
   })
 

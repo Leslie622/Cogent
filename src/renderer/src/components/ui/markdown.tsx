@@ -155,7 +155,7 @@ export function Markdown({ content, streaming = false }: { content: string; stre
           animated={false}
           lineNumbers={false}
           linkSafety={linkSafety}
-          className="md-body text-sm leading-relaxed text-foreground"
+          className="md-body text-sm text-foreground"
         >
           {content}
         </Streamdown>

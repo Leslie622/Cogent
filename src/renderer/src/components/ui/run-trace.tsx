@@ -43,15 +43,15 @@ function headerLabel(phase: RunPhase, durationMs: number | undefined): string {
 }
 
 /** 工作行局部时钟：源与视觉副本共用一次取值，不惊动外层流式树。
- *  亚秒走字是刻意为之（2026-11-11「计时器卡住」排障定论）：1s 粒度的首跳在
- *  +1s，而快回合（预热后问候语 ~1s 跑完）全程只剩挂载零头「6ms」死数字 ——
- *  观感即秒表停走；码表式滚动（6ms→140ms→380ms→1s…）才与「计时中」语义
- *  相符。focus/visibility 即刻对齐：被环境节流的残余路径下，看向窗口瞬间
- *  数字就是准的 */
+ *  秒粒度走字（2026-11-18 修订）：亚秒码表（10Hz 文字宽度变化）在高分屏
+ *  分数缩放下叠加滚动 snap 二态，是「工作中」行可感抖动的加成项；秒粒度
+ *  把数字变化频率降到 1Hz，focus/visibility 即刻对齐口径保留。终态头条的
+ *  formatDuration（两位小数）口径不变 —— 那是「已工作多久」的结算语义。 */
 function useElapsed(startTs: number): string {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 100)
+    // 250ms 采样对齐秒跳：1s 粒度的显示值每秒才变，采样再密只浪费重渲染
+    const timer = setInterval(() => setNow(Date.now()), 250)
     const refresh = (): void => setNow(Date.now())
     window.addEventListener('focus', refresh)
     document.addEventListener('visibilitychange', refresh)
@@ -61,7 +61,7 @@ function useElapsed(startTs: number): string {
       document.removeEventListener('visibilitychange', refresh)
     }
   }, [startTs])
-  return formatDuration(Math.max(now - startTs, 0))
+  return `${Math.floor(Math.max(now - startTs, 0) / 1000)}s`
 }
 
 /** 回合过程轨迹：终态头条 + 折叠体（children = 过程项，间距在此统一 ——
@@ -111,7 +111,10 @@ export function RunTrace({
 }
 
 /** 流内工作行是唯一业务与读屏源；溢出跟随时另画根内视觉副本。
- * 时钟只在此处运行一份；收尾由流内 RunTrace 接棒，不等待视觉队列。 */
+ * 时钟只在此处运行一份；收尾由流内 RunTrace 接棒，不等待视觉队列。
+ * 2026-11-18 消融定案：四件套（秒粒度码表 / rAF 整数贴底 / 24px 行高 /
+ * 关 anchoring）+ 副本 = 真机不抖；四件套单独（剥离副本）= 图标仍抖 ——
+ * 副本保留，勿再以「简化」名义拆除（证据链见 docs/计划/底部工作行抖动归因交接.md）。 */
 export function WorkingLine({ startTs, stopping = false }: { startTs: number; stopping?: boolean }) {
   const elapsed = useElapsed(startTs)
   return (

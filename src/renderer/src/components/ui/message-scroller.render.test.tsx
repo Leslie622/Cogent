@@ -500,14 +500,15 @@ describe('MessageScroller 流内源与视觉副本', () => {
     const decoration = g.decoration()!
     const sourceDescription = g.source.querySelector('[data-slot="trace-description"]')!
     const visualDescription = decoration.querySelector('[data-slot="trace-description"]')!
-    expect(sourceDescription).toHaveTextContent('1.00s')
+    expect(sourceDescription).toHaveTextContent('1s')
     expect(visualDescription.textContent).toBe(sourceDescription.textContent)
     expect(interval.mock.calls.length - clearInterval.mock.calls.length).toBe(1)
     // 先交付库在挂载/RO 时排出的状态同步 rAF，隔离真正的码表文本更新。
     act(() => { vi.advanceTimersByTime(64) })
     g.rootRect.mockClear(); g.viewportRect.mockClear(); g.contentRect.mockClear(); g.sourceRect.mockClear()
-    act(() => { vi.advanceTimersByTime(100) })
-    expect(sourceDescription).toHaveTextContent('1.10s')
+    // 码表 2026-11-18 起秒粒度：跨秒（+1.1s）文字才更新，更新路径仍不得读几何
+    act(() => { vi.advanceTimersByTime(1_100) })
+    expect(sourceDescription).toHaveTextContent('2s')
     expect(visualDescription.textContent).toBe(sourceDescription.textContent)
     expect(g.rootRect).not.toHaveBeenCalled()
     expect(g.viewportRect).not.toHaveBeenCalled()

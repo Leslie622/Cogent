@@ -90,6 +90,13 @@ function useStreamingBottomPin() {
       }
       refs.readingIntent.current = { ...current, source, moved: false }
     }
+    /** 高频轻量贴底：只写显式整数目标，零测量零样式写 —— rAF 每帧调用。
+     *  整数目标 ≤ maxScroll 不走浏览器钳制路径（钳制会对齐到分数设备像素
+     *  网格，落点随换行漂移）；底部恒留 <1px 无感空隙换取落点确定。 */
+    const pinScroll = () => {
+      if (!refs.following.get()) return
+      viewport.scrollTop = Math.round(viewport.scrollHeight - viewport.clientHeight)
+    }
     const pin = () => {
       if (!refs.following.get()) {
         const intent = refs.readingIntent.current
@@ -97,7 +104,7 @@ function useStreamingBottomPin() {
         return
       }
       content.style.translate = ""
-      viewport.scrollTop = viewport.scrollHeight
+      pinScroll()
       const residual = content.getBoundingClientRect().bottom - viewport.getBoundingClientRect().bottom
       if (viewport.scrollHeight > viewport.clientHeight && Math.abs(residual) <= 2) {
         content.style.translate = `0 ${-residual}px`
@@ -106,6 +113,17 @@ function useStreamingBottomPin() {
       refs.afterPin.forEach((listener) => listener())
     }
     refs.pin.current = pin
+    // rAF 驱动贴底（2026-11-18）：ResizeObserver 在 Chromium 的 paint 之后
+    // 交付，RO 里写 scrollTop 慢一帧 —— 每次换行「未贴底半途位置」被 paint
+    // 出来（±行高单帧跳）。rAF 在 paint 前执行，同帧完成修正（use-stick-to-bottom
+    // 库 / dsh use-chat-viewport 同路线）。完整 pin（残差补偿 + 装饰通知）
+    // 仍由 RO / 事件路径按需触发，高频路径不做测量。
+    let raf = 0
+    const frame = () => {
+      pinScroll()
+      raf = requestAnimationFrame(frame)
+    }
+    raf = requestAnimationFrame(frame)
     const onScroll = () => {
       const intent = refs.readingIntent.current
       if (intent === null || refs.following.get()) return
@@ -208,6 +226,7 @@ function useStreamingBottomPin() {
     window.addEventListener("pointercancel", onPointerCancel, true)
     pin()
     return () => {
+      cancelAnimationFrame(raf)
       observer.disconnect()
       if (refs.pin.current === pin) {
         refs.pin.current = NOOP_PIN
@@ -420,7 +439,10 @@ function MessageScrollerViewport({
       ref={nodes.setViewport}
       data-slot="message-scroller-viewport"
       className={cn(
-        "min-h-0 min-w-0 flex-1 scroll-fade-b scrollbar-thin scrollbar-gutter-stable overflow-y-auto overscroll-contain contain-content data-autoscrolling:scrollbar-thumb-transparent data-autoscrolling:scrollbar-track-transparent data-pending-scroll:invisible",
+        // overflow-anchor:none（2026-11-18）：Chromium scroll anchoring 会在内容
+        // 增长时以任意小数微调 scrollTop 补偿锚点，与显式贴底目标打架（落点
+        // 二态的加成项）；dsh use-chat-viewport 同款处理
+        "min-h-0 min-w-0 flex-1 scroll-fade-b scrollbar-thin scrollbar-gutter-stable overflow-y-auto overscroll-contain contain-content [overflow-anchor:none] data-autoscrolling:scrollbar-thumb-transparent data-autoscrolling:scrollbar-track-transparent data-pending-scroll:invisible",
         className
       )}
       {...props}
