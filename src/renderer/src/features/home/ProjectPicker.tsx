@@ -46,7 +46,7 @@ async function rebindSessionToProject(projectId: string): Promise<void> {
   const active = chat.sessions.find((s) => s.id === chat.activeSessionId)
   const scaffold =
     active !== undefined &&
-    (chat.messagesBySession[active.id]?.length ?? 0) === 0 &&
+    (chat.bySession[active.id]?.messages.length ?? 0) === 0 &&
     active.title === '新会话' &&
     active.projectId === undefined
   if (scaffold) {
@@ -74,7 +74,7 @@ async function unbindProject(): Promise<void> {
   const active = chat.sessions.find((s) => s.id === chat.activeSessionId)
   if (
     active !== undefined &&
-    (chat.messagesBySession[active.id]?.length ?? 0) === 0 &&
+    (chat.bySession[active.id]?.messages.length ?? 0) === 0 &&
     active.title === '新会话' &&
     active.projectId !== undefined
   ) {

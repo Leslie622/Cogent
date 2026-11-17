@@ -1,18 +1,21 @@
 /**
  * chat store 事件驱动行为测试（docs/模块/测试.md）：window.cogent
  * 可编程 stub + bindEngineEvents 驱动**真实接线**（不测复制品）—— 事件 →
- * 状态手术的全链路。重点钉 D9 保留式呈现的 store 侧手术：
+ * 会话桶手术的全链路。重点钉 D9 保留式呈现的 store 侧手术：
  * - compaction.pruned standalone 行立即落尾；
  * - compaction.completed 时间序落点 + 同检查点 standalone 撤销 + 副行随条配对；
  * - run.completed 终态替换不吞压缩条/副行（keptCompaction 并回）；
  * - submit 边界失败：IPC 前缀剥壳 + 乐观消息回滚（R10）。
- * 纯函数部分见 chat.test.ts。
+ * 纯函数部分见 flatten.test.ts；projectDefaultMode（F6 解析链一环）随本件。
+ * 2026-11-17 会话状态重构 P1：断言自平行 map 迁到 bySession 桶，判据不变。
  */
 import type { ChatMessage } from '@/env.d'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { bindEngineEvents, useChatStore } from './chat'
-import type { MessageItem } from './chat'
-import { useHomeStore } from './home'
+import { useProjectStore } from '@/stores/project'
+import { useHomeStore } from '@/stores/home'
+import { bindEngineEvents } from './events'
+import { emptyBucket, patchBucket, projectDefaultMode, useChatStore } from './store'
+import type { MessageItem } from './types'
 
 // ———— window.cogent 可编程 stub（模块加载前就位，bindEngineEvents 才拿得到） ————
 
@@ -44,18 +47,18 @@ beforeEach(() => {
 })
 
 const SID = 's1'
-/** 预置消息列表（直写 store，绕开 submit 的乐观路径）。视图态同步置 chat：
+/** 预置消息桶（直写 store，绕开 submit 的乐观路径）。视图态同步置 chat：
  *  生产里"有活动会话"必然是 chat 态（openSession/send 都会翻转 home store），
  *  submit 的物化条件按视图态优先，seed 不对齐会误入
  *  "新聊天强制物化"分支 */
-const seedMessages = (items: ReturnType<typeof useChatStore.getState>['messagesBySession'][string]): void => {
+const seedMessages = (items: MessageItem[]): void => {
   useHomeStore.setState({ session: { kind: 'chat', chatId: SID } })
   useChatStore.setState((state) => ({
-    messagesBySession: { ...state.messagesBySession, [SID]: items },
+    bySession: { ...state.bySession, [SID]: { ...emptyBucket(), messages: items } },
     activeSessionId: SID
   }))
 }
-const messages = (): Array<unknown> => useChatStore.getState().messagesBySession[SID] ?? []
+const messages = (): MessageItem[] => useChatStore.getState().bySession[SID]?.messages ?? []
 
 const userMsg = (content: string, at: number): ChatMessage => ({ id: `u-${content}`, role: 'user', content, timestamp: at })
 const assistantMsg = (content: string, at: number): ChatMessage => ({ id: `a-${content}`, role: 'assistant', content, timestamp: at })
@@ -70,14 +73,14 @@ describe('compaction 事件序列（D9 保留式 store 手术）', () => {
     try {
       seedMessages([userMsg('q1', 100), assistantMsg('a1', 200), userMsg('q2', 300)])
       emit({ method: 'compaction.started', params: { sessionId: SID, reason: 'threshold' } })
-      expect(useChatStore.getState().compactingBySession[SID]).toBe(true)
+      expect(useChatStore.getState().bySession[SID]?.runtime.compacting).toBe(true)
 
       emit({
         method: 'compaction.completed',
         params: { sessionId: SID, reason: 'threshold', tokensBefore: 90_000, tokensAfter: 10_000, summary: 'SUMMARY', summarizedUntil: 250 }
       })
       const state = useChatStore.getState()
-      expect(state.compactingBySession[SID]).toBeUndefined() // 窗口关闭
+      expect(state.bySession[SID]?.runtime.compacting).toBe(false) // 窗口关闭
       const list = messages()
       expect(list.map((m) => (m as ChatMessage).role)).toEqual(['user', 'assistant', 'user', 'compaction'])
       expect(list.map((m) => (m as ChatMessage).content)).toEqual(['q1', 'a1', 'q2', 'SUMMARY'])
@@ -97,7 +100,7 @@ describe('compaction 事件序列（D9 保留式 store 手术）', () => {
       method: 'compaction.completed',
       params: { sessionId: SID, reason: 'threshold', tokensBefore: 90, tokensAfter: 10, summary: 'S', summarizedUntil: 250 }
     })
-    list = messages() as Array<{ id: string; type?: string }>
+    list = messages()
     const prunedRows = list.filter((m) => m.type === 'pruned')
     expect(prunedRows).toHaveLength(1) // 独立行撤下、配对行不双份
     const barAt = list.findIndex((m) => (m as ChatMessage).role === 'compaction')
@@ -108,7 +111,7 @@ describe('compaction 事件序列（D9 保留式 store 手术）', () => {
     seedMessages([userMsg('q1', 100)])
     emit({ method: 'compaction.started', params: { sessionId: SID, reason: 'manual' } })
     emit({ method: 'compaction.completed', params: { sessionId: SID, reason: 'manual', error: '生成失败' } })
-    expect(useChatStore.getState().compactingBySession[SID]).toBeUndefined()
+    expect(useChatStore.getState().bySession[SID]?.runtime.compacting).toBe(false)
     expect(messages()).toHaveLength(1)
   })
 })
@@ -141,7 +144,7 @@ describe('run.completed 终态替换（D9 不吞压缩条/副行）', () => {
         'compaction:S',
         'assistant:answer'
       ])
-      expect(useChatStore.getState().runningBySession[SID]).toBe(false)
+      expect(useChatStore.getState().bySession[SID]?.runtime.running).toBe(false)
     } finally {
       vi.useRealTimers()
     }
@@ -156,9 +159,9 @@ describe('submit 边界失败（R10 IPC 剥壳 + 乐观回滚）', () => {
     )
     // submit 会 rethrow（调用方回填输入框）—— 这里只关心 store 收尾
     await useChatStore.getState().submit('hello', 'mock').catch(() => {})
-    const state = useChatStore.getState()
-    expect(state.lastErrorBySession[SID]).toBe('会话正在回复中，请先停止或等待完成') // 剥过壳
-    expect(state.runningBySession[SID]).toBe(false)
+    const bucket = useChatStore.getState().bySession[SID]
+    expect(bucket?.runtime.lastError).toBe('会话正在回复中，请先停止或等待完成') // 剥过壳
+    expect(bucket?.runtime.running).toBe(false)
     expect(messages()).toHaveLength(0) // 乐观消息回滚
   })
 })
@@ -175,9 +178,9 @@ describe('context.updated 轮终实报与 run.failed 分段终态', () => {
   it('context.updated 落 live 值；run 终态清键（segments 内 usage 为准）', () => {
     seedMessages([userMsg('u1', 100), usageMsg(1)])
     emit({ method: 'context.updated', params: { sessionId: SID, usage: { input: 900, output: 50, cacheRead: 0, cacheWrite: 0, totalTokens: 950, totalCost: 0 } } })
-    expect(useChatStore.getState().contextLiveBySession[SID]?.input).toBe(900)
+    expect(useChatStore.getState().bySession[SID]?.runtime.contextLive?.input).toBe(900)
     emit({ method: 'run.completed', params: { sessionId: SID, messages: [usageMsg(2)] } })
-    expect(useChatStore.getState().contextLiveBySession[SID]).toBeUndefined()
+    expect(useChatStore.getState().bySession[SID]?.runtime.contextLive).toBeNull()
   })
 
   it('compaction.completed 弃置 live（压缩前旧账让位 tokensAfter 估算）', () => {
@@ -187,7 +190,7 @@ describe('context.updated 轮终实报与 run.failed 分段终态', () => {
       method: 'compaction.completed',
       params: { sessionId: SID, reason: 'threshold', tokensBefore: 900, tokensAfter: 100, summary: 'S', summarizedUntil: 200 }
     })
-    expect(useChatStore.getState().contextLiveBySession[SID]).toBeUndefined()
+    expect(useChatStore.getState().bySession[SID]?.runtime.contextLive).toBeNull()
   })
 
   it('run.failed 带分段终态：已完成轮替换流式区（usage 落账，指示器停止后即真实值）', () => {
@@ -197,14 +200,43 @@ describe('context.updated 轮终实报与 run.failed 分段终态', () => {
       { id: 't1', type: 'tool', name: 'read', toolKind: 'read', summary: 'read(a)', status: 'running', startedAt: 150 },
       { id: 'streaming', role: 'assistant', content: '半截', timestamp: 200 }
     ])
-    useChatStore.setState((s) => ({ stoppingBySession: { ...s.stoppingBySession, [SID]: true } }))
+    // 走 store 的真实写入姿势（patchBucket 兜底建桶），免手搓 Partial 索引
+    useChatStore.setState((state) =>
+      patchBucket(state, SID, (bucket) => ({ ...bucket, runtime: { ...bucket.runtime, stopping: true } }))
+    )
     emit({ method: 'run.failed', params: { sessionId: SID, message: '已中止', messages: [usageMsg(1)] } })
-    const list = messages() as MessageItem[]
+    const list = messages()
     // 引擎已完成轮的 usage 落进消息流；被截断的半截正文续在其后（封存保留）
     const withUsage = list.find((m): m is ChatMessage => m.type === undefined && m.usage !== undefined)
     expect(withUsage?.usage?.input).toBe(100)
     expect(list.some((m) => m.type === undefined && m.content === '半截')).toBe(true)
-    expect(useChatStore.getState().runningBySession[SID]).toBe(false)
-    expect(useChatStore.getState().lastErrorBySession[SID]).toBeUndefined() // 停止不是错误
+    expect(useChatStore.getState().bySession[SID]?.runtime.running).toBe(false)
+    expect(useChatStore.getState().bySession[SID]?.runtime.lastError).toBeNull() // 停止不是错误
+  })
+})
+
+// ———— projectDefaultMode（F6 项目级默认权限，createSession 解析链一环） ————
+
+describe('projectDefaultMode', () => {
+  it('projectId 直配命中（defaultPermissionMode 有值才返回）', () => {
+    useProjectStore.setState({
+      projects: [
+        { id: 'p1', name: 'A', cwds: ['C:/ws/a'], createdAt: 0, defaultPermissionMode: 'autonomous' },
+        { id: 'p2', name: 'B', cwds: ['C:/ws/b'], createdAt: 0 }
+      ]
+    })
+    expect(projectDefaultMode('p1')).toBe('autonomous')
+    expect(projectDefaultMode('p2')).toBeUndefined()
+    expect(projectDefaultMode('nope')).toBeUndefined()
+  })
+
+  it('cwd 前缀归属：命中 / 边界不误配 / 项目外 / 反斜杠归一', () => {
+    useProjectStore.setState({
+      projects: [{ id: 'p1', name: 'A', cwds: ['C:\\ws\\a'], createdAt: 0, defaultPermissionMode: 'auto' }]
+    })
+    expect(projectDefaultMode(undefined, 'C:\\WS\\A')).toBe('auto') // 大小写+斜杠归一
+    expect(projectDefaultMode(undefined, 'c:/ws/a/sub/dir')).toBe('auto') // 子路径命中
+    expect(projectDefaultMode(undefined, 'C:/ws/a-x')).toBeUndefined() // 前缀不补分隔符不误配
+    expect(projectDefaultMode(undefined, 'C:/elsewhere')).toBeUndefined()
   })
 })

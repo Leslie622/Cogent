@@ -9,7 +9,7 @@
  */
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useChatStore, type PendingQuestion } from '@/stores/chat'
+import { emptyBucket, useChatStore, type PendingQuestion } from '@/stores/chat'
 import { QuestionPanel } from './QuestionPanel'
 
 const SID = 's-question-panel'
@@ -39,7 +39,7 @@ const TWO_QUESTIONS: PendingQuestion = {
 function mount(pending: PendingQuestion = TWO_QUESTIONS): HTMLElement {
   useChatStore.setState({
     activeSessionId: SID,
-    pendingQuestionsBySession: { [SID]: [pending] },
+    bySession: { [SID]: { ...emptyBucket(), pendingQuestions: [pending] } },
     respondQuestion: vi.fn().mockResolvedValue(undefined)
   })
   const { container } = render(<QuestionPanel />)

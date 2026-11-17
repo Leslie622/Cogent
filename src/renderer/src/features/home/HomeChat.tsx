@@ -50,6 +50,7 @@ import {
 } from '@/components/ui/message-scroller'
 import { useHomeStore, type HomeSession } from '@/stores/home'
 import {
+  EMPTY_MESSAGES,
   selectLastError,
   selectRunning,
   selectStopping,
@@ -57,7 +58,6 @@ import {
   selectTruncated,
   useChatStore,
 } from '@/stores/chat'
-import type { MessageItem } from '@/stores/chat'
 import type { ProjectSummary } from '@/env.d'
 import { useProjectStore } from '@/stores/project'
 import { ProjectPicker } from './ProjectPicker'
@@ -191,16 +191,12 @@ function ChatHeader({
   )
 }
 
-/** 无活动会话时的稳定空回退：选择器里写 `?? []` 字面量，zustand v5 严格相等下
-    快照每次都是新数组 → useSyncExternalStore 强制重渲染死循环（挂载即白屏） */
-const EMPTY_MESSAGES: MessageItem[] = []
-
 /** 对话流：消息源 = chat store 活动会话（引擎事件流驱动，含流式占位与工具卡行），
     渲染期按回合分组（TurnGroup 管两态呈现）。截断/失败提示条挂在消息末尾
     （stopReason=length 是正常结束的附属信息，不是错误） */
 function ChatMessages() {
   const messages = useChatStore(
-    (s) => s.messagesBySession[s.activeSessionId ?? ''] ?? EMPTY_MESSAGES
+    (s) => s.bySession[s.activeSessionId ?? '']?.messages ?? EMPTY_MESSAGES
   )
   // 正文主题：亮色令牌变量挂消息流容器（单点），暗色/extraCss 由 hook 内部
   // <style> 管理 —— 见 ChatTheme.ts
@@ -523,13 +519,13 @@ export function HomeChat({
   // 挂起提问（4c-2）同款占位（QuestionPanel 与审批面板互斥呈现 —— 都是
   // run 挂起中的人机裁决，同一时刻至多一类挂起是引擎执行模型的自然结果）
   const hasPendingApproval = useChatStore(
-    (s) => (s.pendingApprovalsBySession[s.activeSessionId ?? '']?.length ?? 0) > 0
+    (s) => (s.bySession[s.activeSessionId ?? '']?.pendingApprovals.length ?? 0) > 0
   )
   const hasPendingQuestion = useChatStore(
-    (s) => (s.pendingQuestionsBySession[s.activeSessionId ?? '']?.length ?? 0) > 0
+    (s) => (s.bySession[s.activeSessionId ?? '']?.pendingQuestions.length ?? 0) > 0
   )
   const hasPendingPlan = useChatStore(
-    (s) => (s.pendingPlansBySession[s.activeSessionId ?? '']?.length ?? 0) > 0
+    (s) => (s.bySession[s.activeSessionId ?? '']?.pendingPlans.length ?? 0) > 0
   )
   const [draft, setDraft] = useState('')
   return (

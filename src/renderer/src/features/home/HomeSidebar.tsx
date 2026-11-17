@@ -446,13 +446,13 @@ export function HomeSidebar() {
   // 会话/项目都是引擎真数据：chat store（session.list）+ project store（project.list）
   const sessions = useChatStore((s) => s.sessions)
   const createSession = useChatStore((s) => s.createSession)
-  // 等待确认 tag 的派生源（D7）：pendingApprovalsBySession 非空即显。函数签名
+  // 等待确认 tag 的派生源（D7）：会话桶的 pendingApprovals 非空即显。函数签名
   // 下传（useCallback 稳定引用保 ProjectRow/ChatRow memo；pending 变化只让
   // 涉事行因 waitingApproval 布尔翻转而重渲染）
-  const pendingApprovals = useChatStore((s) => s.pendingApprovalsBySession)
+  const bySession = useChatStore((s) => s.bySession)
   const isWaitingApproval = useCallback(
-    (chatId: string): boolean => (pendingApprovals[chatId]?.length ?? 0) > 0,
-    [pendingApprovals]
+    (chatId: string): boolean => (bySession[chatId]?.pendingApprovals.length ?? 0) > 0,
+    [bySession]
   )
   // 行点击真选中：selectSession 拉历史 + 置 activeSessionId（HomeChat 呈现源）——
   // 此前只切 home 视图态不选会话，行与内容错位（真实化要修的核心之一）
@@ -539,7 +539,7 @@ export function HomeSidebar() {
       const active = state.sessions.find((s) => s.id === state.activeSessionId)
       const activeIsEmpty =
         active !== undefined &&
-        (state.messagesBySession[active.id]?.length ?? 0) === 0 &&
+        (state.bySession[active.id]?.messages.length ?? 0) === 0 &&
         active.title === '新会话' && // 双保险：转录空 + 标题未命名（防投影延迟误判）
         (projectId === undefined ? active.projectId === undefined : active.projectId === projectId)
       if (!activeIsEmpty) {

@@ -203,7 +203,7 @@ ZCode /context 色阶的"越大越深"编码，2026-11-11 用户定调：去 ≈
 
 **明细（分类占比）为什么先不做**：需要把总量拆成 系统提示词/系统工具/
 
-**实现落点**：纯 renderer 零协议改动——chat store `messagesBySession`
+**实现落点**：纯 renderer 零协议改动——chat store 会话桶 `bySession[sid].messages`
 （usage 已持久化，老会话直接可用）+ engine store `ModelSummary.contextWindow`
 （分母模型与 ModelMenu 同走 `usableModels` 过滤，防同名跨 provider 命中
 未配 key 条目）。`ContextBar` 斜纹轨道 = `repeating-linear-gradient` +

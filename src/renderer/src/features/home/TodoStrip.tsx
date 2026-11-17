@@ -52,7 +52,7 @@ const EMPTY_TODOS: TodoItem[] = []
 /** 条本体：空清单不挂载（HomeChat 侧由数据源保证，此处空态守一道）。
     absolute 定位生效前提 = 挂载点是内容区的 relative 容器（HomeChat） */
 export function TodoStrip() {
-  const todos = useChatStore((s) => s.todosBySession[s.activeSessionId ?? ''] ?? EMPTY_TODOS)
+  const todos = useChatStore((s) => s.bySession[s.activeSessionId ?? '']?.todos ?? EMPTY_TODOS)
   const [collapsed, setCollapsed] = useState(false)
   // 收起冷却（2026-11-16 交互优化）：点击折叠钮的位置与收起后胶囊的位置
   // 几乎重合，收起瞬间指针就压在胶囊上、:hover 立即命中 → 展开图标动画

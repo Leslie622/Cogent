@@ -9,7 +9,7 @@
  */
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useChatStore, type PendingApproval, type PendingPlan } from '@/stores/chat'
+import { emptyBucket, useChatStore, type PendingApproval, type PendingPlan } from '@/stores/chat'
 import { ApprovalPanel } from './ApprovalPanel'
 import { PlanPanel } from './PlanPanel'
 
@@ -34,7 +34,7 @@ const mountApprovalPanel = (): { respondApproval: ReturnType<typeof vi.fn> } => 
   useChatStore.setState({
     activeSessionId: SID,
     sessions: [],
-    pendingApprovalsBySession: { [SID]: [approval] },
+    bySession: { [SID]: { ...emptyBucket(), pendingApprovals: [approval] } },
     respondApproval
   })
   render(<ApprovalPanel />)
@@ -95,7 +95,7 @@ describe('PlanPanel 裁决回归钉', () => {
     const respondPlan = vi.fn()
     useChatStore.setState({
       activeSessionId: SID,
-      pendingPlansBySession: { [SID]: [plan] },
+      bySession: { [SID]: { ...emptyBucket(), pendingPlans: [plan] } },
       respondPlan
     })
     render(<PlanPanel />)

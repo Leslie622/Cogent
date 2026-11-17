@@ -276,7 +276,7 @@ function PendingQuestionCard({ pending, autoFocus }: { pending: PendingQuestion;
 /** 面板本体：与 ApprovalPanel 同位（输入区替换层内部按序叠放） */
 export function QuestionPanel() {
   const pending = useChatStore(
-    (s) => s.pendingQuestionsBySession[s.activeSessionId ?? ''] ?? undefined
+    (s) => s.bySession[s.activeSessionId ?? '']?.pendingQuestions ?? undefined
   )
   if (pending === undefined || pending.length === 0) return null
   return (

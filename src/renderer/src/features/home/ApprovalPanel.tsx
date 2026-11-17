@@ -268,7 +268,7 @@ function PendingApprovalCard({
     再守一道空态），容器对齐 ChatComposer 的外框留白（px-4 pb-4 + 内容列宽） */
 export function ApprovalPanel() {
   const pending = useChatStore(
-    (s) => s.pendingApprovalsBySession[s.activeSessionId ?? ''] ?? undefined
+    (s) => s.bySession[s.activeSessionId ?? '']?.pendingApprovals ?? undefined
   )
   const hasRoots = useChatStore((s) => {
     const session = s.sessions.find((x) => x.id === s.activeSessionId)

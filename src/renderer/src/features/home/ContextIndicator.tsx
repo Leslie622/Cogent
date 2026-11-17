@@ -13,8 +13,7 @@ import { useMemo } from 'react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useChatStore, selectCompacting } from '@/stores/chat'
-import type { MessageItem } from '@/stores/chat'
+import { EMPTY_MESSAGES, useChatStore, selectCompacting } from '@/stores/chat'
 import { findActiveModel, useEngineStore } from '@/stores/engine'
 import type { HomeSession } from '@/stores/home'
 import type { MessageUsage } from '@/env.d'
@@ -26,11 +25,10 @@ export function formatTokens(n: number): string {
   return `${parseFloat((n / 1e6).toFixed(2))}M`
 }
 
-/** 非聊天视图（新聊天）时的稳定空回退：selector 返回 undefined，若在组件体内
-    写 `?? []` 字面量，每次渲染新建数组 → 下方 usage 聚合的 useMemo 全程失效
-    逐帧重算。模块级常量让引用恒定（同 HomeChat 里 ChatMessages 的先例） */
-// 消息联合（含工具卡行）：usage 扫描经 type 判别跳过工具行（见下方 useMemo）
-const EMPTY_MESSAGES: MessageItem[] = []
+/** 非聊天视图（新聊天）时的稳定空回退（chat store selectors.ts 的单一出处，
+    稳定性依据见彼处注释）：selector 返回 undefined，若在组件体内写 `?? []`
+    字面量，每次渲染新建数组 → 下方 usage 聚合的 useMemo 全程失效逐帧重算。
+    消息联合（含工具卡行）：usage 扫描经 type 判别跳过工具行（见下方 useMemo） */
 
 /** 明细点色灰黑阶（模块级常量同 EMPTY_MESSAGES 的稳定性考量）：行序 = 占比
     降序，最深给最大段；三档对半递减保证 6px 小点上仍可分辨 */
@@ -121,12 +119,12 @@ function ContextBar({
  */
 export function ContextIndicator({ session }: { session: HomeSession }) {
   const messages =
-    useChatStore((s) => (session.kind === 'chat' ? s.messagesBySession[session.chatId] : undefined)) ?? EMPTY_MESSAGES
+    useChatStore((s) => (session.kind === 'chat' ? s.bySession[session.chatId]?.messages : undefined)) ?? EMPTY_MESSAGES
   // 轮终实报：run 进行中每轮 turn_end 落一份 —— 指示器实时跟随
   // （此前流式中冻结在上一 run 的值，run 内多轮工具触发的压缩看起来"远未
   // 到线"）。终态/压缩时引擎事件链清键，回落落盘口径
   const contextLive = useChatStore((s) =>
-    session.kind === 'chat' ? s.contextLiveBySession[session.chatId] : undefined
+    session.kind === 'chat' ? s.bySession[session.chatId]?.runtime.contextLive : undefined
   )
   // 分母模型与 ModelMenu 同源（findActiveModel 双键）：同名模型跨 provider 收录时
   // id 单键命中错家 —— 未配 key 的收录家、或都配了 key 时目录在前的那家（后者
@@ -182,12 +180,12 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
     // live 与 overridden 不同时出现——压缩清 live 后、续轮回包前只有后者，
     // 续轮 context.updated 一到 live 复位为真实实报
     const used =
-      contextLive !== undefined
+      contextLive != null
         ? contextLive.input + contextLive.cacheRead + contextLive.cacheWrite + contextLive.output
         : overridden ?? (usage ? usage.input + usage.cacheRead + usage.cacheWrite + usage.output : 0)
     return {
       used,
-      approximate: contextLive === undefined && overridden !== undefined,
+      approximate: contextLive == null && overridden !== undefined,
       // 端点不报缓存的模型 cacheRead 恒 0，"0%" 是误导 → 不显示（零值省略同 UsageLine）
       cacheHit: cacheRead > 0 && cacheDen > 0 ? cacheRead / cacheDen : undefined,
       // 明细三段（引擎粗估，随末轮 usage 落盘流转）；旧会话/引擎未算/压缩回落时

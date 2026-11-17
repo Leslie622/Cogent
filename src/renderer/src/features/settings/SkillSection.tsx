@@ -34,7 +34,7 @@ import {
 import { SettingsGroup, SettingsPage } from './SettingsParts'
 import { ScopeMenu } from './ScopeMenu'
 import { BADGE, FIELD_GAP, FIELD_LABEL } from './models-recipes'
-import { unwrapIpcError } from '@/stores/chat'
+import { unwrapIpcError } from '@/lib/ipc'
 import { useProjectScope } from '@/hooks/use-project-scope'
 import type { SkillSummary } from '@/env.d'
 

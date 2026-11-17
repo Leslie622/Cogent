@@ -269,7 +269,7 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   实色 `text-emerald-700` text-xs px-2 py-0.5（文字色纪律：透明度只许用在
   背景）+ `size-1.5 animate-pulse` 呼吸点（控制台 timeline 同款「进行中」
   语言）；**常显**不随 hover 隐藏，标题 pr 随之收窄（pr-2，无钮簇要让位）。
-  派生 = chat store pendingApprovalsBySession 非空即显，useCallback 函数签名
+  派生 = chat store 会话桶 pendingApprovals 非空即显，useCallback 函数签名
   下传保行级 memo
 - **设置页**：SettingsParts 拼装 —— **SettingsPage（详情页统一骨架，zcode
   对齐 2026-11-15：所有分区共用，不各自手写页头）**= 限宽单列

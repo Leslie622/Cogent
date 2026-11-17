@@ -132,7 +132,7 @@ function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFoc
 
 /** 面板本体：与 ApprovalPanel/QuestionPanel 同位（输入区替换层） */
 export function PlanPanel() {
-  const pending = useChatStore((s) => s.pendingPlansBySession[s.activeSessionId ?? ''] ?? undefined)
+  const pending = useChatStore((s) => s.bySession[s.activeSessionId ?? '']?.pendingPlans ?? undefined)
   if (pending === undefined || pending.length === 0) return null
   return (
     <div className="shrink-0 px-4 pb-4">

@@ -117,4 +117,4 @@ Cogent 的 `models.list` 直接投影这份目录（`session.ts listModels()`）
 - `src/host/index.ts`：method 注册表挂 runtime（handler 零防御，边界校验在 dispatch）；
 - `src/protocol/types.ts`：ChatMessage/ModelSummary/ProviderSummary +
   session.messages / models.list / credentials.* method + run.completed.message 字段；
-- renderer 消费侧：`src/renderer/src/stores/chat.ts`（事件 → 状态转译集中一处）。
+- renderer 消费侧：`src/renderer/src/stores/chat/`（events.ts 事件 → 桶更新转译集中一处）。

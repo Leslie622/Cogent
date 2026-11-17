@@ -11,7 +11,7 @@
 
 - **未闭合块**：流到一半的 ``` 围栏、`$$` 公式在纯 react-markdown 下按普通段落渲染，
   闭合瞬间整段跳变（"闪纯文本"）；
-- **高频重解析**：chat store 每 delta 全量 setState（`stores/chat.ts` 的 message.delta 分支），
+- **高频重解析**：chat store 每 delta 全量 setState（`stores/chat/events.ts` 的 message.delta 分支），
   渲染组件每个 token 都被要求重新解析整条消息；
 - **安全与 CJK**：模型输出可含原始 HTML（rehype-sanitize 的必要性）；中文标点紧贴
   `**加粗**`/`~~删除线~~` 时 CommonMark 的 emStrong 边界判定会失效。
