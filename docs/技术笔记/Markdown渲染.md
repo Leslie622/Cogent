@@ -48,13 +48,13 @@ requestRender 当成重新核实了整套缓存或虚拟化。
 带 JetBrains Mono，中文回落鸿蒙。语言 chunk 多不意味着所有语言都在启动路径执行。
 
 链接点击 preventDefault 后交给 window.open，让 Electron 的 setWindowOpenHandler
-走系统浏览器。裸 a 窗口内导航不会自动经过这条守卫。链接色、字重和下划线归正文主题
+走系统浏览器。裸 a 窗口内导航不会自动经过这条守卫。链接色、字重和下划线归对话内容主题
 消费表，不在 Markdown 组件硬编码品牌色。默认外链确认弹窗、行号和库内 animated 关闭，
 自有 reveal 的必要性与边界在对应笔记解释。
 
 Tailwind v4 自动扫描不进入 node_modules，必须 `@source` Streamdown dist，才能生成
 包里使用的工具类；这与导入库的全套样式表不是一回事。额外主题层见
-[聊天正文主题](聊天正文主题.md)，不复制一份 CSS 配方。
+[对话内容主题](对话内容主题.md)，不复制一份 CSS 配方。
 
 ## 5. Cogent 落点
 

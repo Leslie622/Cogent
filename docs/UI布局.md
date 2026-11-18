@@ -182,8 +182,12 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 - 用量行位于正文 footer，`text-[11px] text-muted-foreground tabular-nums`；
   显示输入/输出/缓存/成本/耗时，零值和无数据项省略，格式机制见 [用量与成本](模块/用量与成本.md)。
 - Markdown 使用 Streamdown + Shiki + CJK；链接阻止窗口内导航，再 window.open。
-  lineNumbers、库内 animated、linkSafety 弹窗关闭；Tailwind 显式 `@source` 扫 Streamdown。
-- 正文主题导入 Themd，由 `--t-*` 变量作用于消息流；「默认」主题 = 内置
+  lineNumbers 由外观设置「显示代码行号」驱动（默认关）、库内 animated、linkSafety
+  弹窗关闭，Shiki 传 [github-light, github-dark] 双主题随 html.dark 切换；
+  Tailwind 显式 `@source` 扫 Streamdown。深浅色三档（浅/深/跟随系统）切
+  html.dark，初值 main.tsx 同步挂防闪白；代码长行换行走 html[data-code-wrap]
+  门控。
+- 对话内容主题导入 Themd，由 `--t-*` 变量作用于消息流；「默认」主题 = 内置
   Theme-Leslie 令牌集，用户主题包相对库原生做稀疏差异、不叠加在默认之上。
   代码/表格拆壳规则须以变量注入的 `[style*]` 门控，无该组令牌时保持库原生结构。
 - 正文短批逐字/逐词 300ms 淡入；大批单连续片段最多 32 组，同批排期不超过 250ms。
