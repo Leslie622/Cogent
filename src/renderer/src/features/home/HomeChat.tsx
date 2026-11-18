@@ -211,7 +211,7 @@ function ChatMessages() {
   const turnOutcomes = useChatStore(
     (s) => s.bySession[s.activeSessionId ?? '']?.turnOutcomes ?? EMPTY_TURN_OUTCOMES
   )
-  // 正文主题：亮色令牌变量挂消息流容器（单点），暗色/extraCss 由 hook 内部
+  // 对话内容主题：亮色令牌变量挂消息流容器（单点），暗色/extraCss 由 hook 内部
   // <style> 管理 —— 见 ChatTheme.ts
   const themeVars = useChatTheme()
   const running = useChatStore(selectRunning)

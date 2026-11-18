@@ -1,5 +1,5 @@
 /**
- * 正文主题 store（zustand + persist → localStorage: cogent-themes）——
+ * 对话内容主题 store（zustand + persist → localStorage: cogent-themes）——
  * 全仓首个 persist store：纯渲染端视觉偏好，不进引擎/协议/磁盘档案，
  * localStorage 是对的层（跨设备同步是真墙：引擎侧无设置同步通道）。
  * 「默认」主题是常量而非存储档：Theme-Leslie 令牌集（2026-11-18 用户
@@ -40,6 +40,37 @@ const DEFAULT_THEME: ThemeFile = {
     'table.radius': '8px',
     'cell.borderWidth': '2px',
     'table.stripeBg': '#f2f2f2',
+    'hr.thickness': '2px',
+    'img.align': 'auto',
+    'img.radius': '8px',
+    'img.margin': '1em',
+    'root.fontLatin': 'Inter',
+    'root.fontCjk': 'HarmonyOS Sans SC',
+    'root.width': '95%'
+  },
+  /* 暗色套：整面替换语义（theme-file.ts）—— 与明暗无关的键（字体/尺寸/
+     边框样式）照抄，只暗化亮面刺眼值（浅底色 → 暗底色、饱和色提亮度） */
+  dark: {
+    'p.align': 'start',
+    'del.thickness': '2px',
+    'a.hoverColor': '#60a5fa',
+    'a.transition': '220ms',
+    'inlineCode.fontLatin': 'JetBrains Mono',
+    'inlineCode.fontCjk': 'HarmonyOS Sans SC',
+    'inlineCode.padding': '0em 0.5em',
+    'task.accent': '#4ade75',
+    'task.doneColor': '#4ade75',
+    'quote.bg': 'oklch(0.22 0 0)',
+    'quote.radius': '5px',
+    'quote.padding': '1em',
+    'codeBlock.fontLatin': 'JetBrains Mono',
+    'codeBlock.fontCjk': 'HarmonyOS Sans SC',
+    'cell.rowLine': 'solid',
+    'cell.colLine': 'solid',
+    'table.collapse': 'separate',
+    'table.radius': '8px',
+    'cell.borderWidth': '2px',
+    'table.stripeBg': 'oklch(0.23 0 0)',
     'hr.thickness': '2px',
     'img.align': 'auto',
     'img.radius': '8px',

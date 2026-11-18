@@ -1,5 +1,5 @@
 /**
- * Markdown 渲染（助手消息正文，路线空位 4）：Streamdown 封装 —— base-luma
+ * Markdown 渲染（对话内容，路线空位 4）：Streamdown 封装 —— base-luma
  * registry 没有 markdown 件（registry 逐名核实过），按 约定.md §3 手写成
  * 可复用组件，同 reasoning.tsx（手写 AI Elements pattern）的先例。
  * 为什么是 Streamdown 而不是裸 react-markdown：流式而生 —— remend 修复未闭合
@@ -13,14 +13,17 @@
  *    setWindowOpenHandler 守卫，裸 <a> 的窗口内导航（will-navigate）
  *    没人拦，会把应用窗口带到外链，window.open 恰好走该守卫转系统浏览器。
  *    默认的外链确认弹窗（linkSafety）一并关掉：桌面惯例直接开系统浏览器。
- *    颜色/字重/下划线不在组件里定（原 chrome-accent 硬编码已随正文主题化
- *    退役，见 决定.md），归 globals.css「聊天正文主题」消费表按令牌接管；
- * ② lineNumbers 关：主流聊天产品（ChatGPT/Claude）代码块不显示行号；
+ *    颜色/字重/下划线不在组件里定（原 chrome-accent 硬编码已随对话内容主题化
+ *    退役，见 决定.md），归 globals.css「对话内容主题」消费表按令牌接管；
+ * ② lineNumbers 默认关（外观设置「显示代码行号」驱动；默认值沿用主流
+ *    聊天产品惯例——ChatGPT/Claude 代码块无行号）；
+ *    shikiTheme 显式传 [github-light, github-dark] 双元组：亮暗两套同时
+ *    渲染、CSS 随 html.dark 切换显示（Streamdown 原生双主题机制）；
  * ③ animated 关：块入场动画主流均无，克制；
  * ④ 流式逐词淡入：每个真实 Block 实例分别保存进度与插件，追加到 Streamdown
  *    传入的 rehype 管线末尾；消息只共享排期时钟。同文段落也有独立身份，
  *    具体接法见 docs/技术笔记/流式呈现动效.md。
- * md-body 作用域类：正文主题层（globals.css 末尾「聊天正文主题」段）的挂载点，
+ * md-body 作用域类：对话内容主题层（globals.css 末尾「对话内容主题」段）的挂载点，
  * 来自 Themd 主题包（路线 A 静态应用）——层内说明见彼处。
  */
 import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -38,9 +41,12 @@ import {
   type StreamingRevealPacing,
   type StreamingRevealState,
 } from '@/components/ui/stream-reveal'
+import { useAppearanceStore } from '@/stores/appearance'
 
 const plugins = { code, cjk }
 const linkSafety = { enabled: false }
+/** Shiki 双主题：亮暗两套同时渲染，CSS 随 html.dark 切显示（元组序 = [亮, 暗]） */
+const shikiTheme: [string, string] = ['github-light', 'github-dark']
 
 const StreamingRevealContext = createContext<StreamingRevealState | null>(null)
 
@@ -95,6 +101,8 @@ const components: Components = {
 /** streaming只表示业务仍在输出；终态的既有Block树短暂保留到真实过渡结束，再恢复原生static语义。
  * 字号/行高在容器层定基调，块级元素由包默认接管；收尾设计见docs/技术笔记/流式呈现动效.md。 */
 export function Markdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
+  // 代码行号（外观设置；默认关，见文件头 ②）
+  const showLineNumbers = useAppearanceStore((s) => s.showLineNumbers)
   // 30ms 发布由 renderer 事件入口持有；直接传入的内容不再二次延迟。
   // 消息持有节奏与增量信号，文本进度由真实块持有；内容不再替代块身份。
   // 排期时钟种子取自会话级 pacing（封段接力的下一段不早于前段淡入结束）。
@@ -178,7 +186,8 @@ export function Markdown({ content, streaming = false }: { content: string; stre
           BlockComponent={renderStreaming ? StreamingRevealBlock : undefined}
           parseMarkdownIntoBlocksFn={renderStreaming ? parseBlocks : undefined}
           animated={false}
-          lineNumbers={false}
+          lineNumbers={showLineNumbers}
+          shikiTheme={shikiTheme}
           linkSafety={linkSafety}
           className="md-body text-sm leading-relaxed text-foreground"
         >

@@ -114,6 +114,11 @@
   --ring: oklch(0.556 0 0);
   /* 深色 chrome 与主背景仅一档之差，保持中性 */
   --sidebar: oklch(0.205 0 0);
+  /* 亮面自定义灰系（placeholder/空态/内容侧栏）——深色补齐暗面值，
+      否则深底下仍是亮灰/亮绿一块（2026-11-18 深色上线时补） */
+  --placeholder: oklch(0.55 0 0);
+  --empty-hint: oklch(0.45 0 0);
+  --content-sidebar: oklch(0.205 0.008 160);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -706,10 +711,10 @@
 }
 
 /* ============================================================
-   聊天正文主题层 —— 消费表（令牌 → Streamdown DOM 的映射）。
+   对话内容主题层 —— 消费表（令牌 → Streamdown DOM 的映射）。
    变量不在此定义：主题包（.themd.json）经 lib/theme 的
    compile.ts 编译，由 ChatTheme.ts 运行时注入消息流容器，
-   CSS 变量沿 DOM 继承被下面的 var() 消费（docs/技术笔记/聊天正文主题.md）。
+   CSS 变量沿 DOM 继承被下面的 var() 消费（docs/技术笔记/对话内容主题.md）。
    未注入变量 = 全部走回落值 = Streamdown 原生观感（「默认」主题即此）。
 
    为什么必须放非 layer 区：Streamdown 的默认样式是烤进组件的
@@ -735,8 +740,9 @@
    callout/p.* 等）导入后存而未用，映射一段即生效一段。
    不消费的令牌：root.width（正文列宽归布局层管，不属于内容样式）。
 
-   暗色：主题包的 dark 令牌套由 ChatTheme 编译为 .dark 作用域
-   变量块待命——Cogent 暗色切换未上线（.dark 块休眠），上线即生效。
+   暗色：深浅色由外观设置切 html.dark（2026-11-18 上线，三档浅/深/跟随
+   系统）；主题 dark 令牌套经 ChatTheme 换套编译进同一容器 inline style
+   （单管道，门控天然一致）。
    ============================================================ */
 
 /* 正文根：字体栈/字号/行高。回落值 = 现状口径（text-sm 对话流正文
@@ -829,15 +835,17 @@
 /* 内层 body 盒（Streamdown 在 pre 外再套的滚动容器，overflow-auto）——
    它才是滚动条占位（13px gutter）所在的层：灰板底色/边框/下圆角放这里，
    gutter 区域随容器同色，不再透出页面白底（原生白卡时代 gutter 白贴白
-   隐形，灰板上就露馅）；border-radius 裁切溢出内容，滚动时圆角不破 */
+   隐形，灰板上就露馅）；border-radius 裁切溢出内容，滚动时圆角不破。
+   bg 回落 var(--muted)：亮面 0.97 ≈ Themd 极简灰，暗面 0.269 自适应
+   （深色下代码板随全局明暗走，不再亮灰一块） */
 [style*='--t-code-'] .md-body [data-streamdown='code-block-body'] {
-  background: var(--t-code-bg, oklch(0.97 0 0));
+  background: var(--t-code-bg, var(--muted));
   border: var(--t-code-border-width, 0) solid var(--t-code-border-color, var(--border));
   border-radius: 0 0 var(--t-code-radius, 8px) var(--t-code-radius, 8px);
   padding: 0;
 }
 [style*='--t-code-'] .md-body [data-streamdown='code-block-header'] {
-  background: var(--t-code-bg, oklch(0.97 0 0));
+  background: var(--t-code-bg, var(--muted));
   color: color-mix(in oklch, currentColor 45%, transparent);
   border-radius: var(--t-code-radius, 8px) var(--t-code-radius, 8px) 0 0;
   padding: 0.45em 0.9em;
@@ -859,12 +867,22 @@
 /* pre 本体：底色 transparent !important 是全表唯一一处 !important ——
    Shiki 把 background-color 写成 pre 的内联样式，压掉它让灰板统一由
    滚动容器（code-block-body）承担（含滚动条 gutter 区）；内边距/字体
-   令牌留在这层 */
+   令牌留在这层。字号令牌回落 0.875rem = md-body text-sm 继承的现状口径
+   （默认不变）；外观「代码字体大小」经用户覆盖令牌写入（buildUserTokens） */
 [style*='--t-code-'] .md-body [data-streamdown='code-block'] pre {
   background: transparent !important;
   padding: var(--t-code-padding, 1em 1.25em);
   margin: 0;
   font-family: var(--t-code-font, inherit);
+  font-size: var(--t-code-size, 0.875rem);
+}
+
+/* 代码长行换行（外观设置「长行自动换行」）：html[data-code-wrap] 由
+   main.tsx/App 层按偏好挂载，缺席 = 原生横向滚动。pre-wrap 在空格处
+   断行；超长无空格串（base64/长 URL）由 overflow-wrap 兜底，不撑破卡片 */
+html[data-code-wrap] .md-body [data-streamdown='code-block'] pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* 表格：同款门控 —— 没注入 table.* 令牌 = 原生卡（wrapper 边框卡 +

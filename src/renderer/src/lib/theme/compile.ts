@@ -5,8 +5,9 @@ import { TOKEN_VAR, type ThemeTokens, type TokenKey } from './tokens'
  * 链路只有这一条：theme store 的 tokens → compileTokens → 消息流容器
  * style 注入（亮色）/ <style> 块（暗色 + extraCss，见 ThemeApplier）。
  * 未设置的键不产出变量，globals.css 消费表的 var() 回落值即 Streamdown
- * 原生观感。dark 参数：主题有暗色令牌套且当前处于暗色模式时，用 dark 套编译
- * （Cogent 暗色切换未上线，dark 套编译产物待命，.dark 休眠期间不生效）。
+ * 原生观感。dark 参数：主题有暗色令牌套且当前处于暗色模式（外观设置切
+ * html.dark，2026-11-18 上线）时，用 dark 套编译，产物同样走容器
+ * inline style（ChatTheme 单管道）。
  */
 export function compileTokens(
   tokens: ThemeTokens,

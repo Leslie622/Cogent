@@ -16,8 +16,8 @@ export interface ThemeFile {
   id: string
   name: string
   tokens: ThemeTokens
-  /** 暗色令牌套：暗色模式整面替换 tokens（未设键回落 CSS 基础值，
-      不回落亮面）。Cogent 暗色切换未上线，导入后待命 */
+  /** 暗色令牌套：暗色模式（外观设置 html.dark）整面替换 tokens
+      （未设键回落 CSS 基础值，不回落亮面） */
   dark?: ThemeTokens
   /** 附加自定义 CSS（@scope 钉在 .md-body 内注入，见 compile.ts） */
   extraCss?: string
