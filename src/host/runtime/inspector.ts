@@ -339,7 +339,7 @@ export class SessionInspector {
     )
   }
 
-  // ———— 审批层（钩子座 4d：asked/decided 审计对，docs/计划/钩子座实现.md §3.2）————
+  // ———— 审批层（钩子座 4d：asked/decided 审计对，docs/模块/钩子座.md）————
 
   /**
    * 审批询问：面板已弹出、挂起等用户裁决。只有走到 ask 的调用有此条目 ——

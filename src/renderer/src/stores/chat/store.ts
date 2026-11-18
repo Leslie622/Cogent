@@ -10,7 +10,7 @@
  * 组件侧经 selectors.ts 取活动会话视图。stopping 只表示本窗停止请求窗口，
  * lastRunOutcome 独立保存引擎终态；操作错误不改回合结果。
  *
- * 桶化（2026-11-17 会话状态重构 P1，docs/计划/会话状态重构.md）：此前 12 个
+ * 桶化（2026-11-17 会话状态重构 P1，docs/模块/会话与对话.md）：此前 12 个
  * XxxBySession 平行 map，deleteSession 手抄逐项清除、编译器不兜底；现并为
  * 单一 bySession 桶 —— 删会话 = 删一键。对照 zcode 的 workspace 分桶
  * （zcodeSessionStoreTypes.ts:237）；zcode 自认"桶无删除路径"（内存诊断

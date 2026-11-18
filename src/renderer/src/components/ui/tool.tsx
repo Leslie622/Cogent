@@ -2,7 +2,7 @@
  * 工具调用卡 —— shadcn AI Elements Tool pattern 官方配方落地
  * （https://ui.shadcn.com/docs/ai-elements/base/tool：Tool = Trace + TraceCollapsible
  *  + CodeBlock 的组合件，官方即"装原语照配方组合"，无独立可 add 的组件）。
- * 头行结构（docs/计划/对话过程呈现打磨.md §3.2，zcode ToolLayout 同构）：
+ * 头行结构（docs/模块/消息呈现.md，zcode ToolLayout 同构）：
  * 图标 + 类别词（tool-display）+ 主文案（summary 剥壳 / MCP server.tool）
  * + diff 计数尾标 + 状态词 —— 状态语义全在词上，不再整行变色。
  * 失败 = 行尾「执行失败」点状下划线，hover 出 Tooltip 看原因（含复制），

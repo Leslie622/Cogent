@@ -1,5 +1,5 @@
 /**
- * 工具行展示层纯函数（docs/计划/对话过程呈现打磨.md §3.2）：
+ * 工具行展示层纯函数（docs/模块/消息呈现.md）：
  * 工具卡头行从引擎的原始 summary（`read(src/index.ts)` 单行，见
  * host/runtime/tool-meta.ts summarizeArgs）改读「类别词 + 主文案」结构，
  * zcode ToolLayout 同款（图标 + kindLabel + primaryText + diffCount + 状态词）。

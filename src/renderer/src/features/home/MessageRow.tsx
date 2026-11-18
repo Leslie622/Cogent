@@ -30,7 +30,7 @@ export type MessageLike = {
   thinking?: string
   /** 活跃流式占位标记（chat store 本地字段）：驱动 Reasoning/Markdown 的
    *  流式态 —— 不挂在 id 上，id 是渲染 key 素材（封段不换名，见
-   *  docs/计划/正文衔接连续性修复.md） */
+   *  docs/模块/消息呈现.md） */
   placeholder?: boolean
   usage?: MessageUsage
   durationMs?: number
@@ -142,7 +142,7 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
           （图标与工具行错位，违背决定 18 平级零缩进的逐像素对齐） */}
       <MessageContent className="gap-3">
         {/* 思考流：流式占位且正文未开始 = 还在思考阶段（收起单行 + 末行摘要
-            滚动，docs/计划/对话过程呈现打磨.md §3.4）；交错思考（commentary）
+            滚动，docs/模块/消息呈现.md）；交错思考（commentary）
             的精确信号属 content blocks 件，当前模型思考都先于正文 */}
         {message.thinking && (
           <Reasoning

@@ -1,5 +1,5 @@
 /**
- * 技能座集成测试（阶段 4b-1，docs/计划/技能座实现.md §5）—— 断言对象 =
+ * 技能座集成测试（阶段 4b-1，docs/模块/技能座.md）—— 断言对象 =
  * Host 侧接线：skills.save/list 协议方法（同名 project 胜 + 冲突诊断）、
  * skills 段注入系统提示（before_agent_start 活算）、read 工具渐进加载闭环、
  * **同会话**禁用下一轮请求清单消失（回合边界热刷新，sections diff 补丁）、

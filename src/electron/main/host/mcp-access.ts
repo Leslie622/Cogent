@@ -3,7 +3,7 @@
  * externalMcp.enabled，main 经现有签票链（stdio capability.issue，血缘
  * 全权）→ /auth/exchange 换长期 token → 原子写 <storageRoot>/mcp-access.json
  * （{port, token, scope}）。cogent-mcp 进程每次工具调用重读此文件 ——
- * Host 重启换 token/换端口无需通知它（计划/对外MCP实现.md §3.2）。
+ * Host 重启换 token/换端口无需通知它（docs/模块/对外MCP.md）。
  *
  * 关闭态卫生：enabled=false（含从未开）时**删除**遗留文件 —— token 虽随
  * Host 生死，但 Host 还活着时关闭开关若不删，旧 write 档 token 在下次

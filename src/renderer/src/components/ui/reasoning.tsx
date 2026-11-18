@@ -1,7 +1,7 @@
 /**
  * 思考流（AI Elements Reasoning pattern 本地落地，底层 = ui/trace + ui/collapsible）。
  * 数据 = 一段流式思考文本（协议 ChatMessage.thinking），无 SDK 依赖。
- * 形态（docs/计划/对话过程呈现打磨.md §3.4，zcode reasoning.tsx 同构）：
+ * 形态（docs/模块/消息呈现.md，zcode reasoning.tsx 同构）：
  * 收起单行 = 静态脑图标 + 标题（running 扫光）+ 末行摘要横向滚动（增长推到
  * 末尾、超宽渐隐）—— **默认收起，含流式期间**（此前 open ?? running 的
  * 自动展开让逐 token 增长不断撑高布局，是工作中行上下跳动的主源）；

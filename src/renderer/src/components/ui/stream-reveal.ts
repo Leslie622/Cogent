@@ -1,7 +1,7 @@
 /**
- * 流式正文逐词淡入（计划/流式呈现动效.md，移植自 zcode streaming-markdown-reveal：
+ * 流式正文逐词淡入（docs/技术笔记/流式呈现动效.md，移植自 zcode streaming-markdown-reveal：
  * reference/zcode/packages/ui/src/components/ai-elements/message.tsx:845-1345 与其
- * docs/streaming-markdown-reveal.md —— 三代前身栽坑的历史教训都记录在彼处）。
+ * reference/zcode/docs/streaming-markdown-reveal.md —— 三代前身栽坑的历史教训都记录在彼处）。
  * 手法：rehype 插件把流式 block 的文本切成单元（中日文按字、拉丁文按词）逐个包
  * span，挂 data-reveal="new" + 各自的 transition-delay；CSS 侧（globals.css
  * 「逐词浮现」段）用 transition + @starting-style 淡入，尾部几个单元处于不同

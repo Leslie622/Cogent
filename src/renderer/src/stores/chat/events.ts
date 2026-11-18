@@ -2,7 +2,7 @@
  * 引擎事件订阅：App 挂载时接一次（bindEngineEvents），把事件流转译为
  * chat store 的会话桶更新 —— "事件 → 状态"的转译集中一处，组件只读状态
  * （2026-11-17 会话状态重构 P2 自 chat.ts 拆出，分支逻辑不变、写入形状
- * 桶化，见 docs/计划/会话状态重构.md 的 owner + 事件顺序图）。
+ * 桶化，见 docs/模块/会话与对话.md 的 owner + 事件顺序图）。
  * 帧形状 = env.d.ts 的 EngineEvent 判别联合：switch(method) 自然窄化 params，
  * 不做 as + typeof 抽查 —— 那会把联合拆成 untyped record，类型系统从此拦不住
  * 取错字段（当初形状 bug 的成因，见约定.md §1.2-7）。

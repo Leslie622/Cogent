@@ -1,5 +1,5 @@
 /**
- * MCP 客户端配置 store（阶段 4a，docs/计划/MCP座实现.md §3）——
+ * MCP 客户端配置 store（阶段 4a，docs/模块/MCP座.md）——
  * Host 侧的 MCP server 配置真源，pi `createMcpExtension` 的配置供给方。
  *
  * 两级文件（与 pi 语义对齐，出处 reference/pi/packages/coding-agent/src/

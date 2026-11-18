@@ -1,5 +1,5 @@
 /**
- * 交互座集成测试（阶段 4c-1/4c-2，docs/计划/交互座实现.md §5）—— 断言对象 =
+ * 交互座集成测试（阶段 4c-1/4c-2，docs/模块/交互座.md）—— 断言对象 =
  * customTools 注入链 + todo_write 全链（todos.updated 事件 / 结果回灌 / 新 run
  * 段注入 / session.messages 种子）+ ask_user 全链（question.asked 挂起 /
  * question.respond 作答回灌 / abort 取消收口不永悬 / 重复回答 InvalidParams）。

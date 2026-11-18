@@ -1,5 +1,5 @@
 /**
- * 交互座工具定义（阶段 4c，docs/计划/交互座实现.md）—— Host 特有工具
+ * 交互座工具定义（阶段 4c，docs/模块/交互座.md）—— Host 特有工具
  * （todo_write / ask_user / submit_plan 等）的 pi customTools 注入件。
  *
  * 装配链：本文件只造 ToolDefinition（schema + 行为闭包经 bridge 回调），

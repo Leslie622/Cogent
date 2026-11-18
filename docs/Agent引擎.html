@@ -105,9 +105,6 @@
   th { font-size: 12px; color: var(--muted); font-weight: 600; background: #faf9f8; }
   tr:last-child td { border-bottom: none; }
   td code { padding: 0 4px; }
-  .st { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
-  .st.ok   { background: #dcf2e6; color: var(--mint-deep); }
-  .st.plan { background: #efece8; color: #78716c; }
 
   .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 14px 0 6px; max-width: 900px; }
   .card {
@@ -138,12 +135,12 @@
     <li class="sub"><a href="#s4-custom">CustomProviderRegistry</a></li>
     <li class="sub"><a href="#s4-tools">工具系统与审批</a></li>
     <li class="sub"><a href="#s4-compaction">上下文压缩</a></li>
-    <li><a href="#s5">5 pi 能力接线</a></li>
-    <li class="sub"><a href="#s5-gaps">路线空位对照</a></li>
+    <li><a href="#s5">5 能力与入口</a></li>
+    <li class="sub"><a href="#s5-gaps">扩展边界</a></li>
     <li><a href="#s6">6 维护指南</a></li>
   </ol>
   <div class="stamp">
-    基准 pi-coding-agent 1.5.2<br>复核于 2026-11-14<br>代码变更后按第 6 节同步
+    pi-coding-agent 1.5.2<br>图解与原理入口<br>现状以模块页为准
   </div>
 </nav>
 
@@ -156,16 +153,17 @@
     本手册记录它的架构、协议、对话流程与各模块细节 —— 图文一体，随功能演进持续更新。
   </p>
   <p class="lede">
-    当前能力一句话：<b>工具循环 + 审批四档 + 上下文压缩 + 用量统计 + 项目域 + 运行时控制台</b>
-    全部在线；subagent / MCP / HostApi HTTP/WS 通道尚未接线（见第 5 节）。
+    当前能力：<b>工具与MCP、技能、交互、钩子、权限审批、压缩、用量和控制台</b>。
+    主界面、HTTP/WS、内嵌页面与对外MCP共用Host服务；未实现的扩展只在全局计划维护。
   </p>
 
   <!-- ================= 1. 架构 ================= -->
-  <h2 id="s1"><span class="num">1</span>架构总览：三个进程，两层边界</h2>
+  <h2 id="s1"><span class="num">1</span>主界面路径：三个进程，两层边界</h2>
   <p>
     UI 不直接碰引擎。Renderer 经 preload IPC 到 Electron main，main 再经 <b>stdio JSON-RPC</b> 驱动引擎进程。
     引擎目录（<code>host</code> / <code>protocol</code>）零 Electron import —— 目录即边界，
-    任何宿主（现在的 Electron main、以后的测试脚本 / 远程 UI）实现协议即可驱动引擎。
+    脚本与页面也能经HTTP/WS驱动同一方法注册表；传输、凭证与范围见
+    <a href="模块/HTTP通道.md">HTTP通道</a>和<a href="模块/内嵌页面.md">内嵌页面</a>。
   </p>
 
   <div class="figure">
@@ -187,11 +185,11 @@
       <text x="50" y="100" font-size="13" font-weight="600" fill="#1f1f1e">React · 聊天 UI</text>
       <line x1="30" y1="114" x2="310" y2="114" stroke="#efece8"/>
       <g font-size="12.5" fill="#4b4844">
-        <circle cx="52" cy="146" r="3.5" fill="#c9e5d6"/><text x="64" y="150">ChatInput：输入 · 模型下拉 · 力度档</text>
-        <circle cx="52" cy="176" r="3.5" fill="#c9e5d6"/><text x="64" y="180">stores/chat：消息流累积拼字</text>
+        <circle cx="52" cy="146" r="3.5" fill="#c9e5d6"/><text x="64" y="150">HomeChat：输入 · 模型 · 思考力度</text>
+        <circle cx="52" cy="176" r="3.5" fill="#c9e5d6"/><text x="64" y="180">stores/chat：会话桶 · 30ms合批</text>
         <circle cx="52" cy="206" r="3.5" fill="#c9e5d6"/><text x="64" y="210">stores/engine：模型目录 / key 状态</text>
         <circle cx="52" cy="236" r="3.5" fill="#c9e5d6"/><text x="64" y="240">会话栏 CRUD · 设置页（key / provider）</text>
-        <circle cx="52" cy="266" r="3.5" fill="#c9e5d6"/><text x="64" y="270">项目区 / 标签页区（静态占位）</text>
+        <circle cx="52" cy="266" r="3.5" fill="#c9e5d6"/><text x="64" y="270">项目归属 / 标签页区（动作预留）</text>
       </g>
 
       <rect x="400" y="70" width="260" height="270" rx="14" fill="#ffffff" stroke="#e5e2de"/>
@@ -210,7 +208,7 @@
       <g font-size="12.5" fill="#2b4a3c">
         <circle cx="762" cy="146" r="3.5" fill="#7cc9a3"/><text x="774" y="150">SessionManager：会话域服务（南缝合同消费方）</text>
         <circle cx="762" cy="176" r="3.5" fill="#7cc9a3"/><text x="774" y="180">每会话 1 个 pi AgentSession（pi-session-factory 装配）</text>
-        <circle cx="762" cy="206" r="3.5" fill="#7cc9a3"/><text x="774" y="210">pi 内置：8 工具 · 压缩 · JSONL 会话树</text>
+        <circle cx="762" cy="206" r="3.5" fill="#7cc9a3"/><text x="774" y="210">pi 托管：工具 · 压缩 · JSONL会话树</text>
         <circle cx="762" cy="236" r="3.5" fill="#7cc9a3"/><text x="774" y="240">CredentialRegistry：key 只进不出</text>
         <circle cx="762" cy="266" r="3.5" fill="#7cc9a3"/><text x="774" y="270">ProjectRegistry · ApprovalRegistry · Inspector</text>
       </g>
@@ -236,15 +234,15 @@
       </text>
     </svg>
   </div>
-  <div class="figcaption">图 1-1 · 三进程架构。绿色区 = 引擎内部（本手册第 4 节逐一展开）。</div>
+  <div class="figcaption">图 1-1 · 主界面的三进程路径。绿色区 = 引擎内部（本手册第 4 节逐一展开）。</div>
 
   <div class="cards">
     <div class="card"><b>为什么引擎是独立进程</b>
       <p>pi 要求 Node ≥22.19，Electron 31 内置 Node 20.15 不满足 —— 进程内集成物理不可行。独立进程另白送崩溃隔离与 headless 模式；Host 跑在自带 node22 上（<code>resources/runtime</code>，spawn 前版本守卫）。</p></div>
     <div class="card"><b>main 是壳不是业务</b>
-      <p>main 只做三件事：方法白名单代理、事件转发、持有持久化存储（凭据/自定义 provider 定义）。业务判断全部下沉引擎。</p></div>
+      <p>main负责窗口、IPC白名单、事件转发、凭据存储与webview接线；会话和能力策略在Host。</p></div>
     <div class="card"><b>key 的安全边界</b>
-      <p>明文只存在两处：main 的 safeStorage 解密结果（不落明文盘）、引擎进程内存 Map。Renderer 只见「已配置/未配置」布尔位。</p></div>
+      <p>safeStorage加密落盘；Host内存持钥，引擎协议只回配置状态。设置页经壳专属接口按provider回显明文，壳与引擎协议边界不同。</p></div>
   </div>
 
   <!-- ================= 2. 协议 ================= -->
@@ -256,14 +254,14 @@
   </p>
   <ul class="plain">
     <li><b>只增不破</b>：method / event 名一经发布不可改名、不可删；字段只增 optional；</li>
-    <li>破坏性变更必须递增 <code>PROTOCOL_VERSION</code>（当前 1），引擎在 initialize 响应里上报；</li>
+    <li>破坏性变更必须递增 <code>PROTOCOL_VERSION</code>（当前 3），引擎在 initialize 响应里上报；</li>
     <li>protocol 目录零运行时依赖（纯类型 + 纯函数），任何 Node 版本可加载；</li>
     <li>错误码不自造，用 JSON-RPC 标准码（ParseError / InvalidParams / MethodNotFound / InternalError）。</li>
   </ul>
   <div class="callout">
     <b>为什么长任务是事件驱动</b>
     <p>LLM 循环以分钟计，请求-响应式会让宿主挂死在管道上。所以 <code>agent.submit</code> 受理即返回
-    <code>{ accepted: true }</code>，执行进度全部经事件流（run.* / message.* / 将来的 tool.*）推送 ——
+    <code>{ accepted: true }</code>，执行进度全部经事件流（run.* / message.* / tool.*）推送 ——
     受理与执行分离是整份协议最重要的设计决定。</p>
     <p><b>受理 ≠ 收下就完</b>：agent.submit 在受理前同步校验会话、忙状态与模型，
     失败转错误响应帧；受理后先预约运行，再异步装配，失败必须落唯一事件终态。
@@ -271,41 +269,23 @@
     也返回 RPC 错误；取消正常返回，旧回包不能覆盖已到终态。</p>
   </div>
 
-  <h3 id="s2-methods">方法一览（宿主 → 引擎）</h3>
+  <h3 id="s2-methods">方法按职责查找</h3>
+  <p>完整字段以 <code>src/protocol/types.ts</code> 为准；机制在模块页维护，手册只保留调用分工。</p>
   <table>
-    <tr><th style="width:210px">method</th><th>语义</th><th style="width:96px">状态</th></tr>
-    <tr><td><code>initialize</code></td><td>握手：交换 client / protocolVersion / node 版本；<code>params.credentials</code> 可选注入凭据（宿主把持久化 key 灌进引擎内存表）</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>session.list / create / delete</code></td><td>会话 CRUD；create 可带 title / cwd / projectId / permissionMode（缺省时按「显式 &gt; 新聊天暂存 &gt; 项目默认 &gt; 全局默认」解析）</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>session.messages</code></td><td>拉某会话的完整转录（pi JSONL 全量回查 → ChatMessage[]，保留式呈现：影子区/多代压缩条全保留；含按需现算的上下文明细）</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>session.setPinned / archive / listArchived</code></td><td>置顶（pinnedAt 时间戳）/ 归档（软删，可恢复或彻底删除）/ 归档列表</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>session.setPermission</code></td><td>会话级权限切换（四档 ask/plan/auto/autonomous）；判定矩阵每次钩子触发读活值，运行中切换即生效</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>session.compact</code></td><td>手动压缩（→ pi AgentSession.compact）：会话回复中拒绝；无可压缩/刚压过 → InvalidRequest（手动动作要明确结果）。指示器悬浮卡「立即压缩上下文」是它的 UI 面</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>session.continue</code></td><td>手动续写：首 await 前预约并发 run.started，对末条 length 注入续写（预算 ≤3 次）；保留长 RPC，取消正常返回，无效续写发失败终态并返回错误。显示快照保留旧前缀与新增尾段</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>project.list / create / rename / update / delete / setPinned</code></td><td>项目域（cwds[] 多根、默认权限模式、gitignore 语义）；删除不级联删会话（悬挂保留是有意的）</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>agent.submit</code></td><td>提交输入：text + 可选 model / provider / thinkingLevel（provider = 同名模型消歧键；thinkingLevel 值域 = off + 六档）；受理（同步校验：会话存在/空闲，失败回错误帧）即返回，进度走事件流</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>agent.abort</code></td><td>先给本次运行/手动压缩记停止意图，再交给已有 pi 取消；未完成准备返回后继续消费，等待收敛期间保留预约。无可停止操作或会话不存在时回 aborted:false</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>approval.respond</code></td><td>审批裁决回执：resolve 挂起中的 beforeToolCall；optional <code>message</code> = 拒绝附言（→ block reason → 工具 error 结果回灌模型）、<code>always: 'workspace'</code> = 允许本次 + 落工作区级「始终允许」规则（无绑定根会话 → InvalidParams）、<code>switchMode: 'auto'|'autonomous'</code> = 允许本次 + 切会话模式 + 记项目默认（result 回带切换后 summary）；未配对 requestId（重复裁决/已中止）→ InvalidParams</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>credentials.set / remove / list</code></td><td>运行中更新 key / 真删单条 key / 查各 provider 配置状态（只回布尔位，明文不出引擎）</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>models.list</code></td><td>pi 模型目录摘要（UI 下拉数据源）；回带 <code>defaultModel</code>（provider+id 双键）与 <code>compactionThresholdRatio</code>（pi 真实触发线，指示器预警线画它）</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>providers.custom.sync</code></td><td>自定义 provider + 内置 provider 本地调整（baseUrl 覆盖 / 模型增删 / 目录禁用）的<b>全量替换</b>同步</td><td><span class="st ok">已实现</span></td></tr>
-    <tr><td><code>inspect.entries / inspect.entry</code></td><td>运行时控制台：拉会话观测条目摘要（时间线数据源）/ 按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词，数据源 = pi hooks 截获）</td><td><span class="st ok">已实现</span></td></tr>
+    <tr><th>职责</th><th>代表方法</th><th>事实入口</th></tr>
+    <tr><td>会话与运行</td><td>session.* / agent.submit / agent.abort</td><td><a href="模块/会话与对话.md">会话与对话</a></td></tr>
+    <tr><td>权限与交互</td><td>session.setPermission / setPlanMode / approval/question/plan.respond</td><td><a href="模块/审批与权限.md">审批</a>、<a href="模块/交互座.md">交互座</a></td></tr>
+    <tr><td>目录与能力</td><td>models.list / providers.custom.sync / mcp.* / skills.*</td><td><a href="模块/凭据与模型目录.md">模型目录</a>、<a href="模块/MCP座.md">MCP</a>、<a href="模块/技能座.md">技能</a></td></tr>
+    <tr><td>项目、观测与传输</td><td>project.* / inspect.* / capability.issue</td><td><a href="模块/工作区与项目.md">项目</a>、<a href="模块/运行时控制台.md">控制台</a>、<a href="模块/HTTP通道.md">HTTP通道</a></td></tr>
   </table>
 
-  <h3 id="s2-events">事件一览（引擎 → 宿主）</h3>
-  <table>
-    <tr><th style="width:180px">event</th><th>语义</th><th style="width:96px">状态</th></tr>
-    <tr><td><code>run.started</code></td><td>一次执行开始（submit/continue 预约时发，包含装配与校验准备期，不代表模型请求已发出）</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>message.delta</code></td><td>流式文本增量（<code>kind</code> 区分 text / thinking）；toolcall 无增量事件（工具起止走下方 tool.*）</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>run.completed</code></td><td>执行正常结束：<code>messages</code> = 分段终态数组（text 段与工具卡交错保真）+ <code>message</code>（聚合兼容）+ stopReason（length = 被 token 上限截断）；段带 usage / durationMs / model（多轮累加 = 计费口径）</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>run.failed</code></td><td>执行失败或中止：message + optional <code>reason</code>（aborted / error，缺省按 error）+ optional <code>messages</code>。agent_settled 的 messages 是完整终态分段，含中止/失败尾段与 usage；空数组也直接替换，不再续本地占位。pi 可恢复溢出内聚在 run 内，不对外发本事件；恢复失败才收口</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>context.updated</code></td><td>轮终实报：工具循环每个 turn_end 发一份本轮端点实报 usage —— 上下文指示器在 run 进行中实时跟随（此前 usage 只随 run.completed 落账，run 内多轮时指示器冻结在旧值）</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>compaction.started / completed</code></td><td>上下文压缩（pi 内核）：started（reason = threshold 自动 / manual 手动 / overflow 溢出恢复）；completed 带 summary 全文 / tokensBefore / <code>summarizedUntil</code> 锚 / summaryUsage（摘要调用自身的账）/ 失败 error。保留式呈现：宿主在锚处原位中插折叠条，被摘要区历史保留不删，重拉历史不因压缩消失</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>compaction.pruned</code></td><td>工具结果裁剪落账 —— 引擎已不再发射（裁剪随压缩归 pi 内核全量进摘要），协议字段兼容保留</td><td><span class="st plan">兼容保留</span></td></tr>
-    <tr><td><code>tool.started / tool.completed</code></td><td>工具调用起止（带 ToolKind + 参数一行摘要；pi 时序 start 先于审批钩子 —— 挂起期宿主见 running 卡，拒绝后 completed(isError) 收口；completed 带 optional diff = pi edit 工具的展示 diff）</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>tool.progress</code></td><td>工具执行中的流式进度（shell 输出尾部快照，整段替换非增量，引擎侧 100ms 节流 + 尾部 2000 字符）</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>approval.request</code></td><td>审批拦截：ask 档写/exec 挂起（无超时），宿主以 <code>approval.respond</code> 裁决；越界写请求带 <code>outsideRoots</code> 标记（宿主据此隐藏「始终允许此工作区」）；中止/删会话引擎侧兜底收口</td><td><span class="st ok">已发射</span></td></tr>
-    <tr><td><code>inspect.event</code></td><td>观测条目实时推送：引擎每个底层动作（厂商请求/响应/SSE 分片/turn/工具/run + 系统提示词）沉淀一条摘要实时外推，详情不随流走（<code>inspect.entry</code> 按需）——控制台窗口的时间线增量</td><td><span class="st ok">已发射</span></td></tr>
-  </table>
+  <h3 id="s2-events">事件按生命周期消费</h3>
+  <ul class="plain">
+    <li><code>run.started</code> 覆盖运行准备期；<code>message.delta</code>、<code>tool.*</code>、交互事件与观测推进界面。</li>
+    <li><code>run.completed / run.failed</code> 是权威终态；failed的reason区分aborted/error，messages保留中止尾段。</li>
+    <li><code>context.updated</code> 与 <code>compaction.*</code> 更新上下文与压缩呈现；<code>session.summaryChanged</code> 同步会话偏好/权限。</li>
+    <li>renderer按sessionId入桶，旧RPC回包不能覆盖已到终态；投影与屏障见<a href="模块/会话与对话.md">会话模块</a>。</li>
+  </ul>
 
   <!-- ================= 3. 时序 ================= -->
   <h2 id="s3"><span class="num">3</span>一次对话的完整时序</h2>
@@ -461,13 +441,13 @@
     <li><b>终态纪律</b>：已进入 pi 的 run 在 <code>agent_settled</code> 定案；未进入 run 的早停与 handled
     由 Host 收口。装配失败仍报真实错误；没有 signal 的扩展 await 不能强制终止，需保留预约等待。</li>
     <li><b>AUTO_CONTINUE</b>：贴线 maxTokens 截断（pi 不恢复的场景）注入显式 user 续写指令，上限 3 次 ——
-    Cogent 侧保留的唯一运行期干预。</li>
+    保持截断续写的产品语义；能力段注入和审批也由Host扩展承担。</li>
     <li><b>v1 旧会话</b>：架构重构前的盘上转录在首次装配时一次性导入 pi 树（<code>kernel/legacy-import.ts</code>），随后重写 v2。</li>
   </ul>
 
   <h3 id="s4-cred">4.2 凭据旅程（credentials.ts + 壳侧 store）</h3>
   <p>
-    key 从用户输入到 LLM 请求头，全程不落明文盘、不出 main 进程：
+    key从壳侧输入，经加密存储与握手进入Host内存，再由pi按请求解析；不落明文盘：
   </p>
 
   <div class="figure">
@@ -504,7 +484,7 @@
         <line x1="860" y1="62" x2="916" y2="62" stroke="#2f9e6f" stroke-width="2" marker-end="url(#k-arr)"/>
 
         <text x="540" y="128" text-anchor="middle" fill="#8a857f" font-size="11">
-          对外只有两个口：credentials.set（写入）/ credentials.list（回「已配置」布尔位）—— 不存在列出 key 明文的路径
+          引擎凭据口：set / remove / list（只回配置状态）；设置页明文回显走壳专属接口
         </text>
       </g>
     </svg>
@@ -513,7 +493,7 @@
 
   <h3 id="s4-custom">4.3 CustomProviderRegistry（runtime/custom-providers.ts）</h3>
   <p>
-    用户自建的 OpenAI-compatible 端点（中转站 / 网关 / Ollama）。把 pi coding-agent 的 models.json 胶水
+    用户自建的OpenAI Completions / Responses / Anthropic Messages兼容端点。把 pi coding-agent 的 models.json 胶水
     换成了「设置页表单 → 协议全量同步」：引擎只收定义、不持久化（宿主落盘，握手 / sync 注入）。
     <b>双注册</b>：同一 <code>createProvider</code> 实例既进 UI 目录（MutableModels）也进 pi 请求路由
     （ModelRuntime.registerNativeProvider）—— 单一构造源，两套目录永不分叉。
@@ -534,43 +514,20 @@
     resolve 以 async 形式满足；未配 key 返回 undefined = provider 未配置。</li>
   </ul>
 
-  <h3 id="s4-tools">4.4 工具系统与审批（pi 内置工具 + session.ts 审批矩阵）</h3>
-  <p>
-    <b>工具本体 = pi coding-agent 内置 8 工具选 7</b>（read / edit / write / grep / find / ls +
-    shell 位 win=<code>powershell</code> 其他=<code>bash</code>），经 createAgentSession 的
-    <code>tools</code> allowlist 显式指定。执行、截断护栏、并发写队列（withFileMutationQueue）、
-    进程树管理全在 pi；Cogent 侧只剩策略投影：工具名与 ToolKind 静态元数据表
-    （<code>runtime/tool-meta.ts</code> —— pi 内置工具不带 annotations，风险类别是 Cogent 的产品语义）、
-    写类根内判定（<code>runtime/write-boundary.ts</code>）与 <b>审批矩阵</b>（session.ts
-    decideApproval，factory 链式包裹 <code>agent.beforeToolCall</code> —— 拿回 abort signal，
-    挂起审批在中止时不永悬）。find/grep 分别 spawn fd/rg（PATH → 自动下载 → error 降级不崩引擎）。
-  </p>
-  <ul>
-    <li><b>判定矩阵（ToolKind × permissionMode，zcode 对齐）</b>：read 恒放行；
-    <b>auto / autonomous 完全放行</b>（含工作区外写 —— 主流 bypassPermissions / danger-full-access 同款）；
-    plan 拦写/exec；ask（缺省）的 exec 与<b>根内</b>写先查「始终允许」规则表，未命中与<b>越界写</b>都弹
-    <code>approval.request</code> 挂起（人是最终裁决者，越界请求带 <code>outsideRoots</code> 标记）。
-    规则表（<code>runtime/approvals.ts</code>）= <code>~/.cogent/approvals.json</code> 单文件，
-    条目为 roots×kind 快照（只存位置不存内容，无泄漏面），判定 = 会话工作区根与条目任一根交集；
-    <b>规则 = 根内信任记忆，永不放行越界写</b>。mode 读会话 summary 活引用，运行中切换即生效；
-    矩阵判定在引擎协议层 —— 换壳不改安全语义，UI 只是裁决面板；</li>
-    <li><b>权限通告（before_agent_start sections）</b>：每轮按活 mode 设系统提示词的
-    <code>cogent_permission</code> 节（pi 对 sections「变更才追加 patch、回放按名替换」——
-    切换下一轮生效、不堆积）；<b>四档全设正向文案</b>（ask 只移除段的话，历史里 plan 拦截的工具
-    error 会让模型推断"仍只读"连试都不试）；「允许，并切换为 ▾」= 允许本次 + 切会话模式 +
-    记<b>项目默认</b>（同项目新会话沿用；解析链：显式 &gt; 暂存 &gt; 项目默认 &gt; 全局）；</li>
-    <li><b>挂起手法</b>：beforeToolCall 返回 pending Promise（pi 约定 undefined=放行、
-    block=拒绝），pendingApprovals 表登记 resolver；三路收尾兜底 —— signal abort
-    listener（挂起必须监听，否则中止后永悬）、会话删除 settleApprovals、disposeAll；
-    无超时（用户不点就一直等，Claude Code 同款）；</li>
-    <li><b>pi 时序要点</b>：<code>tool_execution_start</code> 先于 beforeToolCall 发出
-    （拒绝后 pi 补 end(isError)）—— 挂起期宿主先见 running 卡再见审批卡，三条投影路径
-    （事件流 / 段化终态 / 历史回查）零特判；</li>
-    <li><b>壳侧裁决通道</b>：main 的 <code>approval:respond</code> 专属 IPC 直抵引擎
-    <code>approval.respond</code>，不经 renderer 通用代理 —— 审批是安全边界，通道独立；
-    重复裁决 → InvalidParams（双击/竞态显式报错）；</li>
-    <li><b>原理与主流对比</b>（Claude Code 规则表 / Codex 沙箱×审批两维 / DeepAgent
-    interrupt）：见 <a href="技术笔记/工具系统与审批.md">技术笔记 · 工具系统与审批</a>。</li>
+  <h3 id="s4-tools">4.4 工具系统与审批</h3>
+  <p>执行、截断、文件并发写队列与进程树由pi托管；Cogent显式选择内置工具，
+    Windows使用powershell，其他平台使用bash。find/grep依赖fd/rg。Host另装配MCP、技能与交互工具。</p>
+  <ul class="plain">
+    <li><b>两维权限</b>：三档ask/auto/autonomous + 独立planEnabled。计划开启先短路拦写/exec；
+    关闭计划才按权限矩阵：read放行，自主写放行而exec走规则/面板，auto完全放行，ask按规则/面板裁决。</li>
+    <li><b>规则边界</b>：工作区根×kind持久化到approvals.json，只记根内信任，不能放行越界写。
+    “允许，并切换为”同时允许本次、切会话档、记录项目默认；计划批准只关开关，不切权限档。</li>
+    <li><b>挂起所有权</b>：beforeToolCall的Promise由pendingApprovals持有，signal abort、会话删除、退出负责收口。
+    工具start先于审批，因此先见运行卡再见审批；拒绝后工具error正常回灌。</li>
+    <li><b>消息段</b>：cogent_permission说明当前三档权限，cogent_plan_active独立说明计划只读约束；
+    新回合按活状态生成sections，不向转录塞不可撤销的权限通知。</li>
+    <li>判定矩阵与裁决IPC见<a href="模块/审批与权限.md">审批与权限</a>；
+    三仓比较与取舍见<a href="技术笔记/工具系统与审批.md">工具系统与审批笔记</a>。</li>
   </ul>
 
   <h3 id="s4-compaction">4.5 上下文压缩（pi 内核 + Cogent 承接面）</h3>
@@ -592,135 +549,73 @@
     AUTO_CONTINUE 续写（贴线 maxTokens 截断注入显式 user 指令，上限 3 次）。</li>
   </ul>
 
-  <!-- ================= 5. 能力接线 ================= -->
-  <h2 id="s5"><span class="num">5</span>pi 能力接线：接了什么，还空着什么</h2>
-  <p>
-    左列是当前真实生效的 pi 能力（实线连进引擎）；右列是 pi 已提供、但 Cogent 尚未接线的部分
-    （虚线，留有断口 —— 尚未连通）。
-  </p>
-
+  <!-- ================= 5. 能力与入口 ================= -->
+  <h2 id="s5"><span class="num">5</span>能力装配与外部入口</h2>
+  <p>能力按pi官方扩展形状装配；入口共用Host方法注册表。图中全部为已接入路径，
+    模块细节分别归事实页，目标架构见<a href="img/Cogent内核架构.html">内核架构图</a>。</p>
   <div class="figure">
-    <svg viewBox="0 0 1120 500" xmlns="http://www.w3.org/2000/svg" font-family="inherit">
-      <text x="190" y="28" text-anchor="middle" font-size="14" font-weight="700" fill="#146c4a">已接线 · 实际生效</text>
-      <text x="930" y="28" text-anchor="middle" font-size="14" font-weight="700" fill="#78716c">未接线 · 路线空位</text>
-
-      <g stroke="#2f9e6f" stroke-width="1.6">
-        <line x1="340" y1="72"  x2="398" y2="72"/>
-        <line x1="340" y1="148" x2="398" y2="148"/>
-        <line x1="340" y1="224" x2="398" y2="224"/>
-        <line x1="340" y1="300" x2="398" y2="300"/>
-        <line x1="340" y1="376" x2="398" y2="376"/>
-        <line x1="340" y1="452" x2="398" y2="452"/>
-        <line x1="398" y1="72"  x2="398" y2="452"/>
-        <line x1="398" y1="280" x2="450" y2="280"/>
+    <svg viewBox="0 0 1120 390" xmlns="http://www.w3.org/2000/svg" font-family="inherit" role="img" aria-labelledby="cap-title cap-desc">
+      <title id="cap-title">Host能力装配与调用入口</title>
+      <desc id="cap-desc">左侧四组能力装配到Host和pi内核；右侧四种已接入调用路径进入同一Host服务层。</desc>
+      <g font-size="14" font-weight="700" text-anchor="middle">
+        <text x="180" y="24" fill="#146c4a">能力装配</text><text x="940" y="24" fill="#1f1f1e">调用入口</text>
       </g>
-      <g stroke="#a8a29e" stroke-width="1.6" stroke-dasharray="5 4">
-        <line x1="722" y1="72"  x2="780" y2="72"/>
-        <line x1="722" y1="148" x2="780" y2="148"/>
-        <line x1="722" y1="224" x2="780" y2="224"/>
-        <line x1="722" y1="300" x2="780" y2="300"/>
-        <line x1="722" y1="376" x2="780" y2="376"/>
-        <line x1="722" y1="452" x2="780" y2="452"/>
-        <line x1="722" y1="72"  x2="722" y2="452"/>
-        <line x1="700" y1="280" x2="722" y2="280"/>
+      <g stroke="#8ecda9" stroke-width="1.6" fill="none">
+        <path d="M330 78H385V195H425 M330 162H385 M330 246H385V195 M330 330H385V246"/>
+        <path d="M790 78H735V195H695 M790 162H735 M790 246H735V195 M790 330H735V246"/>
       </g>
-      <text x="692" y="266" text-anchor="middle" font-size="11" font-weight="700" fill="#a8a29e">未连</text>
-
-      <rect x="450" y="222" width="220" height="116" rx="14" fill="#e8f6ee" stroke="#8ecda9" stroke-width="1.6"/>
-      <text x="560" y="252" text-anchor="middle" font-size="16" font-weight="700" fill="#146c4a">pi AgentSession</text>
-      <text x="560" y="272" text-anchor="middle" font-size="11.5" fill="#4f7a63">@earendil-works/pi-coding-agent</text>
-      <text x="560" y="288" text-anchor="middle" font-size="11.5" fill="#4f7a63">pi-agent-core · pi-ai</text>
-      <text x="560" y="312" text-anchor="middle" font-size="12" fill="#2b4a3c">全托管：工具 · 压缩 · JSONL 树</text>
-      <text x="560" y="328" text-anchor="middle" font-size="12" fill="#2b4a3c">builtinModels · 事件流</text>
-
-      <g>
-        <rect x="40" y="40" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
-        <text x="56" y="64" font-size="13.5" font-weight="700" fill="#1f1f1e">会话树与转录持久化</text>
-        <text x="56" y="84" font-size="11.5" fill="#6f6b66">每会话一个 AgentSession；pi JSONL 追加落盘，保留式呈现</text>
-
-        <rect x="40" y="116" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
-        <text x="56" y="140" font-size="13.5" font-weight="700" fill="#1f1f1e">模型目录与切换</text>
-        <text x="56" y="160" font-size="11.5" fill="#6f6b66">builtinModels() 全目录；submit 可换模型；双注册目录</text>
-
-        <rect x="40" y="192" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
-        <text x="56" y="216" font-size="13.5" font-weight="700" fill="#1f1f1e">思考力度与预算</text>
-        <text x="56" y="236" font-size="11.5" fill="#6f6b66">ThinkingLevel 六档（off → max）+ 思考预算钳制</text>
-
-        <rect x="40" y="268" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
-        <text x="56" y="292" font-size="13.5" font-weight="700" fill="#1f1f1e">凭据 overlay</text>
-        <text x="56" y="312" font-size="11.5" fill="#6f6b66">setRuntimeApiKey 全内存；key 走 safeStorage</text>
-
-        <rect x="40" y="344" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
-        <text x="56" y="368" font-size="13.5" font-weight="700" fill="#1f1f1e">自定义 Provider</text>
-        <text x="56" y="388" font-size="11.5" fill="#6f6b66">OpenAI 兼容端点 + baseUrl 覆盖，运行时注入</text>
-
-        <rect x="40" y="420" width="300" height="64" rx="10" fill="#f4faf6" stroke="#cfe8da"/>
-        <text x="56" y="444" font-size="13.5" font-weight="700" fill="#1f1f1e">工具循环 + 审批 + 压缩 + 观测</text>
-        <text x="56" y="464" font-size="11.5" fill="#6f6b66">pi 内置 7 工具；beforeToolCall 四档矩阵挂起；压缩内核 + AUTO_CONTINUE；inspect 域</text>
+      <rect x="425" y="128" width="270" height="136" rx="14" fill="#e8f6ee" stroke="#8ecda9" stroke-width="1.6"/>
+      <g text-anchor="middle">
+        <text x="560" y="158" font-size="16" font-weight="700" fill="#146c4a">Host服务层</text>
+        <text x="560" y="181" font-size="12" fill="#4f7a63">单一方法注册表 · 会话/权限/观测</text>
+        <text x="560" y="210" font-size="13" font-weight="600" fill="#146c4a">CogentKernel → pi AgentSession</text>
+        <text x="560" y="234" font-size="12" fill="#4f7a63">循环 · JSONL · 压缩 · 模型路由</text>
       </g>
-
-      <g>
-        <rect x="780" y="40" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
-        <text x="796" y="64" font-size="13.5" font-weight="700" fill="#78716c">content blocks 消息模型</text>
-        <text x="796" y="84" font-size="11.5" fill="#8a857f">消息仍以纯文本投影为主，图片 / 结构块透传未接</text>
-
-        <rect x="780" y="116" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
-        <text x="796" y="140" font-size="13.5" font-weight="700" fill="#78716c">steering / followUp</text>
-        <text x="796" y="160" font-size="11.5" fill="#8a857f">运行中插话（pi 队列 API 未接；拒绝+附言是最小雏形）</text>
-
-        <rect x="780" y="192" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
-        <text x="796" y="216" font-size="13.5" font-weight="700" fill="#78716c">network 工具</text>
-        <text x="796" y="236" font-size="11.5" fill="#8a857f">fetch / search（kind='network' 已在审批矩阵预留）</text>
-
-        <rect x="780" y="268" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
-        <text x="796" y="292" font-size="13.5" font-weight="700" fill="#78716c">子代理（subagent）</text>
-        <text x="796" y="312" font-size="11.5" fill="#8a857f">pi 的多 Agent 编排未接（阶段 5）</text>
-
-        <rect x="780" y="344" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
-        <text x="796" y="368" font-size="13.5" font-weight="700" fill="#78716c">MCP</text>
-        <text x="796" y="388" font-size="11.5" fill="#8a857f">外部工具协议接入（阶段 4 能力总线）</text>
-
-        <rect x="780" y="420" width="300" height="64" rx="10" fill="#f7f6f4" stroke="#ddd9d4"/>
-        <text x="796" y="444" font-size="13.5" font-weight="700" fill="#78716c">HostApi HTTP/WS / 技能 / webview</text>
-        <text x="796" y="464" font-size="11.5" fill="#8a857f">HTTP/WS + 票据（阶段 2）/ skillsOverride（阶段 4）/ 第三方页（阶段 3）</text>
+      <g fill="#f4faf6" stroke="#cfe8da">
+        <rect x="30" y="46" width="300" height="64" rx="10"/><rect x="30" y="130" width="300" height="64" rx="10"/>
+        <rect x="30" y="214" width="300" height="64" rx="10"/><rect x="30" y="298" width="300" height="64" rx="10"/>
+      </g>
+      <g fill="#ffffff" stroke="#e5e2de">
+        <rect x="790" y="46" width="300" height="64" rx="10"/><rect x="790" y="130" width="300" height="64" rx="10"/>
+        <rect x="790" y="214" width="300" height="64" rx="10"/><rect x="790" y="298" width="300" height="64" rx="10"/>
+      </g>
+      <g font-size="13.5" font-weight="700" fill="#1f1f1e">
+        <text x="46" y="71">工具与MCP</text><text x="46" y="155">技能</text>
+        <text x="46" y="239">交互</text><text x="46" y="323">钩子与观测</text>
+        <text x="806" y="71">Electron主界面</text><text x="806" y="155">HTTP / WS</text>
+        <text x="806" y="239">内嵌页面webview</text><text x="806" y="323">对外MCP Server</text>
+      </g>
+      <g font-size="12" fill="#6f6b66">
+        <text x="46" y="94">内置工具 + createMcpExtension</text><text x="46" y="178">Host目录 + skillsOverride + read</text>
+        <text x="46" y="262">todo / ask_user / enter_plan / submit_plan</text><text x="46" y="346">InlineExtension + 审批 + inspect</text>
+        <text x="806" y="94">preload IPC → main → stdio JSON-RPC</text><text x="806" y="178">票据兑换scoped token，同一注册表</text>
+        <text x="806" y="262">沙箱preload小SDK → HTTP / WS</text><text x="806" y="346">stdio独立入口 → HostApi方言翻译</text>
       </g>
     </svg>
   </div>
-  <div class="figcaption">图 5-1 · pi 能力接线图。</div>
+  <div class="figcaption">图5-1 · 能力装配与入口分工。MCP客户端消费外部工具，与对外MCP被外部agent调用的方向不同。</div>
+  <p>能力机制见<a href="模块/MCP座.md">MCP座</a>、<a href="模块/技能座.md">技能座</a>、
+    <a href="模块/交互座.md">交互座</a>、<a href="模块/钩子座.md">钩子座</a>；
+    传输与消费见<a href="模块/HTTP通道.md">HTTP通道</a>、<a href="模块/内嵌页面.md">内嵌页面</a>、
+    <a href="模块/对外MCP.md">对外MCP</a>及<a href="img/HostApi调用入口.html">调用入口图</a>。</p>
 
-  <h3 id="s5-gaps">路线空位对照（全局架构阶段 2–5）</h3>
-  <table>
-    <tr><th style="width:56px">空位</th><th>内容</th><th>接线后本手册要补什么</th></tr>
-    <tr><td>1</td><td>content blocks 消息模型细化（图片 / 结构块透传）</td><td>第 2 节 ChatMessage 形状更新；第 3 节转译表加新 block 类型</td></tr>
-    <tr><td>2</td><td>steering / followUp（运行中插话；pi 队列 API）</td><td>第 2 节方法表加行；第 3 节时序图加插话泳道分支</td></tr>
-    <tr><td>3</td><td>HostApi HTTP/WS 通道：根 secret + 票据签发（阶段 2）</td><td>第 1 节架构图加 HTTP/WS 通道；方法注册表双通道共用说明</td></tr>
-    <tr><td>4</td><td>第三方页面 webview 沙箱 + preload 小 SDK（阶段 3）</td><td>第 1 节架构图 webview 框落地说明</td></tr>
-    <tr><td>5</td><td>能力总线：技能座 / MCP 座 / 钩子座 InlineExtension 化（阶段 4）</td><td>第 4 节加对应小节；第 5 节右列卡片移左列</td></tr>
-    <tr><td>6</td><td>对外 MCP Server / subagent 子会话座（阶段 5）</td><td>第 1 节出口说明；第 4 节加子会话协调器小节</td></tr>
-  </table>
+  <h3 id="s5-gaps">扩展边界</h3>
+  <p>子会话、插件分发、chat门面与拨出中继等目标的顺序和审批边界，只在
+    <a href="计划/全局架构.md">全局架构计划</a>维护，不在手册复制另一份路线表。
+    能力可扩展不代表已有多个内核实现；目前仅维护PiSdkKernel。</p>
 
   <!-- ================= 6. 维护指南 ================= -->
-  <h2 id="s6"><span class="num">6</span>维护指南（给未来的 AI / 人）</h2>
-  <p>这份手册与代码同寿命，地图失效比没有更糟（同 AGENTS.md 维护纪律）。按改动类型对应更新：</p>
-  <table>
-    <tr><th style="width:230px">改了什么</th><th>这里要动哪里</th></tr>
-    <tr><td>新协议 method / event</td><td>第 2 节两张表各加一行；注意「只增不破」纪律标注状态徽章（已实现 / 协议已定）</td></tr>
-    <tr><td>对话流程变化（新事件、新阶段）</td><td>第 3 节时序图：泳道对应四个固定代码位置，新增行插进对应阶段色带，编号顺延</td></tr>
-    <tr><td>新引擎模块（tools / storage / …）</td><td>第 4 节加 4.x 小节 + 侧栏加子项；架构图引擎框加一行</td></tr>
-    <tr><td>接线一个空位</td><td>第 5 节：右列卡片移左列、断口接实线；空位对照表标注「已完成」并写实际落点</td></tr>
-    <tr><td>pi 依赖升级 / 行为变化</td><td>核对第 4 节引用的 pi 内部约定（errorMessage、stopReason、getApiKey 时机）是否仍成立</td></tr>
-  </table>
-  <div class="callout">
-    <b>SVG 改图约定</b>
-    <p>本页所有图都是手写 SVG（零依赖，浏览器直接开）。改图时保持既有坐标系约定：
-    架构图三框 x=30/400/740；时序图泳道中心 x=140/430/700/940、行距约 48px；
-    能力图卡片 y=40 起步、行高 76px。新图先在浏览器里过目再提交 —— 坐标是手工定的，没人替你校对。</p>
-  </div>
-
-  <footer>
-    手册本身是文档不是代码：改引擎功能时随代码同 commit 更新对应小节，并在 nav 的 stamp 处更新基准 commit 与日期。
-    图例：绿色 = 引擎 / pi 侧，灰 = 壳或 UI 侧，虚线 = 事件推送或未接线。
-  </footer>
+  <h2 id="s6"><span class="num">6</span>维护指南</h2>
+  <p>本手册保留进程、关键时序与能力装配的图解；完整协议/现状/待办分别归
+    <code>src/protocol/types.ts</code>、<a href="模块/索引.md">模块页</a>、<a href="计划/全局架构.md">全局计划</a>。</p>
+  <ul class="plain">
+    <li>进程或调用路径变化：同步第1/5节图；运行、取消、终态变化：同步第3节时序及第4节原理。</li>
+    <li>新能力接入：补装配位置与模块链接，不再维护逐method/event的状态快照。</li>
+    <li>pi升级：核对终态、压缩、凭据解析与扩展时序；研究对比在技术笔记维护。</li>
+    <li>SVG改图保持现有坐标系；文字与连线在浏览器检查，结构检查不能替代视觉验收。</li>
+  </ul>
+  <footer>绿色表示引擎/pi，灰色表示壳/UI；虚线按各图图例解释。
+    图解与事实页描述同一实现，历史过程查Git。手动验收步骤见<a href="测试用例/消息呈现.md">测试用例</a>。</footer>
 </main>
 
 </div>

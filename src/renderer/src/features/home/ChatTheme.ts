@@ -1,5 +1,5 @@
 /**
- * 正文主题注入 hook（无 UI）—— 计划/聊天正文主题化.md D3 的单点挂载。
+ * 正文主题注入 hook（无 UI）—— docs/技术笔记/聊天正文主题.md 的单点挂载。
  * 亮色变量：编译产物直接作为消息流容器（HomeChat 的 MessageScrollerContent）
  * 的 style —— CSS 变量沿 DOM 继承，消费只存在于 globals.css「聊天正文主题」
  * 段的 .md-body 规则里，容器外的 chrome/侧栏不受影响。

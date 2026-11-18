@@ -266,7 +266,7 @@ function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
  * 连尝试都不尝试。三档全给明确的当下状态（切换 = 内容替换），模型每轮拿到
  * 的是现状而非考古。文案与 decideApproval 的强制面同口径。
  * 只读计划是正交开关（cogent_plan_active 段），不在本段 —— 两个正交维度
- * 各自替换互不干扰（docs/计划/计划模式正交开关.md）。
+ * 各自替换互不干扰（docs/模块/审批与权限.md）。
  */
 function permissionSectionText(mode: PermissionMode): string {
   switch (mode) {
@@ -1258,7 +1258,7 @@ export class SessionManager implements CogentKernel {
     this.compacting.clear()
   }
 
-  // ———— 审批（docs/计划/工具系统与审批.md 第 4 步，D4/D5）————
+  // ———— 审批（docs/模块/审批与权限.mdD5）————
 
   /**
    * 宿主裁决回流：resolve 挂起中的审批 Promise（审批交互升级 D2 扩

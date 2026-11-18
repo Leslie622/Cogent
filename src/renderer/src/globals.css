@@ -365,7 +365,7 @@
   }
 }
 
-/* ── 流式正文逐词浮现（stream-reveal.ts 的消费层，计划/流式呈现动效.md）──
+/* ── 流式正文逐词浮现（stream-reveal.ts 的消费层，docs/技术笔记/流式呈现动效.md）──
    用 transition + @starting-style，不用 @keyframes：单元在下一帧就从 new 变
    settled，keyframes 选择器失配动画即被移除、只播一帧；transition 只要
    transition-property 仍含 opacity 就会跑完，@starting-style 只作用于首次
@@ -399,7 +399,7 @@
     color: transparent;
   }
 }
-/* 流式中的代码块/表格追加行：mount-only 淡入（计划/代码与表格过渡.md）。
+/* 流式中的代码块/表格追加行：mount-only 淡入（docs/模块/消息呈现.md）。
    行身份 = 行 span/tr（行索引 key + 增量高亮前缀稳定，合同钉在
    md-line-transition.render.test.tsx）：旧行元素保留 → @starting-style
    只认首次挂载、永不重播；新行是新挂载 → 淡入，相邻行自然叠成瀑布；
@@ -601,7 +601,7 @@
    聊天正文主题层 —— 消费表（令牌 → Streamdown DOM 的映射）。
    变量不在此定义：主题包（.themd.json）经 lib/theme 的
    compile.ts 编译，由 ChatTheme.ts 运行时注入消息流容器，
-   CSS 变量沿 DOM 继承被下面的 var() 消费（计划/聊天正文主题化.md D2/D3）。
+   CSS 变量沿 DOM 继承被下面的 var() 消费（docs/技术笔记/聊天正文主题.md）。
    未注入变量 = 全部走回落值 = Streamdown 原生观感（「默认」主题即此）。
 
    为什么必须放非 layer 区：Streamdown 的默认样式是烤进组件的

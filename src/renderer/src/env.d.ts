@@ -451,7 +451,7 @@ export interface ChatMessage {
   /** 活跃流式占位（renderer store 本地，非协议；live 期 renderer 自建占位为
    *  true，封段翻 false，终态随权威快照消失）。id 一次分配终身不变 —— id 是
    *  渲染 key 的素材，封段换名会让正文行整体重挂（选区/动画状态丢失），
-   *  见 docs/计划/正文衔接连续性修复.md */
+   *  见 docs/模块/消息呈现.md */
   placeholder?: boolean
   timestamp: number
 }

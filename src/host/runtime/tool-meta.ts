@@ -99,7 +99,7 @@ const TOOL_METAS: Record<string, { kind: ToolKind; summarize: (args: unknown) =>
 /** 工具名 → 元数据；未知名字（盘上旧转录的历史名）返回 undefined，调用方按只读兜底。
     MCP 工具（mcp__<server>__<tool>，阶段 4a）不在静态表 —— 名字运行时才知道，
     前缀判别后投影 exec 档（D8 审批链：默认 ask，autonomous 下仍逐次询问 ——
-    未经用户配置的第三方工具保守起步，见 docs/计划/MCP座实现.md §3.3）。
+    未经用户配置的第三方工具保守起步，见 docs/模块/MCP座.md）。
     annotations 分级（readOnlyHint→低风险，zcode 手法）实施时验证结果：pi 的
     beforeToolCall 载荷（pi-agent-core types.ts BeforeToolCallContext）只有
     assistantMessage/toolCall/args/context，不带工具定义 —— 拿不到 annotations，

@@ -1,7 +1,7 @@
 /**
  * 对外 MCP Server 的 Host 客户端：把 MCP 工具调用翻译成 HostApi /rpc 帧
  * （+ waitMs 场景的 /ws 事件等待）。Cogent 方言全部圈死在这一层 —— 工具层
- * （tools.ts）只见业务形状，外部 agent 只见 MCP 标准（计划/对外MCP实现.md
+ * （tools.ts）只见业务形状，外部 agent 只见 MCP 标准（docs/模块/对外MCP.md
  * §3.1 拓扑：本进程是翻译官，不是透传层）。
  *
  * 错误投影（Pi-meme hosts.ts:207-268 同款纪律，本地版）：网络/超时/越档

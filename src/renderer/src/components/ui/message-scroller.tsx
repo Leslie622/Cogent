@@ -56,7 +56,7 @@ const ScrollerNodesContext = React.createContext<{
 } | null>(null)
 
 /** RO 只把真实尺寸变化交给同一个 pin owner。
- * 不用平移抵消小数坐标：几何归零可能反而破坏图标像素稳定，见 docs/计划/底部工作行抖动归因复核.md。
+ * 不用平移抵消小数坐标：几何归零可能反而破坏图标像素稳定，见 docs/技术笔记/流式呈现动效.md。
  */
 function useStreamingBottomPin() {
   const refs = React.useContext(ScrollerRefsContext)!
@@ -357,7 +357,7 @@ function MessageScroller({ className, ...props }: React.ComponentProps<typeof Me
     className={cn("group/message-scroller relative flex min-h-0 w-full flex-1 flex-col overflow-hidden", className)} {...props} />
 }
 
-// 视口不设 containment：与小数滚动组合会引起工作行像素跳动，见 docs/计划/底部工作行抖动归因复核.md。
+// 视口不设 containment：与小数滚动组合会引起工作行像素跳动，见 docs/技术笔记/流式呈现动效.md。
 function MessageScrollerViewport({
   className,
   ...props

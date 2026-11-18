@@ -94,7 +94,7 @@ export function isRpcEvent(frame: unknown): frame is RpcEvent {
 
 /**
  * 会话摘要（列表/创建/置顶返回）。
- * 持久化（2026-11-09，docs/计划/工作区与会话真实化.md 第 1 步）：引擎重启后经
+ * 持久化（2026-11-09，docs/模块/工作区与项目.md）：引擎重启后经
  * StorageDriver 复原，summary 整体落盘 —— 新字段全部 optional（只增不破），
  * 旧宿主/旧盘数据缺字段即走缺省行为。
  */
@@ -115,13 +115,13 @@ export interface SessionSummary {
    */
   archivedAt?: number
   /**
-   * 会话级权限模式（工具审批判定矩阵的会话侧输入，docs/计划/工具系统与审批.md D4）：
+   * 会话级权限模式（工具审批判定矩阵的会话侧输入，docs/模块/审批与权限.md）：
    * ask（缺省）= 写类工具先审批；auto = 全放行（「完全访问」）；autonomous =
    * 文件写放行/exec 询问。缺省按 ask 处理（旧盘数据无此字段即落默认行为）。
    */
   permissionMode?: PermissionMode
   /**
-   * 计划模式开关（正交于权限档，docs/计划/计划模式正交开关.md）：true = 只读
+   * 计划模式开关（正交于权限档，docs/模块/审批与权限.md）：true = 只读
    * 约束生效（写/exec 拒绝，优先于档位放行）+ submit_plan 可用。缺省 = 关。
    * permissionMode 永不被 plan 触碰 —— 关闭开关后原档自动恢复，无需记回退档。
    */
@@ -171,7 +171,7 @@ export interface ContextEstimate {
 }
 
 /**
- * 工具调用投影（工具卡数据形状，docs/计划/工具系统与审批.md §3）：
+ * 工具调用投影（工具卡数据形状，docs/模块/审批与权限.md）：
  * 流式（tool.started/completed 事件）与历史回查（ChatMessage.toolCalls）共用。
  * status 三态：ok = 执行成功；error = 执行失败（结果 isError）；blocked =
  * 未执行（审批拒绝 / 计划模式只读拦截 / 中止 —— 模型收到的是 error 结果 + 原因）。
@@ -289,7 +289,7 @@ export type ToolKind = 'read' | 'write' | 'edit' | 'exec' | 'network'
  * write/edit 信任放行，exec/network 风险类逐次询问 —— 之前无 exec/network
  * 工具时它只能是 ask 同义词，故一直置灰占位）。
  * 只读计划是正交开关（SessionSummary.planEnabled），不占档位 —— v3 起删
- * 'plan' 联合值（docs/计划/计划模式正交开关.md）。
+ * 'plan' 联合值（docs/模块/审批与权限.md）。
  */
 export type PermissionMode = 'auto' | 'ask' | 'autonomous'
 
@@ -475,7 +475,7 @@ export interface SessionArchiveResult {
 }
 
 /**
- * 会话级权限切换（「完全访问」按钮，docs/计划/工具系统与审批.md D4）：引擎在
+ * 会话级权限切换（「完全访问」按钮，docs/模块/审批与权限.md）：引擎在
  * beforeToolCall 判定矩阵里消费 permissionMode。返回更新后的完整摘要。
  */
 export interface SessionSetPermissionParams {
@@ -747,7 +747,7 @@ export type McpExposure = 'direct' | 'deferred' | 'codemode' | 'hidden'
  * MCP server 定义（mcp.sync 的载荷项）：pi-mcp `mcpServers` 通用形状的
  * 协议展开 —— stdio/http 判别联合 + name 显式字段（盘上文件以 name 为键，
  * 协议里展开成数组项便于逐项校验）。存盘时由引擎折回通用形状
- * （与生态互拷，见 docs/计划/MCP座实现.md §2）。
+ * （与生态互拷，见 docs/模块/MCP座.md）。
  */
 export type McpServerDef = { name: string } & (
   | {
@@ -828,7 +828,7 @@ export interface McpSyncResult {
   synced: number
 }
 
-// ———— 技能座（阶段 4b，docs/计划/技能座实现.md）————
+// ———— 技能座（阶段 4b，docs/模块/技能座.md）————
 //
 // 技能 = 目录里的 SKILL.md 指令包（pi Agent Skills 生态形状），Host 管
 // 两个受管目录的发现/启停/编辑；进入会话走「清单进系统提示段、正文模型

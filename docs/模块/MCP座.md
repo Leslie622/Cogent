@@ -3,7 +3,7 @@
 > Host 侧管理 **MCP 客户端**配置与授权，pi `createMcpExtension` 官方工厂
 > 装配进会话（D7：不造轮子）—— 外部 MCP server 的工具直接进 Agent 循环。
 > 不含对外 MCP Server（那是 D9，未立项）。原理与四家对比看
-> [../技术笔记/mcp-seat.md](../技术笔记/mcp-seat.md)。
+> [../技术笔记/MCP座.md](../技术笔记/MCP座.md)。
 
 ## 是什么 / 在哪
 
@@ -68,7 +68,7 @@ mcp__<server>__<tool> ──经 pi 工具管线──▶ beforeToolCall 审批�
 - 日志：`<COGENT_HOME>/pi/mcp.log`（pi 域）；settings 补丁写回（updateConfig）
   按条目来源落 override 文件或 user 文件，默认值语义与 pi 一致。
 
-## 边界（首发不做，出处 docs/计划/MCP座实现.md §4）
+## 边界（配置与生命周期约束）
 
 - OAuth sign-in 不做（连接需登录时工具不可用；交互式授权流列后续）；
 - 无热刷新：配置变更新会话生效（进行中会话持有快照）；

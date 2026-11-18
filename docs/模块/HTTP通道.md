@@ -1,10 +1,8 @@
 # HTTP 通道
 
-> HostApi 的第二扇门（[计划/全局架构.md](../计划/全局架构.md) D2）：同一份
-> 方法注册表挂上 HTTP + WS，供 curl / 脚本 / 未来的 webview 页与远程端驱动
-> Host。当前进度 = 阶段 2 收官（2a 骨架 + 2b 票据鉴权 + 2c WS 事件流与
-> 远程模式）。原理与四家对比看
-> [../技术笔记/hostapi-http.md](../技术笔记/hostapi-http.md)。
+> HostApi 的 HTTP/WS 传输：与 stdio 共用方法注册表，供脚本、内嵌页面、
+> 浏览器和对外 MCP 驱动运行中的 Host。
+> 原理对比见[HostApiHTTP通道](../技术笔记/HostApiHTTP通道.md)。
 
 ## 是什么 / 在哪
 
@@ -42,9 +40,10 @@ HTTP:  消费者 ──POST /auth/exchange {ticket}──▶ 长期 token（v1.<
 | `POST /rpc` | body 一个请求帧 | 响应帧（恒 200，业务错误住帧内 `error`） |
 | `GET /ws`（upgrade） | 文本帧 = 请求帧（同一 handleFrame） | 响应帧 + **事件帧广播** |
 
-事件推送归属（2c 起，双出口同帧同时写）：
+事件推送归属（双出口同帧同时写）：
 
 ```
+owner: 事件源 = Host 服务层；广播出口 = notify
 服务层(SessionManager/审批/inspect) ──notify()──┬─▶ stdout ─▶ main ─▶ renderer（不变）
                                                 └─▶ broadcastEvent ─▶ 所有在线 WS 连接
  断线：连接级状态随之丢弃，消费者重连后拉快照（session.messages）补偿；
@@ -65,13 +64,12 @@ zcode 同款 —— HTTP server.close() 不收敛已 upgrade 的连接）。
 
 ## 边界
 
-- 事件广播无按会话过滤（所有在线连接收全部事件；session 绑定档留阶段 3
-  webview 消费者）；无 WS 心跳 ping（loopback 稳定；远程 UI 实用化时再加）；
-- main 侧已接线（`HostManager.getHttpPort()` / `issueCapability()`），
-  renderer/webview 消费者 = 阶段 3（调试 UI 改造为首个内嵌页面）；
-  **对外 MCP server 是第三个消费者**（5a）：main 在 Host 启动后走同一
-  签票链铸 token 写 mcp-access.json（凭据链与拓扑见
-  [对外MCP.md](对外MCP.md)），token 随 Host 生死对它同样成立。
+- 事件广播不按会话过滤，所有在线连接收全部事件；尚无 session 绑定 scope、
+  游标重放和 WS 心跳，远程消费者须按现有断线语义补拉快照。
+- main 经 `HostManager.getHttpPort()` / `issueCapability()` 为消费者接线；
+  webview 通过 guest preload 换票后直连（见[内嵌页面](内嵌页面.md)）。
+- 对外 MCP 使用同一签票链，main 写入 `mcp-access.json`，token 随 Host 生死，
+  拓扑与凭据轮换见[对外MCP](对外MCP.md)。
 
 验收：`COGENT_HTTP_RPC=1` 拉起 Host 后 —— stdio `capability.issue` → curl
 `/auth/exchange` 换 token → Bearer 调 `session.list` 200；readonly 越档

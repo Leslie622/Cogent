@@ -348,7 +348,7 @@ const ProjectRow = memo(function ProjectRow({
           </CollapsibleTrigger>
           <div className={ACTIONS}>
             {/* 更多：项目级菜单；「移除项目」只删项目不级联删会话（引擎 delete 语义，
-                会话落回"最近"，见 docs/计划/工作区与会话真实化.md 第 4 步）。
+                会话落回"最近"，见 docs/模块/工作区与项目.md）。
                 菜单项来自上方 actions 数据源（与右键菜单同权同项） */}
             <DropdownMenu>
               {/* Hint 包外层（塞 render 里 children 被吞，ProjectPicker 同教训） */}

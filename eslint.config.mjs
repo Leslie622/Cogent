@@ -1,4 +1,4 @@
-// ESLint 平面配置 —— 防御性代码治理的机械手段（政策条文见 docs/conventions.md）。
+// ESLint 平面配置 —— 防御性代码治理的机械手段（政策条文见 docs/约定.md）。
 //
 // 两类规则是这套治理的核心，都是类型感知规则（需要 tsconfig 项目信息）：
 // - no-unnecessary-condition ：揪出"类型已保证却还在写的 if / typeof / ??"——
@@ -17,6 +17,7 @@ export default tseslint.config(
   // 口径：纯 JS 不进 tsconfig，projectService 找不到项目即报解析错）
   // tests/integration/*.mjs = 测试夹具脚本（mock-mcp-server.mjs：被测引擎
   // 子进程加载的纯 JS，同上不进 tsconfig）
+  // tests/run-tests.mjs = 测试启动器，同为纯 JS，不进 TypeScript 工程。
   {
     ignores: [
       'out/**',
@@ -27,6 +28,7 @@ export default tseslint.config(
       'scripts/**',
       'tmp/**',
       'reference/**',
+      'tests/run-tests.mjs',
       'tests/integration/*.mjs'
     ]
   },

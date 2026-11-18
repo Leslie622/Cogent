@@ -1,5 +1,5 @@
 /**
- * 技能清单 formatter（阶段 4b，docs/计划/技能座实现.md §3.2）—— 系统提示
+ * 技能清单 formatter（阶段 4b，docs/模块/技能座.md）—— 系统提示
  * skills 段的内容源（段由 pi-session-factory 的 before_agent_start 钩子
  * 每回合活算，见 factory）。
  *

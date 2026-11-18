@@ -19,5 +19,9 @@
     }
   },
   "include": [
-    "tests/setup-web.ts","src/renderer/src/**/*", "src/shared/**/*"]
+    "tests/setup-web.ts",
+    "tests/renderer/**/*",
+    "src/renderer/src/**/*",
+    "src/shared/**/*"
+  ]
 }

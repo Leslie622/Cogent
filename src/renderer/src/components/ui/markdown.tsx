@@ -19,7 +19,7 @@
  * ③ animated 关：块入场动画主流均无，克制；
  * ④ 流式逐词淡入：每个真实 Block 实例分别保存进度与插件，追加到 Streamdown
  *    传入的 rehype 管线末尾；消息只共享排期时钟。同文段落也有独立身份，
- *    具体接法见 docs/计划/正文渐显块身份修复.md。
+ *    具体接法见 docs/技术笔记/流式呈现动效.md。
  * md-body 作用域类：正文主题层（globals.css 末尾「聊天正文主题」段）的挂载点，
  * 来自 Themd 主题包（路线 A 静态应用）——层内说明见彼处。
  */
@@ -93,7 +93,7 @@ const components: Components = {
 }
 
 /** streaming只表示业务仍在输出；终态的既有Block树短暂保留到真实过渡结束，再恢复原生static语义。
- * 字号/行高在容器层定基调，块级元素由包默认接管；收尾设计见docs/计划/正文渐显收尾.md。 */
+ * 字号/行高在容器层定基调，块级元素由包默认接管；收尾设计见docs/技术笔记/流式呈现动效.md。 */
 export function Markdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
   // 30ms 发布由 renderer 事件入口持有；直接传入的内容不再二次延迟。
   // 消息持有节奏与增量信号，文本进度由真实块持有；内容不再替代块身份。

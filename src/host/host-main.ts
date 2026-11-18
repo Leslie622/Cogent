@@ -79,7 +79,7 @@ import { startHttpRpc } from './http/server'
 import { createCapabilityStore, createRootSecret } from './http/auth'
 
 /**
- * 存储根：第一方数据唯一根（决策 D1，docs/计划/工作区与会话真实化.md §1/§2）。
+ * 存储根：第一方数据唯一根（决策 D1，docs/模块/工作区与项目.md）。
  * COGENT_HOME 覆盖口供冒烟测试指临时目录（同 COGENT_NODE_BIN 手法）；
  * 第 2 步把 main 侧凭据 store 也迁到同根（引擎是纯 Node，自算 home 零 Electron）。
  * PI_CODING_AGENT_DIR 的归位不在这 —— 那行赋值在 pi 加载之后才执行、对

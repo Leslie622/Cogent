@@ -1,5 +1,5 @@
 /**
- * MCP 座集成测试（阶段 4a-1，docs/计划/MCP座实现.md §5）—— 断言对象 =
+ * MCP 座集成测试（阶段 4a-1，docs/模块/MCP座.md）—— 断言对象 =
  * Host 侧接线：mcp.list/sync 协议方法、createMcpExtension 装配（direct
  * 工具声明给模型）、D8 审批链对 mcp__* 生效（exec 档 ask）、echo 结果回灌
  * 循环闭合、禁用后新会话工具消失（新会话生效语义）。
