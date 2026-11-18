@@ -64,7 +64,15 @@ function Slider<Value extends number | readonly number[]>({
     // 永远不命中 —— 轨道 h-2 / w-full 会整条失效（高度塌 0 → 轨道隐身，
     // 2026-11-10 上下文窗口滑杆踩响；ThinkingSlider 当时靠自覆写 h-5 掩埋）。
     <SliderPrimitive.Root
-      className={cn("data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full", className)}
+      className={cn(
+        // w-full 平铺（不走 orientation 变体）：变体版是"类+属性"双选择器，
+        // 特异性压过调用处的普通宽度类（w-40 等）→ 调用点定宽失效、宽度退回
+        // 父容器（shrink-0 内容宽）形成环塌（通知页滑杆隐形实况）。平铺后与
+        // 调用处的宽度类同特异性，tailwind-merge 同组后写者胜 —— 调用处可
+        // 随意定宽。竖直滑杆（当前无消费者）不受 w-full 影响：其宽度本 auto
+        "w-full data-[orientation=vertical]:h-full",
+        className
+      )}
       data-slot="slider"
       defaultValue={defaultValue}
       value={value}
