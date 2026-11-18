@@ -203,6 +203,7 @@ export interface ChatState {
   respondPlan: (requestId: string, approved: boolean, options?: { message?: string }) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
   setPinned: (sessionId: string, pinned: boolean) => Promise<void>
+  rename: (sessionId: string, title: string) => Promise<void>
   archive: (sessionId: string, archived: boolean) => Promise<void>
   /** true = 引擎受理；false = 旧调用已失效，输入区不执行成功后续；当次拒绝仍抛错 */
   submit: (text: string, model?: string, thinkingLevel?: string, provider?: string) => Promise<boolean>

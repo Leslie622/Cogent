@@ -73,6 +73,7 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   'session.create': 'write',
   'session.delete': 'write',
   'session.setPinned': 'write',
+  'session.rename': 'write',
   'session.archive': 'write',
   'session.setPermission': 'write',
   'session.setPlanMode': 'write',

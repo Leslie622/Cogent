@@ -91,6 +91,7 @@ export type EngineMethod =
   | 'session.delete'
   | 'session.messages'
   | 'session.setPinned'
+  | 'session.rename'
   | 'session.archive'
   | 'session.listArchived'
   | 'session.setPermission'
@@ -135,6 +136,8 @@ export interface AppSettingsFile {
 export interface SessionSummary {
   id: string
   title: string
+  /** 手动标题不再被首条消息自动命名覆盖。 */
+  titleManual?: boolean
   createdAt: number
   updatedAt: number
   cwd?: string
@@ -171,6 +174,7 @@ export interface EngineMethodParams {
   'session.delete': { sessionId: string }
   'session.messages': { sessionId: string }
   'session.setPinned': { sessionId: string; pinned: boolean }
+  'session.rename': { sessionId: string; title: string }
   'session.archive': { sessionId: string; archived: boolean }
   'session.listArchived': Record<string, never>
   'session.setPermission': { sessionId: string; mode: PermissionMode }
@@ -212,6 +216,7 @@ export interface EngineMethodResult {
   'session.delete': { deleted: boolean }
   'session.messages': { messages: ChatMessage[]; todos?: TodoItem[] }
   'session.setPinned': { summary: SessionSummary }
+  'session.rename': { summary: SessionSummary }
   'session.archive': { summary: SessionSummary }
   'session.listArchived': SessionSummary[]
   'session.setPermission': { summary: SessionSummary }

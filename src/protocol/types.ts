@@ -101,6 +101,8 @@ export function isRpcEvent(frame: unknown): frame is RpcEvent {
 export interface SessionSummary {
   id: string
   title: string
+  /** 用户手动命名后不再由首条消息覆盖；缺省沿用自动命名规则。 */
+  titleManual?: boolean
   createdAt: number
   updatedAt: number
   /** 工作区目录（第 6 步接线：无项目也可单绑）；缺省 = 无绑定 */
@@ -454,6 +456,15 @@ export interface PlanRespondParams {
   approved: boolean
   /** 拒绝反馈（进工具结果给模型，修订后重提）；批准时忽略 */
   message?: string
+}
+
+/** 手动重命名；title 为去首尾空白的非空单行标题，返回落盘后的完整摘要。 */
+export interface SessionRenameParams {
+  sessionId: string
+  title: string
+}
+export interface SessionRenameResult {
+  summary: SessionSummary
 }
 
 /** 置顶/取消置顶（同一入口，pinned 二值切换）；返回更新后的完整摘要 */
@@ -1015,6 +1026,7 @@ export interface ProtocolMethods {
   'session.delete': { params: { sessionId: string }; result: { deleted: boolean } }
   'session.messages': { params: SessionMessagesParams; result: SessionMessagesResult }
   'session.setPinned': { params: SessionSetPinnedParams; result: SessionSetPinnedResult }
+  'session.rename': { params: SessionRenameParams; result: SessionRenameResult }
   'session.listArchived': { params: Record<string, never>; result: SessionSummary[] }
   'session.archive': { params: SessionArchiveParams; result: SessionArchiveResult }
   'session.setPermission': { params: SessionSetPermissionParams; result: SessionSetPermissionResult }

@@ -50,6 +50,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { ProjectDialog } from './ProjectDialog'
+import { RenameChatDialog } from './RenameChatDialog'
 import { useChatStore, type SessionSummary } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
 import { useHomeStore } from '@/stores/home'
@@ -135,6 +136,7 @@ const ChatRow = memo(function ChatRow({
   onSelect,
   onTogglePin,
   onArchive,
+  onRename,
   actions,
   waitingApproval
 }: {
@@ -146,6 +148,7 @@ const ChatRow = memo(function ChatRow({
   onTogglePin: (chatId: string, pinned: boolean) => void
   /** 归档（回收站语义）：会话从主列表消失，设置页「已归档的聊天」可恢复/删除 */
   onArchive: (chatId: string) => void
+  onRename: (chatId: string) => void
   actions?: ReactNode
   /** 等待确认 tag（审批交互升级 D7；2026-11-11 用户定调形态）：会话有挂起
       *  审批即显，**占行尾动作钮簇的位置**（此时置顶/归档钮不渲染 —— 待审批
@@ -161,38 +164,37 @@ const ChatRow = memo(function ChatRow({
         render={
           <div
             className={cn(
-              'group relative flex h-8 items-center rounded-md pr-2',
-              indent ? 'pl-8' : 'pl-2',
+              'group relative flex h-8 items-center rounded-md',
               ROW_HOVER,
               active && ROW_ACTIVE
             )}
           />
         }
       >
-        {/* active 只用底色区分不加粗（字重变化引起抖动）；文字一律近黑，层级靠
-            底色/分区标题灰。pr 让位随 hover 钮簇显形（2026-11-16 用户定调）：
-            平时 pr-2 标题占满整行（钮簇 absolute 不占文档流，无 hover 时右侧
-            空白不该压窄省略点），hover/菜单开着钮簇现身时标题收缩避让 */}
+        {/* 内边距归主按钮，且撑满行高，让文字外的空白与项目缩进也能选中会话。
+            右侧动作仍是兄弟按钮，hover/菜单打开时主按钮给它们让出标题空间。 */}
         <button
           type="button"
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-1.5 pr-2 text-[13px] text-foreground transition-[padding] duration-100',
-            'group-hover:pr-12 group-focus-within:pr-12 group-data-popup-open:pr-12 group-has-[[data-popup-open]]:pr-12',
+            'flex h-full min-w-0 flex-1 items-center gap-1.5 pr-4 text-[13px] text-foreground transition-[padding] duration-100',
+            indent ? 'pl-8' : 'pl-2',
+            'group-hover:pr-14 group-focus-within:pr-14 group-data-popup-open:pr-14 group-has-[[data-popup-open]]:pr-14',
             waitingApproval && 'pr-2!'
           )}
           aria-current={active ? 'true' : undefined}
           onClick={() => onSelect(chat.id)}
         >
           <span className="truncate">{chat.title}</span>
+          {waitingApproval && (
+            // 浅绿底 + 实色深绿字（文字色纪律：透明度只许用在背景）+ 呼吸点
+            // （控制台 timeline 同款 pulse 语言，「进行中」感）
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700">
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+              等待确认
+            </span>
+          )}
         </button>
-        {waitingApproval ? (
-          // 浅绿底 + 实色深绿字（文字色纪律：透明度只许用在背景）+ 呼吸点
-          // （控制台 timeline 同款 pulse 语言，「进行中」感）
-          <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700">
-            <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-            等待确认
-          </span>
-        ) : (
+        {!waitingApproval && (
           <div className={ACTIONS}>
             {actions ?? (
               <>
@@ -225,9 +227,12 @@ const ChatRow = memo(function ChatRow({
           </div>
         )}
       </ContextMenuTrigger>
-      {/* 右键菜单项 = hover 钮同权动作（置顶/归档），主入口一个不少；size=lg
-          全 app 菜单统一放大档（2026-11-16） */}
+      {/* 置顶/归档与 hover 钮同权，重命名由菜单打开弹窗；size=lg 与其他菜单统一。 */}
       <ContextMenuContent size="lg">
+        <ContextMenuItem onClick={() => onRename(chat.id)}>
+          <IconPencil className="size-[17px]" />
+          重命名
+        </ContextMenuItem>
         <ContextMenuItem onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}>
           {chat.pinnedAt ? <IconPinFilled className="size-[17px]" /> : <IconPin className="size-[17px]" />}
           {chat.pinnedAt ? '取消置顶' : '置顶'}
@@ -255,6 +260,7 @@ const ProjectRow = memo(function ProjectRow({
   onDeleteProject,
   onEditProject,
   onArchiveChat,
+  onRenameChat,
   onTogglePin,
   isWaitingApproval,
   pinned
@@ -273,6 +279,7 @@ const ProjectRow = memo(function ProjectRow({
   onEditProject: (projectId: string) => void
   /** 子会话归档（回收站语义，下传给 ChatRow） */
   onArchiveChat: (chatId: string) => void
+  onRenameChat: (chatId: string) => void
   /** 项目置顶/取消（菜单项接线） */
   onTogglePin: (projectId: string) => void
   /** 会话是否有挂起审批（等待确认 tag，D7；下传给子 ChatRow） */
@@ -406,6 +413,7 @@ const ProjectRow = memo(function ProjectRow({
                 indent
                 onSelect={onSelectSession}
                 onArchive={onArchiveChat}
+                onRename={onRenameChat}
                 onTogglePin={handleToggleChatPin}
                 waitingApproval={isWaitingApproval(chat.id)}
               />
@@ -429,9 +437,12 @@ export function HomeSidebar() {
   // 编辑项目弹窗（入口 = 项目行菜单「编辑」）：持 projectId 而非布尔 —— key
   // 之用，弹窗每次打开都是全新实例（name 初值从 store 取，免手写重置）
   const [editProjectId, setEditProjectId] = useState<string | null>(null)
+  const [renameChatId, setRenameChatId] = useState<string | null>(null)
+  const renameChat = useCallback((chatId: string) => setRenameChatId(chatId), [])
 
   // 会话/项目都是引擎真数据：chat store（session.list）+ project store（project.list）
   const sessions = useChatStore((s) => s.sessions)
+  const renamingChat = sessions.find((chat) => chat.id === renameChatId)
   const createSession = useChatStore((s) => s.createSession)
   // 等待确认 tag 的派生源（D7）：会话桶的 pendingApprovals 非空即显。函数签名
   // 下传（useCallback 稳定引用保 ProjectRow/ChatRow memo；pending 变化只让
@@ -530,6 +541,7 @@ export function HomeSidebar() {
         active !== undefined &&
         (state.bySession[active.id]?.messages.length ?? 0) === 0 &&
         active.title === '新会话' && // 双保险：转录空 + 标题未命名（防投影延迟误判）
+        active.titleManual !== true &&
         (projectId === undefined ? active.projectId === undefined : active.projectId === projectId)
       // new 视图里的 activeSessionId 可能仍指向旧聊天，不能据此重复建会话。
       if (useHomeStore.getState().session.kind !== 'new' && !activeIsEmpty) {
@@ -646,6 +658,7 @@ export function HomeSidebar() {
                   onDeleteProject={deleteProject}
                   onEditProject={editProject}
                   onArchiveChat={archiveChat}
+                  onRenameChat={renameChat}
                   onTogglePin={toggleProjectPin}
                   isWaitingApproval={isWaitingApproval}
                   pinned
@@ -659,6 +672,7 @@ export function HomeSidebar() {
                   indent={false}
                   onSelect={openSession}
                   onArchive={archiveChat}
+                  onRename={renameChat}
                   onTogglePin={toggleChatPin}
                   waitingApproval={isWaitingApproval(chat.id)}
                 />
@@ -705,6 +719,7 @@ export function HomeSidebar() {
                   onDeleteProject={deleteProject}
                   onEditProject={editProject}
                   onArchiveChat={archiveChat}
+                  onRenameChat={renameChat}
                   onTogglePin={toggleProjectPin}
                   isWaitingApproval={isWaitingApproval}
                   pinned={project.pinnedAt !== undefined}
@@ -749,6 +764,7 @@ export function HomeSidebar() {
                   indent={false}
                   onSelect={openSession}
                   onArchive={archiveChat}
+                  onRename={renameChat}
                   onTogglePin={toggleChatPin}
                   waitingApproval={isWaitingApproval(chat.id)}
                 />
@@ -770,6 +786,10 @@ export function HomeSidebar() {
           startNew(projectId)
         }}
       />
+
+      {renamingChat !== undefined && (
+        <RenameChatDialog key={renamingChat.id} chat={renamingChat} onClose={() => setRenameChatId(null)} />
+      )}
 
       {/* 编辑项目：与创建同一张表单（改名 + 目录增删，新加目录才走信任确认）。
           key = projectId 每次打开全新实例（预填即初值免重置）；项目被删

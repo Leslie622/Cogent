@@ -109,6 +109,19 @@ const seedPrefix = () => {
 }
 
 describe('Host 准备阶段停止与运行预约', () => {
+  it('重命名落盘失败时不改内存标题，允许重试', () => {
+    const original = { ...manager.list()[0] }
+    const put = vi.spyOn(JsonStorageDriver.prototype, 'put').mockImplementationOnce(() => { throw new Error('磁盘只读') })
+    try {
+      expect(() => manager.rename(sid, '新标题')).toThrow('磁盘只读')
+      expect(manager.list()[0]).toEqual(original)
+      expect(manager.rename(sid, '新标题')).toEqual({ ...original, title: '新标题', titleManual: true })
+      expect(createPiSession).not.toHaveBeenCalled()
+    } finally {
+      put.mockRestore()
+    }
+  })
+
   it('submit装配时停止：不调用prompt，已提交user进入树且唯一aborted终态', async () => {
     manager.submit(sid, '准备期问题')
     expect(manager.abort(sid)).toBe(true)

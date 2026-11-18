@@ -65,6 +65,7 @@ import {
   type SessionSetPermissionParams,
   type SessionSetPlanModeParams,
   type SessionSetPinnedParams,
+  type SessionRenameParams,
   type ThinkingLevelWithOff
 } from '../protocol'
 import { ModelRuntime } from '@earendil-works/pi-coding-agent'
@@ -264,6 +265,16 @@ async function main(): Promise<void> {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.setPinned 需要 { sessionId: string, pinned: boolean }')
     }
     return { summary: sessions.setPinned(p.sessionId, p.pinned) }
+  }
+
+  /** 标题来自外部请求，在统一入口校验并归一，运行时只消费合法单行标题。 */
+  function handleSessionRename(params: unknown) {
+    const p = params as Partial<SessionRenameParams>
+    if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 ||
+        typeof p.title !== 'string' || p.title.trim().length === 0 || /[\r\n]/.test(p.title)) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.rename 需要 { sessionId: string, title: 非空单行 string }')
+    }
+    return { summary: sessions.rename(p.sessionId, p.title.trim()) }
   }
 
   /** session.archive 入口校验 */
@@ -744,6 +755,7 @@ async function main(): Promise<void> {
     ['session.delete', handleSessionDelete],
     ['session.messages', handleSessionMessages],
     ['session.setPinned', handleSessionSetPinned],
+    ['session.rename', handleSessionRename],
     ['session.archive', handleSessionArchive],
     ['session.listArchived', () => sessions.listArchived()],
     ['session.setPermission', handleSessionSetPermission],

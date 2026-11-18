@@ -1,5 +1,6 @@
-/** 新聊天入口按主体视图去重，避免残留活动会话和在途创建撑大列表。 */
+/** 侧栏导航：新聊天去重、会话整行热区与独立动作。 */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { emptyBucket, useChatStore } from '@/stores/chat'
 import { useHomeStore } from '@/stores/home'
@@ -70,5 +71,69 @@ describe('侧栏新聊天入口', () => {
     expect(engineRequest.mock.calls.map(([method]) => method)).toEqual(['project.list'])
     expect(useChatStore.getState().sessions).toEqual([empty])
     expect(useHomeStore.getState().session.kind).toBe('new')
+  })
+})
+
+describe('会话行点击区域', () => {
+  it.each(['最近', '置顶', '项目', '等待确认'])('%s会话的空白和缩进属于主按钮热区', async (kind) => {
+    const chat = {
+      ...oldSession,
+      ...(kind === '置顶' && { pinnedAt: 1 }),
+      ...(kind === '项目' && { projectId: 'project' })
+    }
+    const bucket = emptyBucket()
+    if (kind === '等待确认') {
+      bucket.pendingApprovals = [{ requestId: 'approval', toolName: 'write', toolKind: 'write', summary: '写文件' }]
+    }
+    useChatStore.setState({ sessions: [chat], bySession: { [chat.id]: bucket } })
+    if (kind === '项目') {
+      engineRequest.mockResolvedValue([{ id: 'project', name: '项目一', cwds: ['C:/project'], createdAt: 1, updatedAt: 1 }])
+    }
+    render(<HomeSidebar />)
+    const button = await screen.findByRole('button', { name: /已有聊天/ })
+    // jsdom 不做坐标命中；钉住热区布局契约，避免行高或缩进再次留在按钮之外。
+    expect(button).toHaveClass('h-full', 'flex-1', kind === '项目' ? 'pl-8' : 'pl-2')
+    expect(button.parentElement).not.toHaveClass('pl-2', 'pl-8', 'pr-2')
+    fireEvent.click(kind === '等待确认' ? screen.getByText('等待确认') : button)
+    expect(useChatStore.getState().activeSessionId).toBe(chat.id)
+    expect(useHomeStore.getState().session).toEqual({ kind: 'chat', chatId: chat.id })
+    await waitFor(() => expect(useProjectStore.getState().loaded).toBe(true))
+  })
+
+  it.each(['置顶聊天', '归档聊天'])('%s只执行自身操作，不选中会话', async (name) => {
+    const setPinned = vi.fn().mockResolvedValue(undefined)
+    const archive = vi.fn().mockResolvedValue(undefined)
+    useChatStore.setState({ sessions: [oldSession], setPinned, archive })
+    render(<HomeSidebar />)
+    fireEvent.click(screen.getByRole('button', { name }))
+    expect(name === '置顶聊天' ? setPinned : archive).toHaveBeenCalledExactlyOnceWith(oldSession.id, true)
+    expect(useChatStore.getState().activeSessionId).toBeNull()
+    expect(useHomeStore.getState().session.kind).toBe('new')
+    await waitFor(() => expect(useProjectStore.getState().loaded).toBe(true))
+  })
+})
+
+describe('聊天右键重命名', () => {
+  it.each(['最近', '置顶', '项目'])('%s会话右键打开预填弹窗，保存后更新名称且不切换会话', async (kind) => {
+    const user = userEvent.setup()
+    const chat = { ...oldSession, ...(kind === '置顶' && { pinnedAt: 1 }), ...(kind === '项目' && { projectId: 'project' }) }
+    useChatStore.setState({ sessions: [chat] })
+    engineRequest.mockImplementation((method, params) => {
+      if (method === 'project.list') return Promise.resolve(kind === '项目' ? [{ id: 'project', name: '项目一', cwds: ['C:/project'], createdAt: 1 }] : [])
+      if (method === 'session.rename') return Promise.resolve({ summary: { ...chat, title: (params as { title: string }).title, titleManual: true } })
+      throw new Error(`未预期的方法：${method}`)
+    })
+    render(<HomeSidebar />)
+    fireEvent.contextMenu(await screen.findByRole('button', { name: '已有聊天' }))
+    await user.click(await screen.findByRole('menuitem', { name: '重命名' }))
+    const input = await screen.findByRole('textbox', { name: '聊天名称' })
+    expect(input).toHaveValue(oldSession.title)
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+    fireEvent.change(input, { target: { value: '  自定义标题  ' } })
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(engineRequest).toHaveBeenCalledWith('session.rename', { sessionId: oldSession.id, title: '自定义标题' })
+    expect(screen.getByRole('button', { name: '自定义标题' })).toBeInTheDocument()
+    expect(useChatStore.getState().activeSessionId).toBeNull()
   })
 })

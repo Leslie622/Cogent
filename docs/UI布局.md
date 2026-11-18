@@ -68,8 +68,9 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 
 | 部件 | 视觉与组件配方 |
 | --- | --- |
-| 列表行 | h-8、relative/group；主按钮占满，pr-12 留动作位；右侧绝对钮簇 hover 显示 |
+| 列表行 | h-8、relative/group；会话主按钮撑满行高与宽度，内边距及项目缩进放在按钮内；常态 pr-4，动作显现时 pr-14；右侧绝对钮簇独立操作，等待确认 tag 放在主按钮内 |
 | 列表菜单 | ContextMenuTrigger 的 `render` 承载整行；动作数据同时供右键和“更多”菜单消费 |
+| 聊天重命名 | 聊天右键菜单“重命名”打开 Dialog + Input；预填并聚焦全选；原生取消/保存按钮，Enter 保存、Esc 关闭；错误留在弹窗 |
 | 侧栏折叠 | `CollapsibleContent variant="navigation"`，200ms ease-out；keepMounted，收起 inert，结束后 hidden |
 | 等待确认 tag | 占行尾动作簇的位置，常显；emerald `/15` 背景 + 实色深绿文字 + 小呼吸点 |
 | 输入区 | 白卡 rounded-3xl、薄边、无投影、聚焦无反馈；新聊天上方显示项目信息区 |

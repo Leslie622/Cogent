@@ -25,6 +25,7 @@ const ALLOWED_METHODS = new Set<string>([
   'session.delete',
   'session.messages',
   'session.setPinned',
+  'session.rename',
   'session.archive',
   'session.listArchived',
   'session.setPermission',

@@ -201,6 +201,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }))
   },
 
+  /** 等 Host 落盘成功再更新标题；只合并命名字段，避免迟到响应撤回其他摘要变更。 */
+  rename: async (sessionId, title) => {
+    const { summary } = await window.cogent.engineRequest('session.rename', { sessionId, title })
+    set((state) => ({
+      sessions: state.sessions.map((s) => s.id === sessionId
+        ? { ...s, title: summary.title, titleManual: summary.titleManual } : s)
+    }))
+  },
+
   /** 置顶/取消（引擎侧落 pinnedAt 并持久化）；同步更新列表内该会话的摘要 */
   setPinned: async (sessionId, pinned) => {
     const { summary } = await window.cogent.engineRequest('session.setPinned', { sessionId, pinned })

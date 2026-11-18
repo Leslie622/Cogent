@@ -140,8 +140,7 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'session.summaryChanged': {
-        // 摘要广播（正交开关 v3）：档位/计划开关的引擎侧变化（手动切换、
-        // enter_plan、plan.respond 批准）→ 替换列表项，权限钮/计划钮即时联动。
+        // 摘要广播：重命名、档位/计划开关变化 → 替换列表项与相关显示。
         // RPC 返回值更新是同款形状的另一条路（用户主动路径），两路幂等
         const { summary } = event.params
         useChatStore.setState((state) => ({
@@ -429,9 +428,12 @@ export function bindEngineEvents(): () => void {
 
 /** run.completed 后回查一次会话列表，让"首条消息生成标题"反映到侧栏 */
 async function refreshSessionTitle(): Promise<void> {
+  const previous = useChatStore.getState().sessions
   const sessions = await window.cogent.engineRequest('session.list', {})
   useChatStore.setState((state) => ({
     sessions: state.sessions.map((session) => {
+      // 回查期间的重命名等摘要更新优先，旧列表响应不能覆盖后来操作。
+      if (previous.find((s) => s.id === session.id) !== session) return session
       const fresh = sessions.find((s) => s.id === session.id)
       return fresh ? { ...session, title: fresh.title, updatedAt: fresh.updatedAt } : session
     })

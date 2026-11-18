@@ -65,6 +65,32 @@ const assistantMsg = (content: string, at: number): ChatMessage => ({ id: `a-${c
 
 bindEngineEvents()
 
+describe('聊天重命名状态', () => {
+  it('RPC 成功改目标标题，迟到结果不复活已删除列表项', async () => {
+    const session = { id: SID, title: '旧标题', createdAt: 1, updatedAt: 2 }
+    let resolve!: (value: unknown) => void
+    engineRequest.mockImplementation(() => new Promise((done) => { resolve = done }))
+    useChatStore.setState({ sessions: [session] })
+    const saving = useChatStore.getState().rename(SID, '新标题')
+    useChatStore.setState({ sessions: [] })
+    resolve({ summary: { ...session, title: '新标题', titleManual: true } })
+    await saving
+    expect(useChatStore.getState().sessions).toEqual([])
+  })
+
+  it('终态列表回查晚于手动重命名返回时，不覆盖新标题', async () => {
+    const session = { id: SID, title: '旧标题', createdAt: 1, updatedAt: 2 }
+    let resolve!: (value: unknown) => void
+    engineRequest.mockImplementation(() => new Promise((done) => { resolve = done }))
+    useChatStore.setState({ sessions: [session], bySession: { [SID]: emptyBucket() } })
+    emit({ method: 'run.completed', params: { sessionId: SID, messages: [] } })
+    emit({ method: 'session.summaryChanged', params: { summary: { ...session, title: '手动名称', titleManual: true } } })
+    resolve([session])
+    await Promise.resolve()
+    expect(useChatStore.getState().sessions[0].title).toBe('手动名称')
+  })
+})
+
 describe('compaction 事件序列（D9 保留式 store 手术）', () => {
   it('started → completed：折叠条落在压缩时刻已存在的内容之后（=「正在压缩」状态条的位置），旧消息一条不删', () => {
     // fake 钟把 bar.timestamp 钉在 10000：q2(300) 是压缩前刚发的 —— bar 应落它

@@ -48,6 +48,7 @@ async function rebindSessionToProject(projectId: string): Promise<void> {
     active !== undefined &&
     (chat.bySession[active.id]?.messages.length ?? 0) === 0 &&
     active.title === '新会话' &&
+    active.titleManual !== true &&
     active.projectId === undefined
   if (scaffold) {
     await chat.deleteSession(active.id)
@@ -76,6 +77,7 @@ async function unbindProject(): Promise<void> {
     active !== undefined &&
     (chat.bySession[active.id]?.messages.length ?? 0) === 0 &&
     active.title === '新会话' &&
+    active.titleManual !== true &&
     active.projectId !== undefined
   ) {
     await chat.deleteSession(active.id)

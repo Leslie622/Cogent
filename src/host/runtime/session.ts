@@ -744,6 +744,16 @@ export class SessionManager implements CogentKernel {
       .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
   }
 
+  /** 重命名不改变最近活动顺序，也不装配 pi；先落盘再发布，保存失败不能假报成功。 */
+  rename(sessionId: string, title: string): SessionSummary {
+    const session = this.requireSession(sessionId)
+    const summary = { ...session.summary, title, titleManual: true }
+    this.writeSession({ ...session, summary })
+    session.summary = summary
+    this.notify('session.summaryChanged', { summary: { ...summary } })
+    return { ...summary }
+  }
+
   setPinned(sessionId: string, pinned: boolean): SessionSummary {
     const session = this.requireSession(sessionId)
     // 存时间不存布尔：置顶分区按 pinnedAt 倒序，新置顶在上；取消 = 字段移除
@@ -946,7 +956,7 @@ export class SessionManager implements CogentKernel {
     }
 
     // 首条消息命名会话（恢复的旧会话标题已命名，不会覆盖）
-    if (session.summary.title === '新会话') {
+    if (session.summary.title === '新会话' && session.summary.titleManual !== true) {
       session.summary.title = text.trim().slice(0, TITLE_MAX_CHARS) || session.summary.title
     }
     session.summary.updatedAt = Date.now()
@@ -1728,6 +1738,15 @@ export class SessionManager implements CogentKernel {
   private persist(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
+    try {
+      this.writeSession(session)
+    } catch (error) {
+      process.stderr.write(`[host] 会话落盘失败（${sessionId}，下次变更重试）: ${(error as Error).message}\n`)
+    }
+  }
+
+  /** 共用文档形状；显式保存操作直接调用，回合内的尽力落盘由 persist 翻译失败。 */
+  private writeSession(session: Session): void {
     const doc: StoredSession = {
       version: SESSION_FILE_VERSION,
       summary: session.summary,
@@ -1735,11 +1754,7 @@ export class SessionManager implements CogentKernel {
       ...(session.todos.length > 0 && { todos: session.todos }),
       ...(session.plan !== undefined && { plan: session.plan })
     }
-    try {
-      this.storage.put(SESSION_COLLECTION, sessionId, doc as unknown as Record<string, unknown>)
-    } catch (error) {
-      process.stderr.write(`[host] 会话落盘失败（${sessionId}，下次变更重试）: ${(error as Error).message}\n`)
-    }
+    this.storage.put(SESSION_COLLECTION, session.summary.id, doc as unknown as Record<string, unknown>)
   }
 
   /**
