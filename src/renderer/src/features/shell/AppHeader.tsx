@@ -3,7 +3,7 @@
  * 左：content-sidebar 折叠开关，系列图标两态：展开时 Collapse（点击收起）、折叠时
  *     Expand（点击展开）；状态由 AppShell 从面板 onResize 同步，拖拽折叠、点钮
  *     折叠都会翻转图标；
- * 左二：四个菜单文字按钮（shadcn ghost，hover 出底色；点击行为属后续菜单件）；
+ * 左二：四个菜单与两个功能入口共用文字按钮间距（shadcn ghost）；
  * 右：窗口控制三钮（IPC 直达 main；maximize 两态系列图标 Square↔Copy，状态经
  *     window:state-changed 推送；关闭 hover 保留 Windows 红色惯例）。
  * hover 底色压成 sidebar-accent：chrome 面上的按钮，ghost 默认的 bg-accent(0.97)
@@ -19,8 +19,6 @@ import {
   IconLayoutSidebarLeftExpand,
   IconMinus,
   IconSquare,
-  IconTerminal2,
-  IconWindow,
   IconX,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
@@ -81,34 +79,25 @@ export function AppHeader({
               {label}
             </Button>
           ))}
-        </nav>
-        {/* 运行时控制台（帮助右侧，用户定入口）：开独立 DevTools 窗口，
-            单例 —— 已开则聚焦 */}
-        {/* Hint = shadcn Tooltip 包装（原生 title 全量换装，文案沿用 aria-label） */}
-        <Hint tip="运行时控制台">
+          {/* 运行时控制台开独立单例窗口，已开则聚焦 */}
           <Button
             variant="ghost"
-            size="icon-sm"
-            className={cn(CHROME_HOVER, 'ml-1')}
-            aria-label="运行时控制台"
+            size="sm"
+            className={cn(CHROME_HOVER, 'h-7 px-2')}
             onClick={() => void window.cogent.openConsole()}
           >
-            <IconTerminal2 className="size-[18px]" />
+            运行时控制台
           </Button>
-        </Hint>
-        {/* 内嵌页面 demo（阶段 3a）：webview 沙箱 + preload 小 SDK 的首个
-            页面消费者，开独立窗口 */}
-        <Hint tip="内嵌页面">
+          {/* 内嵌页面使用独立窗口承载 webview 沙箱 */}
           <Button
             variant="ghost"
-            size="icon-sm"
-            className={cn(CHROME_HOVER, 'ml-1')}
-            aria-label="打开内嵌页面 demo"
+            size="sm"
+            className={cn(CHROME_HOVER, 'h-7 px-2')}
             onClick={() => void window.cogent.openEmbedded()}
           >
-            <IconWindow className="size-[18px]" />
+            内嵌页面
           </Button>
-        </Hint>
+        </nav>
       </div>
 
       {/* 窗口控制三钮：gap-1.5（2026-11-16 用户定调两轮拉开：0.5→1→1.5）+ Hint */}

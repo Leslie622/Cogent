@@ -16,6 +16,9 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
                 └─ settings  SettingsMain，按分区挂内容
 ```
 
+- header 的“运行时控制台”和“内嵌页面”入口位于“帮助”右侧，使用中文文字按钮
+  （Button ghost / sm），不配图标；与前四个菜单按钮同处一个 `gap-1` 容器，
+  统一 `h-7 px-2`，不额外加左间距。
 - `content-sidebar` 是普通 flex 像素宽块，不进 react-resizable-panels（RRP）；
   CSS 保证缩放时像素宽稳定，避免百分比尺寸经 JS 校正产生脏帧。
 - `SidebarResizeHandle` 使用 pointer capture + rAF 直写宽度；拖过下限有阻力，
