@@ -12,6 +12,7 @@ import { useScrollbarAutoHide } from '@/hooks/use-scrollbar-auto-hide'
 import { useEngineStore } from '@/stores/engine'
 import { bindEngineEvents, useChatStore } from '@/stores/chat'
 import { AppShell } from '@/features/shell/AppShell'
+import { CloseAskDialog } from '@/features/shell/CloseAskDialog'
 
 /** 引擎链路失败横幅：engine store 与 chat store 任一初载失败即出（同源：引擎不可用） */
 function EngineFailureBanner() {
@@ -70,6 +71,8 @@ export default function App() {
     <>
       <AppShell />
       <EngineFailureBanner />
+      {/* 「关闭窗口时」询问（ask 档）：main close 拦截器点火，全局挂一份 */}
+      <CloseAskDialog />
     </>
   )
 }

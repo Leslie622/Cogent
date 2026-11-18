@@ -77,6 +77,10 @@ declare global {
       minimizeWindow: () => Promise<void>
       toggleMaximizeWindow: () => Promise<void>
       closeWindow: () => Promise<void>
+      /** 订阅「关闭窗口时」询问要求（closeBehavior=ask 的关窗弹窗触发） */
+      onAskClose: (callback: () => void) => () => void
+      /** 询问弹窗裁决回传（形状与 shared/ipc.ts 的 WindowCloseAnswer 镜像） */
+      confirmClose: (answer: { action: 'minimize' | 'quit' | 'cancel'; remember: boolean }) => Promise<{ ok: true }>
       /** 订阅最大化状态变化，返回取消订阅函数 */
       onWindowState: (callback: (isMaximized: boolean) => void) => () => void
     }
@@ -130,6 +134,12 @@ export interface AppSettingsFile {
   thinkingLevel?: string
   /** 新会话默认权限（开关两态 ask↔auto；计划是独立开关不进默认，见 D6 拍板） */
   defaultPermissionMode?: 'ask' | 'auto'
+  /** 聊天输入框的发送组合键；缺省 = 'enter' */
+  sendShortcut?: 'enter' | 'shift+enter' | 'ctrl+enter'
+  /** 关闭最后一个窗口的行为（main 侧 close 拦截消费）；缺省 = 'ask' */
+  closeBehavior?: 'minimize' | 'quit' | 'ask'
+  /** Chromium 硬件加速；缺省 = true。main 启动期消费，改后重启生效 */
+  hardwareAcceleration?: boolean
 }
 
 /** 会话摘要（与 protocol SessionSummary 镜像；optional 字段=未设置） */

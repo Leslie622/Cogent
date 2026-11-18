@@ -7,6 +7,7 @@
 import type { ComponentType } from 'react'
 import {
   IconArchive,
+  IconBell,
   IconBrowser,
   IconCommand,
   IconPointer,
@@ -35,6 +36,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
     items: [
       { id: 'general', label: '常规', icon: IconSettings },
       { id: 'appearance', label: '外观', icon: IconSun },
+      { id: 'notifications', label: '通知', icon: IconBell },
       { id: 'models', label: '模型设置', icon: IconRobot },
       { id: 'browser', label: '浏览器', icon: IconBrowser },
       { id: 'computer-control', label: '电脑操控', icon: IconPointer },

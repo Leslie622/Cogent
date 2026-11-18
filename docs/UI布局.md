@@ -119,6 +119,10 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 - 通用设置骨架 `SettingsPage`：`max-w-3xl px-10 py-8` 单列，标题/可选描述/
   工具行/内容；`SettingsGroup` 为带组标题的 rounded-xl 描边卡 + divide-y；
   `SettingsRow` 左说明、右原生控件。路径行等宽截断并提供更改钮。
+- 常规页现有「默认权限」开关、「发送快捷键」「关闭窗口时」两个 Select（行
+  控件统一 w-40）；快捷键选项用 kbd 键帽组合（`KbdGroup` + 弱色 `+` 相连），
+  键帽带细描边以在菜单 hover 灰底上保持轮廓。「关闭窗口时」的 ask 档弹
+  CloseAskDialog（shell 级，勾「不再询问」固化所选动作）。
 - 模型设置单独用 master-detail：页头 + `mx-10 mb-8 flex-1 min-h-0` 主体卡，
   左栏 w-72，各栏独立滚动；右栏 max-w-2xl 居中。详情按 provider id 挂 key，
   模型行动作区固定宽并 hover 显示，避免布局跳动。
@@ -176,8 +180,9 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   显示输入/输出/缓存/成本/耗时，零值和无数据项省略，格式机制见 [用量与成本](模块/用量与成本.md)。
 - Markdown 使用 Streamdown + Shiki + CJK；链接阻止窗口内导航，再 window.open。
   lineNumbers、库内 animated、linkSafety 弹窗关闭；Tailwind 显式 `@source` 扫 Streamdown。
-- 正文主题导入 Themd，由 `--t-*` 变量作用于消息流；默认主题为空令牌，保持库原生观感。
-  代码/表格拆壳规则须以变量注入的 `[style*]` 门控，避免污染默认态。
+- 正文主题导入 Themd，由 `--t-*` 变量作用于消息流；「默认」主题 = 内置
+  Theme-Leslie 令牌集，用户主题包相对库原生做稀疏差异、不叠加在默认之上。
+  代码/表格拆壳规则须以变量注入的 `[style*]` 门控，无该组令牌时保持库原生结构。
 - 正文短批逐字/逐词 300ms 淡入；大批单连续片段最多 32 组，同批排期不超过 250ms。
   代码/表格按新挂载行淡入，旧行不重播；单元格或未闭合行内部增长直接显示。
   业务终态立即切换，已有正文淡入自然播完。系统 reduced-motion 禁用相应动效。

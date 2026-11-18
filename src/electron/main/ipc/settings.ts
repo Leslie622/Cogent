@@ -36,6 +36,18 @@ function readAll(): SettingsFile {
       activeProviderId: raw.activeProviderId,
       thinkingLevel: raw.thinkingLevel,
       defaultPermissionMode: raw.defaultPermissionMode === 'auto' ? 'auto' : 'ask',
+      // 发送组合键：越界值（手改文件/未来版本）按可再生偏好归缺省（enter 由消费侧补）
+      sendShortcut:
+        raw.sendShortcut === 'enter' || raw.sendShortcut === 'shift+enter' || raw.sendShortcut === 'ctrl+enter'
+          ? raw.sendShortcut
+          : undefined,
+      // 关闭行为：同上按可再生偏好归缺省（quit 由消费侧补）
+      closeBehavior:
+        raw.closeBehavior === 'minimize' || raw.closeBehavior === 'quit' || raw.closeBehavior === 'ask'
+          ? raw.closeBehavior
+          : undefined,
+      // 硬件加速：只认 boolean（true=开/false=关），其余归缺省（开）
+      hardwareAcceleration: typeof raw.hardwareAcceleration === 'boolean' ? raw.hardwareAcceleration : undefined,
       // externalMcp 是文件级配置（手编），形状不对按缺省关（持久化读取边界）
       externalMcp:
         raw.externalMcp !== undefined &&
@@ -73,6 +85,9 @@ export function registerSettingsIpc(): void {
       activeProviderId: unknown
       thinkingLevel: unknown
       defaultPermissionMode: unknown
+      sendShortcut: unknown
+      closeBehavior: unknown
+      hardwareAcceleration: unknown
     }>
     if (payload.activeModelId !== undefined && typeof payload.activeModelId !== 'string') {
       throw new Error('settings:save 的 activeModelId 必须是 string')
@@ -86,11 +101,33 @@ export function registerSettingsIpc(): void {
     if (payload.defaultPermissionMode !== undefined && payload.defaultPermissionMode !== 'ask' && payload.defaultPermissionMode !== 'auto') {
       throw new Error("settings:save 的 defaultPermissionMode 必须是 'ask' | 'auto'")
     }
+    if (
+      payload.sendShortcut !== undefined &&
+      payload.sendShortcut !== 'enter' &&
+      payload.sendShortcut !== 'shift+enter' &&
+      payload.sendShortcut !== 'ctrl+enter'
+    ) {
+      throw new Error("settings:save 的 sendShortcut 必须是 'enter' | 'shift+enter' | 'ctrl+enter'")
+    }
+    if (
+      payload.closeBehavior !== undefined &&
+      payload.closeBehavior !== 'minimize' &&
+      payload.closeBehavior !== 'quit' &&
+      payload.closeBehavior !== 'ask'
+    ) {
+      throw new Error("settings:save 的 closeBehavior 必须是 'minimize' | 'quit' | 'ask'")
+    }
+    if (payload.hardwareAcceleration !== undefined && typeof payload.hardwareAcceleration !== 'boolean') {
+      throw new Error('settings:save 的 hardwareAcceleration 必须是 boolean')
+    }
     const settings = readAll()
     if (payload.activeModelId !== undefined) settings.activeModelId = payload.activeModelId
     if (payload.activeProviderId !== undefined) settings.activeProviderId = payload.activeProviderId
     if (payload.thinkingLevel !== undefined) settings.thinkingLevel = payload.thinkingLevel
     if (payload.defaultPermissionMode !== undefined) settings.defaultPermissionMode = payload.defaultPermissionMode
+    if (payload.sendShortcut !== undefined) settings.sendShortcut = payload.sendShortcut
+    if (payload.closeBehavior !== undefined) settings.closeBehavior = payload.closeBehavior
+    if (payload.hardwareAcceleration !== undefined) settings.hardwareAcceleration = payload.hardwareAcceleration
     writeAll(settings)
     return { ok: true as const }
   })

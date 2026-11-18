@@ -1,51 +1,73 @@
 /**
- * 设置 · 常规分区（UI 件 7，参考稿 ChatGPT 桌面端常规页）：两卡四类控件
- * 定风格 —— 开关（Switch，选中黑底合应用黑白系）、静态下拉钮（菜单属
- * 后续件）、路径 + 更改钮、动作钮。开关状态本地 useState 演示（设置持久化
- * 属引擎后续件）；文案按参考稿原样（ChatGPT→Cogent）。
- * 页头/卡片/行全部来自 SettingsParts 通用件（SettingsPage 骨架），
- * 后续分区照此拼装。
+ * 设置 · 常规分区：真接线功能逐件补入（占位行已清空）—— 现有「默认权限」
+ * 开关、「发送快捷键」「关闭窗口时」「Chrome 硬件加速」，均落
+ * ~/.cogent/settings.json。
+ * 页头/卡片/行全部来自 SettingsParts 通用件（SettingsPage 骨架）。
  */
-import { useState } from 'react'
-import { IconChevronDown } from '@tabler/icons-react'
-import { Button } from '@/components/ui/button'
+import { Fragment } from 'react'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Switch } from '@/components/ui/switch'
-import { useEngineStore } from '@/stores/engine'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
+import { useEngineStore, type CloseBehavior, type SendShortcut } from '@/stores/engine'
 import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
 
-/** 下拉占位钮：outline 变体 + 值 + 箭头（点击出菜单属后续件）。
-    组件原生形态（2026-11-15 用户定调：不覆盖 shadcn 样式，用变体档位） */
-function SelectControl({ value, label }: { value: string; label: string }) {
-  return (
-    <Button variant="outline" size="sm" aria-label={label}>
-      {value}
-      <IconChevronDown className="size-3.5 text-muted-foreground" />
-    </Button>
-  )
-}
+/** 发送组合键三档（keys 供 kbd 键帽渲染；label 是兜底文案） */
+const SEND_SHORTCUTS: Array<{ value: SendShortcut; label: string; keys: string[] }> = [
+  { value: 'enter', label: 'Enter', keys: ['Enter'] },
+  { value: 'shift+enter', label: 'Shift + Enter', keys: ['Shift', 'Enter'] },
+  { value: 'ctrl+enter', label: 'Ctrl + Enter', keys: ['Ctrl', 'Enter'] }
+]
 
-/** 次级动作钮（更改 / 打开"启动应用"）：secondary 变体原生形态 */
-function SecondaryAction({ label }: { label: string }) {
+/** 关闭行为三档（纯文本选项；ask 档的「不再询问」在询问弹窗里固化） */
+const CLOSE_BEHAVIORS: Array<{ value: CloseBehavior; label: string }> = [
+  { value: 'minimize', label: '最小化' },
+  { value: 'quit', label: '退出' },
+  { value: 'ask', label: '每次询问' }
+]
+
+/** 组合键键帽（触发器与菜单项共用）：键帽间以弱色 + 相连，组合读法一目了然 */
+function ShortcutKbd({ keys }: { keys: string[] }) {
   return (
-    <Button variant="secondary" size="sm" aria-label={label}>
-      {label}
-    </Button>
+    <KbdGroup>
+      {keys.map((k, index) => (
+        <Fragment key={k}>
+          {index > 0 && <span className="text-xs text-muted-foreground">+</span>}
+          <Kbd>{k}</Kbd>
+        </Fragment>
+      ))}
+    </KbdGroup>
   )
 }
 
 export function GeneralSection() {
-  // 「默认权限」真接线（审批交互升级 D6）：开关两态 = 新会话默认 ask ↔ auto
-  // （plan 不进默认 —— 临时切入的工作方式而非开局常态，2026-11-11 拍板）；
+  // 「默认权限」：开关两态 = 新会话默认 ask ↔ auto（plan 不进默认 ——
+  // 临时切入的工作方式而非开局常态，2026-11-11 拍板）；
   // 落 ~/.cogent/settings.json，chat store createSession 在显式选择缺席时消费
   const defaultPermissionMode = useEngineStore((s) => s.defaultPermissionMode)
   const setDefaultPermissionMode = useEngineStore((s) => s.setDefaultPermissionMode)
-  // 其余开关仍为演示态：设置持久化接入引擎后由 store 替换
-  const [fullAccess, setFullAccess] = useState(true)
-  const [fullView, setFullView] = useState(false)
+  // 「发送快捷键」：输入框按下所选组合发送、其余 Enter 组合换行（HomeChat 消费）
+  const sendShortcut = useEngineStore((s) => s.sendShortcut)
+  const setSendShortcut = useEngineStore((s) => s.setSendShortcut)
+  // 「关闭窗口时」：main 侧 close 拦截消费（读盘即时生效），此处撑显示与落盘
+  const closeBehavior = useEngineStore((s) => s.closeBehavior)
+  const setCloseBehavior = useEngineStore((s) => s.setCloseBehavior)
+  // 「Chrome 硬件加速」：main 启动期消费（disableHardwareAcceleration 只准
+  // ready 前调），此处撑显示与落盘，改后重启生效
+  const hardwareAcceleration = useEngineStore((s) => s.hardwareAcceleration)
+  const setHardwareAcceleration = useEngineStore((s) => s.setHardwareAcceleration)
+  // 键帽渲染查表：受控 value 恒在表内（store 值域与表同源）
+  const current = SEND_SHORTCUTS.find((option) => option.value === sendShortcut)
 
   return (
     <SettingsPage title="常规">
-      {/* 权限组：两个开关，完整访问带风险说明 + 了解更多（面板属后续件） */}
+      {/* 权限组：默认权限开关，完整访问带风险说明的行属后续件 */}
       <SettingsGroup label="权限">
         <SettingsRow
           title="默认权限"
@@ -57,71 +79,74 @@ export function GeneralSection() {
             aria-label="默认权限"
           />
         </SettingsRow>
-        <SettingsRow
-          title="完整访问权限"
-          desc={
-            <>
-              当 Cogent 以完整访问权限运行时，它无需你的批准即可编辑你电脑上的任何文件，并运行可访问网络的命令。这会显著增加数据丢失、泄露或意外行为的风险。
-              {/* 链接色用 chrome-accent（应用唯一品牌蓝，分屏线光带同源） */}
-              <button
-                type="button"
-                className="text-chrome-accent hover:underline"
-                aria-label="了解更多：关于风险升高的信息"
-              >
-                了解更多
-              </button>
-              关于风险升高的信息。
-            </>
-          }
-        >
-          <Switch
-            checked={fullAccess}
-            onCheckedChange={setFullAccess}
-            aria-label="完整访问权限"
-          />
-        </SettingsRow>
       </SettingsGroup>
 
-      {/* 常规组：路径 + 四个下拉 + 开关 + 动作钮 */}
       <SettingsGroup label="常规">
         <SettingsRow
-          title="项目外聊天文件夹"
-          desc="在项目外发起的聊天，其数据的默认存储位置。"
+          title="发送快捷键"
+          desc="在聊天输入框中按下所选组合键发送消息，其余 Enter 组合键换行"
         >
-          <div className="flex items-center gap-3">
-            {/* 中性占位（真值 = ~/.cogent，存储根 D1；后续件接目录选择时替换）。
-                不得硬编码开发机路径 —— 那是作者机器的用户名，泄漏进用户 UI */}
-            <span className="max-w-52 truncate text-xs text-muted-foreground">~/.cogent</span>
-            <SecondaryAction label="更改" />
-          </div>
-        </SettingsRow>
-        <SettingsRow title="默认文件打开位置" desc="默认打开文件和文件夹的位置">
-          <SelectControl value="VS Code" label="默认文件打开位置" />
-        </SettingsRow>
-        <SettingsRow title="智能体环境" desc="选择智能体在 Windows 上的运行位置">
-          <SelectControl value="Windows 原生" label="智能体环境" />
-        </SettingsRow>
-        <SettingsRow title="集成终端 Shell" desc="选择要在集成终端中打开的 Shell。">
-          <SelectControl value="PowerShell" label="集成终端 Shell" />
-        </SettingsRow>
-        <SettingsRow title="语言" desc="应用界面语言">
-          <SelectControl value="简体中文" label="语言" />
+          {/* shadcn Select 原生形态（base-nova 版）；w-40 布局类定行控件宽
+              （约定允许），w-fit 胶囊只包文字会塌成一小条 */}
+          <Select
+            value={sendShortcut}
+            items={SEND_SHORTCUTS}
+            onValueChange={(next) => {
+              // base-ui 单选的 onValueChange 类型含 null（清选路径）；静态三档
+              // 无清选入口，null 实际不可达 —— 真出现时丢弃不动当前值
+              if (next !== null) setSendShortcut(next)
+            }}
+          >
+            <SelectTrigger aria-label="发送快捷键" className="w-40">
+              {/* children 覆盖默认 label 渲染，键帽显示当前组合 */}
+              <SelectValue>{current && <ShortcutKbd keys={current.keys} />}</SelectValue>
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectGroup>
+                {SEND_SHORTCUTS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    <ShortcutKbd keys={option.keys} />
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </SettingsRow>
         <SettingsRow
-          title="关闭窗口前确认"
-          desc="使用关闭标签页的快捷键会导致窗口关闭时，显示警告"
+          title="关闭窗口时"
+          desc="设置关闭最后一个窗口时的行为；最小化将隐藏到系统托盘（引擎继续运行）"
         >
-          <SelectControl value="仅在使用“关闭”快捷键时" label="关闭窗口前确认" />
+          <Select
+            value={closeBehavior}
+            items={CLOSE_BEHAVIORS}
+            onValueChange={(next) => {
+              // 同上：null = base-ui 清选路径的类型宽度，静态三档不可达，丢弃
+              if (next !== null) setCloseBehavior(next)
+            }}
+          >
+            <SelectTrigger aria-label="关闭窗口时" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectGroup>
+                {CLOSE_BEHAVIORS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </SettingsRow>
-        <SettingsRow title="默认使用完整视图" desc="在新聊天中以完整视图打开内容标签页">
+        <SettingsRow
+          title="Chrome 硬件加速"
+          desc="关闭后可规避部分显卡或驱动导致的白屏、闪退、渲染异常。修改后需重启应用生效。"
+        >
           <Switch
-            checked={fullView}
-            onCheckedChange={setFullView}
-            aria-label="默认使用完整视图"
+            checked={hardwareAcceleration}
+            onCheckedChange={setHardwareAcceleration}
+            aria-label="Chrome 硬件加速"
           />
-        </SettingsRow>
-        <SettingsRow title="登录时启动" desc="开启">
-          <SecondaryAction label="打开“启动应用”" />
         </SettingsRow>
       </SettingsGroup>
     </SettingsPage>

@@ -57,9 +57,21 @@ export const IPC = {
   windowMinimize: 'window:minimize',
   windowMaximizeToggle: 'window:maximize-toggle',
   windowClose: 'window:close',
+  /** main → renderer：closeBehavior=ask 时要求弹「关闭窗口时」自绘询问弹窗（无载荷） */
+  windowAskClose: 'window:ask-close',
+  /** renderer → main：询问弹窗的裁决（payload: WindowCloseAnswer；remember 落盘由
+      renderer 经 settings:save 完成，main 只执行动作；cancel = 弹窗关闭/取消） */
+  windowConfirmClose: 'window:confirm-close',
   /** main → renderer：最大化状态变化（payload: boolean isMaximized） */
   windowState: 'window:state-changed'
 } as const
+
+/** 「关闭窗口时」询问弹窗的裁决：action = 用户所选动作（cancel 仅复位询问态）；
+    remember = 勾了「不再询问」（cancel 时忽略） */
+export interface WindowCloseAnswer {
+  action: 'minimize' | 'quit' | 'cancel'
+  remember: boolean
+}
 
 /** 引擎服务连接状态（诊断用；UI 可据此提示"引擎未就绪"） */
 export interface AppStatus {
@@ -108,6 +120,16 @@ export interface SettingsFile {
   /** 新会话默认权限（审批交互升级 D6：开关两态 —— 开 = auto、关/缺省 = ask；
       plan 不进默认，plan 是临时切入的工作方式而非开局常态，2026-11-11 拍板） */
   defaultPermissionMode?: 'ask' | 'auto'
+  /** 聊天输入框的发送组合键（其余 Enter 组合换行）；缺省 = 'enter'（首发行为） */
+  sendShortcut?: 'enter' | 'shift+enter' | 'ctrl+enter'
+  /** 关闭最后一个窗口的行为（main 侧 close 拦截消费）：minimize = 隐藏到
+      系统托盘（托盘点击恢复/右键退出）、quit = 直接退出、ask = 每次询问；
+      缺省 = 'ask'（用户拍板：首启即问一次，「不再询问」把选择固化下来） */
+  closeBehavior?: 'minimize' | 'quit' | 'ask'
+  /** Chromium 硬件加速开关：false = main 在 app ready 前调
+      disableHardwareAcceleration（规避部分显卡/驱动导致的白屏、闪退、渲染
+      异常）；缺省 = true（Electron 默认开）。只在启动期消费，改后重启生效 */
+  hardwareAcceleration?: boolean
   /** 对外 MCP Server（阶段 5a）：enabled = main 在 Host 启动后铸凭据写
       mcp-access.json；allowWrites 决定凭据档位（write = 写组工具注册）。
       文件级配置（手编 settings.json），首发不做设置页 UI */

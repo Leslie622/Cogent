@@ -9,6 +9,7 @@ import { create } from 'zustand'
 export type SettingsSectionId =
   | 'general'
   | 'appearance'
+  | 'notifications'
   | 'models'
   | 'browser'
   | 'computer-control'

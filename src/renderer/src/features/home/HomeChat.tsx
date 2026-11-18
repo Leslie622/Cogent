@@ -7,8 +7,9 @@
  *      「已工作」轨迹，见 docs/模块/消息呈现.md）；消息源是 useChatStore
  *      （引擎事件流驱动，流式占位 id='streaming' 由 store 维护）。
  *      对话正文是"正文类内容"，按 AGENTS.md 方针 5 在内容容器上 select-text 放开选中
- *   ③ 输入框：shadcn AI 组件（components/ui/input-group）—— Enter 发送
- *      （Shift+Enter 换行；中文输入法组词中不误发，判 isComposing）、
+ *   ③ 输入框：shadcn AI 组件（components/ui/input-group）—— 发送组合键按
+ *      设置页「发送快捷键」分流（缺省 Enter 发送、Shift+Enter 换行；中文
+ *      输入法组词中不误发，判 isComposing）、
  *      流式中发送钮变停止钮（agent.abort）
  * 会话视图的自成一域单元已拆至同目录单文件：回合容器（TurnGroup，内含分组/
  * 切分/聚合，复用 MessageRow）、单条消息（MessageRow，导出 UsageLine/MessageLike）、
@@ -71,7 +72,7 @@ import { PlanToggle } from './PlanToggle'
 import { TodoStrip } from './TodoStrip'
 import { QuestionPanel } from './QuestionPanel'
 import { PlanPanel } from './PlanPanel'
-import { findActiveModel, useEngineStore } from '@/stores/engine'
+import { findActiveModel, useEngineStore, type SendShortcut } from '@/stores/engine'
 import { ConversationIndex } from './ConversationIndex'
 import { ModelMenu } from './ModelMenu'
 import { ContextIndicator } from './ContextIndicator'
@@ -317,9 +318,27 @@ function ChatMessages() {
 }
 
 /**
+ * 发送组合键判定（导出供单测）：shortcut 选中组合 → true（发送并吃掉默认
+ * 行为），其余 Enter 组合 → false（textarea 原生换行）；IME 组词中恒 false
+ * （输入法确认键也是 Enter，不判 isComposing 会把组词当发送）。
+ * enter 档只挡 shift —— 与首发行为一致（Ctrl+Enter 同发，主流输入框惯例）；
+ * 另两档做精确单键匹配（Ctrl+Shift+Enter 这类跨档组合不误发）。
+ */
+export function isSendKey(
+  event: { key: string; shiftKey: boolean; ctrlKey: boolean; nativeEvent: { isComposing: boolean } },
+  shortcut: SendShortcut
+): boolean {
+  if (event.key !== 'Enter' || event.nativeEvent.isComposing) return false
+  if (shortcut === 'enter') return !event.shiftKey
+  if (shortcut === 'shift+enter') return event.shiftKey && !event.ctrlKey
+  return event.ctrlKey && !event.shiftKey
+}
+
+/**
  * 底部输入区：输入卡上方灰条（项目会话信息区，新聊天限定）+
- * 输入卡（InputGroup 原生圆角白卡 + 极浅 1px 边，聚焦无反馈）：Enter 发送（isComposing
- * 挡输入法误发）、流式中发送钮变停止钮（agent.abort）、底部工具行 = 裸 +
+ * 输入卡（InputGroup 原生圆角白卡 + 极浅 1px 边，聚焦无反馈）：发送组合键
+ * 按设置页「发送快捷键」分流（isSendKey；缺省 Enter，IME 组词中不误发）、
+ * 流式中发送钮变停止钮（agent.abort）、底部工具行 = 裸 +
  * 附件 / 权限模式菜单 / 上下文指示器 / 模型下拉（ModelMenu）/ 发送。
  * 输入草稿是 props（提升到 HomeChat 层持有）：待审批时本组件整体被
  * ApprovalPanel **替换**（2026-11-11 用户定调：审批卡覆盖输入位、不支持
@@ -347,6 +366,7 @@ function ChatComposer({
   const running = useChatStore(selectRunning)
   const submit = useChatStore((s) => s.submit)
   const abort = useChatStore((s) => s.abort)
+  const sendShortcut = useEngineStore((s) => s.sendShortcut)
   const activeModelId = useEngineStore((s) => s.activeModelId)
   const thinkingLevel = useEngineStore((s) => s.thinkingLevel)
   // 活动模型的 provider：双键查找（findActiveModel）。id 单键两处撞车 —— 全集里
@@ -453,8 +473,8 @@ function ChatComposer({
             value={value}
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={(event) => {
-              // Enter 发送 / Shift+Enter 换行；中文输入法组词期间不误发
-              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+              // 发送组合键按「发送快捷键」设置分流（isSendKey 内含 IME 保护）
+              if (isSendKey(event, sendShortcut)) {
                 event.preventDefault()
                 send()
               }

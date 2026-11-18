@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, type AppStatus, type ApiKeyStatus, type CredentialsStatus, type SettingsFile } from '../../shared/ipc'
+import { IPC, type AppStatus, type ApiKeyStatus, type CredentialsStatus, type SettingsFile, type WindowCloseAnswer } from '../../shared/ipc'
 import type {
   CustomProviderDef,
   ProviderOverrideDef,
@@ -110,6 +110,15 @@ const api = {
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke(IPC.windowMinimize),
   toggleMaximizeWindow: (): Promise<void> => ipcRenderer.invoke(IPC.windowMaximizeToggle),
   closeWindow: (): Promise<void> => ipcRenderer.invoke(IPC.windowClose),
+  /** 订阅「关闭窗口时」询问要求（closeBehavior=ask 的关窗弹窗触发） */
+  onAskClose: (callback: () => void): (() => void) => {
+    const listener = (): void => callback()
+    ipcRenderer.on(IPC.windowAskClose, listener)
+    return () => ipcRenderer.removeListener(IPC.windowAskClose, listener)
+  },
+  /** 询问弹窗裁决回传（cancel = 用户取消，仅复位询问态） */
+  confirmClose: (answer: WindowCloseAnswer): Promise<{ ok: true }> =>
+    ipcRenderer.invoke(IPC.windowConfirmClose, answer),
   /** 订阅最大化状态变化（自绘 header 的最大化/还原图标切换） */
   onWindowState: (callback: (isMaximized: boolean) => void): (() => void) => {
     const listener = (_event: unknown, isMaximized: boolean): void => callback(isMaximized)

@@ -9,6 +9,12 @@ import type { CustomProviderDef, CustomProvidersPayload, ModelSummary, ProviderO
 /** 思考档位全序（off + 六档）：偏好回填的值域校验与"就近取整"共用 */
 const THINKING_ORDER: readonly ThinkingLevelWithOff[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
+/** 发送组合键三档（与 settings.json 的 SettingsFile.sendShortcut 同域） */
+export type SendShortcut = 'enter' | 'shift+enter' | 'ctrl+enter'
+
+/** 关闭最后一个窗口的行为（main 侧 close 拦截消费；ask 的弹窗在 renderer） */
+export type CloseBehavior = 'minimize' | 'quit' | 'ask'
+
 /**
  * 常用内置 provider 的显示名册（模型下拉分组/设置页卡片共用）。
  * pi 目录有 40+ 家，全量名册维护不过来 —— 没收录的兜底显示原始 id。
@@ -51,6 +57,15 @@ interface EngineState {
   /** 新会话默认权限（审批交互升级 D6：设置页「默认权限」开关两态，开 = auto /
    *  关/缺省 = ask；chat store createSession 在显式选择缺席时消费） */
   defaultPermissionMode: 'ask' | 'auto'
+  /** 聊天输入框发送组合键（设置页「发送快捷键」；HomeChat keydown 消费，
+   *  选中组合发送、其余 Enter 组合换行；缺省 = enter 即首发行为） */
+  sendShortcut: SendShortcut
+  /** 关闭最后一个窗口的行为（设置页「关闭窗口时」；真正消费在 main 的
+   *  close 拦截器 —— 这里只撑 UI 显示与落盘，ask 的「不再询问」固化也走本 setter） */
+  closeBehavior: CloseBehavior
+  /** Chrome 硬件加速（设置页开关；真正消费在 main 启动期 —— 这里只撑 UI
+   *  显示与落盘，改后重启生效） */
+  hardwareAcceleration: boolean
   loaded: boolean
   /** 引擎链路失败的原因（load 失败时；App 横幅呈现 + 重试入口）。null = 正常 */
   engineError: string | null
@@ -63,6 +78,12 @@ interface EngineState {
   setThinkingLevel: (level: EngineState['thinkingLevel']) => void
   /** 设置页「默认权限」开关：落盘 + 内存态（新会话物化缺省随动） */
   setDefaultPermissionMode: (mode: 'ask' | 'auto') => void
+  /** 设置页「发送快捷键」下拉：落盘 + 内存态（输入框 keydown 即时随动） */
+  setSendShortcut: (shortcut: EngineState['sendShortcut']) => void
+  /** 设置页「关闭窗口时」下拉 / 询问弹窗「不再询问」固化：落盘 + 内存态 */
+  setCloseBehavior: (behavior: CloseBehavior) => void
+  /** 设置页「Chrome 硬件加速」开关：落盘 + 内存态（main 重启后才生效） */
+  setHardwareAcceleration: (enabled: boolean) => void
 }
 
 function toKeyMap(status: Array<{ providerId: string; keyConfigured: boolean }>): Record<string, boolean> {
@@ -92,6 +113,9 @@ interface AppSettings {
   activeProviderId?: string
   thinkingLevel?: string
   defaultPermissionMode?: 'ask' | 'auto'
+  sendShortcut?: 'enter' | 'shift+enter' | 'ctrl+enter'
+  closeBehavior?: 'minimize' | 'quit' | 'ask'
+  hardwareAcceleration?: boolean
 }
 
 /** 载入落盘偏好；thinkingLevel 做值域归一（未来版本的档位/手改文件按缺省处理，偏好可再生） */
@@ -101,7 +125,10 @@ async function loadSettings(): Promise<AppSettings> {
     activeModelId: file.activeModelId,
     activeProviderId: file.activeProviderId,
     thinkingLevel: file.thinkingLevel,
-    defaultPermissionMode: file.defaultPermissionMode
+    defaultPermissionMode: file.defaultPermissionMode,
+    sendShortcut: file.sendShortcut,
+    closeBehavior: file.closeBehavior,
+    hardwareAcceleration: file.hardwareAcceleration
   }
 }
 
@@ -121,6 +148,9 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   activeProviderId: null,
   thinkingLevel: 'off',
   defaultPermissionMode: 'ask',
+  sendShortcut: 'enter',
+  closeBehavior: 'ask',
+  hardwareAcceleration: true,
   loaded: false,
   engineError: null,
 
@@ -150,6 +180,9 @@ export const useEngineStore = create<EngineState>((set, get) => ({
         activeProviderId: settings.activeProviderId ?? defaultModel.provider,
         thinkingLevel: normalizeThinkingLevel(settings.thinkingLevel),
         defaultPermissionMode: settings.defaultPermissionMode ?? 'ask',
+        sendShortcut: settings.sendShortcut ?? 'enter',
+        closeBehavior: settings.closeBehavior ?? 'ask',
+        hardwareAcceleration: settings.hardwareAcceleration ?? true,
         loaded: true,
         engineError: null
       })
@@ -212,6 +245,18 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   setDefaultPermissionMode: (defaultPermissionMode) => {
     set({ defaultPermissionMode })
     void window.cogent.saveSettings({ defaultPermissionMode })
+  },
+  setSendShortcut: (sendShortcut) => {
+    set({ sendShortcut })
+    void window.cogent.saveSettings({ sendShortcut })
+  },
+  setCloseBehavior: (closeBehavior) => {
+    set({ closeBehavior })
+    void window.cogent.saveSettings({ closeBehavior })
+  },
+  setHardwareAcceleration: (hardwareAcceleration) => {
+    set({ hardwareAcceleration })
+    void window.cogent.saveSettings({ hardwareAcceleration })
   }
 }))
 
