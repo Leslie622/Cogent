@@ -40,7 +40,7 @@ export function AppearanceSection() {
   return (
     <SettingsPage
       title="外观"
-      desc="聊天正文（Markdown 消息）的主题观感。主题包来自 Themd 主题工场的导出（.themd.json）；「默认」= 不套主题的原生观感。"
+      desc="聊天正文（Markdown 消息）的主题观感。主题包来自 Themd 主题工场的导出（.themd.json)；「默认」= 内置观感（Theme-Leslie）。"
     >
       <SettingsGroup label="聊天正文">
         <SettingsRow
@@ -94,7 +94,7 @@ export function AppearanceSection() {
               variant="outline"
               size="sm"
               aria-label="删除当前主题"
-              // 默认主题不可删（空令牌常量，不占用户存储）
+              // 默认主题不可删（内置常量，不占用户存储）
               disabled={activeThemeId === DEFAULT_THEME_ID}
               onClick={() => removeTheme(activeThemeId)}
             >

@@ -10,7 +10,7 @@ import type { ThemeTokens } from './tokens'
  */
 
 /** 主题文件（导入格式即此结构；Cogent 端不导出，无 builtin 概念——
-    「默认」主题是 store 里的空令牌常量，不占持久化） */
+    「默认」主题是 store 里的内置令牌常量，不占持久化） */
 export interface ThemeFile {
   version: 1
   id: string

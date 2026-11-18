@@ -2,9 +2,9 @@
  * 正文主题 store（zustand + persist → localStorage: cogent-themes）——
  * 全仓首个 persist store：纯渲染端视觉偏好，不进引擎/协议/磁盘档案，
  * localStorage 是对的层（跨设备同步是真墙：引擎侧无设置同步通道）。
- * 「默认」主题是常量而非存储档：空令牌 = 消费表全回落 = Streamdown 原生
- * 观感，不占用户存储、不可删除（与 Themd builtin 同思路；Cogent 不编辑
- * 内置主题，无需 builtin 标记与复制分支）。
+ * 「默认」主题是常量而非存储档：Theme-Leslie 令牌集（2026-11-18 用户
+ * 拍板固化为内置观感底座），不占用户存储、不可删除；用户主题包相对
+ * Streamdown 原生做稀疏差异，不叠在本底座上（两套观感混合是语义污染）。
  * 持久化读取是信任边界（约定.md §1.1）：merge 时校验形状，损坏档剔除
  * 并报错，激活 id 指向已剔除档时回落默认。
  */
@@ -14,11 +14,40 @@ import { parseThemeFile, type ThemeFile } from '@/lib/theme/theme-file'
 
 export const DEFAULT_THEME_ID = 'default'
 
+/** 内置默认观感（Theme-Leslie 的导出令牌照抄；值改动 = 改所有人的默认正文观感） */
 const DEFAULT_THEME: ThemeFile = {
   version: 1,
   id: DEFAULT_THEME_ID,
   name: '默认',
-  tokens: {},
+  tokens: {
+    'p.align': 'start',
+    'del.thickness': '2px',
+    'a.hoverColor': '#3b82f6',
+    'a.transition': '220ms',
+    'inlineCode.fontLatin': 'JetBrains Mono',
+    'inlineCode.fontCjk': 'HarmonyOS Sans SC',
+    'inlineCode.padding': '0em 0.5em',
+    'task.accent': '#22c55e',
+    'task.doneColor': '#22c55e',
+    'quote.bg': '#f4f2f2',
+    'quote.radius': '5px',
+    'quote.padding': '1em',
+    'codeBlock.fontLatin': 'JetBrains Mono',
+    'codeBlock.fontCjk': 'HarmonyOS Sans SC',
+    'cell.rowLine': 'solid',
+    'cell.colLine': 'solid',
+    'table.collapse': 'separate',
+    'table.radius': '8px',
+    'cell.borderWidth': '2px',
+    'table.stripeBg': '#f2f2f2',
+    'hr.thickness': '2px',
+    'img.align': 'auto',
+    'img.radius': '8px',
+    'img.margin': '1em',
+    'root.fontLatin': 'Inter',
+    'root.fontCjk': 'HarmonyOS Sans SC',
+    'root.width': '95%'
+  },
 }
 
 interface ThemeState {
