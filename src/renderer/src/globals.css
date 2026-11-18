@@ -399,6 +399,26 @@
     color: transparent;
   }
 }
+/* 流式中的代码块/表格追加行：mount-only 淡入（计划/代码与表格过渡.md）。
+   行身份 = 行 span/tr（行索引 key + 增量高亮前缀稳定，合同钉在
+   md-line-transition.render.test.tsx）：旧行元素保留 → @starting-style
+   只认首次挂载、永不重播；新行是新挂载 → 淡入，相邻行自然叠成瀑布；
+   首挂整块（围栏刚打开/表格首行）= 所有行同帧起淡的整块入场。
+   与正文共用时长/曲线（同族渐变）。单元格与未闭合行内部的文字增长仍直出
+   （行身份 ≠ 字身份，zcode 同边界）。作用域标记 data-md-streaming 由
+   markdown.tsx 按流式渲染（含收尾暂留窗口）挂/摘，终态/历史零动画；
+   markdown.tsx 收尾等待的行选择器须与本处同步。只动 opacity：高度恒定，
+   不触发 ResizeObserver（不撞底部跟随）。 */
+[data-md-streaming='true'] [data-streamdown='code-block-body'] code > span,
+[data-md-streaming='true'] table tr {
+  transition: opacity var(--reveal-duration) var(--reveal-ease);
+}
+@starting-style {
+  [data-md-streaming='true'] [data-streamdown='code-block-body'] code > span,
+  [data-md-streaming='true'] table tr {
+    opacity: 0;
+  }
+}
 /* 动效降级：transition 归零的同时必须把起步态也放开 —— 只关 transition 的话
    starting-style 的 opacity:0 会把新字永久钉在透明。 */
 @media (prefers-reduced-motion: reduce) {
@@ -411,7 +431,9 @@
     transform: none;
   }
   [data-reveal],
-  [data-reveal-marker]::marker {
+  [data-reveal-marker]::marker,
+  [data-md-streaming='true'] [data-streamdown='code-block-body'] code > span,
+  [data-md-streaming='true'] table tr {
     transition: none;
   }
   @starting-style {
@@ -420,6 +442,10 @@
     }
     [data-reveal-marker='new']::marker {
       color: inherit;
+    }
+    [data-md-streaming='true'] [data-streamdown='code-block-body'] code > span,
+    [data-md-streaming='true'] table tr {
+      opacity: 1;
     }
   }
 }

@@ -105,6 +105,21 @@ describe('Markdown终态自然收尾', () => {
     expect(view.container.querySelector('li')!.textContent).toBe('条目')
   })
 
+  it('代码行的淡入参与收尾等待：行元素保留到淡完，标记同步摘除（计划/代码与表格过渡）', async () => {
+    const view = render(<Markdown content={'```ts\nconst a = 1\n'} streaming />)
+    const line = view.container.querySelector("[data-streamdown='code-block-body'] code > span")!
+    expect(line).not.toBeNull()
+    const fade = animate(line)
+    view.rerender(<Markdown content={'```ts\nconst a = 1\n'} />)
+    // 纯代码消息没有 data-reveal；不等行淡入就会立即切 static 把淡入切断
+    expect(received.at(-1)).toEqual({ mode: 'streaming', isAnimating: false })
+    expect(view.container.querySelector("[data-slot='markdown-root']")).toHaveAttribute('data-md-streaming', 'true')
+    expect(view.container.querySelector("[data-streamdown='code-block-body'] code > span")).toBe(line)
+    await finish(fade)
+    expect(received.at(-1)).toEqual({ mode: 'static', isAnimating: false })
+    expect(view.container.querySelector('[data-md-streaming]')).toBeNull()
+  })
+
   it('无真实过渡时直接静态收口，包含reduced-motion取消后的空列表', () => {
     const view = render(<Markdown content="拍板" streaming />)
     view.rerender(<Markdown content="拍板" />)

@@ -44,6 +44,13 @@ const linkSafety = { enabled: false }
 
 const StreamingRevealContext = createContext<StreamingRevealState | null>(null)
 
+/** 流式中代码块/表格追加行的 mount-only 淡入目标（globals.css「逐词浮现」段
+ *  同款选择器，双处同步）：行身份 = 行索引 key + 增量高亮前缀稳定，旧行元素
+ *  保留不重播、新行新挂载才淡入。终态收尾等待也认它们的 opacity —— 纯代码/
+ *  表格消息没有 data-reveal，不等的话收尾立即切 static 会切断仍在播的行淡入
+ *  （Block 树被换、行元素重挂）。合同钉在 md-line-transition.render.test.tsx。 */
+const REVEAL_LINE_SELECTOR = "[data-streamdown='code-block-body'] code > span, table tr"
+
 /** 段间排期接力（会话级，Provider 挂在对话消息流 HomeChat ChatMessages）：
  *  封段后的新正文段以旧段排期尾为初始时钟，首拍不早于前段末拍的淡入结束
  *  —— 快工具后两段渐显不倒序并存（机制见 stream-reveal.ts）。
@@ -129,7 +136,8 @@ export function Markdown({ content, streaming = false }: { content: string; stre
       if (!(animation instanceof CSSTransition) || animation.playState === 'finished' || animation.playState === 'idle') return false
       const target = (animation.effect as KeyframeEffect | null)?.target
       return target instanceof Element && (
-        (animation.transitionProperty === 'opacity' && target.hasAttribute('data-reveal')) ||
+        (animation.transitionProperty === 'opacity' &&
+          (target.hasAttribute('data-reveal') || target.matches(REVEAL_LINE_SELECTOR))) ||
         (animation.transitionProperty === 'color' && target.hasAttribute('data-reveal-marker'))
       )
     })
@@ -152,7 +160,15 @@ export function Markdown({ content, streaming = false }: { content: string; stre
     }
   }, [streaming, content, renderStreaming])
   return (
-    <div ref={root} data-slot="markdown-root" className="contents">
+    // data-md-streaming：行级淡入的作用域标记 —— 流式渲染（含终态视觉收尾
+    // 暂留窗口）为 'true'，static/历史/收尾完成后摘除（摘除后旧树即使重挂
+    // 也无 scoped 规则 = 零动画、不重播）。CSS 消费见 globals.css 逐词浮现段。
+    <div
+      ref={root}
+      data-slot="markdown-root"
+      data-md-streaming={renderStreaming ? 'true' : undefined}
+      className="contents"
+    >
       <StreamingRevealContext.Provider value={revealState}>
         <Streamdown
           mode={renderStreaming ? 'streaming' : 'static'}
