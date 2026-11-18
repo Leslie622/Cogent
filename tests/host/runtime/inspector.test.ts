@@ -21,6 +21,18 @@ const asked = (over?: Partial<Parameters<SessionInspector['approvalAsked']>[0]>)
 })
 
 describe('SessionInspector 审批审计对', () => {
+  it('详情环淘汰后明确报缺失，不能伪装成空详情；无详情条目仍可读取', () => {
+    const insp = newInspector()
+    insp.toolStarted('read', { path: 'first' })
+    const first = insp.entries()[0]
+    for (let i = 0; i < 150; i += 1) insp.toolStarted('read', { path: String(i) })
+    expect(insp.entries()).toContain(first)
+    expect(first.hasDetail).toBe(true)
+    expect(insp.detail(first.seq)).toBeUndefined()
+    insp.turnStarted()
+    expect(insp.detail(insp.entries().at(-1)!.seq)).toEqual({ seq: 152, blocks: [] })
+  })
+
   it('approvalAsked：kind/标题/概览齐全，根外仅在标记时出现，requestId 进详情块', () => {
     const insp = newInspector()
     insp.approvalAsked(asked())

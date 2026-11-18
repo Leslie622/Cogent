@@ -10,6 +10,7 @@ import { useConsoleStore } from '@/stores/console'
 import { KINDS, layerDot, summarizeOverview } from './kinds'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
+import { DetailSection } from './DetailSection'
 
 /** 时刻 → HH:mm:ss.mmm（毫秒是观学习重点：分片节奏/耗时都要看得到） */
 function formatTime(ts: number): string {
@@ -21,6 +22,8 @@ function formatTime(ts: number): string {
 interface RunGroup {
   run: number
   entries: InspectEntrySummary[]
+  allEntries: InspectEntrySummary[]
+  running: boolean
 }
 
 export function ConsoleTimeline() {
@@ -31,6 +34,7 @@ export function ConsoleTimeline() {
   const follow = useConsoleStore((s) => s.follow)
   const setFollow = useConsoleStore((s) => s.setFollow)
   const selectEntry = useConsoleStore((s) => s.selectEntry)
+  const observedRunning = useConsoleStore((s) => sessionId === null ? undefined : s.runningBySession[sessionId])
 
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -41,10 +45,14 @@ export function ConsoleTimeline() {
     for (const entry of visible) {
       const last = result.at(-1)
       if (last !== undefined && last.run === entry.run) last.entries.push(entry)
-      else result.push({ run: entry.run, entries: [entry] })
+      else result.push({
+        run: entry.run, entries: [entry],
+        allEntries: entries.filter((e) => e.run === entry.run),
+        running: entry.run === entries.at(-1)!.run && observedRunning === true,
+      })
     }
     return result
-  }, [entries, layers])
+  }, [entries, layers, observedRunning])
 
   // 实时跟随：可见条目数变化且 follow 开着 → 滚到底。follow 关着（正在翻历史）
   // 不打扰；重新开启时立即回底
@@ -55,14 +63,14 @@ export function ConsoleTimeline() {
     if (el) el.scrollTop = el.scrollHeight
   }, [visibleCount, follow])
 
-  const lastEntry = entries.at(-1)
-  const running = lastEntry !== undefined && !['run.completed', 'run.failed'].includes(lastEntry.kind)
+  const running = observedRunning === true
 
   return (
     <div className="flex h-full min-w-0 flex-col">
       {/* 工具条：条数/运行态 + 跟随开关 */}
       <div className="flex h-9 shrink-0 items-center gap-2 border-b px-4">
         <span className="text-[12px] tabular-nums text-muted-foreground">{visibleCount} 条</span>
+        {entries.length > 0 && entries[0].seq > 1 && <span className="text-xs text-muted-foreground">仅显示留存尾部</span>}
         {running && (
           <span className="flex items-center gap-1.5 text-[12px] text-emerald-600">
             <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
@@ -117,32 +125,27 @@ function RunBlock({
   selectedSeq: number | null
   onSelect: (seq: number) => void
 }) {
-  const started = group.entries[0]
+  const started = group.allEntries[0]
   const preview = started.kind === 'run.started' ? started.title.replace(/^run #\d+ · /, '') : ''
-  const lastKind = group.entries.at(-1)!.kind
+  const lastKind = group.allEntries.at(-1)!.kind
   const status =
-    lastKind === 'run.completed' ? '完成' : lastKind === 'run.failed' ? '失败' : '进行中'
+    lastKind === 'run.completed' ? '完成' : lastKind === 'run.failed' ? '失败' : group.running ? '进行中' : '未见终态'
   const statusClass =
     lastKind === 'run.failed' ? 'text-destructive' : status === '进行中' ? 'text-emerald-600' : 'text-muted-foreground'
 
   return (
-    <section>
-      <header className="flex items-center gap-2 px-1 pb-1.5">
-        <span className="text-[13px] font-semibold">Run #{group.run}</span>
-        {preview !== '' && (
-          <span className="min-w-0 truncate text-[13px] text-muted-foreground">{preview}</span>
-        )}
-        <span className={`ml-auto flex items-center gap-1.5 text-[12px] ${statusClass}`}>
+    <DetailSection title={`Run #${group.run}${preview !== '' ? ` · ${preview}` : ''}`} appearance="row" trailing={
+        <span className={`ml-auto flex shrink-0 items-center gap-1.5 text-[12px] ${statusClass}`}>
           {status === '进行中' && <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />}
           {status}
         </span>
-      </header>
+      }>
       <ul className="flex flex-col rounded-lg border">
         {group.entries.map((entry) => (
           <EntryRow key={entry.seq} entry={entry} selected={entry.seq === selectedSeq} onSelect={onSelect} />
         ))}
       </ul>
-    </section>
+    </DetailSection>
   )
 }
 

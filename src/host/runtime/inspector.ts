@@ -293,7 +293,7 @@ export class SessionInspector {
     this.streamAgg.chunks.push(data)
   }
 
-  /** 聚合态 → 一条 api.stream 条目（NDJSON：一行一个分片，正好是 wire 上的样子） */
+  /** 聚合态 → 一条 api.stream 条目；NDJSON 是解析后事件的存档格式，并非 wire 字节。 */
   private flushStream(): void {
     const agg = this.streamAgg
     this.streamAgg = null
@@ -403,7 +403,7 @@ export class SessionInspector {
   detail(seq: number): InspectEntryDetail | undefined {
     const stored = this.details.get(seq)
     if (stored !== undefined) return stored
-    if (this.summaries.some((e) => e.seq === seq)) return { seq, blocks: [] }
+    if (this.summaries.some((e) => e.seq === seq && !e.hasDetail)) return { seq, blocks: [] }
     return undefined
   }
 

@@ -79,9 +79,9 @@ export const useConsoleStore = create<ConsoleState>((set, get) => ({
     // 初载快照与实时事件赛跑：事件（webContents.send）可能先于响应（invoke 往返）
     // 到达并已 append —— 不能用较旧的快照整体覆盖，按 seq 单调性归并取并集
     set((state) => {
-      if (state.entries.length === 0) return { entries }
-      const lastSeq = state.entries[state.entries.length - 1].seq
-      return { entries: [...state.entries, ...entries.filter((e) => e.seq > lastSeq)] }
+      const merged = new Map(entries.map((entry) => [entry.seq, entry]))
+      for (const entry of state.entries) merged.set(entry.seq, entry)
+      return { entries: [...merged.values()].sort((a, b) => a.seq - b.seq) }
     })
   },
 

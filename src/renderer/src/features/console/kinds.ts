@@ -85,7 +85,7 @@ export const KINDS: Record<InspectEntryKind, KindPresentation> = {
     icon: IconApi,
     layer: 'api',
     label: '接口 · 请求',
-    explain: '即将发给厂商的原始 HTTP 请求体（pi onPayload 截获，SDK 发出前一刻）。系统提示词、完整对话上下文、工具定义都在这个 JSON 里 —— 这是"模型真正看到了什么"的最终答案。',
+    explain: 'pi onPayload 在 SDK 发送前提供的厂商请求对象快照，包含该调用的提示词、上下文、工具及参数。POST 是本控制台的展示标签；当前未采集实际 HTTP 方法、URL、请求头、SDK 重试或最终线上字节，不能据此当作完整网络抓包。超过采集上限的 JSON 会带截断标记。',
   },
   'api.response': {
     icon: IconArrowsExchange,
@@ -97,7 +97,7 @@ export const KINDS: Record<InspectEntryKind, KindPresentation> = {
     icon: IconWaveSine,
     layer: 'api',
     label: '接口 · SSE 流',
-    explain: '本次请求的 SSE 原始分片汇总（pi 归一化之前，一行一条）。模型不是"一次生成完整回复"，是一个分片一个分片吐出来的。',
+    explain: 'pi onProviderStreamEvent 提供的已解析厂商事件，在 pi 消息归一化之前采集，轮次或 run 收尾时汇总为每行一条 JSON。它不保留线上 SSE 帧的原始字节、帧头或逐片时间戳；首块延迟指首个可观察事件，不等同于首个正文 token 延迟。',
   },
   'tool.started': {
     icon: IconTool,
