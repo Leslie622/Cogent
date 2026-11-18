@@ -15,6 +15,33 @@ export type SendShortcut = 'enter' | 'shift+enter' | 'ctrl+enter'
 /** 关闭最后一个窗口的行为（main 侧 close 拦截消费；ask 的弹窗在 renderer） */
 export type CloseBehavior = 'minimize' | 'quit' | 'ask'
 
+/** 提醒的三类事件（与 shared/ipc.ts 的 NotifyKind 同域） */
+export type NotifyKind = 'turn-done' | 'approval' | 'question'
+
+/**
+ * 通知与提示音设置的内存形状（触发条件 × 呈现方式正交，见 docs/计划/通知与
+ * 提示音.md）。声音文件 null = 用默认合成音（settings.json 的删键语义在
+ * setter 里转换，UI 层只说 null）
+ */
+export interface NotifySettings {
+  /** 轮次完成的提醒条件（缺省 unfocused：聚焦时不打扰） */
+  turnDoneNotify: 'always' | 'never' | 'unfocused'
+  approvalNotify: boolean
+  questionNotify: boolean
+  /** 呈现方式：系统 toast（main 弹，点击聚焦窗口；缺省关——声音为主） */
+  toastEnabled: boolean
+  /** 呈现方式：应用内提示音（缺省开） */
+  soundEnabled: boolean
+  soundVolume: number
+  soundPitch: number
+  turnDoneSoundFile: string | null
+  approvalSoundFile: string | null
+  questionSoundFile: string | null
+}
+
+/** setNotifySetting 的 patch：只带要改的键；声音文件 null = 恢复默认合成音 */
+export type NotifyPatch = Partial<NotifySettings>
+
 /**
  * 常用内置 provider 的显示名册（模型下拉分组/设置页卡片共用）。
  * pi 目录有 40+ 家，全量名册维护不过来 —— 没收录的兜底显示原始 id。
@@ -66,6 +93,8 @@ interface EngineState {
   /** Chrome 硬件加速（设置页开关；真正消费在 main 启动期 —— 这里只撑 UI
    *  显示与落盘，改后重启生效） */
   hardwareAcceleration: boolean
+  /** 通知与提示音（设置页「通知」分区；条件判定在 chat 事件流的提醒分发） */
+  notify: NotifySettings
   loaded: boolean
   /** 引擎链路失败的原因（load 失败时；App 横幅呈现 + 重试入口）。null = 正常 */
   engineError: string | null
@@ -84,6 +113,9 @@ interface EngineState {
   setCloseBehavior: (behavior: CloseBehavior) => void
   /** 设置页「Chrome 硬件加速」开关：落盘 + 内存态（main 重启后才生效） */
   setHardwareAcceleration: (enabled: boolean) => void
+  /** 设置页「通知」分区 / 声音文件 pick-clear：patch 式落盘 + 内存态
+   *  （null 文件字段转 undefined 走 settings.json 删键） */
+  setNotifySetting: (patch: NotifyPatch) => void
 }
 
 function toKeyMap(status: Array<{ providerId: string; keyConfigured: boolean }>): Record<string, boolean> {
@@ -116,6 +148,16 @@ interface AppSettings {
   sendShortcut?: 'enter' | 'shift+enter' | 'ctrl+enter'
   closeBehavior?: 'minimize' | 'quit' | 'ask'
   hardwareAcceleration?: boolean
+  turnDoneNotify?: 'always' | 'never' | 'unfocused'
+  approvalNotify?: boolean
+  questionNotify?: boolean
+  toastEnabled?: boolean
+  soundEnabled?: boolean
+  soundVolume?: number
+  soundPitch?: number
+  turnDoneSoundFile?: string
+  approvalSoundFile?: string
+  questionSoundFile?: string
 }
 
 /** 载入落盘偏好；thinkingLevel 做值域归一（未来版本的档位/手改文件按缺省处理，偏好可再生） */
@@ -128,7 +170,50 @@ async function loadSettings(): Promise<AppSettings> {
     defaultPermissionMode: file.defaultPermissionMode,
     sendShortcut: file.sendShortcut,
     closeBehavior: file.closeBehavior,
-    hardwareAcceleration: file.hardwareAcceleration
+    hardwareAcceleration: file.hardwareAcceleration,
+    turnDoneNotify: file.turnDoneNotify,
+    approvalNotify: file.approvalNotify,
+    questionNotify: file.questionNotify,
+    toastEnabled: file.toastEnabled,
+    soundEnabled: file.soundEnabled,
+    soundVolume: file.soundVolume,
+    soundPitch: file.soundPitch,
+    turnDoneSoundFile: file.turnDoneSoundFile,
+    approvalSoundFile: file.approvalSoundFile,
+    questionSoundFile: file.questionSoundFile
+  }
+}
+
+/** 通知域缺省（盘上无值时的回填；与 docs/计划/通知与提示音.md 的拍板一致） */
+function defaultNotify(): NotifySettings {
+  return {
+    turnDoneNotify: 'unfocused',
+    approvalNotify: true,
+    questionNotify: true,
+    toastEnabled: false,
+    soundEnabled: true,
+    soundVolume: 0.5,
+    soundPitch: 660,
+    turnDoneSoundFile: null,
+    approvalSoundFile: null,
+    questionSoundFile: null
+  }
+}
+
+/** 盘上通知域 → 内存形状（越界/缺省逐字段回默认；main 已归一层，这里只补缺省） */
+function normalizeNotify(file: AppSettings): NotifySettings {
+  const d = defaultNotify()
+  return {
+    turnDoneNotify: file.turnDoneNotify ?? d.turnDoneNotify,
+    approvalNotify: file.approvalNotify ?? d.approvalNotify,
+    questionNotify: file.questionNotify ?? d.questionNotify,
+    toastEnabled: file.toastEnabled ?? d.toastEnabled,
+    soundEnabled: file.soundEnabled ?? d.soundEnabled,
+    soundVolume: file.soundVolume ?? d.soundVolume,
+    soundPitch: file.soundPitch ?? d.soundPitch,
+    turnDoneSoundFile: file.turnDoneSoundFile ?? null,
+    approvalSoundFile: file.approvalSoundFile ?? null,
+    questionSoundFile: file.questionSoundFile ?? null
   }
 }
 
@@ -151,6 +236,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   sendShortcut: 'enter',
   closeBehavior: 'ask',
   hardwareAcceleration: true,
+  notify: defaultNotify(),
   loaded: false,
   engineError: null,
 
@@ -183,6 +269,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
         sendShortcut: settings.sendShortcut ?? 'enter',
         closeBehavior: settings.closeBehavior ?? 'ask',
         hardwareAcceleration: settings.hardwareAcceleration ?? true,
+        notify: normalizeNotify(settings),
         loaded: true,
         engineError: null
       })
@@ -257,6 +344,17 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   setHardwareAcceleration: (hardwareAcceleration) => {
     set({ hardwareAcceleration })
     void window.cogent.saveSettings({ hardwareAcceleration })
+  },
+  setNotifySetting: (patch) => {
+    set((state) => ({ notify: { ...state.notify, ...patch } }))
+    // null 文件字段 → 显式 undefined 值的在场键：main 的 writeSettingsFile
+    // 据此删键（「恢复默认」）；未带的键不动（字段合并语义）
+    const { turnDoneSoundFile, approvalSoundFile, questionSoundFile, ...rest } = patch
+    const file: Partial<AppSettings> = rest
+    if (turnDoneSoundFile !== undefined) file.turnDoneSoundFile = turnDoneSoundFile ?? undefined
+    if (approvalSoundFile !== undefined) file.approvalSoundFile = approvalSoundFile ?? undefined
+    if (questionSoundFile !== undefined) file.questionSoundFile = questionSoundFile ?? undefined
+    void window.cogent.saveSettings(file)
   }
 }))
 

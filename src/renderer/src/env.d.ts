@@ -81,6 +81,18 @@ declare global {
       onAskClose: (callback: () => void) => () => void
       /** 询问弹窗裁决回传（形状与 shared/ipc.ts 的 WindowCloseAnswer 镜像） */
       confirmClose: (answer: { action: 'minimize' | 'quit' | 'cancel'; remember: boolean }) => Promise<{ ok: true }>
+      /** 弹系统 toast（条件判定在 renderer；Linux 不支持时 ok:false） */
+      notifyToast: (payload: NotifyToastPayload) => Promise<{ ok: true } | { ok: false; reason: 'unsupported' }>
+      /** 选自定义声音文件（拷进 sounds/ 落字段；取消返回 null） */
+      pickSoundFile: (kind: 'turn-done' | 'approval' | 'question') => Promise<string | null>
+      /** 清除自定义声音文件（恢复默认合成音） */
+      clearSoundFile: (kind: 'turn-done' | 'approval' | 'question') => Promise<{ ok: true }>
+      /** 打开系统通知设置页（Linux 未注册，按 platform 隐藏入口） */
+      openNotificationSettings: () => Promise<void>
+      /** 查系统通知开关快照（false = 系统层已关，null = 未知/默认开） */
+      getSystemNotifyStatus: () => Promise<{ enabled: boolean | null }>
+      /** 运行平台（'win32' | 'darwin' | 'linux'） */
+      platform: string
       /** 订阅最大化状态变化，返回取消订阅函数 */
       onWindowState: (callback: (isMaximized: boolean) => void) => () => void
     }
@@ -140,6 +152,23 @@ export interface AppSettingsFile {
   closeBehavior?: 'minimize' | 'quit' | 'ask'
   /** Chromium 硬件加速；缺省 = true。main 启动期消费，改后重启生效 */
   hardwareAcceleration?: boolean
+  /** —— 通知与提示音（形状与 shared/ipc.ts 的 SettingsFile 镜像；缺省注释见那边）—— */
+  turnDoneNotify?: 'always' | 'never' | 'unfocused'
+  approvalNotify?: boolean
+  questionNotify?: boolean
+  toastEnabled?: boolean
+  soundEnabled?: boolean
+  soundVolume?: number
+  soundPitch?: number
+  turnDoneSoundFile?: string
+  approvalSoundFile?: string
+  questionSoundFile?: string
+}
+
+/** toast 载荷（与 shared/ipc.ts 的 NotifyToastPayload 镜像；文案由 renderer 生成） */
+export interface NotifyToastPayload {
+  title: string
+  body: string
 }
 
 /** 会话摘要（与 protocol SessionSummary 镜像；optional 字段=未设置） */

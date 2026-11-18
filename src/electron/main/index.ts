@@ -7,6 +7,7 @@ import { CredentialStore } from './credentials/store'
 import { CustomProvidersStore } from './custom-providers/store'
 import { registerIpc } from './ipc'
 import { readSettingsFile } from './ipc/settings'
+import { registerNotifyIpc, registerSoundScheme } from './notifications'
 import { ensureTray, installCloseBehavior, restoreMainWindow } from './window-close'
 import { hardenWebviewAttachment } from './webview-policy'
 import { IPC } from '../../shared/ipc'
@@ -28,6 +29,9 @@ app.commandLine.appendSwitch('disable-component-update')
 if (readSettingsFile().hardwareAcceleration === false) {
   app.disableHardwareAcceleration()
 }
+
+// cogent-sound:// 特权协议声明（registerSchemesAsPrivileged 只准 ready 前调）
+registerSoundScheme()
 
 let mainWindow: BrowserWindow | null = null
 let host: HostManager | null = null
@@ -139,6 +143,8 @@ if (!app.requestSingleInstanceLock()) {
       enableHttpRpc: true
     })
     registerIpc({ host, getWindow: () => mainWindow }, credentialStore, customProvidersStore)
+  // 通知域（toast 展示 / 声音文件管理 / cogent-sound 协议 handle）
+  registerNotifyIpc({ getWindow: () => mainWindow })
 
     // webview 附加硬化（D10）：在任何窗口创建前挂上（will-attach-webview 按事件
     // 拦截，createWindow 之后才挂就有绕过窗口期）

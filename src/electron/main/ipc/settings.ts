@@ -48,6 +48,26 @@ function readAll(): SettingsFile {
           : undefined,
       // 硬件加速：只认 boolean（true=开/false=关），其余归缺省（开）
       hardwareAcceleration: typeof raw.hardwareAcceleration === 'boolean' ? raw.hardwareAcceleration : undefined,
+      // —— 通知与提示音：越界值按可再生偏好归缺省（消费侧补默认）——
+      turnDoneNotify:
+        raw.turnDoneNotify === 'always' || raw.turnDoneNotify === 'never' || raw.turnDoneNotify === 'unfocused'
+          ? raw.turnDoneNotify
+          : undefined,
+      approvalNotify: typeof raw.approvalNotify === 'boolean' ? raw.approvalNotify : undefined,
+      questionNotify: typeof raw.questionNotify === 'boolean' ? raw.questionNotify : undefined,
+      toastEnabled: typeof raw.toastEnabled === 'boolean' ? raw.toastEnabled : undefined,
+      soundEnabled: typeof raw.soundEnabled === 'boolean' ? raw.soundEnabled : undefined,
+      // 数值域（0–1 音量 / 400–1200Hz 基频）：越界即丢回缺省，不钳制 —— 钳移
+      // 会把手改的 0.3 静默变成另一档值，缺省化更可预期
+      soundVolume: typeof raw.soundVolume === 'number' && raw.soundVolume >= 0 && raw.soundVolume <= 1 ? raw.soundVolume : undefined,
+      soundPitch:
+        typeof raw.soundPitch === 'number' && raw.soundPitch >= 400 && raw.soundPitch <= 1200
+          ? raw.soundPitch
+          : undefined,
+      // 声音文件名：播放时 protocol handler 还有 basename 防穿越二道闸，这里只验类型
+      turnDoneSoundFile: typeof raw.turnDoneSoundFile === 'string' ? raw.turnDoneSoundFile : undefined,
+      approvalSoundFile: typeof raw.approvalSoundFile === 'string' ? raw.approvalSoundFile : undefined,
+      questionSoundFile: typeof raw.questionSoundFile === 'string' ? raw.questionSoundFile : undefined,
       // externalMcp 是文件级配置（手编），形状不对按缺省关（持久化读取边界）
       externalMcp:
         raw.externalMcp !== undefined &&
@@ -74,61 +94,94 @@ function writeAll(settings: SettingsFile): void {
   writeFileAtomic(filePath(), JSON.stringify(settings, null, 2))
 }
 
+/**
+ * 字段级校验（saveSettings IPC 与 writeSettingsFile 共用的信任边界）：
+ * 带了但类型不对 = 越界，直接抛错（约定 §1.1"越界即抛"）
+ */
+function assertPatchShape(patch: Partial<Record<keyof SettingsFile, unknown>>): void {
+  if (patch.activeModelId !== undefined && typeof patch.activeModelId !== 'string') {
+    throw new Error('settings:save 的 activeModelId 必须是 string')
+  }
+  if (patch.activeProviderId !== undefined && typeof patch.activeProviderId !== 'string') {
+    throw new Error('settings:save 的 activeProviderId 必须是 string')
+  }
+  if (patch.thinkingLevel !== undefined && typeof patch.thinkingLevel !== 'string') {
+    throw new Error('settings:save 的 thinkingLevel 必须是 string')
+  }
+  if (patch.defaultPermissionMode !== undefined && patch.defaultPermissionMode !== 'ask' && patch.defaultPermissionMode !== 'auto') {
+    throw new Error("settings:save 的 defaultPermissionMode 必须是 'ask' | 'auto'")
+  }
+  if (
+    patch.sendShortcut !== undefined &&
+    patch.sendShortcut !== 'enter' &&
+    patch.sendShortcut !== 'shift+enter' &&
+    patch.sendShortcut !== 'ctrl+enter'
+  ) {
+    throw new Error("settings:save 的 sendShortcut 必须是 'enter' | 'shift+enter' | 'ctrl+enter'")
+  }
+  if (
+    patch.closeBehavior !== undefined &&
+    patch.closeBehavior !== 'minimize' &&
+    patch.closeBehavior !== 'quit' &&
+    patch.closeBehavior !== 'ask'
+  ) {
+    throw new Error("settings:save 的 closeBehavior 必须是 'minimize' | 'quit' | 'ask'")
+  }
+  if (patch.hardwareAcceleration !== undefined && typeof patch.hardwareAcceleration !== 'boolean') {
+    throw new Error('settings:save 的 hardwareAcceleration 必须是 boolean')
+  }
+  if (
+    patch.turnDoneNotify !== undefined &&
+    patch.turnDoneNotify !== 'always' &&
+    patch.turnDoneNotify !== 'never' &&
+    patch.turnDoneNotify !== 'unfocused'
+  ) {
+    throw new Error("settings:save 的 turnDoneNotify 必须是 'always' | 'never' | 'unfocused'")
+  }
+  for (const field of ['approvalNotify', 'questionNotify', 'toastEnabled', 'soundEnabled'] as const) {
+    if (patch[field] !== undefined && typeof patch[field] !== 'boolean') {
+      throw new Error(`settings:save 的 ${field} 必须是 boolean`)
+    }
+  }
+  if (patch.soundVolume !== undefined && (typeof patch.soundVolume !== 'number' || patch.soundVolume < 0 || patch.soundVolume > 1)) {
+    throw new Error('settings:save 的 soundVolume 必须是 0–1 的 number')
+  }
+  if (patch.soundPitch !== undefined && (typeof patch.soundPitch !== 'number' || patch.soundPitch < 400 || patch.soundPitch > 1200)) {
+    throw new Error('settings:save 的 soundPitch 必须是 400–1200 的 number')
+  }
+  for (const field of ['turnDoneSoundFile', 'approvalSoundFile', 'questionSoundFile'] as const) {
+    if (patch[field] !== undefined && typeof patch[field] !== 'string') {
+      throw new Error(`settings:save 的 ${field} 必须是 string`)
+    }
+  }
+}
+
+/**
+ * 字段合并写（main 内部复用出口，notifications.ts 的声音文件 pick/clear 用）：
+ * patch 里 undefined = **删键**（「恢复默认」语义；JSON.stringify 不会写出
+ * undefined 值的键），带值 = 覆盖。返回合并后的完整设置。
+ */
+export function writeSettingsFile(patch: Partial<SettingsFile>): SettingsFile {
+  assertPatchShape(patch)
+  const settings = readAll()
+  // keyof 交叉赋值 TS 不认（值联合 vs 各键具体类型），经 unknown record 收窄
+  const target = settings as Partial<Record<keyof SettingsFile, unknown>>
+  for (const [key, value] of Object.entries(patch) as Array<[keyof SettingsFile, unknown]>) {
+    if (key === 'version') continue
+    if (value === undefined) delete target[key]
+    else target[key] = value
+  }
+  writeAll(settings)
+  return settings
+}
+
 export function registerSettingsIpc(): void {
   ipcMain.handle(IPC.settingsGet, () => readAll())
 
   ipcMain.handle(IPC.settingsSave, (_event, raw: unknown) => {
-    // 信任边界：字段级收窄（unknown → 只认可选字段）。带了但类型不对 = 越界，
-    // 直接抛错而非静默忽略 —— 假成功会掩盖 renderer 侧 bug（约定.md §1.1"越界即抛"）
-    const payload = raw as Partial<{
-      activeModelId: unknown
-      activeProviderId: unknown
-      thinkingLevel: unknown
-      defaultPermissionMode: unknown
-      sendShortcut: unknown
-      closeBehavior: unknown
-      hardwareAcceleration: unknown
-    }>
-    if (payload.activeModelId !== undefined && typeof payload.activeModelId !== 'string') {
-      throw new Error('settings:save 的 activeModelId 必须是 string')
-    }
-    if (payload.activeProviderId !== undefined && typeof payload.activeProviderId !== 'string') {
-      throw new Error('settings:save 的 activeProviderId 必须是 string')
-    }
-    if (payload.thinkingLevel !== undefined && typeof payload.thinkingLevel !== 'string') {
-      throw new Error('settings:save 的 thinkingLevel 必须是 string')
-    }
-    if (payload.defaultPermissionMode !== undefined && payload.defaultPermissionMode !== 'ask' && payload.defaultPermissionMode !== 'auto') {
-      throw new Error("settings:save 的 defaultPermissionMode 必须是 'ask' | 'auto'")
-    }
-    if (
-      payload.sendShortcut !== undefined &&
-      payload.sendShortcut !== 'enter' &&
-      payload.sendShortcut !== 'shift+enter' &&
-      payload.sendShortcut !== 'ctrl+enter'
-    ) {
-      throw new Error("settings:save 的 sendShortcut 必须是 'enter' | 'shift+enter' | 'ctrl+enter'")
-    }
-    if (
-      payload.closeBehavior !== undefined &&
-      payload.closeBehavior !== 'minimize' &&
-      payload.closeBehavior !== 'quit' &&
-      payload.closeBehavior !== 'ask'
-    ) {
-      throw new Error("settings:save 的 closeBehavior 必须是 'minimize' | 'quit' | 'ask'")
-    }
-    if (payload.hardwareAcceleration !== undefined && typeof payload.hardwareAcceleration !== 'boolean') {
-      throw new Error('settings:save 的 hardwareAcceleration 必须是 boolean')
-    }
-    const settings = readAll()
-    if (payload.activeModelId !== undefined) settings.activeModelId = payload.activeModelId
-    if (payload.activeProviderId !== undefined) settings.activeProviderId = payload.activeProviderId
-    if (payload.thinkingLevel !== undefined) settings.thinkingLevel = payload.thinkingLevel
-    if (payload.defaultPermissionMode !== undefined) settings.defaultPermissionMode = payload.defaultPermissionMode
-    if (payload.sendShortcut !== undefined) settings.sendShortcut = payload.sendShortcut
-    if (payload.closeBehavior !== undefined) settings.closeBehavior = payload.closeBehavior
-    if (payload.hardwareAcceleration !== undefined) settings.hardwareAcceleration = payload.hardwareAcceleration
-    writeAll(settings)
+    // 信任边界收窄进 assertPatchShape（writeSettingsFile 共用）；字段合并语义
+    // 含"undefined=删键"，renderer 的 settings:save 载荷不带 undefined（只设值）
+    writeSettingsFile(raw as Partial<SettingsFile>)
     return { ok: true as const }
   })
 }

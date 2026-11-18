@@ -123,6 +123,9 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   控件统一 w-40）；快捷键选项用 kbd 键帽组合（`KbdGroup` + 弱色 `+` 相连），
   键帽带细描边以在菜单 hover 灰底上保持轮廓。「关闭窗口时」的 ask 档弹
   CloseAskDialog（shell 级，勾「不再询问」固化所选动作）。
+- 通知页三组：通知（三行触发条件，Select/Switch）+ 提醒方式（toast/提示音
+  两个正交 Switch + 系统设置跳转按钮，Linux 隐藏）+ 提示音（音量/音调滑杆
+  w-40 + 三类声音源行：文件名截断显示 + 选择/试听/恢复默认）。
 - 模型设置单独用 master-detail：页头 + `mx-10 mb-8 flex-1 min-h-0` 主体卡，
   左栏 w-72，各栏独立滚动；右栏 max-w-2xl 居中。详情按 provider id 挂 key，
   模型行动作区固定宽并 hover 显示，避免布局跳动。

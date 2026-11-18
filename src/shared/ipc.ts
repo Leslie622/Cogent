@@ -62,9 +62,32 @@ export const IPC = {
   /** renderer → main：询问弹窗的裁决（payload: WindowCloseAnswer；remember 落盘由
       renderer 经 settings:save 完成，main 只执行动作；cancel = 弹窗关闭/取消） */
   windowConfirmClose: 'window:confirm-close',
+  /** renderer → main：弹系统 toast（payload: NotifyToastPayload；条件判定在
+      renderer 单一源，main 只展示 —— silent，点击聚焦主窗口） */
+  notifyToast: 'notify:toast',
+  /** renderer → main：选自定义声音文件（payload: 三类之一；拷进 ~/.cogent/sounds/
+      后返回纯文件名，用户取消返回 null） */
+  soundPickFile: 'sound:pick-file',
+  /** renderer → main：清除自定义声音文件（payload: 三类之一；删 sounds/ 文件） */
+  soundClearFile: 'sound:clear-file',
+  /** renderer → main：打开系统通知设置页（Win/macOS URI；Linux 无统一入口不注册） */
+  openNotificationSettings: 'shell:open-notification-settings',
+  /** renderer → main：查系统通知开关快照（Windows 注册表 ToastEnabled；无变更
+      事件只能快照，OS 限制）。enabled: false = 系统层已关；null = 查不到
+      （非 Windows / 键缺失按默认开 / 查询失败） */
+  notifySystemStatus: 'notify:system-status',
   /** main → renderer：最大化状态变化（payload: boolean isMaximized） */
   windowState: 'window:state-changed'
 } as const
+
+/** toast 载荷：文案由 renderer 生成（main 无语言上下文，学 zcode 拒绝兜底文案） */
+export interface NotifyToastPayload {
+  title: string
+  body: string
+}
+
+/** 提醒的三类事件（声音文件选择/清除与设置字段共用的键） */
+export type NotifyKind = 'turn-done' | 'approval' | 'question'
 
 /** 「关闭窗口时」询问弹窗的裁决：action = 用户所选动作（cancel 仅复位询问态）；
     remember = 勾了「不再询问」（cancel 时忽略） */
@@ -130,6 +153,27 @@ export interface SettingsFile {
       disableHardwareAcceleration（规避部分显卡/驱动导致的白屏、闪退、渲染
       异常）；缺省 = true（Electron 默认开）。只在启动期消费，改后重启生效 */
   hardwareAcceleration?: boolean
+  /** —— 通知与提示音（触发条件 × 呈现方式正交，见 docs/计划/通知与提示音.md）—— */
+  /** 轮次完成的提醒条件：always / never / unfocused（缺省，聚焦时不打扰） */
+  turnDoneNotify?: 'always' | 'never' | 'unfocused'
+  /** 权限请求时提醒（approval.request）；缺省开 */
+  approvalNotify?: boolean
+  /** 等待回答时提醒（question.asked）；缺省开 */
+  questionNotify?: boolean
+  /** 呈现方式 · 系统 toast（main 侧 Electron Notification，点击聚焦窗口）；
+      缺省关（用户定调声音为主） */
+  toastEnabled?: boolean
+  /** 呈现方式 · 提示音（renderer 合成/自定义文件）；缺省开 */
+  soundEnabled?: boolean
+  /** 提示音音量 0–1（合成 GainNode 与文件 Audio.volume 共用）；缺省 0.5 */
+  soundVolume?: number
+  /** 合成音基频 Hz（400–1200，三类音型按相对模式取值）；缺省 660。
+      只影响合成音 —— 自定义文件不做变调（playbackRate 破坏音质） */
+  soundPitch?: number
+  /** 自定义声音文件（~/.cogent/sounds/ 下纯文件名，三类独立；缺省 = 合成音） */
+  turnDoneSoundFile?: string
+  approvalSoundFile?: string
+  questionSoundFile?: string
   /** 对外 MCP Server（阶段 5a）：enabled = main 在 Host 启动后铸凭据写
       mcp-access.json；allowWrites 决定凭据档位（write = 写组工具注册）。
       文件级配置（手编 settings.json），首发不做设置页 UI */

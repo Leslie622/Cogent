@@ -15,4 +15,33 @@ Object.defineProperty(Element.prototype, 'getAnimations', {
   value: () => []
 })
 
+// jsdom 不实现 Web Audio（lib/notify 的合成提示音用）：空转 stub 只求调用链
+// 不炸 —— 音效不在单测断言范围（notify.test.ts 只钉纯函数行为），生产环境
+// Electron renderer 恒有真 AudioContext
+class AudioParamStub {
+  value = 1
+}
+class AudioNodeStub {
+  gain = new AudioParamStub()
+  frequency = new AudioParamStub()
+  connect = (): void => {}
+  start = (): void => {}
+  stop = (): void => {}
+}
+class AudioContextStub {
+  state = 'running' as const
+  currentTime = 0
+  destination = new AudioNodeStub()
+  createGain(): AudioNodeStub {
+    return new AudioNodeStub()
+  }
+  createOscillator(): AudioNodeStub {
+    return new AudioNodeStub()
+  }
+  resume(): Promise<void> {
+    return Promise.resolve()
+  }
+}
+globalThis.AudioContext = AudioContextStub as unknown as typeof AudioContext
+
 afterEach(cleanup)

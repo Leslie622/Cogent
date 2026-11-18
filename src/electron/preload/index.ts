@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, type AppStatus, type ApiKeyStatus, type CredentialsStatus, type SettingsFile, type WindowCloseAnswer } from '../../shared/ipc'
+import {
+  IPC,
+  type AppStatus,
+  type ApiKeyStatus,
+  type CredentialsStatus,
+  type NotifyKind,
+  type NotifyToastPayload,
+  type SettingsFile,
+  type WindowCloseAnswer
+} from '../../shared/ipc'
 import type {
   CustomProviderDef,
   ProviderOverrideDef,
@@ -119,6 +128,22 @@ const api = {
   /** 询问弹窗裁决回传（cancel = 用户取消，仅复位询问态） */
   confirmClose: (answer: WindowCloseAnswer): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.windowConfirmClose, answer),
+  /** 弹系统 toast（条件判定在 renderer，main 只展示；Linux 不支持时 ok:false） */
+  notifyToast: (payload: NotifyToastPayload): Promise<{ ok: true } | { ok: false; reason: 'unsupported' }> =>
+    ipcRenderer.invoke(IPC.notifyToast, payload),
+  /** 选自定义声音文件（拷进 sounds/ 落字段，返回文件名；取消返回 null） */
+  pickSoundFile: (kind: NotifyKind): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.soundPickFile, kind),
+  /** 清除自定义声音文件（恢复默认合成音） */
+  clearSoundFile: (kind: NotifyKind): Promise<{ ok: true }> =>
+    ipcRenderer.invoke(IPC.soundClearFile, kind),
+  /** 打开系统通知设置页（Linux 未注册本通道，renderer 按 platform 隐藏入口） */
+  openNotificationSettings: (): Promise<void> => ipcRenderer.invoke(IPC.openNotificationSettings),
+  /** 查系统通知开关快照（Windows 注册表；false = 系统层已关，null = 未知/默认开） */
+  getSystemNotifyStatus: (): Promise<{ enabled: boolean | null }> =>
+    ipcRenderer.invoke(IPC.notifySystemStatus),
+  /** 运行平台（'win32' | 'darwin' | 'linux'；平台分支 UI 的判定源） */
+  platform: process.platform,
   /** 订阅最大化状态变化（自绘 header 的最大化/还原图标切换） */
   onWindowState: (callback: (isMaximized: boolean) => void): (() => void) => {
     const listener = (_event: unknown, isMaximized: boolean): void => callback(isMaximized)

@@ -9,6 +9,8 @@
  */
 import { replaceRunTerminal } from './flatten'
 import { emptyBucket, messageDeltas, patchBucket, recordTurnOutcome, useChatStore } from './store'
+import { notifyEvent } from '@/lib/notify'
+import { useEngineStore } from '@/stores/engine'
 import type { ChatMessage } from '@/env.d'
 import type { ApprovalItem, MessageItem, SessionBucket, SessionRuntime, ToolItem } from './types'
 
@@ -108,6 +110,7 @@ export function bindEngineEvents(): () => void {
             ]
           }))
         )
+        notifyEvent('approval', useEngineStore.getState().notify)
         return
       }
       case 'todos.updated': {
@@ -127,6 +130,7 @@ export function bindEngineEvents(): () => void {
             pendingQuestions: [...bucket.pendingQuestions, { requestId, questions }]
           }))
         )
+        notifyEvent('question', useEngineStore.getState().notify)
         return
       }
       case 'plan.requested': {
@@ -331,6 +335,7 @@ export function bindEngineEvents(): () => void {
           }
         })
         void refreshSessionTitle()
+        notifyEvent('turn-done', useEngineStore.getState().notify)
         return
       }
       case 'run.failed': {
@@ -414,6 +419,10 @@ export function bindEngineEvents(): () => void {
             }
           }
         })
+        // 失败提醒（failed 变体文案）；aborted 不提醒 —— 用户自己停的，知道结果
+        if (reason !== 'aborted') {
+          notifyEvent('turn-done', useEngineStore.getState().notify, true)
+        }
         return
       }
       default:
