@@ -28,6 +28,10 @@ export type MessageLike = {
   role: 'user' | 'assistant' | 'compaction'
   content: string
   thinking?: string
+  /** 活跃流式占位标记（chat store 本地字段）：驱动 Reasoning/Markdown 的
+   *  流式态 —— 不挂在 id 上，id 是渲染 key 素材（封段不换名，见
+   *  docs/计划/正文衔接连续性修复.md） */
+  placeholder?: boolean
   usage?: MessageUsage
   durationMs?: number
   timestamp: number
@@ -132,19 +136,28 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
   }
   return (
     <Message align="start">
-      <MessageContent className="gap-1 px-0.5">
+      {/* 行距/左缘对齐 live 容器（gap-3、零缩进，2026-11-18 用户验收）：段内
+          思考行/正文/统计行与平级工具行同一节奏 —— 此前 gap-1 px-0.5 让段内
+          行距 4px（思考→正文视觉 13px vs 思考→工具行 22px）且整体右移 2px
+          （图标与工具行错位，违背决定 18 平级零缩进的逐像素对齐） */}
+      <MessageContent className="gap-3">
         {/* 思考流：流式占位且正文未开始 = 还在思考阶段（收起单行 + 末行摘要
             滚动，docs/计划/对话过程呈现打磨.md §3.4）；交错思考（commentary）
             的精确信号属 content blocks 件，当前模型思考都先于正文 */}
         {message.thinking && (
           <Reasoning
             text={message.thinking}
-            running={message.id === 'streaming' && message.content.length === 0}
+            running={message.placeholder === true && message.content.length === 0}
           />
         )}
-        {/* 正文 Markdown 渲染（路线空位 4 前半）：流式占位消息传 streaming，
-            未闭合的代码围栏在流式中即按代码块渲染（remend 修复） */}
-        <Markdown content={message.content} streaming={message.id === 'streaming'} />
+        {/* 正文 Markdown 渲染（路线空位 4 前半）：活跃占位（placeholder）传
+            streaming，未闭合的代码围栏在流式中即按代码块渲染（remend 修复）。
+            空 content 不挂载：纯思考段的空 md-body 是 0 高 flex 子项，仍吃
+            两侧 gap 的死空白（行距统一 gap-3 后从隐性 4px 变显性 12px，
+            2026-11-18 用户验收）；首个正文 delta 到达时自然挂载 */}
+        {message.content !== '' && (
+          <Markdown content={message.content} streaming={message.placeholder === true} />
+        )}
         <UsageLine usage={message.usage} durationMs={message.durationMs} />
       </MessageContent>
     </Message>

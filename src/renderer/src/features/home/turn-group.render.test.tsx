@@ -209,3 +209,28 @@ describe('TurnGroup 终态折叠体条目摘除 scroller item（收起动画卡�
     expect(wrapped.map((el) => el.getAttribute('data-message-id'))).toEqual(['u1', 'a1'])
   })
 })
+
+describe('TurnGroup 封段正文衔接（计划/正文衔接连续性修复）', () => {
+  it('工具封段（占位翻 placeholder 归过程 + 新占位另起）前后正文行同一 DOM 节点', () => {
+    const poem = '先出的一段长正文'.repeat(4)
+    const before: ChatTurn = {
+      user: userMsg('u1'),
+      items: [{ ...assistantMsg('p1'), placeholder: true, content: poem }]
+    }
+    const view = render(<TurnGroup turn={before} phase="live" />)
+    const el1 = screen.getByText(poem)
+    // 封段后的真实形态：旧段 id 不变翻 placeholder、工具卡随其后、新占位尾部另起
+    view.rerender(<TurnGroup turn={{
+      user: before.user,
+      items: [
+        { ...assistantMsg('p1'), placeholder: false, content: poem },
+        { id: 'c1', type: 'tool', name: 'read', toolKind: 'read', summary: 'read(a)', status: 'running' },
+        { ...assistantMsg('p2'), placeholder: true, content: '' }
+      ]
+    }} phase="live" />)
+    // 同 key（seg-0）同父同位置：React 复用同一节点 —— 选区/渐显状态不丢
+    expect(screen.getByText(poem)).toBe(el1)
+    expect(el1.isConnected).toBe(true)
+    expect(screen.getByTestId('msg-p2')).toBeInTheDocument()
+  })
+})

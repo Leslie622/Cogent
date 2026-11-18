@@ -27,7 +27,7 @@ const initialProject = { ...useProjectStore.getState() }
 const initialEngine = { ...useEngineStore.getState() }
 
 const user: ChatMessage = { id: 'u1', role: 'user', content: '问题', timestamp: 1_000 }
-const streaming: ChatMessage = { id: 'streaming', role: 'assistant', content: '回答中', timestamp: 1_100 }
+const streaming: ChatMessage = { id: 'streaming', placeholder: true, role: 'assistant', content: '回答中', timestamp: 1_100 }
 const completed: ChatMessage = { id: 'a1', role: 'assistant', content: '回答完成', timestamp: 1_100 }
 const observers: Array<{ callback: ResizeObserverCallback; targets: Set<Element>; disconnected: boolean }> = []
 const handlers = new Set<(event: EngineEvent) => void>()
@@ -242,6 +242,18 @@ describe('HomeChat 的真实停止终态接线', () => {
     } }) })
     expect(screen.getByText('已停止')).toBeInTheDocument()
     expect(screen.getByText('回答完成')).toBeInTheDocument()
+  })
+
+  it('工具封段前后正文行同一 DOM 节点（组 key/段 key 双稳定，计划/正文衔接连续性修复）', () => {
+    const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    const findRow = () =>
+      [...container.querySelectorAll('[data-slot="message-scroller-item"]')].find((el) => el.textContent.includes('回答中'))!
+    const el1 = findRow()
+    // 封段 = 原项翻 placeholder 留在原位 + 工具卡随其后：正文行 DOM 不换，
+    // 选区/渐显状态不丢（jsdom 下 React 重挂必换节点，同一引用即零重挂）
+    act(() => { emit({ method: 'tool.started', params: { sessionId: SID, callId: 'c1', name: 'read', kind: 'read' } }) })
+    expect(findRow()).toBe(el1)
+    expect(el1.isConnected).toBe(true)
   })
 
   it('点过停止但收到真实 error，头条显示出错了并保留错误文案', async () => {

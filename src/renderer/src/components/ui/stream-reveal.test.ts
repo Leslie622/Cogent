@@ -8,11 +8,13 @@ import {
   commitStreamingReveal,
   commitStreamingRevealBlock,
   createStreamingRevealBlockState,
+  createStreamingRevealPacing,
   createStreamingRevealState,
   groupRevealUnits,
   isIncrementalRevealSource,
   planRevealSchedule,
   prepareStreamingRevealBlocks,
+  REVEAL_FADE_MS,
   revealPredecessorLength,
   segmentRevealUnits,
 } from '@/components/ui/stream-reveal'
@@ -254,5 +256,34 @@ describe('原生分块的观察与提交', () => {
     commitStreamingReveal(state)
     expect(state.clock).toBe(Number.NEGATIVE_INFINITY)
     expect(state.committedBlocks).toEqual(['替换版本'])
+  })
+})
+
+describe('段间排期接力（pacing 种子，封段后新旧段不倒序并存）', () => {
+  it('前段提交排期后发布 minStart = 末拍起跳 + 淡入时长；新段首拍不早于它', () => {
+    const pacing = createStreamingRevealPacing()
+    const previous = createStreamingRevealState(pacing)
+    planRevealSchedule(previous, createStreamingRevealBlockState(), '上一段', 2)
+    commitStreamingReveal(previous)
+    expect(pacing.minStart).toBe(previous.clock + REVEAL_FADE_MS)
+    const next = createStreamingRevealState(pacing)
+    const schedule = planRevealSchedule(next, createStreamingRevealBlockState(), '下一段', 2)
+    expect(schedule.start).toBeGreaterThanOrEqual(previous.clock + REVEAL_FADE_MS)
+  })
+
+  it('无 pacing 的独立渲染行为不变：时钟从 -Infinity 起', () => {
+    const state = createStreamingRevealState()
+    expect(state.clock).toBe(Number.NEGATIVE_INFINITY)
+    planRevealSchedule(state, createStreamingRevealBlockState(), '字', 1)
+    commitStreamingReveal(state)
+    expect(state.pacing).toBeUndefined()
+  })
+
+  it('前段排期尾已过（慢工具）：新段首拍即当前，不引入等待', () => {
+    const pacing = createStreamingRevealPacing()
+    pacing.minStart = performance.now() - 1_000
+    const next = createStreamingRevealState(pacing)
+    const schedule = planRevealSchedule(next, createStreamingRevealBlockState(), '字', 1)
+    expect(schedule.start).toBeLessThanOrEqual(performance.now() + 50)
   })
 })

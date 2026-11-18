@@ -2,8 +2,9 @@
  * 回合分组与容器（ZCode 式两态呈现的装配层，见 docs/计划/回合过程折叠.md）：
  * store 的消息列表保持平铺（事件流逻辑不动），本件在渲染期按相邻关系分组 ——
  * 用户消息到下一用户消息 = 一个回合（run）。回合内两态：
- *   进行中：过程项（思考块/工具卡/中间正文）逐条直播（各行单行化，上方高度
- *   恒定）+ 流内 WorkingLine；溢出时仅复制视觉内容，业务源全程不卸载；
+ *   进行中：全部项（工具卡/中间正文/活跃占位）在同一平级列表按序直播（各行
+ *   单行化，上方高度恒定），正文段 key 用回合内段序数（跨封段/跨终态稳定，
+ *   见 docs/计划/正文衔接连续性修复.md）+ 流内 WorkingLine；
  *   终态：过程收进 RunTrace 头条（已工作 Xs/已停止/出错了），末条有正文段 =
  *   终答常驻头条之下，用量聚合一行（过程展开时各段仍带自己的用量小字）。
  * 无过程回合（单段纯文本）也恒挂头条（D8 修订 2026-11-11，ZCode 对齐：
@@ -88,25 +89,15 @@ export function groupTurns(items: MessageItem[]): ChatTurn[] {
 export type TurnPhase = 'live' | 'done' | 'stopped' | 'failed'
 
 /**
- * 过程 vs 终答切分（D2）：
- * live —— 流式占位（id 'streaming'）= 输出位置的直播正文（思考 + 已出文本
- * 原样渲染），其余全部是过程；占位被工具事件封段（改名 live-*）后自然归过程。
- * 终态 —— 末条有正文的段 = 终答；answer 剥 thinking（归过程伪段）与
- * usage/durationMs（回合聚合行与头条已表达，不双记）；answerOriginal 保留
- * 原文给**无过程直出分支** —— 该分支没有聚合行，自带用量/耗时不能丢。
- * 终答之后若还有工具项（模型末轮只调工具没收尾的边角）留在过程体，顺序小让步。
+ * 过程 vs 终答切分（D2，仅终态相位使用 —— live 全项平铺，见 live 分支）：
+ * 末条有正文的段 = 终答；answer 剥 thinking（归过程伪段）与 usage/durationMs
+ * （回合聚合行与头条已表达，不双记）；answerOriginal 保留原文给**无过程直出
+ * 分支** —— 该分支没有聚合行，自带用量/耗时不能丢。终答之后若还有工具项
+ * （模型末轮只调工具没收尾的边角）留在过程体，顺序小让步。
  */
 function splitTurn(
-  items: MessageItem[],
-  isLive: boolean
+  items: MessageItem[]
 ): { process: MessageItem[]; answer?: ChatMessage; answerOriginal?: ChatMessage } {
-  if (isLive) {
-    const last = items.at(-1)
-    if (last !== undefined && last.type === undefined && last.id === 'streaming') {
-      return { process: items.slice(0, -1), answer: last }
-    }
-    return { process: items }
-  }
   let answerRaw: ChatMessage | undefined
   let answerIndex = -1
   for (let i = items.length - 1; i >= 0; i--) {
@@ -303,8 +294,6 @@ function TurnGroupImpl({ turn, phase, stopping = false }: { turn: ChatTurn; phas
       </div>
     )
   }
-  const split = splitTurn(turn.items, phase === 'live')
-  const { process, answer, answerOriginal } = split
   // 零内容组的 done 相位不渲染过程件（D9 截断的副产物：压缩条把回合拆成
   // [user|空组] + [续组]，空组只剩用户泡 —— D8"纯文本恒挂头条"落在它头上
   // 就是凭空的「已工作」空壳，验收实测双头条）。live 例外：乐观消息刚上屏
@@ -317,6 +306,85 @@ function TurnGroupImpl({ turn, phase, stopping = false }: { turn: ChatTurn; phas
       </MessageScrollerItem>
     ) : null
   }
+  // 段身份（渲染 key）：assistant 正文段用回合内段序数 —— live 占位的 id 是
+  // renderer 自造 uuid，终态被权威快照整段替换后对不上；序数在两条来源间天然
+  // 对齐（占位只在收到 delta 时建 = 段化只在有正文/思考时落段，flatten.ts）。
+  // 封段只翻 placeholder、终态换 id，序数都不变：正文段跨封段零重挂，终答行
+  // 跨终态保留旧 DOM（尾部渐显得以自然收完，见 turn-terminal 回归）。zcode
+  // 对应物是协议 rowId（其轮/行 key 只依赖协议稳定 id）；工具/审批/裁剪/
+  // 压缩条自带协议稳定 id（callId 等），直接用。
+  let segmentSeq = 0
+  const itemKeys = turn.items.map((item) =>
+    item.type === undefined && item.role === 'assistant' ? `seg-${segmentSeq++}` : item.id
+  )
+  const tailKey = `seg-${segmentSeq - 1}`
+  if (phase === 'live') {
+    // 进行中：全部项（工具卡/中间正文/活跃占位）在同一平级列表按序直播（各行
+    // 单行化，上方高度恒定）；工作中行留在内容流，短回复紧跟正文，阅读态也
+    // 保留业务与布局源。正文段与封段后走同一渲染链（MessageScrollerItem +
+    // MessageRow）：封段 = 原项翻 placeholder 留在原位 + 尾部追加新项，
+    // key/父容器/位置三不变，正文行零重挂（计划/正文衔接连续性修复）。
+    // 容器与终态折叠头**平级同款**（无导线缩进，2026-11-16 用户定调）：
+    // ask_user 挂起会把 live 阶段拉得很长，相邻回合同屏时两态左缘必须
+    // 逐像素一致（曾差 23px 即「图标没对齐」）—— 导线退役后两侧一同
+    // 归 0，收尾翻折叠横向零位移的约束不变。中间正文段随之呈过程灰
+    // （text-muted-foreground 继承）—— 过程语义本就如此，与终态折叠
+    // 体内一致
+    return (
+      <>
+        {turn.user !== undefined && (
+          <MessageScrollerItem messageId={turn.user.id}>
+            <MessageRow message={turn.user} />
+          </MessageScrollerItem>
+        )}
+        <div className="flex min-w-0 flex-col gap-3 pr-1">
+          {turn.items.map((item, index) => (
+            <MessageScrollerItem key={itemKeys[index]} messageId={item.id}>
+              {item.type === undefined && item.role === 'assistant' ? (
+                <MessageRow message={item} />
+              ) : (
+                <ProcessItem item={item} />
+              )}
+            </MessageScrollerItem>
+          ))}
+        </div>
+        <div data-slot="live-working-line-source">
+          <WorkingLine startTs={turn.user?.timestamp ?? turn.startedAt ?? Date.now()} stopping={stopping} />
+        </div>
+      </>
+    )
+  }
+  const { process, answer, answerOriginal } = splitTurn(turn.items)
+  if (phase === 'done' && process.length === 0) {
+    // 无过程回合（D8 修订 2026-11-11）：纯文本也恒挂「已工作」头条（ZCode
+    // 实测对齐：无思考无工具的问候也显示"已工作 4 秒"—— 慢本身是信号，
+    // 原"直出不挂条"让用户看着计时器数到 5s 后整行消失）；空过程体在
+    // RunTrace 内退化为不可展开单行。统计行渲染**原文**（自带 usage/接口
+    // 时长 —— 此分支没有聚合行，剥过的副本会丢统计，首验即栽过）
+    return (
+      <>
+        {turn.user !== undefined && (
+          <MessageScrollerItem messageId={turn.user.id}>
+            <MessageRow message={turn.user} />
+          </MessageScrollerItem>
+        )}
+        {/* 与 live 同一个平级容器 + 段 key 对齐 = 终答行跨终态保留旧 DOM；
+            RunTrace 显式 key：容器子级在 live 是段/工具 key 数组，隐式位置
+            匹配会有歧义 */}
+        <div className="flex min-w-0 flex-col gap-3 pr-1">
+          <RunTrace key="trace" phase="done" durationMs={turnDurationMs(turn)} />
+          {answerOriginal !== undefined && (
+            <MessageScrollerItem key={tailKey} messageId={answerOriginal.id}>
+              <MessageRow message={answerOriginal} />
+            </MessageScrollerItem>
+          )}
+        </div>
+      </>
+    )
+  }
+  // 终态（D2/D6）：过程收进头条折叠体，终答常驻，用量聚合一行。时长双口径
+  // 并存（2026-11-11 用户定调）：头条墙钟 = 用户等了多久；统计行接口时长
+  // = 模型净耗时（不含排队/引擎处理），两个数不冲突
   return (
     <>
       {turn.user !== undefined && (
@@ -324,75 +392,29 @@ function TurnGroupImpl({ turn, phase, stopping = false }: { turn: ChatTurn; phas
           <MessageRow message={turn.user} />
         </MessageScrollerItem>
       )}
-      {phase === 'live' ? (
-        // 进行中：过程摊开直播（思考行默认收起单行、工具行单行 —— 上方高度
-        // 恒定）；工作中行留在内容流，短回复紧跟正文，阅读态也保留业务与布局源。
-        // 此前「终答开流即折叠」的 headerMode 翻转是流中跳变源，已废。
-        // 容器与终态折叠体**平级同款**（无导线缩进，2026-11-16 用户定调）：
-        // ask_user 挂起会把 live 阶段拉得很长，相邻回合同屏时两态左缘必须
-        // 逐像素一致（曾差 23px 即「图标没对齐」）—— 导线退役后两侧一同
-        // 归 0，收尾翻折叠横向零位移的约束不变。中间正文段随之呈过程灰
-        // （text-muted-foreground 继承）—— 过程语义本就如此，与终态折叠
-        // 体内一致
-        <>
-          <div className="flex min-w-0 flex-col gap-3 pr-1">
-            {process.map((item) => (
-              <MessageScrollerItem key={item.id} messageId={item.id}>
-                <ProcessItem item={item} />
-              </MessageScrollerItem>
-            ))}
-          </div>
-          {answer !== undefined && (
-            <MessageScrollerItem messageId={answer.id}>
-              <MessageRow message={answer} />
-            </MessageScrollerItem>
-          )}
-          <div data-slot="live-working-line-source">
-            <WorkingLine startTs={turn.user?.timestamp ?? turn.startedAt ?? Date.now()} stopping={stopping} />
-          </div>
-        </>
-      ) : phase === 'done' && process.length === 0 ? (
-        // 无过程回合（D8 修订 2026-11-11）：纯文本也恒挂「已工作」头条（ZCode
-        // 实测对齐：无思考无工具的问候也显示"已工作 4 秒"—— 慢本身是信号，
-        // 原"直出不挂条"让用户看着计时器数到 5s 后整行消失）；空过程体在
-        // RunTrace 内退化为不可展开单行。统计行渲染**原文**（自带 usage/接口
-        // 时长 —— 此分支没有聚合行，剥过的副本会丢统计，首验即栽过）
-        <>
-          <RunTrace phase="done" durationMs={turnDurationMs(turn)} />
-          {answerOriginal !== undefined && (
-            <MessageScrollerItem messageId={answerOriginal.id}>
-              <MessageRow message={answerOriginal} />
-            </MessageScrollerItem>
-          )}
-        </>
-      ) : (
-        // 终态（D2/D6）：过程收进头条折叠体，终答常驻，用量聚合一行。时长双口径
-        // 并存（2026-11-11 用户定调）：头条墙钟 = 用户等了多久；统计行接口时长
-        // = 模型净耗时（不含排队/引擎处理），两个数不冲突
-        <>
-          {/* 折叠体条目**不套** MessageScrollerItem：那会给每条挂
-              content-visibility:auto —— 开合动画期间条目随裁切边缘进出
-              渲染态、10rem 占位翻真实高度，grid 轨道分母（= 内容自然高度）
-              被中途改动，收起动画肉眼卡顿（2026-11-16 用户实测，决定 17；
-              zcode 折叠体同为纯 div）。定位/刻度无消费方：scrollToMessage
-              只有索引刻度在调、目标恒为 user 消息（顶层另有包装） */}
-          <RunTrace phase={phase} durationMs={turnDurationMs(turn)}>
-            {process.map((item) => (
-              <ProcessItem key={item.id} item={item} />
-            ))}
-          </RunTrace>
-          {answer !== undefined && (
-            <MessageScrollerItem messageId={answer.id}>
-              <MessageRow message={answer} />
-            </MessageScrollerItem>
-          )}
-          <UsageLine
-            usage={sumUsage(turn.items)}
-            durationMs={sumDurationMs(turn.items)}
-            toolMs={sumToolMs(turn.items)}
-          />
-        </>
-      )}
+      <div className="flex min-w-0 flex-col gap-3 pr-1">
+        {/* 折叠体条目**不套** MessageScrollerItem：那会给每条挂
+            content-visibility:auto —— 开合动画期间条目随裁切边缘进出
+            渲染态、10rem 占位翻真实高度，grid 轨道分母（= 内容自然高度）
+            被中途改动，收起动画肉眼卡顿（2026-11-16 用户实测，决定 17；
+            zcode 折叠体同为纯 div）。定位/刻度无消费方：scrollToMessage
+            只有索引刻度在调、目标恒为 user 消息（顶层另有包装） */}
+        <RunTrace key="trace" phase={phase} durationMs={turnDurationMs(turn)}>
+          {process.map((item) => (
+            <ProcessItem key={item.id} item={item} />
+          ))}
+        </RunTrace>
+        {answer !== undefined && (
+          <MessageScrollerItem key={tailKey} messageId={answer.id}>
+            <MessageRow message={answer} />
+          </MessageScrollerItem>
+        )}
+      </div>
+      <UsageLine
+        usage={sumUsage(turn.items)}
+        durationMs={sumDurationMs(turn.items)}
+        toolMs={sumToolMs(turn.items)}
+      />
     </>
   )
 }

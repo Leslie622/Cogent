@@ -101,12 +101,14 @@ export const messageDeltas = createDeltaBatcher((sessionId, deltas) => {
     for (const { delta, kind } of deltas) {
       const last = messages.at(-1)
       const thinking = kind === 'thinking'
-      if (last !== undefined && last.type === undefined && last.role === 'assistant' && last.id === 'streaming') {
+      // 占位 id 一次分配终身不变（id 换名 = 渲染 key 变 = 正文行重挂）；
+      // 「是不是活跃占位」由 placeholder 布尔表达，封段只翻布尔不改 id
+      if (last !== undefined && last.type === undefined && last.role === 'assistant' && last.placeholder) {
         messages[messages.length - 1] = thinking
           ? { ...last, thinking: (last.thinking ?? '') + delta }
           : { ...last, content: last.content + delta }
       } else {
-        messages.push({ id: 'streaming', role: 'assistant', content: thinking ? '' : delta,
+        messages.push({ id: crypto.randomUUID(), placeholder: true, role: 'assistant', content: thinking ? '' : delta,
           thinking: thinking ? delta : undefined, timestamp: Date.now() })
       }
     }

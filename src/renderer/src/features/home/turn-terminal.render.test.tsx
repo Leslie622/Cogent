@@ -1,6 +1,7 @@
 /**
  * 回合终态与正文视觉收尾分工：用真实 TurnGroup / MessageRow / Markdown 验证
- * 尾回答的已有 DOM 能跨 streaming id → 权威 id 保留；传入的终态相位立即生效。
+ * 尾回答的已有 DOM 能跨占位 id → 权威 id 保留（段序数 key 对齐，见
+ * docs/计划/正文衔接连续性修复.md）；传入的终态相位立即生效。
  * 此处不模拟 store 的 abort 标签推导，CSS 逐帧透明度另由生产浏览器验证。
  */
 import { act, render, screen } from '@testing-library/react'
@@ -51,8 +52,8 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 const user: ChatMessage = { id: 'u1', role: 'user', content: '请回答', timestamp: 1_000 }
-const live: ChatMessage = { id: 'streaming', role: 'assistant', content: '尾部文字', timestamp: 1_100 }
-const final: ChatMessage = { ...live, id: 'answer-1', durationMs: 100 }
+const live: ChatMessage = { id: 'streaming', placeholder: true, role: 'assistant', content: '尾部文字', timestamp: 1_100 }
+const final: ChatMessage = { ...live, id: 'answer-1', placeholder: false, durationMs: 100 }
 const tool: MessageItem = {
   id: 'tool-1', type: 'tool', name: 'read', toolKind: 'read', summary: 'read(a.ts)',
   status: 'ok', startedAt: 1_010, endedAt: 1_080,

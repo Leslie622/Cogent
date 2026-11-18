@@ -71,12 +71,14 @@ describe('renderer 30ms 发布', () => {
     delta('前'); delta('思', 'thinking')
     emit({ method: 'tool.started', params: { sessionId: 'a', callId: 't', name: 'read', kind: 'read' } })
     const sealed = bucket().messages[0]
+    // 封段只翻 placeholder 不改 id（id 是渲染 key 素材），新占位 placeholder=true
+    expect(sealed).toMatchObject({ placeholder: false })
     delta('后')
     emit({ method: 'tool.completed', params: { sessionId: 'a', callId: 't', isError: false, summary: 'ok' } })
     expect(bucket().messages).toEqual([
       expect.objectContaining({ content: '前', thinking: '思' }),
       expect.objectContaining({ id: 't', status: 'ok' }),
-      expect.objectContaining({ id: 'streaming', content: '后' })
+      expect.objectContaining({ content: '后', placeholder: true })
     ])
     delta('续'); vi.advanceTimersByTime(30)
     expect(bucket().messages[0]).toBe(sealed)
@@ -107,7 +109,7 @@ describe('renderer 30ms 发布', () => {
     delta('截'); delta('想', 'thinking')
     emit({ method: 'run.failed', params: { sessionId: 'a', reason: 'aborted', message: 'aborted' } })
     expect(bucket().messages[0]).toMatchObject({ content: '半截', thinking: '想' })
-    expect(bucket().messages[0].id).not.toBe('streaming')
+    expect(bucket().messages[0]).toMatchObject({ placeholder: false })
     vi.advanceTimersByTime(1000)
     expect(bucket().messages).toHaveLength(1)
     expect(bucket().runtime).toMatchObject({ running: false, stopping: false, lastRunOutcome: 'stopped' })

@@ -69,6 +69,22 @@ interface HastNode {
 /** 逐词插件的 rehype 形状（unified 只要求「返回 transformer 的函数」） */
 export type StreamRevealPlugin = () => (tree: HastNode) => void
 
+/** 淡入时长，须与 globals.css 的 --reveal-duration 一致（段间排期接力按
+ *  「前段淡入完整结束」对齐下一段首拍；两处漂移只造成观感差，不会错乱）。 */
+export const REVEAL_FADE_MS = 300
+
+/** 段间排期接力种子：跨 Markdown 实例（封段后的新旧正文段）共享。新段以
+ *  minStart 为初始时钟 —— 首拍不早于前段最后一拍的淡入结束，避免快工具后
+ *  「上段渐显未完、下段已开播」的倒序观感；慢路径（工具耗时超过排期尾）
+ *  不受影响（start = max(now, clock + interval)）。 */
+export interface StreamingRevealPacing {
+  minStart: number
+}
+
+export function createStreamingRevealPacing(): StreamingRevealPacing {
+  return { minStart: Number.NEGATIVE_INFINITY }
+}
+
 export interface StreamingRevealState {
   /** 浮现时钟：最后一个已排定单元的开始时间（performance.now 时间线），跨帧接续节奏。 */
   clock: number
@@ -87,6 +103,8 @@ export interface StreamingRevealState {
   pendingBlocks: readonly string[] | undefined
   /** 链接定义/脚注等让旧稳定块重组时，本次重解析直接 settled。 */
   restructured: boolean
+  /** 段间排期接力种子（会话级共享；缺省 = 独立渲染，行为不变）。 */
+  pacing?: StreamingRevealPacing
 }
 
 /** 生命周期跟随真实 BlockComponent；文本只比较本块自己的版本。 */
@@ -109,9 +127,9 @@ interface RevealPlan {
   count: number
 }
 
-export function createStreamingRevealState(): StreamingRevealState {
+export function createStreamingRevealState(pacing?: StreamingRevealPacing | null): StreamingRevealState {
   return {
-    clock: Number.NEGATIVE_INFINITY,
+    clock: pacing?.minStart ?? Number.NEGATIVE_INFINITY,
     rate: undefined,
     gap: undefined,
     arrival: Number.NEGATIVE_INFINITY,
@@ -120,6 +138,7 @@ export function createStreamingRevealState(): StreamingRevealState {
     committedBlocks: [],
     pendingBlocks: undefined,
     restructured: false,
+    pacing: pacing ?? undefined,
   }
 }
 
@@ -342,6 +361,9 @@ export function commitStreamingReveal(state: StreamingRevealState): void {
       arrival = Math.max(arrival, planned.now)
     }
     state.pendingSchedules.clear()
+    // 段间接力：把排期尾（末拍起跳 + 淡入时长）发布给共享种子，新段首拍
+    // 对齐到前段淡入完整结束（无 pacing 的独立渲染不发布）
+    if (state.pacing !== undefined) state.pacing.minStart = state.clock + REVEAL_FADE_MS
     // 到达速度只在连续输出时更新：停顿后的第一批沿用停顿前的速度。
     const gap = arrival - state.arrival
     if (gap <= REVEAL_PAUSE_MS) {

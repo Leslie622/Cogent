@@ -26,13 +26,14 @@ export function bindEngineEvents(): () => void {
         const { sessionId, callId, name, kind, summary } = event.params
         useChatStore.setState((state) =>
           patchBucket(state, sessionId, (bucket) => {
-            // 封段接力：模型先出文字再调工具时，占位（id 'streaming'）改名为 live-*
-            // 定格在本位 —— 后续轮次的 delta 会另起占位，文字与工具卡交错不失真
+            // 封段接力：模型先出文字再调工具时，活跃占位翻 placeholder 定格在本位
+            // —— id 不变（id 换名 = 渲染 key 变 = 正文行重挂，见计划/正文衔接连续性
+            // 修复）；后续轮次的 delta 会另起占位，文字与工具卡交错不失真
             const messages = bucket.messages
             const last = messages.at(-1)
             const sealed =
-              last !== undefined && last.type === undefined && last.id === 'streaming' && last.role === 'assistant'
-                ? [...messages.slice(0, -1), { ...last, id: `live-${crypto.randomUUID()}` }]
+              last !== undefined && last.type === undefined && last.role === 'assistant' && last.placeholder
+                ? [...messages.slice(0, -1), { ...last, placeholder: false }]
                 : messages
             const item: ToolItem = {
               id: callId,
@@ -394,18 +395,16 @@ export function bindEngineEvents(): () => void {
               ...base.bySession,
               [sessionId]: {
                 ...failedBase,
-                // 失败收尾（引擎无分段 —— 首请求即失败等）：中止 = 半截占位改名
-                // 封存（同 tool.started 的封段接力，已出文本留在消息流）；真失败
-                // = 占位移除（既有口径）。挂在 run 里的工具卡若还 running（打断
-                // 在工具处）标 blocked
+                // 失败收尾（引擎无分段 —— 首请求即失败等）：中止 = 半截占位翻
+                // placeholder 封存（id 不变，同 tool.started 的封段接力，已出文本
+                // 留在消息流）；真失败 = 占位移除（既有口径）。挂在 run 里的
+                // 工具卡若还 running（打断在工具处）标 blocked
                 messages: [
                   ...list
-                    .map((m) =>
-                      m.type === undefined && m.id === 'streaming' && wasStopped
-                        ? { ...m, id: `live-${crypto.randomUUID()}` }
-                        : m
-                    )
-                    .filter((m) => m.id !== 'streaming')
+                    .flatMap((m): MessageItem[] => {
+                      if (m.type !== undefined || m.role !== 'assistant' || !m.placeholder) return [m]
+                      return wasStopped ? [{ ...m, placeholder: false }] : []
+                    })
                     .map((m) => (m.type === 'tool' && m.status === 'running' ? { ...m, status: 'blocked' as const } : m)),
                   ...existing.pendingApprovals.map(
                     (p): ApprovalItem => ({ ...p, id: p.requestId, type: 'approval', status: 'cancelled' })

@@ -200,7 +200,7 @@ describe('context.updated 轮终实报与 run.failed 分段终态', () => {
     seedMessages([
       userMsg('u1', 100),
       { id: 't1', type: 'tool', name: 'read', toolKind: 'read', summary: 'read(a)', status: 'running', startedAt: 150 },
-      { id: 'streaming', role: 'assistant', content: '半截', timestamp: 200 }
+      { id: 'p1', placeholder: true, role: 'assistant', content: '半截', timestamp: 200 }
     ])
     // 走 store 的真实写入姿势（patchBucket 兜底建桶），免手搓 Partial 索引
     useChatStore.setState((state) =>
@@ -227,7 +227,7 @@ describe('run 最终结果与停止请求窗口分离', () => {
   const seedLive = (content = '半截', thinking?: string): void => {
     seedMessages([
       userMsg('问题', 100),
-      { id: 'streaming', role: 'assistant', content, thinking, timestamp: 200 }
+      { id: 'p1', placeholder: true, role: 'assistant', content, thinking, timestamp: 200 }
     ])
     useChatStore.setState((state) => patchBucket(state, SID, (bucket) => ({
       ...bucket, runtime: { ...bucket.runtime, running: true }
@@ -247,7 +247,9 @@ describe('run 最终结果与停止请求窗口分离', () => {
     emit({ method: 'run.failed', params: { sessionId: SID, reason: 'aborted', message: '已停止' } })
     expect(runtime()).toMatchObject({ running: false, stopping: false, lastRunOutcome: 'stopped', lastError: null })
     expect(messages()).toEqual([userMsg('问题', 100), expect.objectContaining({ content: '半截' })])
-    expect(messages()[1].id).not.toBe('streaming')
+    // 封存只翻 placeholder、id 不变：id 是渲染 key 素材，换名即正文行重挂
+    //（docs/计划/正文衔接连续性修复.md）
+    expect(messages()[1]).toMatchObject({ id: 'p1', placeholder: false })
   })
 
   it('其他入口中止时，本窗没有 stopping 也按权威 reason 保留正文与 stopped', () => {
@@ -255,6 +257,16 @@ describe('run 最终结果与停止请求窗口分离', () => {
     emit({ method: 'run.failed', params: { sessionId: SID, reason: 'aborted', message: '已停止' } })
     expect(runtime()).toMatchObject({ running: false, stopping: false, lastRunOutcome: 'stopped', lastError: null })
     expect(messages()[1]).toMatchObject({ content: '半截' })
+  })
+
+  it('tool.started 封段接力：占位 id 不变、placeholder 翻 false，工具卡随其后（正文行零重挂合同）', () => {
+    seedLive('先出文字')
+    emit({ method: 'tool.started', params: { sessionId: SID, callId: 'c1', name: 'read', kind: 'read' } })
+    expect(messages()).toEqual([
+      userMsg('问题', 100),
+      expect.objectContaining({ id: 'p1', placeholder: false, content: '先出文字' }),
+      expect.objectContaining({ id: 'c1', type: 'tool' })
+    ])
   })
 
   it.each(['error', undefined] as const)('点过停止仍不能把 reason=%s 的真实失败猜成 stopped', async (reason) => {
@@ -538,7 +550,7 @@ describe('回合终态按用户消息身份保留', () => {
 
   function seedTurn(content?: string): void {
     seedMessages([first, ...(content === undefined ? [] : [{
-      id: 'streaming', role: 'assistant' as const, content, timestamp: 200
+      id: 'p1', placeholder: true, role: 'assistant' as const, content, timestamp: 200
     }])])
     useChatStore.setState((state) => patchBucket(state, SID, (bucket) => ({
       ...bucket, runtime: { ...bucket.runtime, running: true }

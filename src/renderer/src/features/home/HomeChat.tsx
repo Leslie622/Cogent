@@ -16,7 +16,7 @@
  * 内嵌思考力度滑杆 ThinkingSlider）、上下文指示器（ContextIndicator）。
  * 项目回显走 project store（真数据）。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   IconArrowUp,
   IconClock,
@@ -48,6 +48,8 @@ import {
   MessageScrollerViewport,
   useMessageScroller,
 } from '@/components/ui/message-scroller'
+import { RevealPacingContext } from '@/components/ui/markdown'
+import { createStreamingRevealPacing } from '@/components/ui/stream-reveal'
 import { useHomeStore, type HomeSession } from '@/stores/home'
 import {
   EMPTY_MESSAGES,
@@ -198,8 +200,9 @@ function ChatHeader({
     渲染期按回合分组（TurnGroup 管两态呈现）。截断/失败提示条挂在消息末尾
     （stopReason=length 是正常结束的附属信息，不是错误） */
 function ChatMessages() {
+  const activeSessionId = useChatStore((s) => s.activeSessionId)
   const messages = useChatStore(
-    (s) => s.bySession[s.activeSessionId ?? '']?.messages ?? EMPTY_MESSAGES
+    (s) => s.bySession[activeSessionId ?? '']?.messages ?? EMPTY_MESSAGES
   )
   const turnOutcomes = useChatStore(
     (s) => s.bySession[s.activeSessionId ?? '']?.turnOutcomes ?? EMPTY_TURN_OUTCOMES
@@ -220,8 +223,11 @@ function ChatMessages() {
   const turns = groupTurns(messages)
   const terminalPhase = (outcome: SessionBucket['runtime']['lastRunOutcome'] | undefined): TurnPhase =>
     outcome === 'stopped' ? 'stopped' : outcome === 'failed' ? 'failed' : 'done'
+  // 段间排期接力种子：随活动会话更换（切会话时消息全部重挂，旧段排期自然作废）
+  const revealPacing = useMemo(() => createStreamingRevealPacing(), [activeSessionId])
 
   return (
+    <RevealPacingContext.Provider value={revealPacing}>
     <MessageScroller className="min-h-0 flex-1">
       <MessageScrollerViewport>
         {/* select-text：对话正文是正文类内容（AGENTS.md 方针 5 的首个放开点）。
@@ -297,6 +303,7 @@ function ChatMessages() {
       {/* 非底部时浮现的"滚到底部"圆钮，message-scroller 现成 */}
       <MessageScrollerButton />
     </MessageScroller>
+    </RevealPacingContext.Provider>
   )
 }
 

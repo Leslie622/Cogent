@@ -35,6 +35,7 @@ import {
   createStreamingRevealState,
   isIncrementalRevealSource,
   prepareStreamingRevealBlocks,
+  type StreamingRevealPacing,
   type StreamingRevealState,
 } from '@/components/ui/stream-reveal'
 
@@ -42,6 +43,12 @@ const plugins = { code, cjk }
 const linkSafety = { enabled: false }
 
 const StreamingRevealContext = createContext<StreamingRevealState | null>(null)
+
+/** 段间排期接力（会话级，Provider 挂在对话消息流 HomeChat ChatMessages）：
+ *  封段后的新正文段以旧段排期尾为初始时钟，首拍不早于前段末拍的淡入结束
+ *  —— 快工具后两段渐显不倒序并存（机制见 stream-reveal.ts）。
+ *  无 Provider 的独立渲染（单测/孤立 Markdown）行为不变。 */
+export const RevealPacingContext = createContext<StreamingRevealPacing | null>(null)
 
 /** 身份跟随 Streamdown 的真实块实例；默认 Block 继续负责解析、清洗及组件复用。 */
 const StreamingRevealBlock = memo(function StreamingRevealBlock(props: BlockProps) {
@@ -83,7 +90,9 @@ const components: Components = {
 export function Markdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
   // 30ms 发布由 renderer 事件入口持有；直接传入的内容不再二次延迟。
   // 消息持有节奏与增量信号，文本进度由真实块持有；内容不再替代块身份。
-  const [revealState] = useState(createStreamingRevealState)
+  // 排期时钟种子取自会话级 pacing（封段接力的下一段不早于前段淡入结束）。
+  const pacing = useContext(RevealPacingContext)
+  const [revealState] = useState(() => createStreamingRevealState(pacing))
   const revealPrevious = useRef('')
   const root = useRef<HTMLDivElement>(null)
   const [visualStreaming, setVisualStreaming] = useState(streaming)
