@@ -3,16 +3,16 @@
  * 一个回合（run）的过程（思考/工具/中间正文）收进一条可展开的轨迹 ——
  * RunTrace = 头条 + Trace 家族折叠体。头条是**终态**形态（已工作 Xs /
  * 已停止 / 出错了）；live 期间不渲染本件（顶部头条只在收尾出现），
- * 底部由 WorkingLine 常驻「工作中」（静态图标 + 标题扫光 + 码表）。
+ * 底部由 WorkingLine 常驻「工作中」（光环动效图标 WorkingSpinner + 标题扫光 + 码表）。
  * 无过程体（D8 修订：纯文本回合也恒挂头条）时退化为单行头条、不可展开 ——
  * 空折叠体挂个开合箭头是噪音。
- * 底层 = ui/trace（与 Reasoning/ToolCard 同家族，视觉一套）；图标走 lucide
- * 同家族惯例（AGENTS 方针 2 的"原语内部小图标"例外，与 tool.tsx 同理）。
+ * 底层 = ui/trace（与 Reasoning/ToolCard 同家族，视觉一套）；终态头条
+ * 不带图标（2026-11-18 用户定调：状态词自足，failed 红字兜底异常性）。
  * 开合语义：所有终态缺省收起，用户手动选择优先；末条正文由外层常驻，
  * 收起详情不会隐藏半截终答，与 Reasoning 的缺省收起语义一致。
  */
 import { Children, useEffect, useState } from 'react'
-import { CircleXIcon, ClockIcon, SquareIcon } from 'lucide-react'
+import { WorkingSpinner } from '@/components/WorkingSpinner'
 import { MessageScrollerPinnedRow } from '@/components/ui/message-scroller'
 import {
   TraceCollapsible,
@@ -80,15 +80,8 @@ export function RunTrace({
   const [open, setOpen] = useState<boolean | undefined>(undefined)
   const header = (
     <TraceLine status={phase === 'failed' ? 'error' : undefined}>
-      <TraceIcon>
-        {phase === 'failed' ? (
-          <CircleXIcon />
-        ) : phase === 'stopped' ? (
-          <SquareIcon />
-        ) : (
-          <ClockIcon />
-        )}
-      </TraceIcon>
+      {/* 终态头条一律不带图标（2026-11-18 用户定调）：状态词自足，failed 的
+          异常性由整行红字（TraceLine data-status=error）承担 */}
       <TraceTitle>{headerLabel(phase, durationMs)}</TraceTitle>
     </TraceLine>
   )
@@ -116,7 +109,7 @@ export function WorkingLine({ startTs, stopping = false }: { startTs: number; st
   return (
     <MessageScrollerPinnedRow>
       <TraceLine status="running">
-        <TraceIcon><ClockIcon /></TraceIcon>
+        <TraceIcon><WorkingSpinner /></TraceIcon>
         <TraceTitle>{stopping ? '正在停止' : '工作中'}</TraceTitle>
         <TraceDescription>{elapsed}</TraceDescription>
       </TraceLine>

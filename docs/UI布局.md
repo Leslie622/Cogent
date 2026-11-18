@@ -349,6 +349,16 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   `[&>svg]:size-[var(--provider-logo-size)]!` 变量 + `!` 钉死（同文件字色
   `text-background!` 打赢 menu item 通配染色的先例），任意值类吃不进动态数字，
   尺寸走 CSS 变量下发
+- **工作行三叶 spinner WorkingSpinner**（components/，工作中行图标，**动效座**
+  —— 换新动效只替换该文件 + globals.css 的 .working-spinner 块，
+  WorkingLine/TraceIcon 接线不动；历史候选 ClockIcon/双弧/blur 光环/zcode
+  粒子球·变C/blob 留档 tmp/spinner-preview/gen.mjs）：动画 = css-loaders
+  l5 原版逐字保留（整盒三角渐变拼形 + ::before/::after 继承、4s/2s、
+  转轴 50% 66%），产品化仅两处：颜色前景近黑（shadcn 黑白系，暗色翻白）、
+  尺寸 1em 化（线宽 0.05em ≈ 原版比例，text-[13px]，translate 上提
+  0.075em 光学对齐）。呼吸/分相/转轴实验系被否回退（2026-11-18 用户
+  定调）：该三角是等边形（宽 1.154em = 2/√3 × 高），66% 恰是质心，
+  绕质心转 120° 精确映射回自身，三叶分相永久重合 —— 勿再试
 - **通用档位滑杆 StopSlider**（components/，2026-11-10 参考稿 slider-main
   换装）：块状轨道值域选择器，档位模式（stops 吸附 + 键盘相邻档步进 + 选中
   标签加粗）/ 自由模式（无 stops，step 连续滑）两用。视觉规格：25px 轨道
@@ -405,7 +415,10 @@ shell ─┬─ header            40px 拖拽区（AppHeader：折叠开关/菜�
   reduced-motion 降级）；所有终态详情缺省收起，点击开合保留用户选择，末条正文仍常驻；
   折叠体动画 = grid 轨道 `0fr↔1fr`（免高度测量，
   此前 Base UI 首测高度被 content-visibility 10rem 估值污染 → 闪烁/高度
-  跳变），间距用 padding 不用 margin（margin 不随轨道裁切）
+  跳变），间距用 padding 不用 margin（margin 不随轨道裁切）；
+  **行距与左缘全流统一**（2026-11-18）：消息行（含段内思考/正文/统计行）
+  与过程行一律 `gap-3`、左缘零缩进（图标/正文与工具行对齐 —— 段内额外
+  内边距会造成 2px 错位与行距双轨，已并轨）
 - **滚动渐隐** `.scroll-fade-b/-y/-x`（mask 两端 24px 渐变，ChatGPT 同款不硬截；
   base-nova 组件引用了这组类，已补定义）
 - **文字扫光** `.shimmer`（globals.css，**@utility 注册**——trace 组件用

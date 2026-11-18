@@ -298,6 +298,73 @@
   color: inherit;
 }
 
+/* ── 工作行三叶 spinner（WorkingSpinner，消费 = run-trace WorkingLine 图标槽）──
+   旋转 = css-loaders l5 原版逐字保留（整盒三角 + ::before/::after 继承、
+   ::after 提速 2s、转轴 50% 66%）；呼吸 = 用户自带配方（2026-11-18）：
+   旋转零改动，三层叠 opacity 错相呼吸（本体 3s、::before 同步旋转但呼吸
+   错相 1/3、::after 旋转 2s 呼吸 3s 错相 2/3）。注意本体 opacity 会级联
+   合成到伪元素（伪元素实际 = 本体呼吸 × 自身呼吸的乘法调制）—— 配方
+   即如此，整体明暗脉动 + 层间错相涟漪。产品化两处：尺寸 1em 化（线宽
+   0.05em ≈ 原版比例）、颜色 currentColor → 前景色（shadcn 黑白系）。
+   被否勿再试（同日回退）：三叶旋转分相位 / 转轴挪盒心 / 三 <i> 拆分 ——
+   该三角是等边形（宽 1.154em = 2/√3 × 高），66% 恰是质心，绕质心转
+   120° 精确映射回自身，分相三叶永久重合。
+   动效座：换新动效 = 替换本块 + WorkingSpinner.tsx，接线不动；历史候选
+   （ClockIcon/双弧/blur 光环/zcode 粒子球·变C/blob + 呼吸系实验）留档
+   tmp/spinner-preview/gen.mjs。 */
+.working-spinner {
+  display: grid;
+  width: 1.154em;
+  height: 1em;
+  color: var(--color-foreground);
+  translate: 0 -0.075em;
+  background:
+    linear-gradient(to bottom left, transparent calc(50% - 0.025em), currentColor 0 calc(50% + 0.025em), transparent 0) right / 50% 100%,
+    linear-gradient(to bottom right, transparent calc(50% - 0.025em), currentColor 0 calc(50% + 0.025em), transparent 0) left / 50% 100%,
+    linear-gradient(currentColor 0 0) bottom / 100% 0.05em;
+  background-repeat: no-repeat;
+  transform-origin: 50% 66%;
+  animation:
+    working-blade-rotate 4s infinite linear,
+    working-breathe 3s ease-in-out infinite;
+}
+.working-spinner::before,
+.working-spinner::after {
+  content: '';
+  grid-area: 1/1;
+  background: inherit;
+  transform-origin: inherit;
+  animation: inherit;
+}
+.working-spinner::before {
+  animation-delay: 0s, -1s; /* 旋转同步，呼吸错相 1/3 */
+}
+.working-spinner::after {
+  animation-duration: 2s, 3s; /* 旋转保持 2s，呼吸用 3s */
+  animation-delay: 0s, -2s;
+}
+@keyframes working-blade-rotate {
+  100% {
+    transform: rotate(1turn);
+  }
+}
+@keyframes working-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .working-spinner,
+  .working-spinner::before,
+  .working-spinner::after {
+    animation: none;
+  }
+}
+
 /* ── 流式正文逐词浮现（stream-reveal.ts 的消费层，计划/流式呈现动效.md）──
    用 transition + @starting-style，不用 @keyframes：单元在下一帧就从 new 变
    settled，keyframes 选择器失配动画即被移除、只播一帧；transition 只要
