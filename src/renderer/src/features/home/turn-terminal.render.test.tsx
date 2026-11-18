@@ -13,7 +13,7 @@ import { TurnGroup, type ChatTurn, type TurnPhase } from './TurnGroup'
 // 滚动几何归 scroller 的真实集成回归；正文、终态头条与 Markdown 管线均使用真件。
 vi.mock('@/components/ui/message-scroller', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/components/ui/message-scroller')>(),
-  MessageScrollerDecoration: ({ children }: { children: ReactNode }) => <>{children}</>,
+  MessageScrollerPinnedRow: ({ children }: { children: ReactNode }) => <>{children}</>,
   MessageScrollerItem: ({ children, messageId }: { children: ReactNode; messageId?: string }) => (
     <div data-slot="message-scroller-item" data-message-id={messageId}>{children}</div>
   ),

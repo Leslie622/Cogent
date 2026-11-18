@@ -1,4 +1,4 @@
-/** HomeChat 保留流内工作状态业务源；跟随与视觉副本不能决定它的生命周期。 */
+/** HomeChat 保留流内工作状态业务源；滚动跟随不能决定它的生命周期。 */
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage, EngineEvent } from '@/env.d'
@@ -81,11 +81,11 @@ afterEach(() => {
 })
 
 /** 保留真实组件与 observer 接线，只注入 jsdom 缺失的溢出几何。 */
-function activateVisualCopy(container: HTMLElement) {
+function overflowWorkingLine(container: HTMLElement) {
   const root = container.querySelector<HTMLElement>('[data-slot="message-scroller"]')!
   const viewport = screen.getByRole('region')
   const content = screen.getByRole('log')
-  const source = container.querySelector<HTMLElement>('[data-slot="message-scroller-decoration-source"]')!
+  const source = container.querySelector<HTMLElement>('[data-slot="live-working-line-source"]')!
   let scrollTop = 400
   Object.defineProperties(viewport, {
     scrollHeight: { configurable: true, get: () => 1_000 },
@@ -101,14 +101,12 @@ function activateVisualCopy(container: HTMLElement) {
       observer.callback([], {} as ResizeObserver)
     }
   })
-  const portal = root.querySelector<HTMLElement>('[data-slot="message-scroller-decoration"]')!
-  expect(portal).not.toBeNull()
-  expect(portal.parentElement).toBe(root)
-  expect(portal).toHaveAttribute('aria-hidden', 'true')
-  expect(source.style.opacity).toBe('0')
+  expect(root.querySelector('[data-slot="message-scroller-decoration"]')).toBeNull()
+  expect(source.style.opacity).toBe('')
+  expect(screen.getAllByText('工作中')).toHaveLength(1)
   expect(source.closest('[aria-hidden="true"]')).toBeNull()
   expect(screen.getAllByText('工作中').filter((node) => node.closest('[aria-hidden="true"]') === null)).toHaveLength(1)
-  return { source, portal }
+  return { source }
 }
 
 describe('HomeChat 流内 live 工作状态', () => {
@@ -152,7 +150,7 @@ describe('HomeChat 流内 live 工作状态', () => {
     ['failed', { running: false, lastRunOutcome: 'failed', lastError: '请求失败' }, 'failed', '出错了'],
   ] as const)('live → %s 同批终态只由流内 RunTrace 接棒', (_phase, runtime, outcome, terminalText) => {
     const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
-    const live = activateVisualCopy(container)
+    const live = overflowWorkingLine(container)
     act(() => { useChatStore.setState({
       bySession: {
         [SID]: {
@@ -167,7 +165,6 @@ describe('HomeChat 流内 live 工作状态', () => {
     expect(container.querySelector('[data-slot="message-scroller-decoration"]')).toBeNull()
     expect(live.source.isConnected).toBe(false)
     expect(live.source.style.opacity).toBe('')
-    expect(live.portal.isConnected).toBe(false)
     expect(screen.queryByText('工作中')).not.toBeInTheDocument()
     expect(screen.getByText(terminalText)).toBeInTheDocument()
   })
@@ -175,7 +172,7 @@ describe('HomeChat 流内 live 工作状态', () => {
   it('切换活动会话时清理旧源，切回运行会话重新建立流内源', () => {
     const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
     const source = container.querySelector('[data-slot="live-working-line-source"]')!
-    const live = activateVisualCopy(container)
+    const live = overflowWorkingLine(container)
     act(() => { useChatStore.setState({
       activeSessionId: 'other',
       sessions: [
@@ -191,28 +188,26 @@ describe('HomeChat 流内 live 工作状态', () => {
     expect(source.isConnected).toBe(false)
     expect(container.querySelector('[data-slot="message-scroller-decoration"]')).toBeNull()
     expect(live.source.style.opacity).toBe('')
-    expect(live.portal.isConnected).toBe(false)
     expect(screen.queryByText('工作中')).not.toBeInTheDocument()
     act(() => { useChatStore.setState({ activeSessionId: SID }) })
     const restored = container.querySelector('[data-slot="live-working-line-source"]')!
     expect(restored).not.toBeNull()
     expect(restored).not.toBe(source)
     expect(restored.closest('[data-slot="message-scroller-content"]')).toBe(screen.getByRole('log'))
-    const nextLive = activateVisualCopy(container)
+    const nextLive = overflowWorkingLine(container)
     expect(nextLive.source).not.toBe(live.source)
-    expect(nextLive.portal).not.toBe(live.portal)
-    expect(container.querySelectorAll('[data-slot="message-scroller-decoration"]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-slot="message-scroller-decoration"]')).toHaveLength(0)
   })
 })
 
 describe('HomeChat 的真实停止终态接线', () => {
-  it('停止请求在途时源与副本同步显示正在停止，原业务源持续存在', async () => {
+  it('停止请求在途时唯一工作行显示正在停止，DOM 持续存在', async () => {
     const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
-    const live = activateVisualCopy(container)
+    const live = overflowWorkingLine(container)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止' })); await Promise.resolve() })
-    expect(container.querySelector('[data-slot="message-scroller-decoration-source"]')).toBe(live.source)
-    expect(container.querySelector('[data-slot="message-scroller-decoration"]')).toBe(live.portal)
-    expect(screen.getAllByText('正在停止')).toHaveLength(2)
+    expect(container.querySelector('[data-slot="live-working-line-source"]')).toBe(live.source)
+    expect(container.querySelector('[data-slot="message-scroller-decoration"]')).toBeNull()
+    expect(screen.getAllByText('正在停止')).toHaveLength(1)
     expect(screen.getAllByText('正在停止').filter((node) => node.closest('[aria-hidden="true"]') === null)).toHaveLength(1)
     expect(screen.queryByText('工作中')).not.toBeInTheDocument()
     expect(useChatStore.getState().bySession[SID]!.runtime.running).toBe(true)
@@ -220,7 +215,7 @@ describe('HomeChat 的真实停止终态接线', () => {
 
   it('点击停止 → 未发布尾字 → 权威快照：清停止位后仍显示已停止，尾正文恰一份', async () => {
     const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
-    activateVisualCopy(container)
+    overflowWorkingLine(container)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止' })); await Promise.resolve() })
     expect(engineRequest).toHaveBeenCalledWith('agent.abort', { sessionId: SID })
     expect(useChatStore.getState().bySession[SID]!.runtime).toMatchObject({ running: true, stopping: true })

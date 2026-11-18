@@ -5,7 +5,7 @@
  * - 零内容 done 组只渲染用户泡（第七轮验收"双已工作"回归）；
  * - live 零内容组仍含流内 WorkingLine（等待首片时也保留活动信号）；
  * - 「已工作 X.XXs」带秒数（第八轮验收 startedAt 继承回归）。
- * MessageRow / MessageScrollerItem / 视觉装饰 mock 掉（几何归 scroller 集成回归），
+ * MessageRow / MessageScrollerItem mock 掉（几何归 scroller 集成回归），
  * RunTrace / CompactionBar / PrunedBar 用真件 —— 它们的文案正是被验收的呈现。
  */
 import { fireEvent, render, screen } from '@testing-library/react'
@@ -18,7 +18,7 @@ import type { MessageItem, PrunedItem } from '@/stores/chat'
 // mock 忠实带 data-slot / data-message-id（折叠体条目摘除包装的回归钉要查它）
 vi.mock('@/components/ui/message-scroller', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/components/ui/message-scroller')>(),
-  MessageScrollerDecoration: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  MessageScrollerPinnedRow: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   MessageScrollerItem: ({ children, messageId }: { children: React.ReactNode; messageId?: string }) => (
     <div data-slot="message-scroller-item" data-message-id={messageId}>
       {children}
@@ -115,8 +115,7 @@ describe('TurnGroup 零内容组', () => {
     expect(screen.getAllByText('工作中')).toHaveLength(1)
     expect(source).not.toBeNull()
     expect(source).toContainElement(screen.getByText('工作中'))
-    // 码表秒粒度（2026-11-18）：工作中行整数秒，终态两位小数口径不变
-    expect(source).toContainElement(screen.getByText(/^\d+s$/))
+    expect(source).toContainElement(screen.getByText(/\d+\.\d\ds/))
     expect(source.closest('[aria-hidden="true"]')).toBeNull()
   })
 

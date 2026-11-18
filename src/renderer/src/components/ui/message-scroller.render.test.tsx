@@ -1,13 +1,13 @@
-/** 跟随 owner 与视觉副本的行为回归；注入节点几何，像素正确性另由生产浏览器验证。 */
+/** 跟随 owner 与单份流内工作行的行为回归；注入节点几何，像素正确性另由生产浏览器验证。 */
 import { StrictMode, useEffect, useState } from 'react'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MessageScrollerProvider, MessageScroller, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerDecoration, useMessageScroller, useMessageScrollerFollowing } from './message-scroller'
+import { MessageScrollerProvider, MessageScroller, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerPinnedRow, useMessageScroller, useMessageScrollerFollowing } from './message-scroller'
 import { WorkingLine } from './run-trace'
 
 const observers: Array<{ callback: ResizeObserverCallback; disconnected: boolean; targets: Element[] }> = []
 const mutations: Array<{ disconnected: boolean }> = []
-const sourceSelector = '[data-slot="message-scroller-decoration-source"]'
+const sourceSelector = '[data-testid="working-line"]'
 const decorationSelector = '[data-slot="message-scroller-decoration"]'
 function Controls() {
   const api = useMessageScroller()
@@ -15,10 +15,10 @@ function Controls() {
   return <><button onClick={() => api.scrollToStart()}>定位</button><button onClick={() => api.scrollToMessage('a', { align: 'end', behavior: 'smooth' })}>平滑定位</button><button onClick={() => api.scrollToEnd()}>回底</button><output data-testid="following">{following ? 'following' : 'reading'}</output></>
 }
 function Source() {
-  return <MessageScrollerDecoration><span role="note">工作中</span></MessageScrollerDecoration>
+  return <MessageScrollerPinnedRow><span data-testid="working-line" role="note">工作中</span></MessageScrollerPinnedRow>
 }
 function Fixture({ live = true, clock = false }: { live?: boolean; clock?: boolean }) {
-  return <StrictMode><MessageScrollerProvider><Controls /><MessageScroller><MessageScrollerViewport><MessageScrollerContent><MessageScrollerItem messageId="a">正文</MessageScrollerItem>{live && (clock ? <WorkingLine startTs={1_000} /> : <Source />)}</MessageScrollerContent></MessageScrollerViewport></MessageScroller></MessageScrollerProvider></StrictMode>
+  return <StrictMode><MessageScrollerProvider><Controls /><MessageScroller><MessageScrollerViewport><MessageScrollerContent><MessageScrollerItem messageId="a">正文</MessageScrollerItem>{live && (clock ? <div data-testid="working-line"><WorkingLine startTs={1_000} /></div> : <Source />)}</MessageScrollerContent></MessageScrollerViewport></MessageScroller></MessageScrollerProvider></StrictMode>
 }
 // 父树同批更新以及每种节点单独替换，覆盖库合并 ref 的 detach/attach。
 function LifecycleFixture({ session = 'a', generation = 0, viewportGeneration = 0, contentGeneration = 0, sourceGeneration = 0 }: { session?: string; generation?: number; viewportGeneration?: number; contentGeneration?: number; sourceGeneration?: number }) {
@@ -62,6 +62,8 @@ function geometry(initialHeight = 1_000) {
   const content = screen.getByRole('log')
   const root = viewport.closest<HTMLElement>('[data-slot="message-scroller"]')!
   const source = content.querySelector<HTMLElement>(sourceSelector)!
+  const slot = content.querySelector<HTMLElement>('[data-slot="message-scroller-row-slot"]')!
+  const row = content.querySelector<HTMLElement>('[data-slot="message-scroller-pinned-row"]')!
   let height = initialHeight
   let top = Math.max(0, height - 600)
   let residual = 0.75
@@ -85,8 +87,10 @@ function geometry(initialHeight = 1_000) {
     const bottom = height - top - 12 + residual + translate() + sourceOffset
     return box(bottom - sourceHeight, bottom, 64, 264)
   })
+  vi.spyOn(slot, 'getBoundingClientRect').mockImplementation(() => source.getBoundingClientRect())
+  vi.spyOn(row, 'getBoundingClientRect').mockImplementation(() => box(0, sourceHeight, 64, 264))
   return {
-    viewport, content, root, source, rootRect, viewportRect, contentRect, sourceRect,
+    viewport, content, root, source, slot, row, rootRect, viewportRect, contentRect, sourceRect,
     resize: () => resize(content), grow: () => { height += 61.5 },
     height: (value: number) => { height = value }, residual: (value: number) => { residual = value },
     sourceOffset: (value: number) => { sourceOffset = value }, sourceHeight: (value: number) => { sourceHeight = value },
@@ -117,7 +121,7 @@ describe('MessageScroller 跟随状态', () => {
     g.content.addEventListener('wheel', () => { observed = g.source.style.opacity })
     const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -1 })
     fireEvent(g.content, event)
-    // React文字可在事件批次末提交；源的透明度由following订阅同栈恢复。
+    // 工作行始终可见，capture 仅交还滚动权，不吞原生输入。
     expect(observed).toBe('')
     expect(screen.getByTestId('following')).toHaveTextContent('reading')
     expect(event.defaultPrevented).toBe(false)
@@ -129,7 +133,7 @@ describe('MessageScroller 跟随状态', () => {
     const g = geometry(); g.resize()
     fireEvent.wheel(g.viewport, { deltaY: 12 })
     expect(screen.getByTestId('following')).toHaveTextContent('following')
-    expect(g.decoration()).not.toBeNull()
+    expect(g.decoration()).toBeNull()
     g.grow(); g.resize()
     expect(g.viewport.scrollTop).toBe(461.5)
     view.unmount()
@@ -279,17 +283,15 @@ describe('MessageScroller 跟随状态', () => {
     expect(screen.getByRole('region')).toBe(firstViewport)
     expect(view.container.querySelector(sourceSelector)).toBe(firstSource)
     const g = geometry(); g.resize()
-    const oldDecoration = g.decoration()!
     const previous = [...observers]
     view.rerender(<StrictMode><LifecycleFixture session="c" generation={1} /></StrictMode>)
     expect(screen.getByRole('region')).not.toBe(firstViewport)
-    expect(oldDecoration.isConnected).toBe(false)
     expect(previous.every((entry) => entry.disconnected)).toBe(true)
     const currentViewport = screen.getByRole('region')
     expect(observers.filter((entry) => !entry.disconnected).every((entry) => entry.targets.every((node) => node.isConnected))).toBe(true)
     expect(observers.filter((entry) => !entry.disconnected).some((entry) => entry.targets.includes(currentViewport))).toBe(true)
     const next = geometry(); next.resize()
-    expect(next.decoration()).not.toBeNull()
+    expect(next.decoration()).toBeNull()
     view.unmount()
     expect(observers.every((entry) => entry.disconnected)).toBe(true)
     expect(mutations.every((entry) => entry.disconnected)).toBe(true)
@@ -299,14 +301,12 @@ describe('MessageScroller 跟随状态', () => {
     const view = render(<StrictMode><LifecycleFixture /></StrictMode>)
     const g = geometry(); g.resize()
     const old = g.viewport
-    const oldDecoration = g.decoration()!
     view.rerender(<StrictMode><LifecycleFixture viewportGeneration={1} /></StrictMode>)
     expect(old.isConnected).toBe(false)
-    expect(oldDecoration.isConnected).toBe(false)
     expect(observers.filter((entry) => entry.targets.includes(old)).every((entry) => entry.disconnected)).toBe(true)
     expect(observers.filter((entry) => !entry.disconnected).every((entry) => entry.targets.every((node) => node.isConnected))).toBe(true)
     const next = geometry(); next.resize()
-    expect(next.decoration()).not.toBeNull()
+    expect(next.decoration()).toBeNull()
     view.unmount()
     expect(observers.every((entry) => entry.disconnected)).toBe(true)
     expect(mutations.every((entry) => entry.disconnected)).toBe(true)
@@ -323,11 +323,11 @@ describe('MessageScroller 跟随状态', () => {
       view.unmount()
     }
   })
-  it('StrictMode 后尺寸变化仍贴底，定位只撤视觉副本，显式回底后继续跟随', () => {
+  it('StrictMode 后尺寸变化仍贴底，定位保留工作行，显式回底后继续跟随', () => {
     const view = render(<Fixture />)
     const g = geometry(); g.resize()
-    expect(g.content.style.translate).toBe('0 -0.75px')
-    expect(g.decoration()).not.toBeNull()
+    expect(g.content.style.translate).toBe('')
+    expect(g.decoration()).toBeNull()
     fireEvent.click(screen.getByText('定位'))
     expect(g.content.style.translate).toBe('')
     expect(g.decoration()).toBeNull()
@@ -339,14 +339,14 @@ describe('MessageScroller 跟随状态', () => {
     expect(g.viewport.scrollTop).toBe(readingTop)
     expect(g.writes()).toBe(writes)
     fireEvent.click(screen.getByText('回底'))
-    expect(g.decoration()).not.toBeNull()
+    expect(g.decoration()).toBeNull()
     expect(g.viewport.scrollTop).toBe(461.5)
     g.grow(); g.resize()
     expect(g.viewport.scrollTop).toBe(523)
     view.unmount()
     expect(observers.every((entry) => entry.disconnected)).toBe(true)
   })
-  it('上翻、触摸、键盘和滚动条立即撤副本并保留源；真实到底恢复', () => {
+  it('上翻、触摸、键盘和滚动条立即释放跟随并保留工作行；真实到底恢复', () => {
     const releaseCases = [
       [() => fireEvent.wheel(screen.getByRole('region'), { deltaY: -10 }),
         () => fireEvent.wheel(screen.getByRole('region'), { deltaY: 10 })],
@@ -375,147 +375,105 @@ describe('MessageScroller 跟随状态', () => {
       toward()
       g.viewport.scrollTop = 461.5
       fireEvent.scroll(g.viewport)
-      expect(g.decoration()).not.toBeNull()
+      expect(g.decoration()).toBeNull()
       g.grow(); g.resize()
       expect(g.viewport.scrollTop).toBe(523)
       view.unmount()
     }
   })
-  it('有限残差之外不补偿，不靠循环追赶布局', () => {
-    const view = render(<Fixture />)
-    const g = geometry(); g.residual(12); g.resize()
-    expect(g.content.style.translate).toBe('')
-    g.residual(-0.4); g.resize()
-    expect(Number.parseFloat(g.content.style.translate.split(' ')[1])).toBeCloseTo(0.4)
-    view.unmount()
-  })
-})
-describe('MessageScroller 流内源与视觉副本', () => {
-  it('严格溢出时 portal 属于同一 root 且在 log 外，源透明但保留唯一可访问文本', () => {
-    const view = render(<Fixture />)
-    const g = geometry(600.01); g.resize()
-    const decoration = g.decoration()!
-    expect(decoration.parentElement).toBe(g.root)
-    expect(decoration.closest('[role="log"]')).toBeNull()
-    expect(decoration).toHaveAttribute('aria-hidden', 'true')
-    expect(decoration).toHaveClass('pointer-events-none', 'absolute')
-    expect(decoration.style.top).toBe('568px')
-    expect(decoration.style.left).toBe('64px')
-    expect(g.source.style.opacity).toBe('0')
-    expect(g.source.style.display).toBe('')
-    expect(g.source.style.visibility).toBe('')
-    expect(g.source).not.toHaveAttribute('aria-hidden')
-    expect(screen.getAllByRole('note')).toHaveLength(1)
-    expect(screen.getAllByRole('note', { hidden: true })).toHaveLength(2)
-    view.unmount()
-  })
-  it('溢出缩回等高、源裁切和零高度时撤副本，尺寸恢复后重新显示', () => {
+  it('小数残差变化只写 scrollTop，不平移正文或隔离视口绘制', () => {
     const view = render(<Fixture />)
     const g = geometry(); g.resize()
-    expect(g.decoration()).not.toBeNull()
-    g.height(600); g.resize()
-    expect(g.decoration()).toBeNull()
-    expect(g.source.style.opacity).toBe('')
-    g.height(1_000); g.resize()
-    expect(g.decoration()).not.toBeNull()
-    g.sourceOffset(40); resize(g.source)
-    expect(g.decoration()).toBeNull()
-    expect(g.source.style.opacity).toBe('')
-    g.sourceOffset(0); resize(g.source)
-    expect(g.decoration()).not.toBeNull()
-    g.sourceHeight(0); resize(g.source)
-    expect(g.decoration()).toBeNull()
-    expect(g.source.style.opacity).toBe('')
-    g.sourceHeight(20); resize(g.source)
-    expect(g.decoration()).not.toBeNull()
-    view.unmount()
-  })
-  it('content 和 source 单独换代均清理旧副本及观察器，终止时恢复源透明度', () => {
-    const view = render(<StrictMode><LifecycleFixture /></StrictMode>)
-    let g = geometry(); g.resize()
-    for (const props of [{ contentGeneration: 1 }, { contentGeneration: 1, sourceGeneration: 1 }]) {
-      const oldSource = g.source
-      const oldDecoration = g.decoration()!
-      const oldSourceObservers = observers.filter((entry) => !entry.disconnected && entry.targets.includes(oldSource))
-      view.rerender(<StrictMode><LifecycleFixture {...props} /></StrictMode>)
-      expect(oldSource.isConnected).toBe(false)
-      expect(oldSource.style.opacity).toBe('')
-      expect(oldDecoration.isConnected).toBe(false)
-      expect(oldSourceObservers.every((entry) => entry.disconnected)).toBe(true)
-      expect(observers.filter((entry) => !entry.disconnected).every((entry) => entry.targets.every((node) => node.isConnected))).toBe(true)
-      g = geometry(); g.resize()
-      expect(g.decoration()).not.toBeNull()
-    }
-    const source = g.source
-    view.unmount()
-    expect(source.style.opacity).toBe('')
-    expect(observers.every((entry) => entry.disconnected)).toBe(true)
-    expect(mutations.every((entry) => entry.disconnected)).toBe(true)
-  })
-  it('内容增长先由 owner pin，再启用副本；持续 delta 不复制源 y 或搬动副本', () => {
-    const view = render(<Fixture />)
-    const g = geometry(600); g.resize()
-    expect(g.decoration()).toBeNull()
-    // 增长后、pin 前源落到视口下方；装饰必须等 pin 后再检查裁切。
-    g.grow()
-    expect(g.source.getBoundingClientRect().bottom).toBeGreaterThan(600)
-    g.resize()
-    expect(g.viewport.scrollTop).toBe(61.5)
-    const decoration = g.decoration()!
-    expect(decoration).not.toBeNull()
-    const initialTop = decoration.style.top
-    const initialLeft = decoration.style.left
-    const computed = vi.spyOn(globalThis, 'getComputedStyle')
-    g.rootRect.mockClear(); computed.mockClear()
-    for (const residual of [0.15, 0.65, -0.35, 0.45]) {
+    expect(g.viewport).not.toHaveClass('contain-content')
+    g.contentRect.mockClear()
+    for (const residual of [0.75, -0.4, 12]) {
       g.residual(residual); g.grow(); g.resize()
-      expect(g.decoration()).toBe(decoration)
-      expect(decoration.style.top).toBe(initialTop)
-      expect(decoration.style.left).toBe(initialLeft)
+      expect(g.viewport.scrollTop).toBe(g.viewport.scrollHeight - g.viewport.clientHeight)
+      expect(g.content.style.translate).toBe('')
+      expect(g.decoration()).toBeNull()
+      expect(screen.getAllByRole('note', { hidden: true })).toHaveLength(1)
     }
-    expect(g.rootRect).not.toHaveBeenCalled()
-    expect(computed).not.toHaveBeenCalled()
+    expect(g.row.style.position).toBe('fixed')
+    expect(g.row.style.top).toBe('568px')
     view.unmount()
   })
-  it('后置提示改变尾距时重定位，pin 后发现源已裁切则撤副本', () => {
+  it('溢出跟随只定位同一节点，阅读capture同步归流，回底不重挂文案', () => {
     const view = render(<Fixture />)
     const g = geometry(); g.resize()
-    const initialTop = Number.parseFloat(g.decoration()!.style.top)
+    const note = screen.getByRole('note')
+    expect(g.row.style.position).toBe('fixed')
+    expect(g.slot.style.height).toBe('20px')
+    expect(g.row.style.width).toBe('200px')
+    let positionAtBubble = 'not-called'
+    g.content.addEventListener('wheel', () => { positionAtBubble = g.row.style.position })
+    fireEvent.wheel(g.content, { deltaY: -1 })
+    expect(positionAtBubble).toBe('')
+    expect(g.slot.style.height).toBe('')
+    expect(screen.getByRole('note')).toBe(note)
+    fireEvent.click(screen.getByText('回底'))
+    expect(g.row.style.position).toBe('fixed')
+    expect(screen.getAllByRole('note', { hidden: true })).toEqual([note])
+    view.unmount()
+    expect(g.row.style.position).toBe('')
+  })
+  it('内容缩短归流，尾部提示和工作行高度变化使用真实尾距重新定位', () => {
+    const view = render(<Fixture />)
+    const g = geometry(); g.resize()
+    g.sourceOffset(-0.0002); g.resize()
+    expect(g.row.style.top).toBe('568px')
     g.sourceOffset(-40); g.grow(); g.resize()
-    expect(Number.parseFloat(g.decoration()!.style.top)).toBeCloseTo(initialTop - 40)
-    g.sourceOffset(-700); g.grow(); g.resize()
-    expect(g.decoration()).toBeNull()
-    expect(g.source.style.opacity).toBe('')
-    g.sourceOffset(0); g.grow(); g.resize()
-    expect(Number.parseFloat(g.decoration()!.style.top)).toBeCloseTo(initialTop)
+    expect(g.row.style.top).toBe('528px')
+    g.sourceHeight(40); resize(g.row)
+    expect(g.slot.style.height).toBe('40px')
+    expect(g.row.style.top).toBe('508px')
+    g.sourceOffset(-700); g.resize()
+    expect(g.row.style.position).toBe('')
+    g.sourceOffset(0); g.height(600); g.resize()
+    expect(g.row.style.position).toBe('')
+    expect(g.slot.style.height).toBe('')
+    g.grow(); g.resize()
+    expect(g.row.style.position).toBe('fixed')
+    expect(screen.getAllByRole('note', { hidden: true })).toHaveLength(1)
     view.unmount()
   })
-  it('工作行只运行一份计时器，副本与源数字同步且码表更新不读取几何', () => {
+  it('替换 content 后只有当前节点响应尺寸变化', () => {
+    const view = render(<StrictMode><LifecycleFixture /></StrictMode>)
+    const first = geometry(); first.resize()
+    view.rerender(<StrictMode><LifecycleFixture contentGeneration={1} /></StrictMode>)
+    expect(first.content.isConnected).toBe(false)
+    expect(observers.filter((entry) => entry.targets.includes(first.content)).every((entry) => entry.disconnected)).toBe(true)
+    const next = geometry(); next.resize()
+    const writes = next.writes()
+    resize(first.content)
+    expect(next.writes()).toBe(writes)
+    next.grow(); next.resize()
+    expect(next.viewport.scrollTop).toBe(461.5)
+    view.unmount()
+    expect(observers.every((entry) => entry.disconnected)).toBe(true)
+  })
+  it('长内容只有一个工作行和时钟，码表更新不读取几何', () => {
     vi.useFakeTimers()
     vi.setSystemTime(2_000)
     const interval = vi.spyOn(globalThis, 'setInterval')
     const clearInterval = vi.spyOn(globalThis, 'clearInterval')
     const view = render(<Fixture clock />)
     const g = geometry(); g.resize()
-    const decoration = g.decoration()!
-    const sourceDescription = g.source.querySelector('[data-slot="trace-description"]')!
-    const visualDescription = decoration.querySelector('[data-slot="trace-description"]')!
-    expect(sourceDescription).toHaveTextContent('1s')
-    expect(visualDescription.textContent).toBe(sourceDescription.textContent)
+    const description = g.source.querySelector('[data-slot="trace-description"]')!
+    expect(screen.getAllByText('工作中')).toHaveLength(1)
+    expect(description).toHaveTextContent('1.00s')
     expect(interval.mock.calls.length - clearInterval.mock.calls.length).toBe(1)
-    // 先交付库在挂载/RO 时排出的状态同步 rAF，隔离真正的码表文本更新。
     act(() => { vi.advanceTimersByTime(64) })
     g.rootRect.mockClear(); g.viewportRect.mockClear(); g.contentRect.mockClear(); g.sourceRect.mockClear()
-    // 码表 2026-11-18 起秒粒度：跨秒（+1.1s）文字才更新，更新路径仍不得读几何
-    act(() => { vi.advanceTimersByTime(1_100) })
-    expect(sourceDescription).toHaveTextContent('2s')
-    expect(visualDescription.textContent).toBe(sourceDescription.textContent)
+    act(() => { vi.advanceTimersByTime(100) })
+    expect(description).toHaveTextContent('1.10s')
     expect(g.rootRect).not.toHaveBeenCalled()
     expect(g.viewportRect).not.toHaveBeenCalled()
     expect(g.contentRect).not.toHaveBeenCalled()
     expect(g.sourceRect).not.toHaveBeenCalled()
-    expect(sourceDescription.closest('[aria-live]')).toBeNull()
-    view.unmount()
+    expect(description.closest('[aria-live]')).toBeNull()
+    view.rerender(<Fixture live={false} clock />)
+    expect(screen.queryByText('工作中')).toBeNull()
     expect(interval.mock.calls.length).toBe(clearInterval.mock.calls.length)
+    view.unmount()
   })
 })
