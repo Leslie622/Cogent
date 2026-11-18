@@ -26,9 +26,9 @@ let host: HostManager | null = null
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1120,
-    height: 720,
-    minWidth: 800,
-    minHeight: 560,
+    height: 730,
+    minWidth: 400,
+    minHeight: 600,
     show: false,
     autoHideMenuBar: true,
     title: 'Cogent',

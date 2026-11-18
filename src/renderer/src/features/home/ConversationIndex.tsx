@@ -8,7 +8,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from 'cn'
 import { useMessageScroller } from '@/components/ui/message-scroller'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import type { MessageLike } from './HomeChat'
+
+const EMPTY_ANSWERS: ReadonlyMap<string, string> = new Map()
+
+/** 摘要只保留可读纯文本，不把代码围栏、图片地址与 Markdown 标记带进窄卡片。 */
+export function conversationPreviewText(content: string): string {
+  return content.replace(/```[\s\S]*?(?:```|$)/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[#*_>`~|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 240)
+}
 
 /**
  * 对话索引轨道（参考稿动画）：短横线刻度一列，宽度/颜色 transition ——
@@ -23,7 +34,7 @@ import type { MessageLike } from './HomeChat'
  * 的"还能滚"判断在真到底时仍为真 —— 自算只有两条稳定规则：视口顶边压着的
  * 最后一条提问消息所在轮为当前；按真实 scrollHeight 口径已吸底时点亮末轮。
  */
-export function ConversationIndex({ messages }: { messages: MessageLike[] }) {
+export function ConversationIndex({ messages, answers = EMPTY_ANSWERS }: { messages: MessageLike[]; answers?: ReadonlyMap<string, string> }) {
   const { scrollToMessage } = useMessageScroller()
   // 刻度 = 每轮的提问（user 消息）；turnIds 供激活判定时从全部消息条目里筛提问。
   // turns 随 messages 每 delta 换引用（流式），但轮集合只在新增提问时真变 ——
@@ -73,39 +84,48 @@ export function ConversationIndex({ messages }: { messages: MessageLike[] }) {
 
   return (
     <div
-      className="absolute top-1/2 left-3 flex -translate-y-1/2 flex-col items-start gap-[7px]"
+      className="conversation-index absolute top-1/2 left-3 -translate-y-1/2"
       onMouseLeave={() => setHoverIndex(null)}
     >
+      <div className="flex w-6 flex-col items-start">
       {turns.map((message, index) => {
         const active = message.id === activeId
-        // 阶梯剖面：距悬停刻度 0/1/2/≥3 → 宽 24/17/14/10、色 70/50/40/25 透明度
+        // 宽度阶梯保留；降低常态与悬停色深，避免索引抢正文的注意力。
         const dist = hoverIndex === null ? null : Math.abs(index - hoverIndex)
         const [width, shade] =
           dist === null
             ? active
-              ? ['w-5', 'bg-foreground/70']
-              : ['w-2.5', 'bg-foreground/25']
+              ? ['w-5', 'bg-foreground/35']
+              : ['w-2.5', 'bg-foreground/15']
             : dist === 0
-              ? ['w-6', 'bg-foreground/70']
+              ? ['w-6', 'bg-foreground/40']
               : dist === 1
-                ? ['w-[17px]', 'bg-foreground/50']
+                ? ['w-[17px]', 'bg-foreground/30']
                 : dist === 2
-                  ? ['w-3.5', 'bg-foreground/40']
-                  : ['w-2.5', 'bg-foreground/25']
+                  ? ['w-3.5', 'bg-foreground/20']
+                  : ['w-2.5', 'bg-foreground/15']
+        const answer = conversationPreviewText(answers.get(message.id) ?? '')
         return (
-          /* 刻度条 3px 太窄不包 Hint（tooltip trigger 会给 button 挂事件与
-             data 属性行为同源，但 3px 目标上弹气泡遮相邻刻度）—— 原生 title
-             同样删除：悬停预览已有阶梯剖面 + aria-label 承载定位语义 */
-          <button
-            key={message.id}
-            type="button"
-            aria-label={`定位消息：${message.content.slice(0, 12)}`}
-            onMouseEnter={() => setHoverIndex(index)}
-            onClick={() => scrollToMessage(message.id, { align: 'center', behavior: 'smooth' })}
-            className={cn('h-[3px] rounded-full transition-all duration-200', width, shade)}
-          />
+          <HoverCard key={message.id} onOpenChange={(open) => {
+            if (open) setHoverIndex(index)
+            else setHoverIndex((current) => current === index ? null : current)
+          }}>
+            <HoverCardTrigger delay={200} closeDelay={80} render={
+              <button type="button" className="flex h-2.5 w-6 items-center" aria-label={`定位消息：${message.content.slice(0, 12)}`}
+                aria-current={active ? 'location' : undefined}
+                onMouseEnter={() => setHoverIndex(index)}
+                onClick={() => scrollToMessage(message.id, { align: 'center', behavior: 'smooth' })} />
+            }>
+              <span aria-hidden="true" className={cn('block h-[3px] rounded-full transition-all duration-200', width, shade)} />
+            </HoverCardTrigger>
+            <HoverCardContent side="right" align="center" sideOffset={12} className="max-w-[calc(100vw-2rem)]">
+              <p className="line-clamp-2 font-medium wrap-break-word">{conversationPreviewText(message.content)}</p>
+              {answer !== '' && <p className="mt-1 line-clamp-3 leading-relaxed wrap-break-word text-muted-foreground">{answer}</p>}
+            </HoverCardContent>
+          </HoverCard>
         )
       })}
+      </div>
     </div>
   )
 }

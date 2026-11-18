@@ -41,7 +41,7 @@
 :root {
   --radius: 0.625rem;
   /* 内容卡圆角（卡片自描边 border-l 天然贴弧线走，分屏线不单独画） */
-  --shell-radius: 1rem;
+  --shell-radius: var(--radius-xl);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -554,6 +554,114 @@
 /* base-luma 空引用补齐第二批：message-scroller 视口引用，滚动条不占布局跳动 */
 .scrollbar-gutter-stable {
   scrollbar-gutter: stable;
+}
+
+/* 主体宽度由聊天面板裁决，侧栏/标签页改变宽度时无需 JS 测量。
+   cqw 统一正文和输入框的列宽，双侧 gutter 抵消滚动条对中心线的偏移。 */
+.home-chat {
+  container: home-chat / inline-size;
+}
+
+.chat-column {
+  /* 留白与输入框外扩都随聊天面板连续变化，分屏时不保留宽屏的固定占位。 */
+  --chat-column-width: min(48rem, calc(100cqw - 2 * clamp(28px, 8cqw, 64px)));
+  --chat-composer-outset: clamp(6px, calc((100cqw - 320px) / 16), 20px);
+  width: var(--chat-column-width);
+  margin-inline: auto;
+}
+
+.chat-composer-column {
+  width: calc(var(--chat-column-width) + 2 * var(--chat-composer-outset));
+}
+
+.composer-toolbar,
+.composer-actions {
+  flex-wrap: wrap;
+}
+
+.composer-actions {
+  gap: clamp(4px, 1.5cqw, 12px);
+}
+
+.composer-model-trigger {
+  max-width: min(16rem, 28cqw);
+}
+
+.composer-model-trigger .composer-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.context-wide {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.context-ring {
+  display: none;
+}
+
+.app-header-compact {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .app-header-wide {
+    display: none;
+  }
+
+  .app-header-compact {
+    display: block;
+  }
+}
+
+@container home-chat (width <= 640px) {
+  .composer-label,
+  .composer-chevron,
+  .context-wide {
+    display: none;
+  }
+
+  .context-ring {
+    display: block;
+  }
+
+  .composer-model-trigger {
+    max-width: none;
+  }
+}
+
+.chat-viewport {
+  scrollbar-gutter: stable both-edges;
+}
+
+/* 刻度保留固定内宽，由外壳裁切到零；先播完收拢，再从焦点导航中隐藏。 */
+.conversation-index {
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: width 200ms ease-out, opacity 200ms ease-out, visibility 0s linear 200ms;
+}
+
+/* 按聊天面板实际宽度判断；760px 本身仍收起。 */
+@container home-chat (width > 760px) {
+  .conversation-index {
+    width: 24px;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition-delay: 0s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-index {
+    transition: none;
+  }
 }
 
 /* message-scroller 视口自带 Tailwind v4.1 的 scrollbar 工具类，两处都会绕过

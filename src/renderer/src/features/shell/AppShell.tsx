@@ -36,16 +36,20 @@ import {
   useContentSidebarSplit,
 } from '@/hooks/use-content-sidebar-split'
 import { useUiStore, VIEW_LABELS } from '@/stores/ui'
+import { useWindowMediaQuery } from '@/hooks/use-window-media-query'
 
 export function AppShell() {
   // content-sidebar 分栏：像素宽状态机 + localStorage 记忆，机制全在 hook；
   // 此处只接线（拖拽直写/提交、折叠开关）
   const sidebar = useContentSidebarSplit()
   const view = useUiStore((s) => s.view)
+  const sidebarAutoCollapsed = useWindowMediaQuery('(max-width: 760px)')
+  // 自动约束只叠加在呈现层，不能回写用户的手动开合与宽度记忆。
+  const sidebarCollapsed = sidebarAutoCollapsed || sidebar.collapsed
 
   return (
     <div className="chrome-surface flex h-dvh flex-col text-sidebar-foreground">
-      <AppHeader sidebarCollapsed={sidebar.collapsed} onToggleSidebar={sidebar.toggle} />
+      <AppHeader sidebarCollapsed={sidebarCollapsed} sidebarToggleDisabled={sidebarAutoCollapsed} onToggleSidebar={sidebar.toggle} />
       <div className="flex min-h-0 flex-1">
         {/* 应用侧栏：上/下两组路由钮（chrome 底色与 header 融合） */}
         <AppSidebar />
@@ -61,8 +65,9 @@ export function AppShell() {
             <div
               ref={sidebar.clipRef}
               data-sidebar-clip
+              inert={sidebarCollapsed}
               className="h-full w-0 shrink-0 overflow-hidden bg-content-sidebar transition-[width] duration-200 ease-out"
-              style={{ width: sidebar.collapsed ? 0 : sidebar.widthPx }}
+              style={{ width: sidebarCollapsed ? 0 : sidebar.widthPx }}
             >
               {/* 内容层：固定像素宽（min-w-60 = 下限 240px 兜底）。content-sidebar
                   内容随 AppView 换：首页（件 4）与设置（件 6）已落地，其余视图
@@ -81,14 +86,14 @@ export function AppShell() {
             </div>
             {/* 自绘拖拽条：样式/光带/状态机与 GlowResizeHandle 同构；拖过下限
                 折叠成 0、再向外拖恢复、键盘 ±16、双击回默认 */}
-            <SidebarResizeHandle
+            {!sidebarAutoCollapsed && <SidebarResizeHandle
               min={SIDEBAR_WIDTH_MIN}
               max={SIDEBAR_WIDTH_MAX}
               readWidth={sidebar.readWidth}
               writeWidth={sidebar.writeWidth}
               onCommit={sidebar.commit}
               onReset={sidebar.reset}
-            />
+            />}
             {/* content-main：flex-1 吃剩余宽度，窗口缩放增量全在这。
                 内容随 AppView 换：首页（HomeMain，件 5 —— 内部再分
                 [主要区 | 标签页区]）与设置（SettingsMain，件 6）已落地 */}

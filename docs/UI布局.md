@@ -5,6 +5,8 @@
 
 ## 布局结构
 
+主窗口由 Electron 限制最小尺寸为 400×600px；初始尺寸为 1120×730px。
+
 ```text
 shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗口控制
        └─ body
@@ -18,12 +20,15 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 
 - header 的“运行时控制台”和“内嵌页面”入口位于“帮助”右侧，使用中文文字按钮
   （Button ghost / sm），不配图标；与前四个菜单按钮同处一个 `gap-1` 容器，
-  统一 `h-7 px-2`，不额外加左间距。
+  统一 `h-7 px-2`，不额外加左间距；窗口 ≤760px 时文字菜单收进“应用菜单”，保留窗口控制三钮。
 - `content-sidebar` 是普通 flex 像素宽块，不进 react-resizable-panels（RRP）；
   CSS 保证缩放时像素宽稳定，避免百分比尺寸经 JS 校正产生脏帧。
 - `SidebarResizeHandle` 使用 pointer capture + rAF 直写宽度；拖过下限有阻力，
   越过 min/2 折叠，反向对称恢复；键盘 ±16px，双击回默认。
 - `use-content-sidebar-split` 记忆宽度/折叠态，首帧直接还原；只在用户手势后落盘。
+- 窗口 ≤1100px 自动折叠右侧标签页区，≤760px 自动折叠会话侧栏；400px 时内容区
+  仅显示对话。自动约束不写入手动布局记忆，放宽后恢复原开合/宽度，手动关闭的栏仍关闭；
+  自动收起期间禁用展开入口与分割线，收起内容 inert。窗口断点由 `use-window-media-query` 订阅。
 - HomeMain 内部分屏是百分比语义，使用 RRP v4 + `GlowResizeHandle`；
   折叠后把手贴缘可展开抓取，按钮通过 `usePanelRef` 的 collapse/expand 操作。
 - 路由是 `stores/ui` 的 AppView；`stores/home` 管首页会话，`stores/settings`
@@ -39,7 +44,7 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 | 行内小钮 | 白卡上 hover `/5`，已有行底上 `/15` |
 | 文字 | 实色 token；次级 `muted-foreground`，placeholder `--placeholder`；层级靠实色深浅 |
 | 语义色 | destructive 错误红；warning 琥珀 `oklch(0.666 0.155 70)`；chrome-accent 品牌蓝 `#0231fa` |
-| 圆角 | 大卡 24px、设置组卡 12px、行 6px、信息区条只圆上两角 |
+| 圆角 | 内容主体左上角 `--radius-xl`；输入框 `InputGroup` 原生 `rounded-lg`；发送/停止钮 `Button icon-sm` 原生圆角；其余按组件变体，信息区条只圆上两角 |
 | 字号 | 页面标题 24/semibold、侧栏标题 16/semibold、行标题 14/medium、正文与说明 13、时间 11–12 |
 | 字体 | Inter + HarmonyOS Sans SC；代码 JetBrains Mono，中文注释回落鸿蒙；13px 中文用 400 |
 
@@ -73,7 +78,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 | 聊天重命名 | 聊天右键菜单“重命名”打开 Dialog + Input；预填并聚焦全选；原生取消/保存按钮，Enter 保存、Esc 关闭；错误留在弹窗 |
 | 侧栏折叠 | `CollapsibleContent variant="navigation"`，200ms ease-out；keepMounted，收起 inert，结束后 hidden |
 | 等待确认 tag | 占行尾动作簇的位置，常显；emerald `/15` 背景 + 实色深绿文字 + 小呼吸点 |
-| 输入区 | 白卡 rounded-3xl、薄边、无投影、聚焦无反馈；新聊天上方显示项目信息区 |
+| 输入区 | 白卡、InputGroup 原生圆角、薄边、无投影、聚焦无反馈；新聊天上方显示项目信息区 |
 | 底部工具行 | +、权限、计划 chip、上下文、模型；Button xs 原生档，h-7，与发送钮同高；图标 17px |
 | 项目胶囊 | 触发钮内左图标原位交叉渐变为 X；16px 定宽叠层，不能另起独立关闭钮 |
 | 会话信息卡 | 项目会话标题整体用非交互 span 触发 hover-card，延迟 400ms；标题全文、项目/主根、最近活动 |
@@ -90,6 +95,10 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   `SwitchModeDropdown` 复用它，内容宽至少 min-w-56；触发钮无常态背景，箭头继承文字色。
 - 权限菜单顶部是独立计划开关项，其后分隔线再列三档权限；开启时输入区显示
   浅灰 PlanToggle chip + h-4 矮竖线，hover 浮现 ×，关闭后整组消失。
+- 输入卡工具行以聊天面板宽度做容器查询：≤640px 时权限仅显示档位图标，
+  上下文显示无数值圆环，模型仅显示厂商图标；计划 chip 也只留图标。
+  图标按钮保留完整 aria-label 与原菜单/详情入口。宽态模型名称超长省略，
+  间距随面板宽度缩小；极窄时工具组换行，不能裁掉发送按钮。
 - FullAccessConfirm 用 alert-dialog + checkbox；权限卡列文件/终端，确认钮为
   destructive。每次打开重置勾选；所有切完全访问入口共用这一闸门。
 - TodoStrip 条目完成态绿勾/划线灰字，进行中深色，待办虚线圈；内容 max-h-56。
@@ -124,7 +133,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 功能、所有权与事件顺序见 [消息呈现](模块/消息呈现.md)，原理见
 [流式呈现动效](技术笔记/流式呈现动效.md)，真机矩阵见 [消息验收](测试用例/消息呈现.md)。
 
-- 用户消息灰气泡，助手平铺；消息段和过程行统一 `gap-3`、左缘零缩进。
+- 用户消息灰气泡，助手平铺；消息段和过程行统一 `gap-3`、回合容器左右零内边距。
   空正文不挂容器，避免纯思考段多吃间距。
 - 运行态过程单行化，工作行位于流底，图标是 `WorkingSpinner` 三叶动效，
   配标题扫光和 tabular-nums 码表；停止在途文字为“正在停止”。
@@ -141,8 +150,19 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   keepMounted，折叠体内部不套 content-visibility 包装。
 - 消息流保留库布局/回底钮，关闭库 autoScroll，跟随由本地 controller 独占。
   工作行只渲染一份；跟随溢出时同节点定位，阅读时归流；不加残差 translate/viewport containment。
-- 对话索引每消息一刻度，激活项按真实视口/scrollHeight 自算；hover 宽度阶梯
-  24/17/14/10px。库的 visibility/scrollable 快照不作为索引判断源。
+- 正文与输入卡共用 `.chat-column` 的水平基准：正文最大 48rem，双侧留白按
+  `clamp(28px,8cqw,64px)` 连续变化；输入卡每侧外扩按
+  `clamp(6px,(100cqw−320px)/16,20px)` 连续变化，宽度充裕时各超出 20px，
+  窄面板逐步收敛至 6px，两者始终同轴。消息视口用双侧稳定滚动条槽，避免单侧占位推偏正文；
+  留白需覆盖滚动条槽并保留正文呼吸空间，不能只验证列宽相差 20px 而忽略真实视口裁切。
+- 对话索引每轮提问一刻度，激活项按真实视口/scrollHeight 自算；hover 宽度阶梯
+  24/17/14/10px；常态刻度 15%、激活 35%，hover 阶梯 40/30/20/15% 前景透明度。
+  200ms 悬停后显示右侧 HoverCard：问题最多两行、已完成回答摘要最多三行；
+  生成中、停止、失败回合只显示问题，摘要剥除 Markdown 标记并压平空白。
+  索引在正文列外的左侧留白，按 `home-chat` 容器宽度判断：
+  大于 760px 时显示，760px 及以下外壳宽度 24→0px、透明度 1→0，200ms ease-out；结束后隐藏，
+  立即停止指针命中，恢复宽度时反向展开。reduced-motion 直接切换。
+  库的 visibility/scrollable 快照不作为索引判断源。
 - 用量行位于正文 footer，`text-[11px] text-muted-foreground tabular-nums`；
   显示输入/输出/缓存/成本/耗时，零值和无数据项省略，格式机制见 [用量与成本](模块/用量与成本.md)。
 - Markdown 使用 Streamdown + Shiki + CJK；链接阻止窗口内导航，再 window.open。

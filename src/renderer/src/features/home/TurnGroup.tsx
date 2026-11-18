@@ -337,7 +337,7 @@ function TurnGroupImpl({ turn, phase, stopping = false }: { turn: ChatTurn; phas
             <MessageRow message={turn.user} />
           </MessageScrollerItem>
         )}
-        <div className="flex min-w-0 flex-col gap-3 pr-1">
+        <div className="flex min-w-0 flex-col gap-3">
           {turn.items.map((item, index) => (
             <MessageScrollerItem key={itemKeys[index]} messageId={item.id}>
               {item.type === undefined && item.role === 'assistant' ? (
@@ -371,7 +371,7 @@ function TurnGroupImpl({ turn, phase, stopping = false }: { turn: ChatTurn; phas
         {/* 与 live 同一个平级容器 + 段 key 对齐 = 终答行跨终态保留旧 DOM；
             RunTrace 显式 key：容器子级在 live 是段/工具 key 数组，隐式位置
             匹配会有歧义 */}
-        <div className="flex min-w-0 flex-col gap-3 pr-1">
+        <div className="flex min-w-0 flex-col gap-3">
           <RunTrace key="trace" phase="done" durationMs={turnDurationMs(turn)} />
           {answerOriginal !== undefined && (
             <MessageScrollerItem key={tailKey} messageId={answerOriginal.id}>
@@ -392,7 +392,7 @@ function TurnGroupImpl({ turn, phase, stopping = false }: { turn: ChatTurn; phas
           <MessageRow message={turn.user} />
         </MessageScrollerItem>
       )}
-      <div className="flex min-w-0 flex-col gap-3 pr-1">
+      <div className="flex min-w-0 flex-col gap-3">
         {/* 折叠体条目**不套** MessageScrollerItem：那会给每条挂
             content-visibility:auto —— 开合动画期间条目随裁切边缘进出
             渲染态、10rem 占位翻真实高度，grid 轨道分母（= 内容自然高度）

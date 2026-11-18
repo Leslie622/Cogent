@@ -188,9 +188,9 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
       >
         {/* 档位图标 17px（2026-11-16 与模型触发钮厂商标同步定 17；曾 size-4.5=18） */}
         <TriggerIcon className="size-[17px]" strokeWidth={2.25} />
-        {MODES[current].label}
+        <span className="composer-label">{MODES[current].label}</span>
         {/* 箭头不单独给色 —— 继承按钮主体色，与主体统一；随主体大一号（14→15px） */}
-        <IconChevronDown className="size-3.5" />
+        <IconChevronDown className="composer-chevron size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="min-w-64">
         {/* 计划开关置顶（toggle 语义）；分割线隔开开关组与档位组 —— 线从原

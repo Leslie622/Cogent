@@ -61,8 +61,8 @@ export function ModelMenu() {
           <Button
             variant="ghost"
             size="xs"
-            className="h-7 gap-1.5 px-2 text-[13px] text-muted-foreground has-[>svg]:px-2 hover:bg-accent-foreground/5 hover:text-foreground"
-            aria-label="选择模型"
+            className="composer-model-trigger h-7 gap-1.5 px-2 text-[13px] text-muted-foreground has-[>svg]:px-2 hover:bg-accent-foreground/5 hover:text-foreground"
+            aria-label={active ? `选择模型：${active.id}` : '选择模型'}
           />
         }
       >
@@ -74,14 +74,14 @@ export function ModelMenu() {
                 18 曾显小是 Button svg 兜底钉 16 的假象，ProviderLogo 本体修复后
                 才真正生效）。菜单内行标仍 16 不动，只调工具行这处 */}
             <ProviderLogo providerId={active.provider} name={providerDisplayName(active.provider, customProviders)} size={17} />
-            {active.id}
+            <span className="composer-label">{active.id}</span>
           </>
         ) : usable.length > 0 ? (
-          '选择模型'
+          <><IconCube className="size-[17px]" /><span className="composer-label">选择模型</span></>
         ) : (
-          '配置模型'
+          <><IconSettingsAi className="size-[17px]" /><span className="composer-label">配置模型</span></>
         )}
-        <IconChevronDown className="size-3.5" />
+        <IconChevronDown className="composer-chevron size-3.5" />
       </DropdownMenuTrigger>
       {/* w-auto 覆写原语的 w-(--anchor-width)（锚点是小圆钮，菜单会被压窄裁行）；
           size=lg：内容型菜单放大档（原语本体，2026-11-16 —— 曾在调用点逐项

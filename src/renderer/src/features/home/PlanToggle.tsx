@@ -51,6 +51,7 @@ export function PlanToggle({ session }: { session: HomeSession }) {
         <Button
           variant="ghost"
           size="xs"
+          aria-label="关闭计划模式"
           onClick={close}
           className={cn(
             // pl-1：左内距压半（8→4px）—— 与分隔线/权限钮组的收紧（三块紧凑）；
@@ -59,9 +60,9 @@ export function PlanToggle({ session }: { session: HomeSession }) {
           )}
         >
           <IconClipboardList className="size-4.5" strokeWidth={2.25} />
-          计划
+          <span className="composer-label">计划</span>
           <IconX
-            className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100"
+            className="composer-chevron size-3.5 opacity-0 transition-opacity group-hover:opacity-100"
             aria-label="关闭计划模式"
           />
         </Button>

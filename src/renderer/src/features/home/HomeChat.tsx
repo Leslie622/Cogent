@@ -108,6 +108,7 @@ function ChatHeader({
   project,
   lastActiveAt,
   tabsCollapsed,
+  tabsToggleDisabled,
   onToggleTabs,
 }: {
   title: string
@@ -116,6 +117,7 @@ function ChatHeader({
   /** 同项目各会话的最近更新时间（毫秒）；无记录不显活动行 */
   lastActiveAt?: number
   tabsCollapsed: boolean
+  tabsToggleDisabled?: boolean
   onToggleTabs: () => void
 }) {
   return (
@@ -183,6 +185,7 @@ function ChatHeader({
           size="icon-sm"
           className={cn(HOVER, 'text-muted-foreground')}
           aria-label={tabsCollapsed ? '展开标签页区' : '折叠标签页区'}
+          disabled={tabsToggleDisabled}
           onClick={onToggleTabs}
         >
           {tabsCollapsed ? (
@@ -223,26 +226,32 @@ function ChatMessages() {
   const turns = groupTurns(messages)
   const terminalPhase = (outcome: SessionBucket['runtime']['lastRunOutcome'] | undefined): TurnPhase =>
     outcome === 'stopped' ? 'stopped' : outcome === 'failed' ? 'failed' : 'done'
+  // 索引只预览已完成回合的末段回答；工具间已封段的正文也不能冒充最终回答。
+  const indexAnswers = new Map<string, string>()
+  for (const turn of turns) {
+    if (turn.user === undefined || (turn === turns.at(-1) && running) || terminalPhase(turnOutcomes[turn.user.id]) !== 'done') continue
+    const answer = turn.items.findLast((item) => item.type === undefined && item.role === 'assistant' && !item.placeholder && item.content.trim() !== '')
+    if (answer !== undefined && answer.type === undefined) indexAnswers.set(turn.user.id, answer.content)
+  }
   // 段间排期接力种子：随活动会话更换（切会话时消息全部重挂，旧段排期自然作废）
   const revealPacing = useMemo(() => createStreamingRevealPacing(), [activeSessionId])
 
   return (
     <RevealPacingContext.Provider value={revealPacing}>
     <MessageScroller className="min-h-0 flex-1">
-      <MessageScrollerViewport>
+      <MessageScrollerViewport className="chat-viewport">
         {/* select-text：对话正文是正文类内容（AGENTS.md 方针 5 的首个放开点）。
             放开区里的 chrome 行在行上收回 select-none（TraceLine 轨迹行族 /
             用量行 / 时间戳）—— 放开的是正文，不是行头。
-            内边距给索引轨道留固定 gutter：pl-16 = 轨道(左 12px + 刻度最宽 24px)
-            + 28px 呼吸间隙（此前 pl-11 只剩 8px，刻度紧贴文字，用户反馈太近）
-            —— 面板窄时（列宽顶到 max-w-3xl）文字也不会贴轨道/边缘。
+            正文与输入框共用 chat-column，索引仅使用列外留白；留白不足时收起，
+            不靠正文单侧 padding 给索引让位，避免正文与输入框中心线错开。
             回合 = 视觉单元：外层 gap-6 隔回合，回合内 gap-3 紧凑成组。顶层
             条目（user/终答/live 过程行）挂 scroller item 供刻度/定位按
             messageId 查表；终态折叠体内的过程条目不挂 —— content-visibility
             会扰动开合动画的轨道分母（见 TurnGroup 终态分支） */}
         <MessageScrollerContent
           style={themeVars}
-          className="mx-auto w-full max-w-3xl gap-6 py-6 pr-6 pl-16 select-text"
+          className="chat-column gap-6 py-6 select-text"
         >
           {turns.map((turn) => (
             // key：user 有则用 user；无 user 头组取首项 id（D9 保留式下压缩条
@@ -299,7 +308,7 @@ function ChatMessages() {
         </MessageScrollerContent>
       </MessageScrollerViewport>
       {/* 索引轨道只标注内容消息（工具卡不是刻度目标，过滤掉） */}
-      <ConversationIndex messages={messages.filter((m): m is MessageLike => m.type !== 'tool')} />
+      <ConversationIndex messages={messages.filter((m): m is MessageLike => m.type !== 'tool')} answers={indexAnswers} />
       {/* 非底部时浮现的"滚到底部"圆钮，message-scroller 现成 */}
       <MessageScrollerButton />
     </MessageScroller>
@@ -309,7 +318,7 @@ function ChatMessages() {
 
 /**
  * 底部输入区：输入卡上方灰条（项目会话信息区，新聊天限定）+
- * 输入卡（24px 圆角白卡 + 极浅 1px 边，聚焦无反馈）：Enter 发送（isComposing
+ * 输入卡（InputGroup 原生圆角白卡 + 极浅 1px 边，聚焦无反馈）：Enter 发送（isComposing
  * 挡输入法误发）、流式中发送钮变停止钮（agent.abort）、底部工具行 = 裸 +
  * 附件 / 权限模式菜单 / 上下文指示器 / 模型下拉（ModelMenu）/ 发送。
  * 输入草稿是 props（提升到 HomeChat 层持有）：待审批时本组件整体被
@@ -398,8 +407,8 @@ function ChatComposer({
   }
 
   return (
-    <div className="shrink-0 px-4 pb-4">
-      <div className="mx-auto w-full max-w-3xl">
+    <div className="shrink-0 pb-4">
+      <div className="chat-column chat-composer-column">
         {/* 灰舌头（项目会话信息区）：见函数头注释 —— 新聊天限定。
             项目归属 = 只显项目卡（名称 + 悬停见全部根路径）——项目必含目录，
             再出目录卡是重复信息（用户实测：项目叫 Cogent、目录 basename 也叫
@@ -438,8 +447,8 @@ function ChatComposer({
             整组被 :has(:disabled) 命中像盖了层灰蒙版（打字才散）——置灰语义
             该只落在发送钮自己身上（Button 自带 disabled 样式），组级这两条压掉；
             ③ 聚焦态 border-ring + ring-3 光晕，参考稿聚焦无变化。
-            另带 textarea 的组默认 rounded-2xl，压回 rounded-3xl */}
-        <InputGroup className="rounded-3xl border-foreground/10 bg-background has-[>textarea]:rounded-3xl has-[[data-slot=input-group-control]:focus-visible]:border-foreground/10 has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-disabled:bg-background has-disabled:opacity-100 dark:bg-background dark:has-disabled:bg-background">
+            圆角沿用 InputGroup 原生 rounded-lg，与项目输入控件同源。 */}
+        <InputGroup className="border-foreground/10 bg-background has-[[data-slot=input-group-control]:focus-visible]:border-foreground/10 has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-disabled:bg-background has-disabled:opacity-100 dark:bg-background dark:has-disabled:bg-background">
           <InputGroupTextarea
             value={value}
             onChange={(event) => setValue(event.target.value)}
@@ -455,7 +464,7 @@ function ChatComposer({
           />
           {/* gap-1：工具行三块（+ / 权限钮 / 计划 chip）紧凑（2026-11-16 用户
               定调，曾 gap-2 偏松）；分隔线自身 mx 已归零由本 gap 接管间距 */}
-          <InputGroupAddon align="block-end" className="gap-1 p-2">
+          <InputGroupAddon align="block-end" className="composer-toolbar gap-1 p-2">
             {/* + 号：icon-xs 的 size-6 定宽改成 h-7 w-auto + px-2（与右侧文字钮
                 同为 8px 水平内距，行内对齐）；圆角走 xs 档原生，不覆写 */}
             <InputGroupButton
@@ -469,19 +478,18 @@ function ChatComposer({
                 （正交开关 v3：chip 常显开关态，菜单项等价入口，两处同源同步） */}
             <PermissionMenu session={session} />
             <PlanToggle session={session} />
-            <div className="ml-auto flex items-center gap-3">
+            <div className="composer-actions ml-auto flex min-w-0 items-center gap-3">
               {/* 上下文指示器紧邻模型下拉：分母（contextWindow）跟着模型走 */}
               <ContextIndicator session={session} />
               <ModelMenu />
               {/* 发送/停止双态：流式中变方块停止钮（abort 后 store 由 run.* 事件复位）。
-                  发送 28px 石墨灰圆 + 白箭头（视觉 diff 定稿：低饱和石墨灰、比
-                  36px 小一档），空输入置灰；cursor-pointer（2026-11-16 用户定调，
+                  图标按钮沿用 icon-sm 圆角档；空输入置灰；cursor-pointer（2026-11-16 用户定调，
                   Button 原语默认 cursor-default）；Hint 文案按双态切换 */}
               {running ? (
                 <Hint tip="停止" side="top">
                   <Button
                     size="icon-sm"
-                    className="size-7 cursor-pointer rounded-full bg-foreground/85 hover:bg-foreground"
+                    className="size-7 cursor-pointer bg-foreground/85 hover:bg-foreground"
                     aria-label="停止"
                     onClick={() => void abort()}
                   >
@@ -497,7 +505,7 @@ function ChatComposer({
                        （Hint 外层接住 pointer 事件），显式声明禁用光标；允许
                        pointer 事件穿透到钮上是安全的 —— button disabled 属性
                        本身就不派发 click */
-                    className="size-7 cursor-pointer rounded-full bg-foreground/85 hover:bg-foreground disabled:pointer-events-auto disabled:cursor-not-allowed disabled:hover:bg-foreground/85"
+                    className="size-7 cursor-pointer bg-foreground/85 hover:bg-foreground disabled:pointer-events-auto disabled:cursor-not-allowed disabled:hover:bg-foreground/85"
                     aria-label="发送"
                     disabled={!value.trim()}
                     onClick={send}
@@ -516,9 +524,11 @@ function ChatComposer({
 
 export function HomeChat({
   tabsCollapsed,
+  tabsToggleDisabled,
   onToggleTabs,
 }: {
   tabsCollapsed: boolean
+  tabsToggleDisabled?: boolean
   onToggleTabs: () => void
 }) {
   const session = useHomeStore((s) => s.session)
@@ -558,12 +568,13 @@ export function HomeChat({
   )
   const [draft, setDraft] = useState('')
   return (
-    <div className="flex h-full min-w-0 flex-col">
+    <div className="home-chat flex h-full min-w-0 flex-col">
       <ChatHeader
         title={title}
         project={project}
         lastActiveAt={lastActiveAt}
         tabsCollapsed={tabsCollapsed}
+        tabsToggleDisabled={tabsToggleDisabled}
         onToggleTabs={onToggleTabs}
       />
       {/* 吸底跟随不走库 autoScroll（已关）：其 RO→rAF→scrollTo 链路慢一帧，

@@ -14,7 +14,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { EMPTY_MESSAGES, useChatStore, selectCompacting } from '@/stores/chat'
+import { EMPTY_MESSAGES, useChatStore } from '@/stores/chat'
 import { findActiveModel, useEngineStore } from '@/stores/engine'
 import type { HomeSession } from '@/stores/home'
 import type { MessageUsage } from '@/env.d'
@@ -137,11 +137,9 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
     findActiveModel(s.models, s.keyConfigured, s.activeModelId, s.activeProviderId)
   )
   const contextWindow = activeModel?.contextWindow ?? 0
-  // 有效压缩触发占比：引擎随目录下发，预警线/变色带/说明行三处
+  // 有效压缩触发占比：引擎随目录下发，预警线与变色带共用；
   // 共用；老目录无字段回落 0.9
   const compactThreshold = activeModel?.compactionThresholdRatio ?? COMPACT_THRESHOLD_FALLBACK
-  // 压缩进行中：手动入口的禁用位（会话级护栏，引擎侧另有一道）
-  const compacting = useChatStore(selectCompacting)
 
   const { used, cacheHit, estimate, approximate } = useMemo(() => {
     let usage: MessageUsage | undefined
@@ -245,13 +243,20 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
           <Button
             variant="ghost"
             size="xs"
-            className="h-7 gap-1.5 px-2 text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
-            aria-label="上下文窗口用量"
+            className="composer-context-trigger h-7 gap-1.5 px-2 text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
+            aria-label={`上下文窗口用量：${pctLabel}%`}
           />
         }
       >
-        <ContextBar pct={pct} tone={tone} warnAt={compactThreshold} className="h-1.5 w-20" />
-        <span className="text-xs tabular-nums">{pctLabel}%</span>
+        <span className="context-wide">
+          <ContextBar pct={pct} tone={tone} warnAt={compactThreshold} className="h-1.5 w-20" />
+          <span className="text-xs tabular-nums">{pctLabel}%</span>
+        </span>
+        {/* 窄态仍可查看详情，圆环只压缩呈现面积，沿用同一占用比例和预警阈值。 */}
+        <svg className={cn('context-ring size-[18px] -rotate-90', pct >= compactThreshold ? 'text-destructive' : pct >= compactThreshold - 0.15 ? 'text-warning' : 'text-foreground')} viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="2" opacity="0.15" />
+          <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="2" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - pct * 100} />
+        </svg>
       </PopoverTrigger>
       {/* 全卡字号与间距（2026-11-11 用户多轮定调收敛）：标题 13px semibold、
           明细/缓存行 12px、右上数值 11px；卡内 p-3.5；进度条 → 明细**无分割线**
@@ -285,25 +290,6 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
             </span>
           </div>
         )}
-        {/* 压缩说明行：解释横条刻度的含义 —— 越线后下一条消息前自动
-            压缩，回落动画即压缩产物（分子切 tokensAfter 估算）。百分比 = 有效
-            触发线（随模型下发，小窗前移），四舍五入整显 */}
-        <div className="mt-3 flex items-center gap-1.5 border-t pt-3 text-xs text-muted-foreground">
-          <span className="h-1.5 w-px bg-foreground/40" aria-hidden="true" />
-          越过 {Math.round(compactThreshold * 100)}% 自动压缩上下文
-        </div>
-        {/* 手动压缩入口：session.compact 已通协议，此处补
-            UI 面 —— 无可压缩（刚压过/内容不足）引擎报错落 chat store 错误条；
-            压缩中按钮禁用（会话级护栏引擎侧也有） */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mt-2 w-full justify-center rounded-lg text-xs text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
-          disabled={compacting}
-          onClick={() => void useChatStore.getState().compactNow()}
-        >
-          {compacting ? '压缩中…' : '立即压缩上下文'}
-        </Button>
       </PopoverContent>
     </Popover>
   )

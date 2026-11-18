@@ -18,12 +18,14 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconMinus,
+  IconMenu2,
   IconSquare,
   IconX,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties
 /** chrome 面上的 ghost hover 覆盖（见文件头注释）：黑低透明度软叠（同 ChatGPT
@@ -35,9 +37,11 @@ const MENUS = ['文件', '编辑', '视图', '帮助'] as const
 
 export function AppHeader({
   sidebarCollapsed,
+  sidebarToggleDisabled = false,
   onToggleSidebar,
 }: {
   sidebarCollapsed: boolean
+  sidebarToggleDisabled?: boolean
   onToggleSidebar: () => void
 }) {
   const [maximized, setMaximized] = useState(false)
@@ -49,7 +53,7 @@ export function AppHeader({
     /* 内容整体降一档灰（用户定的规则：头部图标/文字不用主字体色，与 rail
        未激活图标同档；hover 经 CHROME_HOVER 加深作反馈，关闭钮红底白字不变） */
     <header
-      className="flex h-10 shrink-0 items-center pr-2 text-muted-foreground"
+      className="app-header flex h-10 shrink-0 items-center pr-2 text-muted-foreground"
       style={{ WebkitAppRegion: 'drag' } as CSSProperties}
     >
       <div className="flex items-center gap-2 pl-2" style={NO_DRAG}>
@@ -60,6 +64,7 @@ export function AppHeader({
             className={CHROME_HOVER}
             aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
             onClick={onToggleSidebar}
+            disabled={sidebarToggleDisabled}
           >
             {sidebarCollapsed ? (
               <IconLayoutSidebarLeftExpand className="size-[19px]" />
@@ -68,7 +73,7 @@ export function AppHeader({
             )}
           </Button>
         </Hint>
-        <nav className="flex items-center gap-1">
+        <nav className="app-header-wide flex items-center gap-1">
           {MENUS.map((label) => (
             <Button
               key={label}
@@ -98,6 +103,19 @@ export function AppHeader({
             内嵌页面
           </Button>
         </nav>
+        <div className="app-header-compact">
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="应用菜单" className={CHROME_HOVER} />}>
+              <IconMenu2 />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-auto min-w-40" align="start">
+              {MENUS.map((label) => <DropdownMenuItem key={label}>{label}</DropdownMenuItem>)}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => void window.cogent.openConsole()}>运行时控制台</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void window.cogent.openEmbedded()}>内嵌页面</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* 窗口控制三钮：gap-1.5（2026-11-16 用户定调两轮拉开：0.5→1→1.5）+ Hint */}

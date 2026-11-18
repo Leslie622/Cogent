@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8">
+  <title>400px 应用分栏回归</title>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import RefreshRuntime from '/@react-refresh';
+      RefreshRuntime.injectIntoGlobalHook(window);
+      window.$RefreshReg$ = () => {};
+      window.$RefreshSig$ = () => (type) => type;
+      window.__vite_plugin_react_preamble_installed__ = true;
+      // 验收会点击真实折叠开关，布局记忆只写隔离内存，不能改用户的 localStorage。
+      const memory = new Map();
+      Object.defineProperty(window, 'localStorage', { value: {
+        getItem: (key) => memory.get(key) ?? null,
+        setItem: (key, value) => memory.set(key, String(value)),
+        removeItem: (key) => memory.delete(key),
+        clear: () => memory.clear(),
+        key: (index) => [...memory.keys()][index] ?? null,
+        get length() { return memory.size; },
+      } });
+      await import('./shell-layout.browser.tsx');
+    </script>
+  </body>
+</html>
