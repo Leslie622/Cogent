@@ -22,6 +22,7 @@
     "tests/host/**/*",
     "tests/integration/**/*",
     "tests/shared/**/*",
+    "tests/browser-harness.config.ts",
     "electron.vite.config.ts",
     "src/electron/**/*",
     "src/host/**/*",
