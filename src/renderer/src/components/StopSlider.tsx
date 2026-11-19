@@ -78,8 +78,8 @@ export function StopSlider({
   // 拇指的挂载动画抑制开关（2026-11-16）：slider 原语基类的过渡清单含
   // inset-inline-start/transform，弹窗每次打开全新挂载时拇指（竖条）从 0%
   // 滑到目标档位、填充条随之从 0 长出 —— 即"初始动画总执行一次"。steered
-  // 挂在 onValueChange 上是确定性的：初始渲染拇指整类 transition-none（直接
-  // 就位零动画，填充条宽度随拇指位置同步出现、同样不闪），用户操作过后才
+  // 挂在 onValueChange 上是确定性的：初始渲染只过渡聚焦线，位置直接就位，
+  // 填充条随拇指同步出现；用户操作过后才
   // 恢复基类过渡（拖档磁吸手感照常）。
   const [steered, setSteered] = useState(false)
 
@@ -128,20 +128,18 @@ export function StopSlider({
           /* 竖条拇指：4×19 全圆角 + primary 近黑强调，阴影/描边/hover 光环全关；
              ms -8px = 中心 P%−8px（右缘距填充右缘 6px，用户定稿），100% 顶格
              不出轨道右缘；位置过渡 280ms（原语清单已含 inset-inline-start，
-             这里只覆写时长/缓动）。focus-visible 光环保留 —— 键盘用户需要焦点落点 */
+             这里只覆写时长/缓动）。键盘落点沿用全局聚焦内描边 */
           '[&_[data-slot=slider-thumb]]:h-[19px] [&_[data-slot=slider-thumb]]:w-[4px]',
           '[&_[data-slot=slider-thumb]]:rounded-[2px]',
           '[&_[data-slot=slider-thumb]]:bg-primary',
           '[&_[data-slot=slider-thumb]]:shadow-none',
           '[&_[data-slot=slider-thumb]]:ring-0 [&_[data-slot=slider-thumb]]:hover:ring-0',
           '[&_[data-slot=slider-thumb]]:-ms-[8px]',
-          /* steered 前拇指整类 transition-none（原语基类过渡清单含
-             inset-inline-start/transform，挂载时位置从 0% 滑到目标档）；
-             操作后恢复基类过渡（磁吸手感）。duration-0 那版只压时长不删
-             过渡属性，同帧竞态下仍可能瞬发 —— 整类覆盖才是零竞态口子 */
+          /* 挂载时只过渡聚焦线，排除 inset-inline-start/transform，避免位置
+             从 0% 滑到目标档；操作后再恢复基类位置过渡。 */
           steered
             ? '[&_[data-slot=slider-thumb]]:duration-[280ms] [&_[data-slot=slider-thumb]]:ease-out'
-            : '[&_[data-slot=slider-thumb]]:transition-none',
+            : '[&_[data-slot=slider-thumb]]:transition-[outline-color]',
           /* 抓握光标只落拖拽区（Control = 25px 轨道行），按下变 grabbing */
           '[&_[data-slot=slider-control]]:cursor-grab',
           '[&_[data-slot=slider-control]]:active:cursor-grabbing'

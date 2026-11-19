@@ -107,7 +107,7 @@ function KindCard({
       onClick={() => onSelect(card.kind)}
       className={cn(
         shell,
-        'cursor-pointer outline-none  focus-visible:ring-2 focus-visible:ring-ring/40',
+        'cursor-pointer outline-none ',
         selected
           ? 'border-transparent bg-muted text-foreground'
           : 'border-transparent bg-muted/40 hover:bg-muted/70 text-foreground'
@@ -261,7 +261,7 @@ export function ProjectDialog({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="项目名称"
-                className="border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+                className="border-0 bg-transparent px-0 shadow-none"
                 autoFocus
               />
             </div>
@@ -380,7 +380,7 @@ function TrustConfirmDialog({
         <div className="flex flex-col gap-2">
           {/* 主钮保持整宽，键盘聚焦沿用全局内描边。 */}
           <Button
-            className="h-10 rounded-full bg-foreground text-background hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="h-10 rounded-full bg-foreground text-background hover:bg-foreground/90"
             onClick={onTrust}
             autoFocus
           >

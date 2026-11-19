@@ -176,7 +176,7 @@ const ChatRow = memo(function ChatRow({
         <button
           type="button"
           className={cn(
-            'flex h-full min-w-0 flex-1 items-center gap-1.5 pr-4 text-sm text-foreground transition-[padding] duration-100',
+            'flex h-full min-w-0 flex-1 items-center gap-1.5 pr-4 text-sm text-foreground transition-[padding,outline-color] duration-100',
             indent ? 'pl-8' : 'pl-2',
             'group-hover:pr-14 group-focus-within:pr-14 group-data-popup-open:pr-14 group-has-[[data-popup-open]]:pr-14',
             waitingApproval && 'pr-2!'

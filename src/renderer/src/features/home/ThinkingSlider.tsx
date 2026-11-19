@@ -159,8 +159,8 @@ export function ThinkingSlider({
   // 白色圆拇指的挂载动画抑制开关（2026-11-16）：slider 原语基类的过渡清单
   // 含 inset-inline-start/transform，菜单每次打开全新挂载时白圆从 0% 滑到
   // 目标档、scale 从初始值过渡 —— 即用户指认的"进度条动画每次执行一次"。
-  // steered 挂在 onValueChange 上是确定性的：初始渲染拇指整类 transition-none
-  // （直接就位零动画），用户操作过后才恢复基类过渡（拖档滑动 + hover/active
+  // steered 挂在 onValueChange 上是确定性的：初始渲染拇指只过渡聚焦线，
+  // 位置直接就位，用户操作过后才恢复基类过渡（拖档滑动 + hover/active
   // scale 反馈）。填充条（slider-range）无需处理：宽度和拇指位置同步出现，
   // 拇指不动它就不闪。
   const [steered, setSteered] = useState(false)
@@ -248,16 +248,12 @@ export function ThinkingSlider({
           /* 拇指必须是轨道之上的不透明层；此前未显式设层级，端点的轨道色会
              从圆点下方透出来，视觉上像圆点没有盖住条。光晕色由通道变量 +
              呼吸中的 --think-glow-alpha 现场组出（think-pulse 驱动）。
-             steered 前拇指整体 transition-none（2026-11-16 用户指认的"白色圆
-             动画"即此）：原语基类的过渡清单含 inset-inline-start/transform，
-             挂载时位置从 0%、scale 从初始值过渡到目标 —— 白圆滑过去/弹一下。
-             注意 transition-none 是整类覆写（同属性组 tailwind-merge 后写者胜），
-             steered 后才恢复 hover/active 的 scale 反馈与位置滑动 */
+             挂载时只过渡聚焦线，排除位置与缩放，避免白圆从 0% 滑过去或弹一下；
+             steered 后才恢复 hover/active 的 scale 反馈与位置滑动。 */
           steered
             ? '[&_[data-slot=slider-thumb]]:z-10 [&_[data-slot=slider-thumb]]:size-6 [&_[data-slot=slider-thumb]]:border [&_[data-slot=slider-thumb]]:border-border [&_[data-slot=slider-thumb]]:bg-white'
-            : '[&_[data-slot=slider-thumb]]:z-10 [&_[data-slot=slider-thumb]]:size-6 [&_[data-slot=slider-thumb]]:border [&_[data-slot=slider-thumb]]:border-border [&_[data-slot=slider-thumb]]:bg-white [&_[data-slot=slider-thumb]]:transition-none',
-          '[&_[data-slot=slider-thumb]]:shadow-[0_1px_4px_rgb(15_23_42/0.18),0_0_var(--think-glow-blur)_rgb(var(--think-r)_var(--think-g)_var(--think-b)/var(--think-glow-alpha))] [&_[data-slot=slider-thumb]]:hover:scale-105 [&_[data-slot=slider-thumb]]:active:scale-95',
-          '[&_[data-slot=slider-thumb]]:focus-visible:ring-2 [&_[data-slot=slider-thumb]]:focus-visible:ring-[#3498f4] [&_[data-slot=slider-thumb]]:focus-visible:ring-offset-2'
+            : '[&_[data-slot=slider-thumb]]:z-10 [&_[data-slot=slider-thumb]]:size-6 [&_[data-slot=slider-thumb]]:border [&_[data-slot=slider-thumb]]:border-border [&_[data-slot=slider-thumb]]:bg-white [&_[data-slot=slider-thumb]]:transition-[outline-color]',
+          '[&_[data-slot=slider-thumb]]:shadow-[0_1px_4px_rgb(15_23_42/0.18),0_0_var(--think-glow-blur)_rgb(var(--think-r)_var(--think-g)_var(--think-b)/var(--think-glow-alpha))] [&_[data-slot=slider-thumb]]:hover:scale-105 [&_[data-slot=slider-thumb]]:active:scale-95'
         )}
       />
     </div>

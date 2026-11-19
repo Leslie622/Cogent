@@ -1,3 +1,4 @@
+// 组合输入框原语；聊天卡的浮层外观集中在 composer 档，普通表单保持原生形态。
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
@@ -6,15 +7,33 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 
-function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
+const inputGroupVariants = cva(
+  "group/input-group relative flex h-8 w-full min-w-0 items-center rounded-lg border border-input transition-colors outline-none has-[[data-slot][aria-invalid=true]]:border-destructive has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>textarea]:h-auto has-[>[data-align=block-end]]:[&>input]:pt-3 has-[>[data-align=block-start]]:[&>input]:pb-3 has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=inline-start]]:[&>input]:pl-1.5",
+  {
+    variants: {
+      variant: {
+        default: "has-disabled:bg-input/50 has-disabled:opacity-50 dark:bg-input/30 dark:has-disabled:bg-input/80",
+        // 空输入只禁用发送钮，不能让整张输入卡随它一起变灰；深色用抬亮的卡面保持层次。
+        composer: "z-10 border-foreground/10 bg-background shadow-[0_2px_6px_-2px_rgb(0_0_0/0.06),0_12px_32px_-8px_rgb(0_0_0/0.08)] dark:border-white/12 dark:bg-card dark:shadow-[0_2px_6px_-2px_rgb(0_0_0/0.2),0_12px_32px_-8px_rgb(0_0_0/0.35)]",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  }
+)
+
+function InputGroup({
+  className,
+  variant = "default",
+  ...props
+}: React.ComponentProps<"div"> & VariantProps<typeof inputGroupVariants>) {
   return (
     <div
       data-slot="input-group"
+      data-variant={variant}
       role="group"
-      className={cn(
-        "group/input-group relative flex h-8 w-full min-w-0 items-center rounded-lg border border-input transition-colors outline-none in-data-[slot=combobox-content]:focus-within:border-inherit in-data-[slot=combobox-content]:focus-within:ring-0 has-disabled:bg-input/50 has-disabled:opacity-50 has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-3 has-[[data-slot=input-group-control]:focus-visible]:ring-ring/50 has-[[data-slot][aria-invalid=true]]:border-destructive has-[[data-slot][aria-invalid=true]]:ring-3 has-[[data-slot][aria-invalid=true]]:ring-destructive/20 has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>textarea]:h-auto dark:bg-input/30 dark:has-disabled:bg-input/80 dark:has-[[data-slot][aria-invalid=true]]:ring-destructive/40 has-[>[data-align=block-end]]:[&>input]:pt-3 has-[>[data-align=block-start]]:[&>input]:pb-3 has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=inline-start]]:[&>input]:pl-1.5",
-        className
-      )}
+      className={cn(inputGroupVariants({ variant }), className)}
       {...props}
     />
   )
@@ -91,6 +110,7 @@ function InputGroupButton({
   VariantProps<typeof inputGroupButtonVariants> & {
     type?: "button" | "submit" | "reset"
   }) {
+  // 尺寸也交给底层，避免默认档的最小高度把小图标按钮撑成长方形。
   return (
     <Button
       type={type}
@@ -123,7 +143,7 @@ function InputGroupInput({
     <Input
       data-slot="input-group-control"
       className={cn(
-        "flex-1 rounded-none border-0 bg-transparent shadow-none ring-0 focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent",
+        "flex-1 rounded-none border-0 bg-transparent shadow-none ring-0 disabled:bg-transparent dark:bg-transparent dark:disabled:bg-transparent",
         className
       )}
       {...props}
@@ -139,7 +159,7 @@ function InputGroupTextarea({
     <Textarea
       data-slot="input-group-control"
       className={cn(
-        "flex-1 resize-none rounded-none border-0 bg-transparent py-2 shadow-none ring-0 focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent",
+        "flex-1 resize-none rounded-none border-0 bg-transparent py-2 shadow-none ring-0 disabled:bg-transparent dark:bg-transparent dark:disabled:bg-transparent",
         className
       )}
       {...props}

@@ -60,7 +60,6 @@ export default function InspectCodeViewer({ content, format, label, raw, wrap, r
             '.cm-search': { display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center', fontFamily: 'var(--font-sans)' },
             '.cm-search input': { minWidth: '0', maxWidth: '100%' },
             '.cm-panels': { backgroundColor: 'transparent', color: 'var(--foreground)', border: 'none' },
-            '&.cm-focused': { outline: 'none' },
           }),
         ],
       }),

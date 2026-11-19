@@ -237,7 +237,7 @@ function PendingApprovalCard({
           }
         }}
         placeholder="告诉模型接下来应该怎么做…"
-        className="mt-2.5 h-9 rounded-lg border-0 bg-muted/60 px-3 text-xs placeholder:text-muted-foreground focus-visible:ring-0"
+        className="mt-2.5 h-9 rounded-lg border-0 bg-muted/60 px-3 text-xs placeholder:text-muted-foreground"
       />
       {/* 底部行：ⓘ 快捷键提示（左）+ 确认主钮（右，深色石墨 = 发送钮同族） */}
       <div className="mt-3 flex items-center justify-between">

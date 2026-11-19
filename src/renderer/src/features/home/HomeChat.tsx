@@ -448,7 +448,7 @@ function ChatComposer({
             Cogent 时出现两个"Cogent"）；目录卡只在"无项目但会话直接绑了
             目录"时兜底显示 */}
         {session.kind === 'new' && (
-          <div className="mx-5 flex h-9 items-center gap-6 rounded-t-xl bg-muted px-4">
+          <div className="relative mx-4 -mb-3 flex h-12 items-center gap-6 rounded-t-xl bg-muted px-4 pb-3">
             {project || projectId === undefined ? (
               /* ProjectPicker 同时负责项目清单和会话物化。不能在这里仅改视图态，
                   因为 projectId 只能在 session.create 时绑定，否则首条消息会串归属。 */
@@ -474,14 +474,8 @@ function ChatComposer({
           </div>
         )}
 
-        {/* 组件基类三条反制（tailwind-merge 按变体组去重，同变体后写者胜）：
-            ① dark:bg-input/30 常驻灰底 → 覆回纯背景；
-            ② has-disabled:bg-input/50 + opacity-50 —— 空输入时发送钮 disabled，
-            整组被 :has(:disabled) 命中像盖了层灰蒙版（打字才散）——置灰语义
-            该只落在发送钮自己身上（Button 自带 disabled 样式），组级这两条压掉；
-            ③ 聚焦态 border-ring + ring-3 光晕，参考稿聚焦无变化。
-            圆角沿用 InputGroup 原生 rounded-lg，与项目输入控件同源。 */}
-        <InputGroup className="border-foreground/10 bg-background has-[[data-slot=input-group-control]:focus-visible]:border-foreground/10 has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-disabled:bg-background has-disabled:opacity-100 dark:bg-background dark:has-disabled:bg-background">
+        {/* 输入卡盖住信息条下沿，圆角与阴影由原语的 composer 档统一维护。 */}
+        <InputGroup variant="composer">
           {items.length > 0 && <InputGroupAddon align="block-start" className="w-full px-4 pt-3">
             <AttachmentCards items={items}
               onRemove={(key) => useAttachmentStore.getState().remove(draftId, key)}

@@ -81,10 +81,8 @@ function Slider<Value extends number | readonly number[]>({
       thumbAlignment={thumbAlignment}
       {...props}
     >
-      {/* Control 不裁切（无 overflow-hidden）：轨道（h-1）矮于拇指（size-3），
-          拇指与 focus ring 的 ring-offset 都要越出 Control 上下沿渲染，裁了
-          圆钮会被削平、聚焦环残缺。轨道自身的圆角裁切由 Track 的
-          overflow-hidden 负责。 */}
+      {/* 轨道矮于拇指，Control 不裁切圆钮；轨道圆角由 Track 自身裁切，
+          键盘聚焦的内描边由全局样式画在拇指上。 */}
       <SliderPrimitive.Control
         data-slot="slider-control"
         className="relative flex w-full touch-none items-center select-none data-disabled:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-40 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col"
@@ -140,7 +138,7 @@ function Slider<Value extends number | readonly number[]>({
             aria-label={thumbAriaLabel}
             getAriaValueText={getThumbAriaValueText}
             onKeyDown={thumbOnKeyDown}
-            className="relative block size-3 shrink-0 rounded-full border border-ring bg-white ring-ring/50 transition-[color,box-shadow,inset-inline-start,transform] select-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
+            className="relative block size-3 shrink-0 rounded-full border border-ring bg-white ring-ring/50 transition-[color,outline-color,box-shadow,inset-inline-start,transform] select-none after:absolute after:-inset-2 hover:ring-3 active:ring-3 disabled:pointer-events-none disabled:opacity-50"
           />
         ))}
       </SliderPrimitive.Control>
