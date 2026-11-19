@@ -23,7 +23,7 @@ export function useChatTheme(): CSSProperties {
   /* 套选择：暗色且主题带 dark 套 → 整面换套；未带 = 亮色套直用（未设键
      回落 CSS 基础值，不回落亮面——theme-file.ts 的 dark 套语义）。
      用户覆盖（外观设置的字号/字体档）在套选择之后合并 —— 压过所有主题
-     （含默认 Leslie），中英文分别覆盖；"跟随主题"的槽位不写键。三字段分别
+     （含内置默认），中英文分别覆盖；"跟随主题"的槽位不写键。三字段分别
      订阅再 memo 组装：对象选择器每次新引用会踩 1.2-8 快照不稳定坑 */
   const codeFontSize = useAppearanceStore((s) => s.codeFontSize)
   const contentFont = useAppearanceStore((s) => s.contentFont)

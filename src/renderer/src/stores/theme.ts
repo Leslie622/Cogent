@@ -2,8 +2,8 @@
  * 对话内容主题 store（zustand + persist → localStorage: cogent-themes）——
  * 全仓首个 persist store：纯渲染端视觉偏好，不进引擎/协议/磁盘档案，
  * localStorage 是对的层（跨设备同步是真墙：引擎侧无设置同步通道）。
- * 「默认」主题是常量而非存储档：Theme-Leslie 令牌集（2026-11-18 用户
- * 拍板固化为内置观感底座），不占用户存储、不可删除；用户主题包相对
+ * 「默认」主题是常量而非存储档：Cogent.themd.json 令牌集（2026-11-19
+ * 用户拍板替换原 Theme-Leslie 底座），不占用户存储、不可删除；用户主题包相对
  * Themd 基础样式做稀疏差异，不叠在本底座上（两套观感混合是语义污染）。
  * 持久化读取是信任边界（约定.md §1.1）：merge 时校验形状，损坏档剔除
  * 并报错，激活 id 指向已剔除档时回落默认。
@@ -14,7 +14,8 @@ import { parseThemeFile, type ThemeFile } from '@/lib/theme/theme-file'
 
 export const DEFAULT_THEME_ID = 'default'
 
-/** 内置默认观感（Theme-Leslie 的导出令牌照抄；值改动 = 改所有人的默认正文观感） */
+/** 内置默认观感（Cogent.themd.json 的导出令牌照抄，2026-11-19 用户拍板
+    替换原 Theme-Leslie 底座；值改动 = 改所有人的默认正文观感） */
 const DEFAULT_THEME: ThemeFile = {
   version: 1,
   id: DEFAULT_THEME_ID,
@@ -26,10 +27,8 @@ const DEFAULT_THEME: ThemeFile = {
     'p.align': 'start',
     'del.thickness': '2px',
     'a.hoverColor': '#3b82f6',
-    'a.transition': '220ms',
     'inlineCode.fontLatin': 'JetBrains Mono',
     'inlineCode.fontCjk': 'HarmonyOS Sans SC',
-    'inlineCode.padding': '0em 0.5em',
     'task.accent': '#22c55e',
     'task.doneColor': '#22c55e',
     'quote.bg': '#f4f2f2',
@@ -38,31 +37,40 @@ const DEFAULT_THEME: ThemeFile = {
     'codeBlock.fontLatin': 'JetBrains Mono',
     'codeBlock.fontCjk': 'HarmonyOS Sans SC',
     'cell.rowLine': 'solid',
-    'cell.colLine': 'solid',
+    'cell.colLine': 'none',
     'table.collapse': 'separate',
-    'table.radius': '8px',
-    'cell.borderWidth': '2px',
-    'table.stripeBg': '#f2f2f2',
-    'hr.thickness': '2px',
+    'cell.borderWidth': '1px',
+    'table.stripeBg': 'rgba(242, 242, 242, 0.42)',
+    'hr.thickness': '1.5px',
     'img.align': 'auto',
-    'img.radius': '8px',
-    'img.margin': '1em',
+    'img.margin': '0.6em',
     'root.fontLatin': 'Inter',
     'root.fontCjk': 'HarmonyOS Sans SC',
-    'root.width': '95%'
+    'h1.size': '21px',
+    'h2.size': '19px',
+    'h3.size': '18px',
+    'h4.size': '15px',
+    'h5.size': '15px',
+    'h6.size': '14px',
+    'a.underline': 'always',
+    'a.color': '#3b82f6',
+    'a.underlineHeight': '1.5px',
+    'table.radius': '6px',
+    'hr.margin': '1.2em 0em',
+    'img.radius': '8px',
   },
   /* 暗色套：整面替换语义（theme-file.ts）—— 与明暗无关的键（字体/尺寸/
-     边框样式）照抄，只暗化亮面刺眼值（浅底色 → 暗底色、饱和色提亮度） */
+     边框样式）照抄，只暗化亮面刺眼值（浅底色 → 暗底色、饱和色提亮度）。
+     暗化规则沿用 Theme-Leslie 底座：#3b82f6→#60a5fa、#22c55e→#4ade75、
+     浅灰底→oklch 暗灰；stripeBg 亮值是半透明浅灰，暗值取同透明度暗灰 */
   dark: {
     'root.size': '14px',
     'codeBlock.size': '14px',
     'p.align': 'start',
     'del.thickness': '2px',
     'a.hoverColor': '#60a5fa',
-    'a.transition': '220ms',
     'inlineCode.fontLatin': 'JetBrains Mono',
     'inlineCode.fontCjk': 'HarmonyOS Sans SC',
-    'inlineCode.padding': '0em 0.5em',
     'task.accent': '#4ade75',
     'task.doneColor': '#4ade75',
     'quote.bg': 'oklch(0.22 0 0)',
@@ -71,18 +79,27 @@ const DEFAULT_THEME: ThemeFile = {
     'codeBlock.fontLatin': 'JetBrains Mono',
     'codeBlock.fontCjk': 'HarmonyOS Sans SC',
     'cell.rowLine': 'solid',
-    'cell.colLine': 'solid',
+    'cell.colLine': 'none',
     'table.collapse': 'separate',
-    'table.radius': '8px',
-    'cell.borderWidth': '2px',
-    'table.stripeBg': 'oklch(0.23 0 0)',
-    'hr.thickness': '2px',
+    'cell.borderWidth': '1px',
+    'table.stripeBg': 'oklch(0.23 0 0 / 0.42)',
+    'hr.thickness': '1.5px',
     'img.align': 'auto',
-    'img.radius': '8px',
-    'img.margin': '1em',
+    'img.margin': '0.6em',
     'root.fontLatin': 'Inter',
     'root.fontCjk': 'HarmonyOS Sans SC',
-    'root.width': '95%'
+    'h1.size': '21px',
+    'h2.size': '19px',
+    'h3.size': '18px',
+    'h4.size': '15px',
+    'h5.size': '15px',
+    'h6.size': '14px',
+    'a.underline': 'always',
+    'a.color': '#60a5fa',
+    'a.underlineHeight': '1.5px',
+    'table.radius': '6px',
+    'hr.margin': '1.2em 0em',
+    'img.radius': '8px',
   },
 }
 
