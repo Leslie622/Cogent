@@ -3,8 +3,11 @@
  * 选中组合发送、其余 Enter 组合换行（false）、IME 组词中恒不发送
  * （输入法确认键也是 Enter，不判 isComposing 会把组词当发送）。
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { isSendKey } from '@/features/home/HomeChat'
+
+// 快捷键断言只依赖纯函数；页面主题在模块加载时读取matchMedia，交给主题自己的环境验证。
+vi.mock('@/features/home/ChatTheme', () => ({ useChatTheme: () => ({}) }))
 
 /** 最小事件形状（isSendKey 只读这四个字段） */
 const key = (k: string, mods: { shift?: boolean; ctrl?: boolean; composing?: boolean } = {}) => ({
