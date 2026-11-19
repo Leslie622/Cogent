@@ -7,6 +7,7 @@ import { useEngineStore } from '@/stores/engine'
 import { useHomeStore } from '@/stores/home'
 import { useProjectStore } from '@/stores/project'
 import { HomeChat } from '@/features/home/HomeChat'
+import { useAttachmentStore, EMPTY_DRAFT } from '@/stores/attachments'
 
 vi.mock('@/features/home/ChatTheme', () => ({ useChatTheme: () => ({}) }))
 vi.mock('@/features/home/ConversationIndex', () => ({ ConversationIndex: () => null }))
@@ -37,6 +38,7 @@ let unbind: () => void
 const emit = (event: EngineEvent): void => { for (const handler of handlers) handler(event) }
 
 beforeEach(() => {
+  useAttachmentStore.setState({ drafts: { [`chat-${SID}`]: { ...EMPTY_DRAFT, loaded: true } }, media: {} })
   observers.length = 0
   engineRequest.mockReset().mockImplementation((method) => Promise.resolve(method === 'agent.abort' ? { aborted: true } : []))
   window.cogent = {
@@ -447,6 +449,23 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
 })
 
 describe('HomeChat 提交回包与输入区身份', () => {
+  it('新聊天物化后沿用原草稿，受理期间继续输入也不丢字', async () => {
+    settleInitialRun()
+    const draftId = 'new-materializing'
+    useHomeStore.setState({ session: { kind: 'new', draftId: 'materializing' } })
+    useAttachmentStore.setState({ drafts: { [draftId]: { ...EMPTY_DRAFT, loaded: true } } })
+    let finish!: (value: string | false) => void
+    const pending = new Promise<string | false>((resolve) => { finish = resolve })
+    useChatStore.setState({ submit: () => { useChatStore.setState({ activeSessionId: 'materialized' }); return pending } })
+    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    const input = screen.getByPlaceholderText('随心输入')
+    fireEvent.change(input, { target: { value: '第一次发送' } }); fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.change(input, { target: { value: '发送后继续写' } })
+    await act(async () => { finish('materialized'); await Promise.resolve() })
+    expect(useHomeStore.getState().session).toEqual({ kind: 'chat', chatId: 'materialized' })
+    expect(screen.getByPlaceholderText('随心输入')).toHaveValue('发送后继续写')
+    expect(localStorage.getItem('cogent.chat-draft.materialized')).toBe(draftId)
+  })
   function pendingSubmission() {
     let resolve!: (value: unknown) => void
     let reject!: (reason: Error) => void
@@ -496,7 +515,7 @@ describe('HomeChat 提交回包与输入区身份', () => {
     })
     await act(async () => { old.resolve({ accepted: true }); await Promise.resolve() })
     expect(useHomeStore.getState().session.kind).toBe('new')
-    expect(screen.getByPlaceholderText('随心输入')).toHaveValue('旧会话问题')
+    expect(screen.getByPlaceholderText('随心输入')).toHaveValue('')
   })
 
   it('同文重发的新请求仍在途时，旧成功回包不能提前清新请求草稿', async () => {

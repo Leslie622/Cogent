@@ -33,9 +33,7 @@ export function PlanToggle({ session }: { session: HomeSession }) {
       void setPlanMode(activeId, false)
       return
     }
-    useHomeStore.setState((s) =>
-      s.session.kind === 'new' ? { session: { ...s.session, planEnabled: false } } : s
-    )
+    useHomeStore.getState().updateNewChat({ planEnabled: false })
   }
 
   /* 视觉规范同权限触发钮（ghost 无常态底 + hover 出底；文字色 =

@@ -7,7 +7,7 @@
  * 数据源全部真实：会话 = chat store（引擎 session.list），
  * 项目 = project store（引擎 project.list）。行点击 = chat.selectSession（高亮看
  * activeSessionId，行与内容不再错位）；发起入口 startNew 优先看主体视图：
- * 已是新聊天只更新视图，否则按需创建/复用空会话；首条消息由 submit 物化。
+ * 新聊天入口始终回到同一未发送草稿；首条消息由 submit 物化。
  * 分区标题带折叠箭头（折叠态常显、展开态 hover 显现）；标题行 hover 浮现
  * [更多 ⋯ + 创建类] 双钮（项目=创建项目弹窗、最近=新建聊天）；项目行 hover
  * 浮现 [更多 + 新建聊天]；聊天行动作 [置顶 + 归档]（置顶真接线 setPinned，
@@ -443,7 +443,6 @@ export function HomeSidebar() {
   // 会话/项目都是引擎真数据：chat store（session.list）+ project store（project.list）
   const sessions = useChatStore((s) => s.sessions)
   const renamingChat = sessions.find((chat) => chat.id === renameChatId)
-  const createSession = useChatStore((s) => s.createSession)
   // 等待确认 tag 的派生源（D7）：会话桶的 pendingApprovals 非空即显。函数签名
   // 下传（useCallback 稳定引用保 ProjectRow/ChatRow memo；pending 变化只让
   // 涉事行因 waitingApproval 布尔翻转而重渲染）
@@ -472,7 +471,7 @@ export function HomeSidebar() {
   const openSession = useCallback(
     (chatId: string) => {
       void selectSession(chatId)
-      useHomeStore.setState({ session: { kind: 'chat', chatId } })
+      useHomeStore.getState().openChat(chatId)
     },
     [selectSession]
   )
@@ -528,28 +527,13 @@ export function HomeSidebar() {
     .filter((s) => s.projectId === undefined && s.pinnedAt === undefined)
     .sort((a, b) => b.updatedAt - a.updatedAt)
 
-  // 发起新聊天 = 视图态切 kind:'new' + （按需）真建引擎会话。主流语义（ChatGPT
-  // 同款）：**当前会话还是空的（没发过任何消息）时不再堆一个新空会话**，直接
-  // 复用 —— 否则连点 N 次新聊天就攒 N 个「新会话」垃圾；空会话复用到它发出
-  // 首条消息为止。带 projectId = 项目内发起（继承项目 cwd）；项目场景不复用
-  // 非本项目会话（挂错归属），但可复用同项目下的空会话
+  // 新聊天入口只回到同一份未发送草稿；首条提交才创建引擎会话和侧栏列表项。
   const startNew = useCallback(
     (projectId?: string) => {
-      const state = useChatStore.getState()
-      const active = state.sessions.find((s) => s.id === state.activeSessionId)
-      const activeIsEmpty =
-        active !== undefined &&
-        (state.bySession[active.id]?.messages.length ?? 0) === 0 &&
-        active.title === '新会话' && // 双保险：转录空 + 标题未命名（防投影延迟误判）
-        active.titleManual !== true &&
-        (projectId === undefined ? active.projectId === undefined : active.projectId === projectId)
-      // new 视图里的 activeSessionId 可能仍指向旧聊天，不能据此重复建会话。
-      if (useHomeStore.getState().session.kind !== 'new' && !activeIsEmpty) {
-        void createSession(projectId !== undefined ? { projectId } : undefined)
-      }
+      useChatStore.setState({ activeSessionId: null })
       startNewChat(projectId)
     },
-    [createSession, startNewChat]
+    [startNewChat]
   )
 
   /** 归档（回收站语义）：归档的活动会话 → 视图落 kind:'new'（chat store 内已处理） */

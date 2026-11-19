@@ -40,6 +40,7 @@ export type ToolStatus = ToolDisplayStatus
 /** 工具名 → 图标（官方配方：TraceIcon 放工具自身的图标，状态走类别词扫光/状态词） */
 const TOOL_ICON: Record<string, React.ReactNode> = {
   read: <FileTextIcon />,
+  read_attachment: <FileTextIcon />,
   glob: <FolderSearchIcon />,
   grep: <SearchIcon />,
   ls: <FolderSearchIcon />,

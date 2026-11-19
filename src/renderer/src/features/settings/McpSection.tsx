@@ -43,6 +43,7 @@ import { parseImport } from './mcp-import'
 import { McpServerDialog } from './McpServerDialog'
 import { useProjectScope } from '@/hooks/use-project-scope'
 import type { McpExposure, McpServerDef, McpServerSummary } from '@/env.d'
+import { MediaBindingsSection } from './MediaBindingsSection'
 
 /** IPC / 解析错误 → 文案（engine:request 直抛 Error，失败原样呈现给用户） */
 const messageOf = (error: unknown): string => unwrapIpcError(error)
@@ -264,6 +265,7 @@ export function McpSection() {
         </>
       }
     >
+      {servers !== null && userScope && <MediaBindingsSection servers={servers} />}
       {servers === null ? (
         <div className="mt-3 rounded-xl border border-border px-5 py-4 text-[13px] text-muted-foreground">加载中…</div>
       ) : count === 0 ? (

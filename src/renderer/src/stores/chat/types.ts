@@ -5,6 +5,7 @@
  * 纯类型与载荷形状，无逻辑。
  */
 import type { ChatMessage, MessageUsage, PermissionMode, SessionSummary, TodoItem } from '@/env.d'
+import type { AttachmentRef, DirectoryRef } from '@shared/attachments'
 
 /** 引擎 SessionSummary 的 renderer 侧直接镜像（env.d.ts），不再本地重复声明 */
 export type { SessionSummary }
@@ -206,7 +207,7 @@ export interface ChatState {
   rename: (sessionId: string, title: string) => Promise<void>
   archive: (sessionId: string, archived: boolean) => Promise<void>
   /** true = 引擎受理；false = 旧调用已失效，输入区不执行成功后续；当次拒绝仍抛错 */
-  submit: (text: string, model?: string, thinkingLevel?: string, provider?: string) => Promise<boolean>
+  submit: (text: string, model?: string, thinkingLevel?: string, provider?: string, attachments?: AttachmentRef[], directories?: DirectoryRef[]) => Promise<string | false>
   abort: () => Promise<void>
   /** 审批裁决（专属 IPC 通道）：先收面板/落痕迹行（乐观），引擎侧竞态失败不回滚；
       options.message = 拒绝附言（「告诉模型接下来怎么做」），options.always =

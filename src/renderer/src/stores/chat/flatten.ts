@@ -30,7 +30,7 @@ export function flattenSegments(segments: ChatMessage[]): MessageItem[] {
         endedAt: call.endedAt
       })
     }
-    if (segment.content !== '' || segment.thinking !== undefined) {
+    if (segment.content !== '' || segment.thinking !== undefined || (segment.attachments?.length ?? 0) > 0 || (segment.directories?.length ?? 0) > 0) {
       items.push({ ...segment, toolCalls: undefined })
     }
   }

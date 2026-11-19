@@ -21,6 +21,7 @@ import type { ChatMessage, PermissionMode } from '@/env.d'
 import { useHomeStore } from '@/stores/home'
 import { useEngineStore } from '@/stores/engine'
 import { useProjectStore } from '@/stores/project'
+import { useAttachmentStore } from '@/stores/attachments'
 import { unwrapIpcError } from '@/lib/ipc'
 import { flattenSegments } from './flatten'
 import { createDeltaBatcher } from './delta-batcher'
@@ -126,8 +127,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // 用户归档了全部会话（合法终态）。原"列表空就建一个"在后者每次重启都复活
   // 一个幽灵"新会话"（用户归档两个会话后重启"还在"的元凶；且 StrictMode 双
   // 挂载下 load 并发跑两遍会各建一个，盘上留下 13ms 双胞胎）。空列表统一落
-  // "新聊天"着陆页，会话改由用户动作物化（点新聊天 = startNew，发首条消息
-  // = submit 按需建）
+  // "新聊天"着陆页，会话只在首条 submit 时物化，导航和项目选择不创建空会话。
   // 失败落 loadError（引擎不可用时 App 横幅呈现 + 重试），不再裸抛成
   // unhandled rejection
   load: async () => {
@@ -139,7 +139,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // 视图态对齐（修"重启后已有内容的会话还挂着信息区"）：load 自动选中了
         // 最近会话，home store 若还停在默认 kind:'new'，就会出现"对话内容 +
         // 选择项目信息条"同屏的错排 —— 选中即 chat 态
-        useHomeStore.setState({ session: { kind: 'chat', chatId: sessions[0].id } })
+        useHomeStore.getState().openChat(sessions[0].id)
       }
     } catch (error) {
       set({ loadError: error instanceof Error ? error.message : String(error) })
@@ -186,7 +186,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
     set((state) => ({
       sessions: [{ ...summary }, ...state.sessions],
-      activeSessionId: summary.id,
+      ...(useHomeStore.getState().session === home && { activeSessionId: summary.id }),
       bySession: { ...state.bySession, [summary.id]: emptyBucket() }
     }))
     return summary.id
@@ -232,7 +232,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }))
     const home = useHomeStore.getState().session
     if (archived && home.kind === 'chat' && home.chatId === sessionId) {
-      useHomeStore.setState({ session: { kind: 'new' } })
+      useHomeStore.getState().startNewChat()
     }
   },
 
@@ -255,11 +255,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
     const home = useHomeStore.getState().session
     if (wasActive && home.kind === 'chat' && home.chatId === sessionId) {
-      useHomeStore.setState({ session: { kind: 'new' } })
+      useHomeStore.getState().startNewChat()
     }
+    await useAttachmentStore.getState().discardChat(sessionId).catch((error: unknown) => {
+      set({ loadError: `聊天已删除，但草稿清理失败：${unwrapIpcError(error)}` })
+    })
   },
 
-  submit: async (text, model, thinkingLevel, provider) => {
+  submit: async (text, model, thinkingLevel, provider, attachments = [], directories = []) => {
     // 会话物化条件：**新聊天视图态优先于 activeSessionId**。
     // startNewChat 只翻视图态不清 activeSessionId —— 只看 id 会把"新聊天"里的
     // 首条消息落进残留的旧会话（权限暂存位随之被绕过：新聊天切自主，发消息后
@@ -278,6 +281,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       id: `u-${crypto.randomUUID()}`,
       role: 'user',
       content: text,
+      ...(attachments.length > 0 && { attachments }),
+      ...(directories.length > 0 && { directories }),
       timestamp: Date.now()
     }
     set((state) =>
@@ -300,8 +305,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // provider 随 model 下发：同名模型被多家目录收录（azure 也收录 deepseek-v4-pro），
     // 只传 id 引擎全局查找有歧义（详见 protocol AgentSubmitParams.provider 注释）
     try {
-      await window.cogent.engineRequest('agent.submit', { sessionId, text, model, thinkingLevel, provider })
-      return true
+      await window.cogent.engineRequest('agent.submit', { sessionId, text, model, thinkingLevel, provider,
+        ...(attachments.length > 0 && { attachmentIds: attachments.map((a) => a.id) }),
+        ...((attachments.length > 0 || directories.length > 0) && { inputId: userMessage.id }),
+        ...(directories.length > 0 && { directories }) })
+      return sessionId
     } catch (error) {
       // IPC回包晚于终态/新run/删桶时，旧请求没有队列、消息或输入区的回写权。
       if (get().bySession[sessionId]?.runtime.runRequestId !== runRequestId) return false

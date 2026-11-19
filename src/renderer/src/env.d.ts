@@ -9,9 +9,18 @@
  * 协议类型（ChatMessage/ModelSummary/SessionSummary 等）从 @shared 不可达（它们在
  * src/protocol，属于引擎协议而非壳契约），故此处按需内联渲染所需的最小形状。
  */
+import type { AttachmentMethods, AttachmentRef, DirectoryRef } from '@shared/attachments'
+type AttachmentParams = { [K in keyof AttachmentMethods]: AttachmentMethods[K]['params'] }
+type AttachmentResults = { [K in keyof AttachmentMethods]: AttachmentMethods[K]['result'] }
+
 declare global {
   interface Window {
     cogent: {
+      filePath: (file: File) => string
+      pickAttachments: () => Promise<string[]>
+      clipboardFiles: () => Promise<string[]>
+      attachmentPreview: (id: string, thumbnail: boolean) => Promise<string>
+      attachmentAction: (id: string, action: 'reveal' | 'save') => Promise<void>
       /** 查询 Agent 引擎服务连接状态（诊断） */
       getStatus: () => Promise<{
         state: 'starting' | 'running' | 'stopped' | 'failed'
@@ -102,6 +111,7 @@ declare global {
 /** 引擎方法名（renderer 可触达的子集；白名单在 main 侧 ipc/engine.ts 收窄 ——
     providers.custom.sync 已退出：自定义 provider 的写路径只有 custom-providers:set） */
 export type EngineMethod =
+  | keyof AttachmentMethods
   | 'session.list'
   | 'session.create'
   | 'session.delete'
@@ -207,7 +217,7 @@ export interface ProjectSummary {
 }
 
 /** 与 protocol/types.ts 对应 method 的参数形状（renderer 侧镜像声明） */
-export interface EngineMethodParams {
+export interface EngineMethodParams extends AttachmentParams {
   'session.list': Record<string, never>
   'session.create': { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode; planEnabled?: boolean }
   'session.delete': { sessionId: string }
@@ -226,7 +236,7 @@ export interface EngineMethodParams {
   'project.update': { projectId: string; name: string; cwds: string[] }
   'project.delete': { projectId: string }
   'project.setPinned': { projectId: string; pinned: boolean }
-  'agent.submit': { sessionId: string; text: string; model?: string; provider?: string; thinkingLevel?: string }
+  'agent.submit': { sessionId: string; text: string; model?: string; provider?: string; thinkingLevel?: string; attachmentIds?: string[]; inputId?: string; directories?: DirectoryRef[] }
   'agent.abort': { sessionId: string }
   'credentials.list': Record<string, never>
   'models.list': Record<string, never>
@@ -249,7 +259,7 @@ export interface TodoItem {
 }
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
-export interface EngineMethodResult {
+export interface EngineMethodResult extends AttachmentResults {
   'session.list': SessionSummary[]
   'session.create': SessionSummary
   'session.delete': { deleted: boolean }
@@ -467,6 +477,8 @@ export interface InspectEntryDetail {
 }
 
 export interface ChatMessage {
+  attachments?: AttachmentRef[]
+  directories?: DirectoryRef[]
   id: string
   role: 'user' | 'assistant' | 'compaction'
   /**

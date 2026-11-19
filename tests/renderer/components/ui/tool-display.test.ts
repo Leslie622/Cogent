@@ -6,6 +6,8 @@ describe('toolKindLabel', () => {
   it('running 用进行形，其余三态共用完成形（失败的「已写入」指动作已发生）', () => {
     expect(toolKindLabel('read', 'running')).toBe('正在读取')
     expect(toolKindLabel('read', 'ok')).toBe('已读取')
+    expect(toolKindLabel('read_attachment', 'running')).toBe('正在读取附件')
+    expect(toolKindLabel('read_attachment', 'ok')).toBe('已读取附件')
     expect(toolKindLabel('write', 'error')).toBe('已写入')
     expect(toolKindLabel('write', 'blocked')).toBe('已写入')
   })

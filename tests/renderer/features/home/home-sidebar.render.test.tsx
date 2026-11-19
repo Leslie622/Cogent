@@ -6,6 +6,7 @@ import { emptyBucket, useChatStore } from '@/stores/chat'
 import { useHomeStore } from '@/stores/home'
 import { useProjectStore } from '@/stores/project'
 import { HomeSidebar } from '@/features/home/HomeSidebar'
+import { EMPTY_DRAFT, useAttachmentStore } from '@/stores/attachments'
 
 vi.mock('@/features/home/ProjectDialog', () => ({ ProjectDialog: () => null }))
 
@@ -44,7 +45,7 @@ describe('侧栏新聊天入口', () => {
     expect(useHomeStore.getState().session.kind).toBe('new')
   })
 
-  it('从已有聊天进入新聊天，创建尚未返回时连点也只创建一次', async () => {
+  it('从已有聊天进入新聊天，连点也不创建空会话', async () => {
     useChatStore.setState({ activeSessionId: oldSession.id, sessions: [oldSession] })
     useHomeStore.getState().openChat(oldSession.id)
     render(<HomeSidebar />)
@@ -52,9 +53,31 @@ describe('侧栏新聊天入口', () => {
     fireEvent.click(button)
     fireEvent.click(button)
     fireEvent.click(button)
-    await waitFor(() => expect(useChatStore.getState().sessions).toHaveLength(2))
-    expect(engineRequest.mock.calls.filter(([method]) => method === 'session.create')).toHaveLength(1)
+    await waitFor(() => expect(useProjectStore.getState().loaded).toBe(true))
+    expect(useChatStore.getState().sessions).toEqual([oldSession])
+    expect(useChatStore.getState().activeSessionId).toBeNull()
+    expect(engineRequest.mock.calls.filter(([method]) => method === 'session.create')).toHaveLength(0)
     expect(useHomeStore.getState().session.kind).toBe('new')
+  })
+
+  it('新聊天写正文和附文件后，A→新聊天往返仍取同一草稿', async () => {
+    const view = useHomeStore.getState().session
+    expect(view.kind).toBe('new')
+    if (view.kind !== 'new') throw new Error('测试前置错误')
+    const draftId = `new-${view.draftId}`
+    const items = [{ key: 'file', name: '未发附件.txt', size: 12, status: 'importing' as const }]
+    useAttachmentStore.setState({ drafts: { [draftId]: { ...EMPTY_DRAFT, loaded: true, text: '未发正文', items } } })
+    useChatStore.setState({ activeSessionId: oldSession.id, sessions: [oldSession], bySession: { [oldSession.id]: emptyBucket() } })
+    useHomeStore.getState().openChat(oldSession.id)
+    render(<HomeSidebar />)
+    fireEvent.click(screen.getByRole('button', { name: '新聊天' }))
+    expect(useHomeStore.getState().session).toEqual(view)
+    fireEvent.click(screen.getByRole('button', { name: '已有聊天' }))
+    fireEvent.click(screen.getByRole('button', { name: '新聊天' }))
+    expect(useHomeStore.getState().session).toEqual(view)
+    expect(useAttachmentStore.getState().drafts[draftId]).toMatchObject({ text: '未发正文', items })
+    expect(useChatStore.getState().sessions).toEqual([oldSession])
+    await waitFor(() => expect(useProjectStore.getState().loaded).toBe(true))
   })
 
   it('打开的会话本身还是空白新会话时继续复用', async () => {

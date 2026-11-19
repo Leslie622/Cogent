@@ -66,6 +66,21 @@ const assistantMsg = (content: string, at: number): ChatMessage => ({ id: `a-${c
 bindEngineEvents()
 
 describe('聊天重命名状态', () => {
+  it('新聊天创建晚返回时不抢走用户已经打开的会话，提交仍返回实际目标ID', async () => {
+    const summary = { id: 'created-late', title: '新会话', createdAt: 1, updatedAt: 1 }
+    let finish!: (value: typeof summary) => void
+    engineRequest.mockImplementation((method) => method === 'session.create'
+      ? new Promise((resolve) => { finish = resolve }) : Promise.resolve({ accepted: true }))
+    useHomeStore.setState({ session: { kind: 'new', draftId: 'late' } })
+    const pending = useChatStore.getState().submit('提交到新聊天')
+    useHomeStore.getState().openChat('already-open')
+    useChatStore.setState({ activeSessionId: 'already-open' })
+    finish(summary)
+    await expect(pending).resolves.toBe(summary.id)
+    expect(useChatStore.getState().activeSessionId).toBe('already-open')
+    expect(useHomeStore.getState().session).toEqual({ kind: 'chat', chatId: 'already-open' })
+    expect(engineRequest).toHaveBeenCalledWith('agent.submit', expect.objectContaining({ sessionId: summary.id }))
+  })
   it('RPC 成功改目标标题，迟到结果不复活已删除列表项', async () => {
     const session = { id: SID, title: '旧标题', createdAt: 1, updatedAt: 2 }
     let resolve!: (value: unknown) => void
@@ -178,6 +193,14 @@ describe('run.completed 终态替换（D9 不吞压缩条/副行）', () => {
 })
 
 describe('submit 边界失败（R10 IPC 剥壳 + 乐观回滚）', () => {
+  it('纯目录提交保留乐观卡片，并传独立引用与真实输入身份', async () => {
+    seedMessages([]); engineRequest.mockResolvedValue({ accepted: true })
+    const directories = [{ kind: 'directory' as const, name: '资料', path: 'C:/资料' }]
+    expect(await useChatStore.getState().submit('', 'mock', 'off', 'custom/mock', [], directories)).toBe(SID)
+    const user = messages().find((message) => message.id.startsWith('u-')) as ChatMessage
+    expect(user.directories).toEqual(directories)
+    expect(engineRequest).toHaveBeenCalledWith('agent.submit', { sessionId: SID, text: '', model: 'mock', thinkingLevel: 'off', provider: 'custom/mock', directories, inputId: user.id })
+  })
   it('engineRequest 拒绝：错误条显示剥壳后的协议文案，乐观用户消息撤回、运行态复位', async () => {
     seedMessages([])
     engineRequest.mockRejectedValueOnce(

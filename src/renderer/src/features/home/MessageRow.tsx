@@ -17,6 +17,8 @@ import { formatDuration } from '@/components/ui/run-trace'
 import { formatTokens } from './ContextIndicator'
 import { CompactionBar } from './CompactionBar'
 import type { MessageUsage } from '@/env.d'
+import type { AttachmentRef, DirectoryRef } from '@shared/attachments'
+import { AttachmentCards } from './AttachmentCards'
 
 /** 消息的最小渲染形状（chat store 的 ChatMessage，props 单向传入；会话视图
     件 —— ConversationIndex 等 —— 共享，经 HomeChat 再导出）。role 含
@@ -24,6 +26,8 @@ import type { MessageUsage } from '@/env.d'
     MessageRow 是其类型流的终点，跟上才有完备分支（常态由 TurnGroup 的
     独立行快路接管，进不到这里） */
 export type MessageLike = {
+  attachments?: AttachmentRef[]
+  directories?: DirectoryRef[]
   id: string
   role: 'user' | 'assistant' | 'compaction'
   content: string
@@ -105,9 +109,13 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
     return (
       <Message align="end">
         <MessageContent>
-          <Bubble variant="muted" align="end">
+          {(message.attachments !== undefined || message.directories !== undefined) && <AttachmentCards history items={[
+            ...(message.attachments ?? []).map((ref) => ({ key: ref.id, name: ref.name, size: ref.size, ref, status: 'ready' as const })),
+            ...(message.directories ?? []).map((directory) => ({ key: `directory:${directory.path}`, name: directory.name, size: 0, directory, status: 'ready' as const }))
+          ]} />}
+          {message.content !== '' && <Bubble variant="muted" align="end">
             <BubbleContent>{message.content}</BubbleContent>
-          </Bubble>
+          </Bubble>}
           <MessageFooter className="gap-1 px-0">
             {/* 时间戳是 chrome：select-none（气泡正文保持可选，zcode 时间戳同款） */}
             <span className="text-[11px] text-muted-foreground select-none">{formatTime(message.timestamp)}</span>

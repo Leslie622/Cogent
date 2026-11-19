@@ -3,14 +3,9 @@
  * 触发钮 = 信息区灰条里的「选择项目」/「项目名」胶囊（两态同组件：未选项目时
  * 出"选择项目"，已选时回显项目名、点开可**换绑**）；已选态胶囊 hover 时左侧
  * 文件夹图标原位渐变成灰底白 X 圆徽（嵌在钮内的 role=button span，stopPropagation
- * 拦触发器，点它 = 解绑 unbindProject：删绑定空脚手架会话 + 视图态回"无项目"，
- * **不是**删项目 —— 真删走侧栏「移除项目」）。
+ * 拦触发器，点它只清除草稿的项目归属，项目本身由侧栏管理）。
  *
- * 关键边界：协议里会话与项目的绑定只在 session.create 时可定（无改绑 method），
- * 所以"选项目"不是切视图态就完 —— 必须物化一个绑定会话，否则首条消息会发进
- * 未绑定的会话（串归属）。物化语义对齐侧栏 startNew（空会话复用防垃圾）：
- * 当前会话为空（无消息 + 未命名 + 无归属）→ 删掉再建绑定的；非空 → 直接新建。
- * 已有会话（kind:'chat'）打开弹层时不提供换绑 —— 协议无改绑能力，列了也做不到。
+ * 项目只修改未发送草稿的归属；首条提交再随 session.create 落定，选择/解绑不建空会话。
  */
 import { useMemo, useState } from 'react'
 import {
@@ -29,60 +24,15 @@ import {
 } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { useProjectStore } from '@/stores/project'
-import { useChatStore } from '@/stores/chat'
 import { useHomeStore } from '@/stores/home'
 import { ProjectDialog } from './ProjectDialog'
 
 /** 行 hover 底：全局黑 5% 软叠配方（同侧栏行） */
 const ROW_HOVER = 'hover:bg-accent-foreground/5'
 
-/**
- * 把当前"新聊天进行中"的空脚手架会话换成绑定项目的新会话。
- * 空会话（无消息 + 未命名 + 无归属）直接删掉再建 —— 对齐侧栏 startNew 的
- * "不复用即不堆垃圾"语义；项目场景下空会话不可复用（归属不同，挂错项目）。
- */
-async function rebindSessionToProject(projectId: string): Promise<void> {
-  const chat = useChatStore.getState()
-  const active = chat.sessions.find((s) => s.id === chat.activeSessionId)
-  const scaffold =
-    active !== undefined &&
-    (chat.bySession[active.id]?.messages.length ?? 0) === 0 &&
-    active.title === '新会话' &&
-    active.titleManual !== true &&
-    active.projectId === undefined
-  if (scaffold) {
-    await chat.deleteSession(active.id)
-  }
-  await chat.createSession({ projectId })
-  // 视图态跟着落：信息区回显从"选择项目"变项目名（同 startNewChat 的效果）
-  const created = useChatStore.getState().activeSessionId
-  if (created !== null) {
-    useHomeStore.setState({ session: { kind: 'new', projectId } })
-  }
-}
-
-/**
- * X 解绑（与 pick 相反的操作）：删掉选项目时物化的**绑定空脚手架会话**（绑定
- * 只在 session.create 时可定，留着它下条消息就串进该项目），视图态回"无项目"
- * —— 信息区回到「选择项目」。仅解绑不删项目：真删项目走侧栏「移除项目」
- * （引擎语义：项目没了会话落回"最近"）。
- * 会话已被发过消息/改过名时（非脚手架形态）X 不出现，本函数不会被走到；
- * 脚手架判定同 rebind 的口径 —— 消息空 + 未命名，归属必为本项目（该会话就是
- * 为绑定本项目而物化的）。
- */
-async function unbindProject(): Promise<void> {
-  const chat = useChatStore.getState()
-  const active = chat.sessions.find((s) => s.id === chat.activeSessionId)
-  if (
-    active !== undefined &&
-    (chat.bySession[active.id]?.messages.length ?? 0) === 0 &&
-    active.title === '新会话' &&
-    active.titleManual !== true &&
-    active.projectId !== undefined
-  ) {
-    await chat.deleteSession(active.id)
-  }
-  useHomeStore.setState({ session: { kind: 'new' } })
+/** 解绑只改暂存归属，正文、附件与草稿身份继续保留。 */
+function unbindProject(): void {
+  useHomeStore.getState().updateNewChat({ projectId: undefined })
 }
 
 /** 弹层内项目行：folder 图标 + 名称，当前所在项目打勾（触发钮已回显名称时） */
@@ -119,7 +69,7 @@ export function ProjectPicker({
 }: {
   /** 当前绑定项目 id；undefined = 未选（触发钮显示"选择项目"） */
   projectId?: string
-  /** 选中/换绑回调（组件内部先物化会话，再通知视图态） */
+  /** 选中项目时更新同一草稿的归属 */
   onProjectId: (projectId: string) => void
   /** 选完（含新建项目流）后的收尾钩子：主流产品语义 = 选完即聚焦输入框 */
   onAfterPick?: () => void
@@ -140,12 +90,9 @@ export function ProjectPicker({
 
   const pick = (id: string) => {
     setOpen(false)
-    // 先物化绑定会话（文件头的关键边界：绑定只在 session.create 时可定，
-    // 空脚手架换绑防串归属），再通知视图态回显
-    void rebindSessionToProject(id).then(() => {
-      onProjectId(id)
-      onAfterPick?.()
-    })
+    // 首次提交才物化，选择项目只通知草稿所有者更新归属。
+    onProjectId(id)
+    onAfterPick?.()
   }
 
   return (
@@ -270,7 +217,7 @@ export function ProjectPicker({
         </PopoverContent>
       </Popover>
 
-      {/* 新建项目流：创建成功 = 选中它（物化绑定会话，回到弹层原本的选中路径）。
+      {/* 新建项目流：创建成功后选为当前草稿的项目，首条发送再绑定会话。
           取消/关闭时 createOpen 落 false，回到界面原状（弹层已关，无残留态） */}
       <ProjectDialog
         open={createOpen}

@@ -29,6 +29,17 @@ const segment = (id: string, content: string, toolCalls?: ToolCallRecord[]): Cha
 })
 
 describe('flattenSegments', () => {
+  it('纯目录用户消息水合时保留', () => {
+    const message: ChatMessage = { id: 'directory-user', role: 'user', content: '', timestamp: 1,
+      directories: [{ kind: 'directory', name: '项目', path: 'C:/项目' }] }
+    expect(flattenSegments([message])).toEqual([{ ...message, toolCalls: undefined }])
+  })
+  it('纯附件用户消息在历史水合中保留，不因空正文被过滤', () => {
+    const message: ChatMessage = { id: 'file-user', role: 'user', content: '', timestamp: 1, attachments: [{
+      id: '11111111-1111-1111-1111-111111111111', name: 'a.pdf', size: 1, mime: 'application/pdf', sha256: 'a'.repeat(64)
+    }] }
+    expect(flattenSegments([message])).toEqual([{ ...message, toolCalls: undefined }])
+  })
   it('每段先落工具卡再落消息本体；纯工具段不落本体（只留卡）', () => {
     const out = flattenSegments([
       segment('a1', '先说两句', [call('t1')]),

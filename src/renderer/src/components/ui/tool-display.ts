@@ -17,6 +17,7 @@ export type ToolDisplayStatus = 'running' | 'ok' | 'error' | 'blocked'
  */
 const KIND_LABELS: Record<string, [string, string]> = {
   read: ['正在读取', '已读取'],
+  read_attachment: ['正在读取附件', '已读取附件'],
   write: ['正在写入', '已写入'],
   edit: ['正在编辑', '已编辑'],
   grep: ['正在搜索', '已搜索'],

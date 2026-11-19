@@ -128,9 +128,7 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
       void setPermission(activeId, mode)
       return
     }
-    useHomeStore.setState((s) =>
-      s.session.kind === 'new' ? { session: { ...s.session, permissionMode: mode } } : s
-    )
+    useHomeStore.getState().updateNewChat({ permissionMode: mode })
   }
 
   const select = (mode: PermissionMode) => {
@@ -152,9 +150,7 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
       void setPlanMode(activeId, !planOn)
       return
     }
-    useHomeStore.setState((s) =>
-      s.session.kind === 'new' ? { session: { ...s.session, planEnabled: !planOn } } : s
-    )
+    useHomeStore.getState().updateNewChat({ planEnabled: !planOn })
   }
 
   const TriggerIcon = MODES[current].icon

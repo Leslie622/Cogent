@@ -27,7 +27,6 @@ import {
   IconLayoutSidebarRightCollapse,
   IconLayoutSidebarRightExpand,
   IconPlayerPlayFilled,
-  IconPlus,
   IconSquare,
   IconStack2Filled,
 } from '@tabler/icons-react'
@@ -38,7 +37,6 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import {
   InputGroup,
   InputGroupAddon,
-  InputGroupButton,
   InputGroupTextarea,
 } from '@/components/ui/input-group'
 import {
@@ -52,6 +50,12 @@ import {
 import { RevealPacingContext } from '@/components/ui/markdown'
 import { createStreamingRevealPacing } from '@/components/ui/stream-reveal'
 import { useHomeStore, type HomeSession } from '@/stores/home'
+import { bindChatDraft, chatDraftId, EMPTY_DRAFT, useAttachmentStore, type Draft } from '@/stores/attachments'
+import { AttachmentRejections } from './AttachmentRejections'
+import { AttachmentMenu } from './AttachmentMenu'
+import { ATTACHMENT_LIMITS, formatAttachmentBytes } from '@shared/attachments'
+import { AttachmentCards, isReferenceOnlyAttachment } from './AttachmentCards'
+import { unwrapIpcError } from '@/lib/ipc'
 import {
   EMPTY_MESSAGES,
   selectLastError,
@@ -340,29 +344,26 @@ export function isSendKey(
  * 按设置页「发送快捷键」分流（isSendKey；缺省 Enter，IME 组词中不误发）、
  * 流式中发送钮变停止钮（agent.abort）、底部工具行 = 裸 +
  * 附件 / 权限模式菜单 / 上下文指示器 / 模型下拉（ModelMenu）/ 发送。
- * 输入草稿是 props（提升到 HomeChat 层持有）：待审批时本组件整体被
+ * 输入草稿由独立仓通过 props 提供：待审批时本组件整体被
  * ApprovalPanel **替换**（2026-11-11 用户定调：审批卡覆盖输入位、不支持
  * 输入 —— run 挂起中本就发不出，留着能打字的框是误导），本地态会随卸载
- * 丢草稿，父层持有则裁决后回来字还在。
+ * 丢草稿，独立仓持有则裁决后回来字还在。
  */
 function ChatComposer({
   session,
+  draftId,
+  draft,
   value,
   onValueChange
 }: {
   session: HomeSession
+  draftId: string
+  draft: Draft
   value: string
   onValueChange: (next: string) => void
 }) {
-  // 长回包不能清掉用户后来输入的草稿、另一会话，或新挂载输入区的内容。
-  const submission = useRef({ request: 0, edit: 0, value })
-  submission.current.value = value
-  useEffect(() => () => { submission.current.request++ }, [])
-  const setValue = (next: string): void => {
-    submission.current.edit++
-    submission.current.value = next
-    onValueChange(next)
-  }
+  // 草稿仓持有提交身份与编辑代次；输入区因审批卸载也不丢提交后的新编辑。
+  const setValue = onValueChange
   const running = useChatStore(selectRunning)
   const submit = useChatStore((s) => s.submit)
   const abort = useChatStore((s) => s.abort)
@@ -376,6 +377,17 @@ function ChatComposer({
   const activeProvider = useEngineStore((s) =>
     findActiveModel(s.models, s.keyConfigured, s.activeModelId, s.activeProviderId)?.provider
   )
+  const imageInput = useEngineStore((s) => findActiveModel(s.models, s.keyConfigured, s.activeModelId, s.activeProviderId)?.input?.includes('image') === true)
+  const media = useAttachmentStore((s) => s.media)
+  const items = draft.items
+  const referenceOnly = items.some((item) => item.ref !== undefined && isReferenceOnlyAttachment(item.ref, imageInput, media))
+  const overCapacity = items.reduce((n, item) => n + item.size, 0) > ATTACHMENT_LIMITS.messageBytes
+  const blocked = !draft.loaded || items.some((item) => item.status !== 'ready') || overCapacity
+  const sendLabel = referenceOnly ? '作为文件发送' : '发送'
+  const reportError = (error: unknown): void => {
+    useAttachmentStore.setState((state) => ({ drafts: { ...state.drafts, [draftId]: { ...state.drafts[draftId]!, error: unwrapIpcError(error) } } }))
+  }
+  const add = (files: Array<File | string>): void => useAttachmentStore.getState().add(draftId, files)
   const projects = useProjectStore((s) => s.projects)
   const sessions = useChatStore((s) => s.sessions)
   const { scrollToEnd } = useMessageScroller()
@@ -397,32 +409,33 @@ function ChatComposer({
 
   const send = () => {
     const text = value.trim()
-    if (!text || running) return
-    const request = ++submission.current.request
-    const edit = submission.current.edit
+    if ((!text && items.length === 0) || running || blocked) return
+    const token = useAttachmentStore.getState().startSubmission(draftId)
     const view = useHomeStore.getState().session
     // submit 可能要先按需建会话（空列表着陆页直发，chat store 内物化）——必须
-    // await 之后再读 activeSessionId 翻视图态，否则建会话未落定时读到 null，
-    // 消息进了新会话而视图还停在新聊天（串视图）。清空输入放在受理成功之后：
+    // 受理结果直接携带目标 sessionId，不能在 await 后用可能已切走的活动会话猜归属。
+    // 清空输入放在受理成功之后：
     // submit 失败（引擎不可用）会 rethrow，此时输入框保留原文供改后重发
     void (async () => {
       try {
-        const accepted = await submit(text, activeModelId, thinkingLevel, activeProvider)
-        if (!accepted || request !== submission.current.request || edit !== submission.current.edit ||
-          submission.current.value !== value || useHomeStore.getState().session !== view) return
+        const acceptedSessionId = await submit(text, activeModelId, thinkingLevel, activeProvider,
+          items.flatMap((item) => item.ref === undefined ? [] : [item.ref]),
+          items.flatMap((item) => item.directory === undefined ? [] : [item.directory]))
+        if (acceptedSessionId === false) return
+        const consumed = useAttachmentStore.getState().consume(draftId, draft, token)
+        if (!consumed) return
+        if (view.kind === 'new') {
+          bindChatDraft(acceptedSessionId, draftId)
+          useHomeStore.getState().finishNewChat(view.draftId ?? 'default', acceptedSessionId)
+        }
+        const visible = useHomeStore.getState().session
+        if (visible.kind === 'chat' && visible.chatId === acceptedSessionId) {
+          useChatStore.setState({ activeSessionId: acceptedSessionId })
+          scrollToEnd()
+        }
       } catch {
         return // 失败态已由 store 落（错误条 + 运行位复位），原文留在输入框
       }
-      setValue('')
-      // 发首条消息即脱离"新聊天进行中"视图态（信息区消失，对齐 ChatGPT：
-      // 提交后进入正常对话态）；activeId 此刻必为 submit 物化/选中的会话
-      const activeId = useChatStore.getState().activeSessionId
-      if (activeId !== null) {
-        useHomeStore.setState({ session: { kind: 'chat', chatId: activeId } })
-      }
-      // 发送即回到底部并恢复跟随（对齐主流产品）：翻历史/索引跳转过也吸底；
-      // 消息追加后库的 handleContentChange 在 following-bottom 态继续吸底
-      scrollToEnd()
     })()
   }
 
@@ -442,7 +455,7 @@ function ChatComposer({
               <ProjectPicker
                 projectId={projectId}
                 onProjectId={(nextProjectId) => {
-                  useHomeStore.setState({ session: { kind: 'new', projectId: nextProjectId } })
+                  useHomeStore.getState().updateNewChat({ projectId: nextProjectId })
                 }}
               />
             ) : primaryCwd ? (
@@ -469,8 +482,26 @@ function ChatComposer({
             ③ 聚焦态 border-ring + ring-3 光晕，参考稿聚焦无变化。
             圆角沿用 InputGroup 原生 rounded-lg，与项目输入控件同源。 */}
         <InputGroup className="border-foreground/10 bg-background has-[[data-slot=input-group-control]:focus-visible]:border-foreground/10 has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-disabled:bg-background has-disabled:opacity-100 dark:bg-background dark:has-disabled:bg-background">
+          {items.length > 0 && <InputGroupAddon align="block-start" className="w-full px-4 pt-3">
+            <AttachmentCards items={items}
+              onRemove={(key) => useAttachmentStore.getState().remove(draftId, key)}
+              onRetry={(key) => useAttachmentStore.getState().retry(draftId, key)} />
+          </InputGroupAddon>}
           <InputGroupTextarea
             value={value}
+            disabled={!draft.loaded}
+            onPaste={(event) => {
+              const data = event.clipboardData
+              const text = data.getData('text/plain')
+              // 表格的 HTML/位图并存时保留可编辑文字；截图只有图像时接附件。
+              if (text !== '' && /<table[\s>]/i.test(data.getData('text/html'))) return
+              const files = Array.from(data.files)
+              if (files.length > 0) { event.preventDefault(); add(files); return }
+              if (text === '' || data.getData('text/uri-list').split(/\r?\n/).some((line) => line.startsWith('file://')) || data.types.includes('Files')) {
+                event.preventDefault()
+                void window.cogent.clipboardFiles().then(add, reportError)
+              }
+            }}
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={(event) => {
               // 发送组合键按「发送快捷键」设置分流（isSendKey 内含 IME 保护）
@@ -485,15 +516,7 @@ function ChatComposer({
           {/* gap-1：工具行三块（+ / 权限钮 / 计划 chip）紧凑（2026-11-16 用户
               定调，曾 gap-2 偏松）；分隔线自身 mx 已归零由本 gap 接管间距 */}
           <InputGroupAddon align="block-end" className="composer-toolbar gap-1 p-2">
-            {/* + 号：icon-xs 的 size-6 定宽改成 h-7 w-auto + px-2（与右侧文字钮
-                同为 8px 水平内距，行内对齐）；圆角走 xs 档原生，不覆写 */}
-            <InputGroupButton
-              size="icon-xs"
-              className="h-7 w-auto px-2 text-muted-foreground has-[>svg]:px-2 hover:bg-accent-foreground/5 hover:text-foreground"
-              aria-label="添加附件"
-            >
-              <IconPlus className="size-4.5" />
-            </InputGroupButton>
+            <AttachmentMenu disabled={!draft.loaded} onAdd={add} onError={reportError} />
             {/* 权限模式菜单（三档单选 + 顶部计划开关项）+ 计划开关外置 chip
                 （正交开关 v3：chip 常显开关态，菜单项等价入口，两处同源同步） */}
             <PermissionMenu session={session} />
@@ -517,7 +540,7 @@ function ChatComposer({
                   </Button>
                 </Hint>
               ) : (
-                <Hint tip="发送" side="top">
+                <Hint tip={sendLabel} side="top">
                   <Button
                     size="icon-sm"
                     /* 禁用态 cursor-not-allowed（2026-11-16 用户定调）：原语
@@ -526,8 +549,8 @@ function ChatComposer({
                        pointer 事件穿透到钮上是安全的 —— button disabled 属性
                        本身就不派发 click */
                     className="size-7 cursor-pointer bg-foreground/85 hover:bg-foreground disabled:pointer-events-auto disabled:cursor-not-allowed disabled:hover:bg-foreground/85"
-                    aria-label="发送"
-                    disabled={!value.trim()}
+                    aria-label={sendLabel}
+                    disabled={blocked || (!value.trim() && items.length === 0)}
                     onClick={send}
                   >
                     <IconArrowUp className="size-3.5" />
@@ -536,6 +559,13 @@ function ChatComposer({
               )}
             </div>
           </InputGroupAddon>
+          {draft.error !== null && <InputGroupAddon align="block-end" role="alert">{draft.error}
+            {!draft.loaded && <Button variant="ghost" size="xs" onClick={() => void useAttachmentStore.getState().load(draftId)}>重试恢复</Button>}
+          </InputGroupAddon>}
+          {draft.rejections !== undefined && draft.rejections.length > 0 && <InputGroupAddon align="block-end">
+            <AttachmentRejections items={draft.rejections} onClear={() => useAttachmentStore.getState().clearRejections(draftId)} />
+          </InputGroupAddon>}
+          {overCapacity && <InputGroupAddon align="block-end" role="alert">附件合计超过 {formatAttachmentBytes(ATTACHMENT_LIMITS.messageBytes)}，请移除部分文件。</InputGroupAddon>}
         </InputGroup>
       </div>
     </div>
@@ -574,7 +604,7 @@ export function HomeChat({
     return max > 0 ? max : undefined
   })
   // 待审批 = ApprovalPanel **替换**输入区（2026-11-11 用户定调：审批卡覆盖
-  // 输入位、待审批不支持输入）。草稿提升到本层持有，Composer 卸载不丢字。
+  // 输入位、待审批不支持输入）。草稿由独立仓持有，Composer 卸载不丢字。
   // 挂起提问（4c-2）同款占位（QuestionPanel 与审批面板互斥呈现 —— 都是
   // run 挂起中的人机裁决，同一时刻至多一类挂起是引擎执行模型的自然结果）
   const hasPendingApproval = useChatStore(
@@ -586,9 +616,25 @@ export function HomeChat({
   const hasPendingPlan = useChatStore(
     (s) => (s.bySession[s.activeSessionId ?? '']?.pendingPlans.length ?? 0) > 0
   )
-  const [draft, setDraft] = useState('')
+  const draftId = session.kind === 'chat' ? chatDraftId(session.chatId) : `new-${session.draftId ?? 'default'}`
+  const draft = useAttachmentStore((s) => s.drafts[draftId] ?? EMPTY_DRAFT)
+  useEffect(() => { void useAttachmentStore.getState().load(draftId) }, [draftId])
+  const [dragging, setDragging] = useState(false)
+  const dragDepth = useRef(0)
   return (
-    <div className="home-chat flex h-full min-w-0 flex-col">
+    <div className="home-chat relative flex h-full min-w-0 flex-col"
+      onDragEnter={(event) => {
+        if (!draft.loaded || !event.dataTransfer.types.includes('Files')) return
+        event.preventDefault(); dragDepth.current++; setDragging(true)
+      }}
+      onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
+      onDragLeave={(event) => { event.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (dragDepth.current === 0) setDragging(false) }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault(); dragDepth.current = 0; setDragging(false)
+        if (draft.loaded) useAttachmentStore.getState().add(draftId, Array.from(event.dataTransfer.files))
+      }}>
+      {dragging && <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-lg border-2 border-dashed bg-background/90" role="status">添加到当前聊天</div>}
       <ChatHeader
         title={title}
         project={project}
@@ -617,7 +663,7 @@ export function HomeChat({
         ) : hasPendingQuestion ? (
           <QuestionPanel />
         ) : (
-          <ChatComposer session={session} value={draft} onValueChange={setDraft} />
+          <ChatComposer session={session} draftId={draftId} draft={draft} value={draft.text} onValueChange={(text) => useAttachmentStore.getState().setText(draftId, text)} />
         )}
       </MessageScrollerProvider>
     </div>
