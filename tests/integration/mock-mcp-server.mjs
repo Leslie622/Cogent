@@ -39,6 +39,10 @@ stdin.on('line', (line) => {
         result: {
           tools: [
             {
+              name: 'analyse_attachment', description: '分析本地附件（测试）',
+              inputSchema: { type: 'object', properties: { path: { type: 'string' }, question: { type: 'string' } }, required: ['path', 'question'] }
+            },
+            {
               name: 'echo',
               description: 'Echo the input text back, prefixed with "echo: "',
               inputSchema: {
@@ -53,6 +57,10 @@ stdin.on('line', (line) => {
         }
       })
     } else if (method === 'tools/call') {
+      if (params.name === 'analyse_attachment') {
+        send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: `视频分析：00:02 车辆开始移动；本机路径=${params.arguments.path}` }] } })
+        return
+      }
       if (params.name !== 'echo') {
         send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: `unknown tool: ${params.name}` }], isError: true } })
         return

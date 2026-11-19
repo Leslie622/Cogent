@@ -4,7 +4,7 @@
  */
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -23,6 +23,7 @@ import { readPiTranscript } from '../../../src/host/kernel/pi-session-factory'
 const hooks = vi.hoisted(() => ({
   input: (): Promise<{ action: 'continue' | 'handled' } | undefined> => Promise.resolve(undefined),
   beforeStart: (): Promise<void> => Promise.resolve(),
+  payload: (...args: [unknown]): Promise<unknown> => { void args; return Promise.resolve(undefined) },
   build: (): Promise<void> => Promise.resolve(),
   compactAbort: (): Promise<void> => Promise.resolve(),
   sessions: [] as AgentSession[],
@@ -42,6 +43,7 @@ vi.mock('../../../src/host/runtime/hook-seat', async (importOriginal) => {
           const initialized = factory(api)
           api.on('input', () => hooks.input())
           api.on('before_agent_start', () => hooks.beforeStart())
+          api.on('before_provider_request', (event) => hooks.payload(event.payload))
           return initialized
         }
       }
@@ -109,6 +111,7 @@ beforeEach(async () => {
   hooks.prompts = []
   hooks.input = () => Promise.resolve(undefined)
   hooks.beforeStart = () => Promise.resolve()
+  hooks.payload = () => Promise.resolve(undefined)
   hooks.build = () => Promise.resolve()
   hooks.compactAbort = () => Promise.resolve()
   answer = { text: '完整回答', finish: 'stop' }
@@ -197,6 +200,93 @@ function submit(text = '准备期停止的问题') {
 }
 
 describe('真实 pi 准备期取消与终态内容', () => {
+  it('历史图片请求超额时零新增HTTP，异步原回调变换后的有效载荷才被记录', async () => {
+    manager.syncCustomProviders([{ id: PROVIDER, name: '请求额度', baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`, models: [],
+      modelDefs: [{ id: MODEL, input: ['text','image'], contextWindow: 128000, maxTokens: 4096 }] }], [])
+    hooks.beforeStart = () => {
+      hooks.sessions.at(-1)!.model!.inputLimits = { images: { maxPerRequest: 1 } }
+      return Promise.resolve()
+    }
+    hooks.payload = async (payload) => { await Promise.resolve(); return { ...payload as Record<string,unknown>, user: 'async-original-payload' } }
+    const original = join(root,'budget.png'); writeFileSync(original,readFileSync('reference/pi/packages/ai/test/data/red-circle.png'))
+    const ref = await manager.attachments.importPath(original)
+    manager.submit(sessionId,'第一次',MODEL,'off',PROVIDER,[ref.id]); await waitTerminals(1)
+    expect(terminals[0]).toMatchObject({ method: 'run.completed' }); expect(requests).toHaveLength(1)
+    expect(requests[0]).toContain('async-original-payload')
+    const recorded = new InspectStore(root).load(sessionId).find((entry) => entry.e.kind === 'api.request')!
+    expect(recorded.d?.blocks[0].content).toContain('async-original-payload')
+    manager.submit(sessionId,'第二次',MODEL,'off',PROVIDER,[ref.id]); await waitTerminals(2)
+    expect(terminals[1].method).toBe('run.failed')
+    if (terminals[1].method !== 'run.failed') throw new Error('应拒绝超额请求')
+    expect(terminals[1].params.message).toContain('含历史共 2')
+    expect(requests).toHaveLength(1)
+    const fresh = manager.create({ cwd: root }).id
+    manager.submit(fresh,'新聊天',MODEL,'off',PROVIDER,[ref.id]); await waitTerminals(3)
+    expect(terminals[2]).toMatchObject({ method: 'run.completed' }); expect(requests).toHaveLength(2)
+  })
+  it('附件按实际用户条目 id 绑定，历史恢复原始正文且保留原件', async () => {
+    const original = join(root, '原件.txt'); writeFileSync(original, '附件正文')
+    const ref = await manager.attachments.importPath(original)
+    rmSync(original)
+    manager.submit(sessionId, '请看附件', MODEL, 'off', PROVIDER, [ref.id], 'input-test')
+    await waitTerminals(1)
+    expect(terminals[0].method).toBe('run.completed')
+    expect(requests[0]).toContain('read_attachment')
+    const messages = manager.messages(sessionId).filter((message) => message.role === 'user')
+    expect(messages).toHaveLength(1); expect(messages[0]).toMatchObject({ content: '请看附件', attachments: [ref] })
+    const branch = hooks.sessions[0].sessionManager.getBranch()
+    const userEntry = branch.find((entry) => entry.type === 'message' && entry.message.role === 'user')!
+    const metadata = branch.find((entry) => entry.type === 'custom' && entry.customType === 'cogent.attachment-input.v1')!
+    expect(metadata.type === 'custom' && metadata.data).toMatchObject({ userEntryId: userEntry.id, inputId: 'input-test' })
+    expect(readPiTranscript(root, root, sessionId)?.find((message) => message.role === 'user')).toHaveProperty('attachmentInput.attachments', [ref])
+    hooks.sessions[0].sessionManager.appendCompaction('附件相关摘要', userEntry.id, 100)
+    expect(manager.messages(sessionId).find((message) => message.role === 'user')?.attachments).toEqual([ref])
+  })
+  it('带附件在 input 前停止，原始正文和附件各保存一份', async () => {
+    const ref = await manager.attachments.finish(manager.attachments.begin('空.txt', 0, ''))
+    const gate = blockNext('input')
+    manager.submit(sessionId, '', MODEL, 'off', PROVIDER, [ref.id], 'pure-file-stop')
+    await gate.entered; manager.abort(sessionId); gate.release(); await waitTerminals(1)
+    expect(requests).toHaveLength(0)
+    expect(manager.messages(sessionId).filter((message) => message.role === 'user')).toMatchObject([{ content: '', attachments: [ref] }])
+  })
+  it('图片能力来自模型声明，原生图片真实进入 pi 请求', async () => {
+    manager.syncCustomProviders([{ id: PROVIDER, name: '图片测试', baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
+      models: [], modelDefs: [{ id: MODEL, reasoning: false, input: ['text', 'image'], contextWindow: 128_000, maxTokens: 4096 }] }], [])
+    const bytes = readFileSync('reference/pi/packages/ai/test/data/red-circle.png')
+    const original = join(root, '一像素.png'); writeFileSync(original, bytes)
+    const ref = await manager.attachments.importPath(original)
+    manager.submit(sessionId, '', MODEL, 'off', PROVIDER, [ref.id])
+    await waitTerminals(1)
+    expect(terminals[0]).toMatchObject({ method: 'run.completed' })
+    expect(requests[0]).toContain('image_url')
+    expect(manager.listModels().models.find((model) => model.provider === PROVIDER && model.id === MODEL)?.input).toEqual(['text', 'image'])
+    expect(manager.messages(sessionId).find((message) => message.role === 'user')).toMatchObject({ content: '', attachments: [ref] })
+  })
+  it('同一模型同一聊天的图片能力热更新，关闭后实际请求不再含图片，控制台同步保留原生请求', async () => {
+    const endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`
+    const configure = (input: Array<'text' | 'image'>) => manager.syncCustomProviders([{ id: PROVIDER, name: '能力热更新', baseUrl: endpoint,
+      models: [], modelDefs: [{ id: MODEL, reasoning: false, input, contextWindow: 128_000, maxTokens: 4096 }] }], [])
+    configure(['text', 'image'])
+    const original = join(root, '图片.png'); writeFileSync(original, readFileSync('reference/pi/packages/ai/test/data/red-circle.png'))
+    const ref = await manager.attachments.importPath(original)
+    manager.submit(sessionId, '开启图片', MODEL, 'off', PROVIDER, [ref.id]); await waitTerminals(1)
+    expect(requests[0]).toContain('image_url')
+    const changes = hooks.sessions[0].sessionManager.getBranch().filter((entry) => entry.type === 'model_change').length
+    configure(['text'])
+    manager.submit(sessionId, '关闭图片后再发', MODEL, 'off', PROVIDER, [ref.id]); await waitTerminals(2)
+    expect(terminals[1]).toMatchObject({ method: 'run.completed' })
+    expect(requests[1]).not.toContain('image_url')
+    expect(hooks.sessions[0].model?.input).toEqual(['text'])
+    expect(hooks.sessions[0].sessionManager.getBranch().filter((entry) => entry.type === 'model_change')).toHaveLength(changes)
+    configure(['text', 'image'])
+    manager.submit(sessionId, '再次开启', MODEL, 'off', PROVIDER, [ref.id]); await waitTerminals(3)
+    expect(requests[2]).toContain('image_url')
+    const records = new InspectStore(root).load(sessionId).filter((record) => record.e.kind === 'api.request')
+    expect(records).toHaveLength(3)
+    expect(records[0].d?.blocks[0].content).toContain('image_url')
+    expect(records[1].d?.blocks[0].content).not.toContain('image_url')
+  })
   it.each(['input', 'beforeStart'] as const)('%s 等待中停止，恢复后零HTTP且user恰一份', async (phase) => {
     const gate = blockNext(phase)
     submit()

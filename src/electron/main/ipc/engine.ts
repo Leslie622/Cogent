@@ -10,6 +10,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import { IPC } from '../../../shared/ipc'
 import type { ProtocolMethods } from '../../../protocol'
 import type { IpcDeps } from './index'
+import { SHELL_ATTACHMENT_METHODS } from '../../../shared/attachments'
 
 /**
  * renderer 可触达的引擎方法白名单（approval.respond 等宿主侧裁决不在此列）。
@@ -20,6 +21,7 @@ import type { IpcDeps } from './index'
  *（引擎独占写者，无壳侧双写），与 providers 的差异恰在持久层归属。
  */
 const ALLOWED_METHODS = new Set<string>([
+  ...SHELL_ATTACHMENT_METHODS,
   'session.list',
   'session.create',
   'session.delete',

@@ -18,6 +18,7 @@ import { registerCredentialsIpc } from './credentials'
 import { registerCustomProvidersIpc } from './custom-providers'
 import { registerWorkspaceIpc } from './workspace'
 import { registerSettingsIpc } from './settings'
+import { registerAttachmentIpc } from './attachments'
 
 export interface IpcDeps {
   host: HostManager
@@ -37,4 +38,5 @@ export function registerIpc(deps: IpcDeps, store: CredentialStore, customProvide
   registerCustomProvidersIpc(deps.host, customProviders)
   registerWorkspaceIpc(deps)
   registerSettingsIpc()
+  registerAttachmentIpc(deps)
 }

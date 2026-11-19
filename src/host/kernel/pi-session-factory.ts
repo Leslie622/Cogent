@@ -12,11 +12,9 @@
  *   key 持久层在壳侧 safeStorage；
  * - 系统提示词：systemPromptOverride 整体注入 Cogent 自拼提示词；pi 在其后
  *   自动追加 <cwd> 环境段（探针实证，重复声明无害，已对账去重）；
- * - 审批（D8）：**链式包裹 agent.beforeToolCall** 而非 InlineExtension 的
- *   tool_call 事件 —— pi AgentSession 装的扩展分发器丢弃核心循环传入的
- *   abort signal（agent-session.ts:719 形参无 signal），挂起审批在中止时会
- *   永悬（agent-loop.ts:739 的 await 无超时无外部 resolve）；链式包裹保住
- *   pi 原钩子（扩展链不失联）且拿回 signal；
+ * - 审批：直接调用包裹 agent.beforeToolCall，保留 core 的每次调用 signal；
+ *   嵌套调用绕过该公开入口，另由具名扩展按 parentToolCallId 处理。
+ *   两条入口共用 ApprovalBridge，原 pi 验证/事件管线不被替换；
  * - 压缩：pi 内置（settings 默认 reserve 16384 / keep 20000，含溢出恢复与
  *   provider 自动重试，全部发生在 prompt() Promise 生命周期内）；Cogent 侧
  *   只做小窗自适应（见 factory 尾部的 settings 链式包裹）。
@@ -41,6 +39,18 @@ import type { Usage } from '@earendil-works/pi-ai'
 import { adaptCompactionToWindow } from '../runtime/compaction'
 import type { McpSettingsPatch } from '../runtime/mcp-config'
 import { COGENT_TOOL_NAMES, MCP_TOOL_ALLOWLIST } from '../runtime/tool-meta'
+import { isAttachmentRef, isDirectoryRef, type AttachmentRef, type DirectoryRef } from '../../shared/attachments'
+
+/** 呈现元数据跟随用户条目；不把上传/预览信息塞进模型内容块。 */
+export interface AttachmentInput {
+  version: 1
+  userEntryId: string
+  inputId: string
+  text: string
+  attachments: AttachmentRef[]
+  directories?: DirectoryRef[]
+}
+export type AttachmentMessage = AgentMessage & { attachmentInput?: AttachmentInput }
 
 /**
  * 投影源里的压缩条：pi 的 CompactionSummaryMessage 不带 usage
@@ -77,10 +87,22 @@ export function readPiTranscript(cwd: string, hostRoot: string, sessionId: strin
   const sessionDir = piSessionDir(cwd, join(hostRoot, PI_AGENT_DIR_NAME))
   const file = PiSessionManager.findById(cwd, sessionId, sessionDir)
   if (file === undefined) return undefined
-  const messages: AgentMessage[] = []
-  for (const entry of PiSessionManager.open(file, sessionDir).getBranch()) {
+  const messages: AttachmentMessage[] = []
+  const branch = PiSessionManager.open(file, sessionDir).getBranch()
+  const inputs = new Map<string, AttachmentInput>()
+  for (const entry of branch) {
+    if (entry.type === 'custom' && entry.customType === 'cogent.attachment-input.v1') {
+      const data = entry.data as Partial<AttachmentInput>
+      if (data.version !== 1 || typeof data.userEntryId !== 'string' || typeof data.text !== 'string' ||
+        typeof data.inputId !== 'string' || !Array.isArray(data.attachments) || !data.attachments.every(isAttachmentRef) ||
+        (data.directories !== undefined && (!Array.isArray(data.directories) || !data.directories.every(isDirectoryRef)))) throw new Error('附件消息元数据损坏')
+      inputs.set(data.userEntryId, data as AttachmentInput)
+    }
+  }
+  for (const entry of branch) {
     if (entry.type === 'message') {
-      messages.push(entry.message)
+      const input = inputs.get(entry.id)
+      messages.push(input === undefined ? entry.message : { ...entry.message, attachmentInput: input })
     } else if (entry.type === 'compaction') {
       const bar: CompactionBarSource = {
         role: 'compactionSummary',
@@ -112,6 +134,8 @@ export interface ApprovalBridge {
 }
 
 export interface PiSessionOptions {
+  /** appendMessage 返回后才有真实条目 id；公开 message_end 尚早于持久化。 */
+  onUserEntry?: (entryId: string) => Omit<AttachmentInput, 'userEntryId'> | undefined
   /** 会话主根（pi 的 cwd：项目发现 + 会话目录编码；无绑定根时调用方兜底主目录） */
   cwd: string
   /** Cogent Host 根（pi 域 = <hostRoot>/pi） */
@@ -171,6 +195,16 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     ? PiSessionManager.create(opts.cwd, sessionDir, { id: opts.sessionId })
     : PiSessionManager.open(existingFile, sessionDir)
 
+  const appendMessage = piSessionManager.appendMessage.bind(piSessionManager)
+  piSessionManager.appendMessage = (message) => {
+    const id = appendMessage(message)
+    if (message.role === 'user') {
+      const input = opts.onUserEntry?.(id)
+      if (input !== undefined) piSessionManager.appendCustomEntry('cogent.attachment-input.v1', { ...input, userEntryId: id })
+    }
+    return id
+  }
+
     // 压缩参数小窗自适应：pi 的 reserve/keep 固定默认对小窗模型
   // （ctx ≤ keep）会「触发即无可压缩」。链式包裹 getCompactionSettings 按
   // 活模型的 contextWindow 收敛（公式见 adaptCompactionToWindow；标准窗
@@ -217,7 +251,7 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
         : []),
       // 钩子座（4d）：段注入（before_agent_start）等 Host 干预的具名注册地
       // （装配形状与「审批为何不走扩展」的墙见 runtime/hook-seat.ts 头注）
-      createCogentHooks({ sections: opts.sections })
+      createCogentHooks({ sections: opts.sections, nestedApproval: opts.approval })
     ]
   })
   await resourceLoader.reload()
@@ -253,10 +287,7 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
   // 活到 Host 进程退出（与 pi print-mode 同语义，session 删除不回收）。
   await session.bindExtensions({ mode: 'rpc' })
 
-  // 审批链（D8）：链式包裹 pi 的 beforeToolCall（构造时已被 AgentSession 装成
-  // 扩展分发器）。包裹器本体在钩子座（runtime/hook-seat.ts 的
-  // wrapApprovalChain —— 为什么是包裹而非 tool_call 扩展事件：分发器丢
-  // abort signal，挂起审批遇停止永悬，见该文件头注）
+  // 直接调用保留 core signal，嵌套调用另走上面的官方事件；共用审批桥且不重复询问。
   session.agent.beforeToolCall = wrapApprovalChain(session.agent.beforeToolCall, opts.approval)
 
   // 保留pi的请求准备钩子；已在启动交接时收到的取消，不再进入provider。

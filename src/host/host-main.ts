@@ -78,6 +78,8 @@ import { SkillStore } from './runtime/skill-store'
 import { InspectStore, JsonStorageDriver } from './storage'
 import { startHttpRpc } from './http/server'
 import { createCapabilityStore, createRootSecret } from './http/auth'
+import { AttachmentConfig, attachmentHandlers } from './runtime/attachment-config'
+import { prepareDirectoryReferences } from './runtime/directory-references'
 
 /**
  * 存储根：第一方数据唯一根（决策 D1，docs/模块/工作区与项目.md）。
@@ -357,14 +359,14 @@ async function main(): Promise<void> {
     return { summary: projects.setPinned(p.projectId, p.pinned) }
   }
 
-  /** agent.submit 入口校验：sessionId/text 必填非空；model/provider/thinkingLevel 带了就约束值域。
+  /** agent.submit 入口校验：sessionId 必填，正文/附件至少一项；其余字段带了就约束值域。
       optional 字段逐个独立守卫（TS 控制流只在独立 if 中窄化，复合 || 不窄化）。
       thinkingLevel 值域与协议 ThinkingLevelWithOff 对齐（satisfies 钉住，防白名单与
       枚举漂移）——'off' 是 pi 原生档（关闭思考），漏收它会把滑杆默认档拒之门外 */
   function handleAgentSubmit(params: unknown) {
-    const p = params as Partial<{ sessionId: unknown; text: unknown; model: unknown; provider: unknown; thinkingLevel: unknown }>
+    const p = params as Partial<{ sessionId: unknown; text: unknown; model: unknown; provider: unknown; thinkingLevel: unknown; attachmentIds: unknown; inputId: unknown; directories: unknown }>
     const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const satisfies readonly ThinkingLevelWithOff[]
-    if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 || typeof p.text !== 'string' || p.text.length === 0) {
+    if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 || typeof p.text !== 'string') {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'agent.submit 需要 { sessionId: string, text: string }')
     }
     if (p.model !== undefined && typeof p.model !== 'string') {
@@ -384,7 +386,14 @@ async function main(): Promise<void> {
     }
     // 受理后 LLM 循环在 submit 内部异步执行，进度走事件流。这里不能拿掉同步调用
     // 改成 fire-and-forget 的 promise：异步拒绝会绕过 dispatch 的 try/catch 崩掉引擎
-    sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel, p.provider)
+    if (p.attachmentIds !== undefined && (!Array.isArray(p.attachmentIds) ||
+      !p.attachmentIds.every((id) => typeof id === 'string' && /^[a-f0-9-]{36}$/.test(id)))) throw new Error('attachmentIds 不合法')
+    if (p.inputId !== undefined && (typeof p.inputId !== 'string' || p.inputId.length > 100)) throw new Error('inputId 不合法')
+    const directories = p.directories === undefined ? [] : prepareDirectoryReferences(p.directories)
+    if (p.text.trim().length === 0 && (p.attachmentIds === undefined || p.attachmentIds.length === 0) && directories.length === 0) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, '正文和附件不能同时为空')
+    }
+    sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel, p.provider, p.attachmentIds, p.inputId, directories)
     return { accepted: true as const }
   }
 
@@ -758,6 +767,7 @@ async function main(): Promise<void> {
    * 由 dispatch 统一转成错误帧 —— 不要在 handler 里自行 try/catch。
    */
   const handlers = new Map<string, (params: unknown) => unknown>([
+    ...attachmentHandlers(sessions.attachments, new AttachmentConfig(STORAGE_ROOT)),
     ['initialize', handleInitialize],
     ['session.list', () => sessions.list()],
     ['session.create', handleSessionCreate],

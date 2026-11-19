@@ -7,6 +7,10 @@
  */
 
 export const IPC = {
+  attachmentsPick: 'attachments:pick',
+  attachmentsClipboard: 'attachments:clipboard',
+  attachmentsPreview: 'attachments:preview',
+  attachmentsAction: 'attachments:action',
   /** renderer → main：查询 Agent 引擎服务连接状态 */
   appStatus: 'app:status',
   /** renderer → main：引擎方法通用代理（载荷 { method, params }；白名单校验在 ipc/engine.ts） */

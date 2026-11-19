@@ -15,6 +15,8 @@
 /** 协议版本：语义承诺 = 帧格式与既有 method 语义不变，新增能力走可选字段/新 method */
 export const PROTOCOL_VERSION = 3
 
+import type { AttachmentMethods } from '../shared/attachments'
+
 // ———— JSON-RPC 2.0 极简子集 ————
 
 export interface RpcRequest {
@@ -212,6 +214,8 @@ export interface ToolCallRecord {
  * 完整块结构化（phase/签名透传等）仍是路线第 1 项，届时继续以 optional 字段扩展。
  */
 export interface ChatMessage {
+  attachments?: import('../shared/attachments').AttachmentRef[]
+  directories?: import('../shared/attachments').DirectoryRef[]
   id: string
   /**
    * role 'compaction'（additive）= 上下文压缩折叠条：
@@ -321,6 +325,9 @@ export interface InitializeResult {
 }
 
 export interface AgentSubmitParams {
+  attachmentIds?: string[]
+  directories?: import('../shared/attachments').DirectoryRef[]
+  inputId?: string
   sessionId: string
   text: string
   /** 本次请求使用的模型（provider 内模型 id）；省略时沿用会话当前模型 */
@@ -1020,7 +1027,7 @@ export interface CapabilityIssueResult {
 /**
  * method 注册表：键名即线上协议。新增 method = 在此加一行 + 服务端加 handler。
  */
-export interface ProtocolMethods {
+export interface ProtocolMethods extends AttachmentMethods {
   initialize: { params: InitializeParams; result: InitializeResult }
   'session.list': { params: Record<string, never>; result: SessionSummary[] }
   'session.create': { params: { title?: string; permissionMode?: PermissionMode; planEnabled?: boolean; cwd?: string; projectId?: string }; result: SessionSummary }

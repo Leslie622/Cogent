@@ -67,6 +67,8 @@ mcp__<server>__<tool> ──经 pi 工具管线──▶ beforeToolCall 审批�
   SDK 消费者漏了它则 MCP 扩展零初始化且无诊断（Pi-meme session.ts:917 同款）；
 - 日志：`<COGENT_HOME>/pi/mcp.log`（pi 域）；settings 补丁写回（updateConfig）
   按条目来源落 override 文件或 user 文件，默认值语义与 pi 一致。
+- 图片/视频/文档分析绑定见[附件模块](图片与文件附件.md)；通过 ctx.executeTool 委托，
+  宿主[嵌套审批入口](钩子座.md)复用现有挂起表、取消与审计。参数 schema 在实际调用时校验。
 
 ## 边界（配置与生命周期约束）
 

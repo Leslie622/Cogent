@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   IPC,
   type AppStatus,
@@ -29,6 +29,11 @@ type CustomProvidersPayload = { providers: CustomProviderDef[]; overrides: Provi
  * 暴露的 API 形状即 CogentApi，renderer 侧类型由此导出。
  */
 const api = {
+  filePath: (file: File): string => webUtils.getPathForFile(file),
+  pickAttachments: (): Promise<string[]> => ipcRenderer.invoke(IPC.attachmentsPick),
+  clipboardFiles: (): Promise<string[]> => ipcRenderer.invoke(IPC.attachmentsClipboard),
+  attachmentPreview: (id: string, thumbnail: boolean): Promise<string> => ipcRenderer.invoke(IPC.attachmentsPreview, { id, thumbnail }),
+  attachmentAction: (id: string, action: 'reveal' | 'save'): Promise<void> => ipcRenderer.invoke(IPC.attachmentsAction, { id, action }),
   /** 查询 Agent 引擎服务连接状态（诊断） */
   getStatus: (): Promise<AppStatus> => ipcRenderer.invoke(IPC.appStatus),
 

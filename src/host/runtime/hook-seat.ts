@@ -1,15 +1,15 @@
 /**
  * 钩子座（阶段 4d，docs/模块/钩子座.md）—— Host 干预内核循环的统一装配点。
  *
- * 四种形状各归其位，为什么不全走扩展事件：
+ * 干预形状各归其位：
  * - **段注入**（sections）：`before_agent_start` 扩展事件 —— pi 官方缝，
  *   本文件工厂注册（Pi-meme session.ts:570-795 单工厂集中装配同款形状）；
- * - **审批包裹**（wrapApprovalChain）：链式包裹官方的 `agent.beforeToolCall`
- *   钩子，**不是**扩展 —— pi 的扩展分发器丢 abort signal（AgentSession 适配
- *   器单参，installed 1.5.2 与 reference HEAD 827383a15 均如此，
- *   core/agent-session.ts:716），审批挂起需 signal 兜底 resolve（否则停止钮
- *   按下挂起永悬、run 永不结束）；loop 层是传 signal 的（agent-loop.ts:745），
- *   包裹层因此拿得到。升级 pi 版本时重查此项；
+ * - **直接审批**（wrapApprovalChain）：包裹公开 `agent.beforeToolCall`，
+ *   保留 core 传入的每次调用 signal，再委托 pi 原链；
+ * - **嵌套审批**：ctx.executeTool 直接调用 pi 私有扩展分发器，不经过上述公开链。
+ *   官方 tool_call 事件按 parentToolCallId 筛嵌套项，复用同一 ApprovalBridge。
+ *   当前扩展 context.signal 公开提供 agent.signal；不能把分发器没有第二形参
+ *   误读成扩展上下文完全拿不到信号。升级 pi 时重查两条入口；
  * - **厂商标量观测**：AgentOptions 三回调（onPayload/onResponse/
  *   onProviderStreamEvent，session.attachInspector 挂装）—— 载荷带 model
  *   上下文而扩展事件版没有（before_provider_request 仅 payload），不等价
@@ -28,6 +28,8 @@ import type { ApprovalBridge } from '../kernel/pi-session-factory'
 
 /** 钩子座的注入面（pi-session-factory 装配时传入；undefined 项 = 该钩子不挂） */
 export interface CogentHooksOptions {
+  /** 嵌套调用走 pi 私有分发器，不经过公开 Agent 包装；用官方事件复用同一审批桥。 */
+  nestedApproval?: ApprovalBridge
   /**
    * 段表活算：每回合 before_agent_start 现读的 段名→内容 表。值 null = 撤段
    * （pi 段表无 null，删除靠期望侧不出现该键 —— diff 对转录回放的旧段产出
@@ -48,6 +50,13 @@ export function createCogentHooks(opts: CogentHooksOptions): InlineExtension {
   return {
     name: 'cogent-hooks',
     factory: (pi) => {
+      if (opts.nestedApproval !== undefined) {
+        pi.on('tool_call', async (event, ctx) => {
+          if (event.parentToolCallId === undefined) return
+          // 当前 pi 的公开扩展 context.signal 来自 agent.signal；read_attachment 透传同一 run 信号。
+          return opts.nestedApproval!.decide(event.toolName, event.toolCallId, event.input, ctx.signal)
+        })
+      }
       pi.on('before_agent_start', (event) => {
         const wanted = opts.sections?.()
         if (wanted === undefined || Object.keys(wanted).length === 0) return

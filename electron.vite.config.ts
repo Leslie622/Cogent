@@ -18,7 +18,8 @@ export default defineConfig({
         input: {
           index: resolve('src/electron/main/index.ts'),
           host: resolve('src/host/index.ts'),
-          mcp: resolve('src/host/mcp-server/main.ts')
+          mcp: resolve('src/host/mcp-server/main.ts'),
+          'attachment-worker': resolve('src/host/runtime/attachment-worker.ts')
         }
       }
     }

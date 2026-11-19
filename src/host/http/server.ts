@@ -113,6 +113,8 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
 
 /** 档位判定（/rpc 与 /ws 共用）：method 非字符串或不在表内 = 放行交 handleFrame */
 function scopeAllows(scope: TokenScope, method: unknown): boolean {
+  // 桌面路径/分片/预览/草稿只属于壳；admin 也不能从远程取得本机文件入口。
+  if (typeof method === 'string' && method.startsWith('attachments.')) return false
   if (typeof method !== 'string' || !(method in METHOD_MIN_SCOPE)) return true
   return SCOPE_RANK[scope] >= SCOPE_RANK[METHOD_MIN_SCOPE[method]]
 }

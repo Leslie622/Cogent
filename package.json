@@ -37,13 +37,19 @@
     "@streamdown/cjk": "^1.0.4",
     "@streamdown/code": "^2.0.0",
     "@tabler/icons-react": "^3.50.0",
+    "@xmldom/xmldom": "^0.9.12",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cn": "^0.5.2",
     "diff": "^8.0.4",
+    "exceljs": "4.4.0",
+    "fast-xml-parser": "5.12.1",
+    "fflate": "0.8.3",
     "hono": "^4.13.18",
     "ignore": "^7.0.14",
+    "image-size": "2.1.0",
     "lucide-react": "^1.69.0",
+    "pdfjs-dist": "6.5.438",
     "radix-ui": "^1.8.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -76,5 +82,10 @@
     "typescript-eslint": "^8.72.1",
     "vite": "^8.3.6",
     "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

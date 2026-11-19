@@ -11,7 +11,9 @@
  */
 import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { writeFileSync } from 'node:fs'
+import type { AttachmentRef } from '../../src/shared/attachments'
 import type { McpListResult } from '../../src/protocol'
 import {
   check,
@@ -167,5 +169,46 @@ describe('MCP 座集成（协议方法 + 直连工具 + 审批链 + 禁用生效
     await submitAndDone(s3, 'S3 禁用探测')
     const r3 = JSON.stringify(requestBodies[2] ?? {})
     check('9. 禁用后新会话：工具未声明给模型', !r3.includes('mcp__mock__echo'), r3.slice(0, 160))
+
+    // 附件委托必须触发内层 MCP 审批；read_attachment 自身只读不能绕过它。
+    await engine.send('mcp.sync', { servers: [mockDef] })
+    await engine.send('attachments.saveMedia', { bindings: { video: {
+      server: 'mock', tool: 'analyse_attachment', pathArgument: 'path', questionArgument: 'question', formats: ['.mp4']
+    } } })
+    const video = join(ws, 'video.mp4'); writeFileSync(video, 'test-video-fixture')
+    const imported = await engine.send<AttachmentRef>('attachments.importPath', { path: video })
+    expect(imported.error).toBeUndefined()
+    const s4 = await newSession()
+    ACTIONS.push({ type: 'toolCall', callId: 'attachment-call', tool: 'read_attachment', args: { id: imported.result!.id, question: '车辆何时移动' } }, text('视频回答'))
+    const pureSend = await engine.send('agent.submit', { sessionId: s4, text: '', model: 'mock', attachmentIds: [imported.result!.id] })
+    expect(pureSend.result?.accepted).toBe(true)
+    const nestedApproval = await engine.waitEvent('approval.request', (p) => p.sessionId === s4, 30_000)
+    expect(nestedApproval.params.toolName).toBe('mcp__mock__analyse_attachment')
+    await engine.send('approval.respond', { requestId: nestedApproval.params.requestId, approved: true })
+    const nestedResult = await engine.waitEvent('tool.completed', (p) => p.sessionId === s4 && p.callId === 'attachment-call', 30_000)
+    expect(nestedResult.params.isError).toBe(false)
+    await engine.waitEvent('run.completed', (p) => p.sessionId === s4, 30_000)
+    expect(JSON.stringify(requestBodies.at(-1))).toContain('音轨未分析')
+    expect(JSON.stringify(requestBodies.at(-1))).toContain('车辆开始移动')
+    const history = await engine.send('session.messages', { sessionId: s4 })
+    expect(history.result?.messages?.find((message) => message.role === 'user')).toMatchObject({ content: '', attachments: [imported.result] })
+
+    for (const decision of ['deny', 'abort']) {
+      const sid = await newSession()
+      ACTIONS.push({ type: 'toolCall', callId: `attachment-${decision}`, tool: 'read_attachment', args: { id: imported.result!.id } })
+      if (decision === 'deny') ACTIONS.push(text('分析被拒绝'))
+      await engine.send('agent.submit', { sessionId: sid, text: '分析附件', model: 'mock', attachmentIds: [imported.result!.id] })
+      const pending = await engine.waitEvent('approval.request', (p) => p.sessionId === sid, 30_000)
+      if (decision === 'deny') {
+        await engine.send('approval.respond', { requestId: pending.params.requestId, approved: false })
+        const failed = await engine.waitEvent('tool.completed', (p) => p.sessionId === sid && p.callId === `attachment-${decision}`, 30_000)
+        expect(failed.params.isError).toBe(true)
+        await engine.waitEvent('run.completed', (p) => p.sessionId === sid, 30_000)
+      } else {
+        await engine.send('agent.abort', { sessionId: sid })
+        const stopped = await engine.waitEvent('run.failed', (p) => p.sessionId === sid, 30_000)
+        expect(stopped.params.reason).toBe('aborted')
+      }
+    }
   }, 180_000)
 })

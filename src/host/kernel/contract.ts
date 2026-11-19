@@ -38,7 +38,10 @@ export interface CogentKernel {
     text: string,
     model?: string,
     thinkingLevel?: string,
-    provider?: string
+    provider?: string,
+    attachmentIds?: string[],
+    inputId?: string,
+    directories?: import('../../shared/attachments').DirectoryRef[]
   ): void
   /** 手动续写（末条 length 截断时） */
   continueSession(sessionId: string): Promise<{ ok: true }>
