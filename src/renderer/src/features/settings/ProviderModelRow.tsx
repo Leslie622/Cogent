@@ -9,6 +9,8 @@ import { IconPencil, IconPlus, IconTrash } from '@tabler/icons-react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { ModelVisionBadge } from '@/components/ModelVisionBadge'
+import { useEngineStore } from '@/stores/engine'
 import type { ModelDef } from '@/env.d'
 import { BADGE, formatContext } from './models-recipes'
 
@@ -64,12 +66,14 @@ function ModelRowActions({
 /** 共享模型行（原自定义/内置详情里成对重复的 h-12 行收敛）：id 文本 + 徽标 +
     hover 动作簇 + 常驻启用开关；行容器 divide-y 分隔，圆角由外层容器裁 */
 export function ProviderModelRow({
+  providerId,
   def,
   enabled,
   onToggle,
   onEdit,
   onDelete,
 }: {
+  providerId: string
   def: ModelDef
   /** 开关语义 = 启用（off 才进 disabledModels） */
   enabled: boolean
@@ -78,11 +82,13 @@ export function ProviderModelRow({
   /** 缺省 = 无删除语义（未改过的目录模型不能删，只能禁用） */
   onDelete?: () => void
 }) {
+  const input = useEngineStore((s) => s.models.find((m) => m.provider === providerId && m.id === def.id)?.input)
   return (
     <div className="group flex h-12 min-w-0 items-center gap-2 px-4">
       {/* 显示一律 id（2026-11-10 定调，同聊天页模型菜单口径）：目录营销名与
           API id 不对应，所见即所传；自定义条目更是 id 输什么是什么 —— name 不参与呈现 */}
       <span className="min-w-0 shrink truncate text-[13px]">{def.id}</span>
+      <ModelVisionBadge input={input} />
       <ModelBadges def={def} />
       <ModelRowActions modelId={def.id} onEdit={onEdit} onDelete={onDelete} />
       <Switch checked={enabled} onCheckedChange={onToggle} aria-label={`${def.id} 启用`} />

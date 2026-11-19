@@ -878,6 +878,7 @@ export class SessionManager implements CogentKernel {
           name: m.name,
           provider: m.provider,
           reasoning: m.reasoning,
+          input: m.input,
           // pi 按端点标定的 thinkingLevelMap 判定真实可用档（含 'off'）——
           // UI 滑杆据此渲染/置灰，切模型据此 clamp，杜绝静默降级
           thinkingLevels: getSupportedThinkingLevels(m),
@@ -1014,6 +1015,9 @@ export class SessionManager implements CogentKernel {
       if (current === undefined || current.id !== model.id || current.provider !== model.provider) {
         await pi.setModel(model)
         if (this.finishPreparingRun(session, pi, streaming)) return
+      } else {
+        // 同名模型的本地能力/端点定义也可更新；只刷新公开 Agent 状态，不追加虚假的模型切换条目。
+        pi.agent.state.model = model
       }
       // 思考预算跟随模型：预算是模型属性，切模型换预算。
       // pi 的预算消费在请求选项层（Agent.thinkingBudgets 逐 prompt 带进

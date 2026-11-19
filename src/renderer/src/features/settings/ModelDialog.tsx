@@ -105,7 +105,7 @@ export function ModelDialog({
     setId(initial?.id ?? '')
     setContext(initial?.contextWindow ?? 200000)
     setMaxTokens(initial?.maxTokens !== undefined ? String(initial.maxTokens) : '')
-    setImageInput(initial?.input?.includes('image') === true)
+    setImageInput((initial?.input ?? (initial === null ? undefined : catalog.get(initial.id)?.input))?.includes('image') === true)
     setReasoning(initial?.reasoning === true)
     setThinkingLevels(initial?.thinkingLevels ?? [])
     setBudgets({
@@ -114,7 +114,7 @@ export function ModelDialog({
       medium: initial?.thinkingBudgets?.medium !== undefined ? String(initial.thinkingBudgets.medium) : '',
       high: initial?.thinkingBudgets?.high !== undefined ? String(initial.thinkingBudgets.high) : ''
     })
-  }, [open, initial])
+  }, [open, initial, catalog])
 
   // 智能预填：新增态下 id 命中目录 → 用目录元数据补齐（编辑态不动已有值）。
   // 目录 ModelSummary 不含输入模态/思考等级，图片与等级保持默认
@@ -125,6 +125,7 @@ export function ModelDialog({
     setContext(hit.contextWindow)
     setMaxTokens(String(hit.maxTokens))
     setReasoning(hit.reasoning)
+    setImageInput(hit.input?.includes('image') === true)
   }
 
   const save = (): void => {
@@ -144,8 +145,8 @@ export function ModelDialog({
         id: trimmed,
         contextWindow: context,
         ...(maxTokensValue !== undefined && { maxTokens: maxTokensValue }),
-        // 文本恒含；仅当勾了图片才落 input（['text'] 是引擎默认值，不必写）
-        ...(imageInput && { input: ['text', 'image'] as Array<'text' | 'image'> }),
+        // 显式 text 覆盖目录 image；省略会重新继承，无法真正关闭图片。
+        input: imageInput ? ['text', 'image'] : ['text'],
         ...(reasoning && { reasoning: true }),
         ...(reasoning && thinkingLevels.length > 0 && { thinkingLevels }),
         ...(Object.keys(budgetOverride).length > 0 && { thinkingBudgets: budgetOverride })

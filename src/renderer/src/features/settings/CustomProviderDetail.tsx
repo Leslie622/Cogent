@@ -222,6 +222,7 @@ export function CustomProviderDetail({
             {modelRows.map((row) => (
               <ProviderModelRow
                 key={row.id}
+                providerId={def.id}
                 def={row}
                 enabled={!disabled.has(row.id)}
                 onToggle={(on) => toggleModel(row.id, on)}

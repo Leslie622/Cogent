@@ -9,6 +9,7 @@ import { useEffect, useMemo } from 'react'
 import { IconCheck, IconChevronDown, IconCube, IconSettingsAi } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import { ProviderLogo } from '@/components/ProviderLogo'
+import { ModelVisionBadge } from '@/components/ModelVisionBadge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,7 +88,9 @@ export function ModelMenu() {
           size=lg：内容型菜单放大档（原语本体，2026-11-16 —— 曾在调用点逐项
           补 py-1.5/my-0.5 打补丁，lg 档落地后撤除） */}
       <DropdownMenuContent align="end" size="lg" className="w-auto min-w-64 max-w-96">
-        <ModelMenuPanel />
+        <DropdownMenuGroup>
+          <ModelMenuPanel />
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -185,6 +188,7 @@ function ModelMenuPanel() {
             <span className="min-w-0 flex-1 truncate">
               {active?.id ?? (groups.length > 0 ? '选择模型' : '配置模型')}
             </span>
+            <ModelVisionBadge input={active?.input} />
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="min-w-60">
             {(activeProviderEntry?.[1] ?? []).map((model) => (
@@ -193,6 +197,7 @@ function ModelMenuPanel() {
                 onClick={() => setActiveModel(model.id, model.provider)}
               >
                 <span className="min-w-0 flex-1 truncate">{model.id}</span>
+                <ModelVisionBadge input={model.input} />
                 {model.id === activeModelId && <IconCheck className="ml-auto size-3.5" />}
               </DropdownMenuItem>
             ))}

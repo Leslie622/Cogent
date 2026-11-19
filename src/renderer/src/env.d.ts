@@ -550,6 +550,7 @@ export interface ProviderSummary {
 }
 
 export interface ModelSummary {
+  input?: Array<'text' | 'image'>
   id: string
   name: string
   provider: string

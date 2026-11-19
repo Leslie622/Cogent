@@ -252,6 +252,7 @@ export interface ProviderSummary {
 
 /** 模型摘要（models.list 返回；模型选择下拉的数据源） */
 export interface ModelSummary {
+  input?: Array<'text' | 'image'>
   id: string
   name: string
   /** 所属 provider id（如 'anthropic' / 'openai'） */

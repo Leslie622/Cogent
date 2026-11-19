@@ -155,6 +155,7 @@ export function BuiltinProviderDetail({
           {merged.map(({ def: row, shadowed }) => (
             <ProviderModelRow
               key={row.id}
+              providerId={providerId}
               def={row}
               enabled={!disabled.has(row.id)}
               onToggle={(on) => toggleModel(row.id, on)}
