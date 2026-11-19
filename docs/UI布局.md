@@ -48,6 +48,9 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 | 字号 | 页面标题 24/semibold、侧栏标题 16/semibold、行标题 14/medium、正文与说明 13、时间 11–12 |
 | 字体 | Inter + HarmonyOS Sans SC；代码 JetBrains Mono，中文注释回落鸿蒙；13px 中文用 400 |
 
+Electron 通过 `disable-lcd-text` 启动参数关闭 LCD 文字抗锯齿。
+启动参数的对照验证需完整重启应用；字体清晰度与 DPI 的最终结论在实际 Electron 验证。
+
 UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时间等行头收回
 `select-none`，折叠内容仍可选。input/textarea 保持原生选择。
 

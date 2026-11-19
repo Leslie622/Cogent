@@ -12,9 +12,6 @@ import { ensureTray, installCloseBehavior, restoreMainWindow } from './window-cl
 import { hardenWebviewAttachment } from './webview-policy'
 import { IPC } from '../../shared/ipc'
 
-// Windows 分数 DPI（125%/150%）下，LCD 亚像素文字经合成缩放会被 smear 成
-// "虚肥 + 红蓝彩边"（用户对比 ChatGPT 发现笔画发糊的主因：我们侧彩边明显、
-// ChatGPT 侧是干净灰度抗锯齿）。关掉 LCD 走灰度，边缘干净。
 app.commandLine.appendSwitch('disable-lcd-text')
 
 // Chromium 后台组件更新默认访问 Google 域，国内/信创内网下握手被重置，
