@@ -7,6 +7,8 @@ import { useHomeStore } from '@/stores/home'
 import { useEngineStore } from '@/stores/engine'
 import '@/globals.css'
 
+declare global { interface Window { chatLayoutResult?: { passed: boolean; results?: unknown[]; error?: string } } }
+
 const messages = [
   { id: 'u1', role: 'user' as const, timestamp: 1, content: '先写一首关于秋天的短诗，写完后读一下 package.json，告诉我版本号。'.repeat(3) },
   { id: 'a1', role: 'assistant' as const, timestamp: 2, content: '## 窄面板换行\n\n' + '这是一段较长的正文，检查缩窄后末字是否完整可见。'.repeat(40) },
@@ -30,7 +32,8 @@ useEngineStore.setState({
 })
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+// 下一次 rAF 仍在本帧布局/RO 之前；跨两帧再检查观察者更新后的真实定位。
+const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message)
 }
@@ -49,6 +52,7 @@ function App() {
       const results = []
       // 重复缩窄/放宽，覆盖已有长消息重新换行，不只检查空容器首次布局。
       for (const width of [1100, 761, 760, 641, 640, 480, 340, 280, 240, 896, 340]) {
+        document.documentElement.dataset.chatLayoutStage = `静态布局 ${width}px`
         chat.style.width = `${width}px`
         await frame()
         await delay(240)
@@ -87,9 +91,81 @@ function App() {
         }
         results.push({ width, bodyMargin: b.left - c.left, inputMargin: i.left - c.left, outset, toolbarWidth: toolbar.clientWidth })
       }
-      setReport(`全部通过：11 次真实 HomeChat 缩放，留白 / 右缘 / 外扩 / 索引 / 工具行\n${JSON.stringify(results, null, 2)}`)
+      const updateRuntime = (running: boolean, stopping = false) => useChatStore.setState((state) => ({
+        bySession: { ...state.bySession, [sessionId]: {
+          ...state.bySession[sessionId]!, runtime: { ...emptyBucket().runtime, running, stopping },
+        } },
+      }))
+      const workingRow = () => chat.querySelector<HTMLElement>('[data-slot=message-scroller-pinned-row]')
+      const assertVisible = (row: HTMLElement, stage: string) => {
+        const r = row.getBoundingClientRect(), v = viewport.getBoundingClientRect()
+        assert(r.height > 0 && r.top >= v.top && r.bottom <= v.bottom && r.left >= v.left && r.right <= v.right,
+          `工作行越出真实视口：${JSON.stringify({ stage, row: { top: r.top, bottom: r.bottom, left: r.left, right: r.right }, viewport: { top: v.top, bottom: v.bottom, left: v.left, right: v.right }, style: row.getAttribute('style') })}`)
+        assert(row.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)), '工作行虽在视口内却被裁切或遮挡')
+      }
+      updateRuntime(true)
+      // 不同面板起点同时覆盖顶部工具栏、左侧栏和分数 CSS 像素；仅在原点检查会漏掉 fixed 坐标系错配。
+      for (const [width, left, top] of [[896, 180, 40], [640, 50.5, 16.5], [340, 220, 0], [280, 24, 24]]) {
+        document.documentElement.dataset.chatLayoutStage = `工作行 ${width}px`
+        chat.style.width = `${width}px`
+        chat.style.marginLeft = `${left}px`
+        chat.style.marginTop = `${top}px`
+        await delay(120)
+        await frame()
+        const row = workingRow()!
+        assert(row.style.position === 'fixed', `${width}px 长内容没有进入跟随定位`)
+        assertVisible(row, `${width}px 初始`)
+        const beforeClock = row.textContent
+        await delay(180)
+        assert(row.textContent !== beforeClock, '可见工作行的计时器未更新')
+        useChatStore.setState((state) => ({ bySession: { ...state.bySession, [sessionId]: {
+          ...state.bySession[sessionId]!, messages: state.bySession[sessionId]!.messages.map((message) =>
+            message.type === undefined && message.id === 'a2' ? { ...message, content: message.content + '\n\n继续增长的正文。'.repeat(8) } : message),
+        } } }))
+        await delay(120)
+        assert(workingRow() === row, '内容增长重挂工作行')
+        assertVisible(row, `${width}px 增长`)
+        viewport.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true }))
+        assert(row.style.position === '', '阅读意图没有同步归流')
+        // 合成 wheel 不执行原生滚动，补上真实位移才能验证离底后的回底按钮。
+        viewport.scrollTop -= 100
+        viewport.dispatchEvent(new Event('scroll'))
+        // 库按钮仅在 active 提交后接收点击；同栈点尚为 inert 的按钮不代表用户回底。
+        await frame()
+        const returnButton = chat.querySelector<HTMLButtonElement>('[data-slot=message-scroller-button]')!
+        assert(!returnButton.inert, '离底后回底按钮未就绪')
+        returnButton.click()
+        await frame()
+        await delay(120)
+        assert(workingRow() === row && row.style.position === 'fixed', '显式回底时工作行丢失或重挂')
+        assertVisible(row, `${width}px 回底`)
+        results.push({ width, left, top, workingLine: '可见、走时、增长与阅读切换通过' })
+      }
+      updateRuntime(true, true)
+      document.documentElement.dataset.chatLayoutStage = '停止与短回复'
+      await frame()
+      assert(workingRow()!.textContent.includes('正在停止'), '停止在途未显示工作状态')
+      updateRuntime(false)
+      await frame()
+      assert(workingRow() === null, '终态残留工作行')
+      chat.style.width = '896px'
+      chat.style.height = '650px'
+      useChatStore.setState((state) => ({ bySession: { ...state.bySession, [sessionId]: {
+        ...emptyBucket(), messages: [messages[2], { ...messages[3], content: '短回复' }],
+        runtime: { ...emptyBucket().runtime, running: true },
+      } } }))
+      await delay(120)
+      const shortRow = workingRow()!
+      assert(shortRow.style.position === '', '短内容不应固定到底部')
+      assertVisible(shortRow, '短内容')
+      results.push({ workingLine: '短内容随正文、停止在途与终态清理通过' })
+      window.chatLayoutResult = { passed: true, results }
+      setReport(`全部通过：真实 HomeChat 缩放与工作行可见性\n${JSON.stringify(results, null, 2)}`)
     }
-    void run().catch((error: unknown) => setReport(String(error)))
+    void run().catch((error: unknown) => {
+      window.chatLayoutResult = { passed: false, error: String(error) }
+      setReport(String(error))
+    })
     return () => { cancelled = true }
   }, [])
   return <>

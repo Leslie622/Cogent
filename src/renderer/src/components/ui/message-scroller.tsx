@@ -265,6 +265,7 @@ function MessageScrollerPinnedRow({ children }: { children: React.ReactNode }) {
   const refs = React.useContext(ScrollerRefsContext)!
   const { viewport, content } = React.useContext(ScrollerNodesContext)!
   const slotRef = React.useRef<HTMLDivElement>(null)
+  const originRef = React.useRef<HTMLDivElement>(null)
   const rowRef = React.useRef<HTMLDivElement>(null)
   React.useLayoutEffect(() => {
     if (viewport === null || content === null) return
@@ -294,15 +295,20 @@ function MessageScrollerPinnedRow({ children }: { children: React.ReactNode }) {
         release()
         return
       }
+      // Electron 31 的 inline-size 查询容器会成为 fixed 包含块；rect 是窗口坐标，
+      // top/left 却相对此包含块。用同级零尺寸锚点测原点，避免聊天面板偏移被重复加算。
+      const origin = originRef.current!.getBoundingClientRect()
+      const fixedTop = top - origin.top
+      const fixedLeft = slotBox.left - origin.left
       // 尾距相减有浮点噪声；同一落点不能因万分之一像素误差跨过绘制舍入边界。
-      if (previous !== null && Math.abs(top - previous.top) < 1 / 64 &&
-        Math.abs(slotBox.left - previous.left) < 1 / 64 &&
+      if (previous !== null && Math.abs(fixedTop - previous.top) < 1 / 64 &&
+        Math.abs(fixedLeft - previous.left) < 1 / 64 &&
         Math.abs(slotBox.width - previous.width) < 1 / 64 && Math.abs(height - previous.height) < 1 / 64) return
-      previous = { top, left: slotBox.left, width: slotBox.width, height }
+      previous = { top: fixedTop, left: fixedLeft, width: slotBox.width, height }
       slot.style.height = `${height}px`
       row.style.position = "fixed"
-      row.style.top = `${top}px`
-      row.style.left = `${slotBox.left}px`
+      row.style.top = `${fixedTop}px`
+      row.style.left = `${fixedLeft}px`
       row.style.width = `${slotBox.width}px`
     }
     const observer = new ResizeObserver(sync)
@@ -319,6 +325,7 @@ function MessageScrollerPinnedRow({ children }: { children: React.ReactNode }) {
     }
   }, [refs, viewport, content])
   return <div ref={slotRef} data-slot="message-scroller-row-slot">
+    <div ref={originRef} data-slot="message-scroller-fixed-origin" aria-hidden="true" className="pointer-events-none fixed left-0 top-0 size-0" />
     <div ref={rowRef} data-slot="message-scroller-pinned-row">{children}</div>
   </div>
 }

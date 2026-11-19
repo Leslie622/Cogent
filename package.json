@@ -17,6 +17,7 @@
     "coverage": "node tests/run-tests.mjs run --coverage",
     "theme:check": "node scripts/themd-theme.mjs --check",
     "test:theme-browser": "node scripts/check-theme-browser.mjs",
+    "test:chat-layout-browser": "node scripts/check-chat-layout-browser.mjs",
     "fetch:runtime": "node scripts/fetch-runtime.mjs"
   },
   "dependencies": {

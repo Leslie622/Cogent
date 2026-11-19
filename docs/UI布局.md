@@ -200,6 +200,8 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   keepMounted，折叠体内部不套 content-visibility 包装。
 - 消息流保留库布局/回底钮，关闭库 autoScroll，跟随由本地 controller 独占。
   工作行只渲染一份；跟随溢出时同节点定位，阅读时归流；不加残差 translate/viewport containment。
+  `home-chat` 查询容器在 Electron 31 中会改变 fixed 定位原点，工作行按实际包含块换算坐标，
+  保证带顶部/侧栏偏移的长对话中仍在视口内；机制见[消息呈现](模块/消息呈现.md)。
 - 正文与输入卡共用 `.chat-column` 的水平基准：正文最大 48rem，双侧留白按
   `clamp(28px,8cqw,64px)` 连续变化；输入卡每侧外扩按
   `clamp(6px,(100cqw−320px)/16,20px)` 连续变化，宽度充裕时各超出 20px，
