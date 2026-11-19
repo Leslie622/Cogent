@@ -6,7 +6,7 @@
  * 实现上复用同一 renderer bundle + hash 路由（#console）分流到控制台根组件，
  * preload / 引擎事件通道 / 白名单全部零重复。
  *
- * 单例语义：已开则聚焦（避免多实例抢事件流）；关闭即释放引用。
+ * 单例语义：已开则恢复并聚焦（避免多实例抢事件流）；关闭即释放引用。
  * 窗口自身 frameless + renderer 自绘 header（与主窗口同一套窗口控制 IPC，
  * window.ts 已按"发起窗口"寻址，主/控制台窗口共用）。
  */
@@ -72,7 +72,10 @@ function createConsoleWindow(): void {
 export function registerConsoleIpc(): void {
   // 无参数：动作语义由 channel 表达（同 window 域）
   ipcMain.handle(IPC.consoleOpen, () => {
-    if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.focus()
-    else createConsoleWindow()
+    if (consoleWindow && !consoleWindow.isDestroyed()) {
+      // Windows 上聚焦不会唤回最小化窗口，必须先恢复再请求焦点。
+      if (consoleWindow.isMinimized()) consoleWindow.restore()
+      consoleWindow.focus()
+    } else createConsoleWindow()
   })
 }
