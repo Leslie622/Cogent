@@ -115,8 +115,13 @@ function ImportDialog({
   )
 }
 
+/** 列表缓存（模块级，按作用域键）：分区切换 = 组件重挂载，本地 state 归零
+    会让页面先塌成加载卡、IPC 往返回来再弹起（跨进程 + 扫盘，肉眼可见）。
+    命中缓存先渲染旧值、后台照常刷新（stale-while-revalidate），仅首访出加载卡 */
+const serversCache = new Map<string, McpServerSummary[]>()
+
 export function McpSection() {
-  /** null = 加载中（首拉未返回） */
+  /** null = 加载中（仅该作用域首次访问、缓存未命中时短暂出现） */
   const [servers, setServers] = useState<McpServerSummary[] | null>(null)
   const [fileErrors, setFileErrors] = useState<string[]>([])
   const [actionError, setActionError] = useState<string | null>(null)
@@ -133,15 +138,20 @@ export function McpSection() {
   const scopeState = useProjectScope()
   const { scope, project, projectCwd } = scopeState
 
+  const scopeKey = scope === 'project' ? `project:${projectCwd}` : 'user'
   const refresh = useCallback(async () => {
+    // 缓存命中先顶上（切分区/切作用域回来不闪加载卡），拿到新值后原位替换
+    const cached = serversCache.get(scopeKey)
+    if (cached !== undefined) setServers(cached)
     try {
       const r = await window.cogent.engineRequest('mcp.list', scope === 'project' ? { cwd: projectCwd } : {})
+      serversCache.set(scopeKey, r.servers)
       setServers(r.servers)
       setFileErrors(r.errors)
     } catch (error) {
       setActionError(messageOf(error))
     }
-  }, [scope, projectCwd])
+  }, [scope, projectCwd, scopeKey])
 
   useEffect(() => {
     void refresh()
@@ -267,11 +277,11 @@ export function McpSection() {
     >
       {servers !== null && userScope && <MediaBindingsSection servers={servers} />}
       {servers === null ? (
-        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">加载中…</div>
+        <div className="mt-8 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">加载中…</div>
       ) : count === 0 ? (
         userScope ? (
           /* 空态（zcode 形态）：虚线卡 + 主副文案 + 新建/导入双入口 */
-          <div className="mt-3 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-12 text-center">
+          <div className="mt-8 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-12 text-center">
             <div className="text-sm font-medium">尚未安装 MCP 服务器</div>
             <div className="text-xs text-muted-foreground">手动新建服务器，或导入已有配置。</div>
             <div className="mt-2 flex items-center gap-2">
@@ -293,12 +303,12 @@ export function McpSection() {
             </div>
           </div>
         ) : (
-          <div className="mt-3 rounded-xl border border-dashed border-border px-6 py-10 text-center text-xs text-muted-foreground">
+          <div className="mt-8 rounded-xl border border-dashed border-border px-6 py-10 text-center text-xs text-muted-foreground">
             没有可覆盖的服务器 —— 先在「本机 · 用户」作用域添加 MCP 服务器。
           </div>
         )
       ) : visible.length === 0 ? (
-        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">
+        <div className="mt-8 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">
           没有匹配「{query.trim()}」的服务器
         </div>
       ) : (

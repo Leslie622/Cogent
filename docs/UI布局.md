@@ -26,8 +26,10 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 - `content-sidebar` 是普通 flex 像素宽块，不进 react-resizable-panels（RRP）；
   CSS 保证缩放时像素宽稳定，避免百分比尺寸经 JS 校正产生脏帧。
 - `SidebarResizeHandle` 使用 pointer capture + rAF 直写宽度；拖过下限有阻力，
-  越过 min/2 折叠，反向对称恢复；键盘 ±16px，双击回默认。
+  越过 min/2 折叠（落点 `collapsedWidth`：侧栏折成 0，模型设置左栏折成 48px
+  图标栏），反向对称恢复；键盘 ±16px，双击回默认。
 - `use-content-sidebar-split` 记忆宽度/折叠态，首帧直接还原；只在用户手势后落盘。
+  模型设置左栏同方案（`use-provider-rail-split`，像素宽可拖可折）。
 - 窗口 ≤1100px 自动折叠右侧标签页区，≤760px 自动折叠会话侧栏；400px 时内容区
   仅显示对话。自动约束不写入手动布局记忆，放宽后恢复原开合/宽度，手动关闭的栏仍关闭；
   自动收起期间禁用展开入口与分割线，收起内容 inert。窗口断点由 `use-window-media-query` 订阅。
@@ -142,7 +144,11 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   原文与代码共用详情页唯一纵向滚动条，不设固定 vh 上限；JSON默认展开2层。
 
 - 通用设置骨架 `SettingsPage`：`max-w-3xl px-10 py-8` 单列，标题/可选描述/
-  工具行/内容；`SettingsGroup` 为带组标题的 rounded-xl 描边卡 + divide-y；
+  工具行/内容；页头块独立成 `SettingsHeader`（标题/描述/工具行），页头的
+  列位与上、左右边距是模板量，所有分区一致；页头 → 第一个内容（组卡或
+  加载/空态卡）统一 mt-8，不逐页手写。内容区滚动容器挂
+  `scrollbar-gutter-stable` 且切分区回顶（防抖机制见 [模块/设置页](模块/设置页.md)）。
+  `SettingsGroup` 为带组标题的 rounded-xl 描边卡 + divide-y；
   `SettingsRow` 左说明、右原生控件。设置页及其弹窗的 Button、SelectTrigger、Toggle
   和模型能力徽标统一使用 default；包括 MCP 服务器弹窗的保存／取消与列表行操作。
   调用处不再用高度／边长覆写尺寸档；模型行编辑／删除动作簇保留 w-20 占位以避免悬停跳动。
@@ -160,8 +166,16 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 - 通知页三组：通知（三行触发条件，Select/Switch）+ 提醒方式（toast/提示音
   两个正交 Switch + 系统设置跳转按钮，Linux 隐藏）+ 提示音（音量/音调滑杆
   w-40 + 三类声音源行：文件名截断显示 + 选择/试听/恢复默认）。
-- 模型设置单独用 master-detail：页头 + `mx-10 mb-8 flex-1 min-h-0` 主体卡，
-  左栏 w-72，各栏独立滚动；右栏 max-w-2xl 居中。详情按 provider id 挂 key，
+- 模型设置单独用 master-detail：页头同走 `SettingsHeader`（与其余分区同列位，
+  切页标题不跳位），仅主体卡 `mx-10 mb-8 mt-8 flex-1 min-h-0` 保持全宽例外。
+  左栏像素宽 176–320 可拖（默认 208），拖过下限折成 48px 图标栏（品牌标钮 +
+  角标状态点，title 提示名，组间细分隔线），宽与折叠态 localStorage 记忆。
+  换挡（折叠↔展开）是 200ms 收拢动画：栏 = 裁剪窗 + 清单层/图标层交叉淡出
+  （展开区间拖动两层同宽直写、逐帧回流；收拢时清单层保宽被裁，隐藏层 inert），
+  换挡瞬间 `data-snap` 放行宽度过渡（其余拖拽段仍杀过渡保跟手）；分屏线 =
+  1px 线 + 把手胶囊 + 悬停光带（同 content-sidebar 形态，栏本体不叠 border
+  避免双线加粗）。
+  各栏独立滚动；右栏 max-w-2xl 居中、上边距 24px。详情按 provider id 挂 key，
   模型行动作区固定宽并 hover 显示，避免布局跳动。
 - MCP/技能页共用 ScopeMenu 与两行工具栏：作用域、计数、右侧搜索；
   已安装组右侧刷新/导入/新建。条目有图标、名称、徽标、说明、开关和动作钮。

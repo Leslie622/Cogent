@@ -1,12 +1,13 @@
 /**
  * 设置页通用件（件 7 定风格，所有设置分区共用）：
  *   SettingsPage  —— 详情页骨架（限宽单列 + 大标题 + 描述/工具行，zcode 对齐）
+ *   SettingsHeader —— 页头块（标题/描述/工具行），页头边距是模板量，全分区一致
  *   SettingsGroup —— 组标题 + 圆角描边卡片（行间 divide-y 细分隔线）
  *   SettingsRow  —— 左标题+描述、右控件的横行（desc 可带内联链接）
  * 控件本体（Switch / 下拉 / 按钮）由各分区自行组合，通用件不锁死 ——
  * 后续分区（外观/浏览器/技能…）照此拼装即可保持同一风格，不各自手写页头
  * （2026-11-15 用户指令：详情页布局模块化；模型设置是唯一例外——master-detail
- * 自撑布局，内容特殊）。
+ * 自撑布局，仅主体卡全宽特殊，页头同样走 SettingsHeader）。
  */
 import type { ReactNode } from 'react'
 
@@ -29,18 +30,39 @@ export function SettingsPage({
 }) {
   return (
     <div className="@container/settings mx-auto w-full max-w-3xl px-10 py-8">
-      <h2 className="text-2xl font-semibold">{title}</h2>
-      {desc !== undefined && (
-        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{desc}</p>
-      )}
-      {toolbar !== undefined && <div className="mt-6 flex items-center gap-2">{toolbar}</div>}
+      <SettingsHeader title={title} desc={desc} toolbar={toolbar} />
       {children}
     </div>
   )
 }
 
+/** 页头块（标题/描述/工具行）单独成件：页头列位与上、左右边距是全分区
+    统一的模板量 —— 模型设置不走 SettingsPage 容器（master-detail 自撑），
+    但页头必须复用本件，切页时标题不跳位 */
+export function SettingsHeader({
+  title,
+  desc,
+  toolbar
+}: {
+  title: string
+  desc?: ReactNode
+  toolbar?: ReactNode
+}) {
+  return (
+    <>
+      <h2 className="text-2xl font-semibold">{title}</h2>
+      {desc !== undefined && (
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{desc}</p>
+      )}
+      {toolbar !== undefined && <div className="mt-6 flex items-center gap-2">{toolbar}</div>}
+    </>
+  )
+}
+
 /** 设置分组：标题（可省 —— 列表卡直接顶格）+ 可选标题行右侧动作区（zcode
-    「已安装 N … [刷新][新建]」同位）+ 卡片容器；divide-y 出行间 1px 线（首行无线） */
+    「已安装 N … [刷新][新建]」同位）+ 卡片容器；divide-y 出行间 1px 线（首行无线）。
+    mt-8 同时承担"页头 → 第一个内容"与组间距 —— 两处统一 32px，各分区的
+    状态卡（加载/空/无匹配）也按此间距对齐，不再各自手写 */
 export function SettingsGroup({
   label,
   actions,
@@ -52,7 +74,7 @@ export function SettingsGroup({
   children: ReactNode
 }) {
   return (
-    <section className="mt-8 first:mt-7">
+    <section className="mt-8">
       {(label !== undefined || actions !== undefined) && (
         <div className="flex items-center justify-between">
           {label !== undefined && <h3 className="text-base font-semibold">{label}</h3>}

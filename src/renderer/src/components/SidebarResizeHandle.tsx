@@ -5,11 +5,14 @@ import { useDividerGlow } from '@/hooks/use-divider-glow'
 interface SidebarResizeHandleProps {
   min: number
   max: number
-  /** 读当前实时宽度（px；折叠 = 0）。拖拽起点以此为准，不依赖 React 状态 */
+  /** 折叠目标宽（px）。content-sidebar 折成 0（缺省）；模型设置左栏折成
+      48px 图标栏 —— 拖过 min/2 落到该值而非 0 */
+  collapsedWidth?: number
+  /** 读当前实时宽度（px；折叠 = collapsedWidth）。拖拽起点以此为准，不依赖 React 状态 */
   readWidth: () => number
-  /** 拖拽/键盘实时写宽度（px；0 = 折叠）—— 直写 DOM 绕开 React 渲染 */
+  /** 拖拽/键盘实时写宽度（px；collapsedWidth = 折叠）—— 直写 DOM 绕开 React 渲染 */
   writeWidth: (px: number) => void
-  /** 手势结束提交一次（此时才进 React 状态并持久化；0 = 折叠） */
+  /** 手势结束提交一次（此时才进 React 状态并持久化；collapsedWidth = 折叠） */
   onCommit: (px: number) => void
   /** 双击恢复默认宽度 */
   onReset: () => void
@@ -31,21 +34,23 @@ function horizontalResizeCursor(): string {
 }
 
 /**
- * content-sidebar 自绘拖拽条（方案移植自 Themd）。侧栏不参与 react-resizable-panels
- * 的百分比引擎（引擎靠 JS 追赶校正，窗口缩放画脏帧抖动，且 4.18.1 的
- * preserve-pixel-size 实测无效），宽度是纯 CSS 像素值，拖拽在此直写 DOM：
- * pointer capture + rAF 节流，松手才 onCommit 进 React 状态与持久化。
+ * 自绘像素宽拖拽条（content-sidebar 与模型设置供应商栏共用，方案移植自
+ * Themd）。不参与 react-resizable-panels 的百分比引擎（引擎靠 JS 追赶校正，
+ * 窗口缩放画脏帧抖动，且 4.18.1 的 preserve-pixel-size 实测无效），宽度是
+ * 纯 CSS 像素值，拖拽在此直写 DOM：pointer capture + rAF 节流，松手才
+ * onCommit 进 React 状态与持久化。
  *
  * 交互对齐 RRP 时代的既定手感：拖过下限先钉在下限（阻力区），继续拖过
- * min/2 才折叠成 0、折叠后向外拖过 min/2 恢复（对齐库 collapsedThreshold
- * 默认，见 docs/UI布局.md）；键盘 ←/→ 步进 ±16px（折叠态 → 右键展开到下限），
+ * min/2 才折叠（落点 collapsedWidth，缺省 0；模型设置左栏 = 图标栏宽）、
+ * 折叠后向外拖过 min/2 恢复（对齐库 collapsedThreshold 默认，见
+ * docs/UI布局.md）；键盘 ←/→ 步进 ±16px（折叠态 → 右键展开到下限），
  * 双击回默认。
  *
  * 样式与 shadcn ResizableHandle（withHandle 形态）逐字一致，data-separator
  * 状态机（hover/active）与库同构 —— use-divider-glow 的光带与 AppShell 容器的
  * 「拖拽杀过渡」:has() 选择器都以它为观察源，自绘后光带/过渡行为不变。
  */
-export function SidebarResizeHandle({ min, max, readWidth, writeWidth, onCommit, onReset }: SidebarResizeHandleProps) {
+export function SidebarResizeHandle({ min, max, collapsedWidth = 0, readWidth, writeWidth, onCommit, onReset }: SidebarResizeHandleProps) {
   const frame = useRef<number | null>(null)
   const elementRef = useDividerGlow()
 
@@ -64,9 +69,9 @@ export function SidebarResizeHandle({ min, max, readWidth, writeWidth, onCommit,
   /** 拖拽落点规则（对齐 RRP collapsedThreshold 默认语义 = collapsedSize 与
       minSize 间距之半）：拖到下限以下先钉在下限（阻力感 —— 拒绝继续变窄），
       继续拖过 min/2 才折叠；反向对称 —— 折叠后拖出 min/2 才展开。没这段的话
-      拖到下限瞬间就折，一点阻力没有 */
+      拖到下限瞬间就折，一点阻力没有。折叠落点 = collapsedWidth（0 或图标栏宽） */
   const resolve = (raw: number) => {
-    if (raw < min / 2) return 0
+    if (raw < min / 2) return collapsedWidth
     if (raw < min) return min
     return Math.min(max, raw)
   }
@@ -131,16 +136,16 @@ export function SidebarResizeHandle({ min, max, readWidth, writeWidth, onCommit,
   }
 
   /** 键盘微调（对齐库 Separator 的可操作性）：±16px；折叠态右键 = 展开到下限，
-      展开态左键低于下限 = 折叠；每次按键即提交（进状态 + 持久化） */
+      展开态左键低于下限 = 折叠（collapsedWidth）；每次按键即提交（进状态 + 持久化） */
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
     const current = readWidth()
     let next: number
     if (event.key === 'ArrowRight') {
-      next = current === 0 ? min : Math.min(max, current + 16)
+      next = current <= collapsedWidth ? min : Math.min(max, current + 16)
     } else {
-      next = current - 16 < min ? 0 : current - 16
+      next = current - 16 < min ? collapsedWidth : current - 16
     }
     writeWidth(next)
     onCommit(next)

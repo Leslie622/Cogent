@@ -23,10 +23,11 @@ it('打开取色面板不改设置，Themd 色板和 HEX 输入即时保存，�
   render(<AppearanceSection />)
   const controls = within(screen.getByRole('group', { name: '强调色' }))
   expect(controls.getAllByRole('button')).toHaveLength(2)
-  const reset = controls.getByRole('button', { name: '恢复默认' })
+  const reset = controls.getByRole('button', { name: '恢复默认强调色' })
   const trigger = controls.getByRole('button', { name: '选择颜色' })
   expect(reset).toBeDisabled()
-  expect(trigger).toHaveTextContent(/^$/)
+  /* 默认档触发钮按明暗回落显示色值（亮 #0231fa／暗 #5f9cff，测试环境无 dark 类） */
+  expect(trigger).toHaveTextContent('#0231fa')
   fireEvent.click(trigger)
   const picker = within(screen.getByRole('dialog', { name: '强调色选择器' }))
   expect(picker.queryByText('自定义强调色')).not.toBeInTheDocument()

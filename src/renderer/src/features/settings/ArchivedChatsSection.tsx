@@ -202,25 +202,25 @@ export function ArchivedChatsSection() {
       }
     >
       {archived === null ? (
-        <div className="mt-7 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">
+        <div className="mt-8 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">
           加载中…
         </div>
       ) : total === 0 ? (
         /* 空态文案对齐主流产品（ChatGPT 同款口吻） */
-        <div className="mt-7 flex flex-col items-center gap-1 rounded-xl border border-dashed border-border px-6 py-12 text-center">
+        <div className="mt-8 flex flex-col items-center gap-1 rounded-xl border border-dashed border-border px-6 py-12 text-center">
           <div className="text-sm font-medium">没有已归档的聊天</div>
           <div className="text-xs text-muted-foreground">
             归档的聊天会显示在此处。你可以在聊天操作中选择归档。
           </div>
         </div>
       ) : !visible || visibleCount === 0 ? (
-        <div className="mt-7 flex flex-col items-center gap-1 rounded-xl border border-dashed border-border px-6 py-12 text-center">
+        <div className="mt-8 flex flex-col items-center gap-1 rounded-xl border border-dashed border-border px-6 py-12 text-center">
           <div className="text-sm font-medium">没有匹配的归档聊天</div>
           <div className="text-xs text-muted-foreground">调整搜索词或筛选条件再试。</div>
         </div>
       ) : (
         /* 行卡（divide-y）：标题 + 项目徽标 + 归档时间 | 恢复 / 删除 icon 钮 */
-        <div className="mt-7 flex flex-col divide-y divide-border rounded-xl border border-border">
+        <div className="mt-8 flex flex-col divide-y divide-border rounded-xl border border-border">
           {visible.map((chat) => (
             <div key={chat.id} className="flex items-center gap-4 px-5 py-3.5">
               <div className="min-w-0 flex-1">

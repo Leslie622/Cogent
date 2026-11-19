@@ -158,8 +158,13 @@ function SkillDialog({
   )
 }
 
+/** 列表缓存（模块级，按作用域键）：分区切换 = 组件重挂载，本地 state 归零
+    会让页面先塌成加载卡、IPC 往返回来再弹起。命中缓存先渲染旧值、后台照常
+    刷新（stale-while-revalidate），仅首访出加载卡 —— 与 McpSection 同款 */
+const skillsCache = new Map<string, SkillSummary[]>()
+
 export function SkillSection() {
-  /** null = 加载中（首拉未返回） */
+  /** null = 加载中（仅该作用域首次访问、缓存未命中时短暂出现） */
   const [skills, setSkills] = useState<SkillSummary[] | null>(null)
   const [fileErrors, setFileErrors] = useState<string[]>([])
   const [actionError, setActionError] = useState<string | null>(null)
@@ -178,15 +183,20 @@ export function SkillSection() {
   const scopeState = useProjectScope()
   const { scope, project, projectCwd } = scopeState
 
+  const scopeKey = scope === 'project' ? `project:${projectCwd}` : 'user'
   const refresh = useCallback(async () => {
+    // 缓存命中先顶上（切分区/切作用域回来不闪加载卡），拿到新值后原位替换
+    const cached = skillsCache.get(scopeKey)
+    if (cached !== undefined) setSkills(cached)
     try {
       const r = await window.cogent.engineRequest('skills.list', scope === 'project' ? { cwd: projectCwd } : {})
+      skillsCache.set(scopeKey, r.skills)
       setSkills(r.skills)
       setFileErrors(r.errors)
     } catch (error) {
       setActionError(unwrapIpcError(error))
     }
-  }, [scope, projectCwd])
+  }, [scope, projectCwd, scopeKey])
 
   useEffect(() => {
     void refresh()
@@ -337,10 +347,10 @@ export function SkillSection() {
       }
     >
       {skills === null ? (
-        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">加载中…</div>
+        <div className="mt-8 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">加载中…</div>
       ) : count === 0 ? (
         userScope ? (
-          <div className="mt-3 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-12 text-center">
+          <div className="mt-8 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-12 text-center">
             <div className="text-sm font-medium">还没有技能</div>
             <div className="text-xs text-muted-foreground">新建一枚，或把 SKILL.md 技能包放进 ~/.cogent/skills（自动发现）。</div>
             <div className="mt-2 flex items-center gap-2">
@@ -351,12 +361,12 @@ export function SkillSection() {
             </div>
           </div>
         ) : (
-          <div className="mt-3 rounded-xl border border-dashed border-border px-6 py-10 text-center text-xs text-muted-foreground">
+          <div className="mt-8 rounded-xl border border-dashed border-border px-6 py-10 text-center text-xs text-muted-foreground">
             该项目还没有技能 —— 可在本页新建（写入项目 .cogent/skills），或依赖用户级技能。
           </div>
         )
       ) : visible.length === 0 ? (
-        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">
+        <div className="mt-8 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">
           没有匹配「{query.trim()}」的技能
         </div>
       ) : (

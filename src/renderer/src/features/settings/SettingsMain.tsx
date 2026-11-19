@@ -2,8 +2,12 @@
  * content-main 的设置页主体：按 settings store 的选中分区挂内容 ——
  * 常规已落地（GeneralSection，件 7 定风格：组卡片 + 行 + 开关/下拉/按钮），
  * 其余分区出占位标题（内容逐件实现）。
+ * 滚动容器两条防抖规则（切分区时内容会重挂、高度先塌后弹）：
+ *   scrollbar-gutter-stable —— 滚动条空间常驻（HomeSidebar 同款），居中列
+ *     不随滚动条出现/消失左右横跳；切分区显式回顶 —— 一次干净跳转代替
+ *     浏览器对"内容突然变矮"的钳位乱跳。
  */
-import type { ComponentType } from 'react'
+import { useLayoutEffect, useRef, type ComponentType } from 'react'
 import { GeneralSection } from './GeneralSection'
 import { AppearanceSection } from './AppearanceSection'
 import { NotificationsSection } from './NotificationsSection'
@@ -29,9 +33,16 @@ export function SettingsMain() {
   const section = useSettingsStore((s) => s.section)
   const Section = SECTIONS[section]
   const item = findSettingsItem(section)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // 回顶放 useLayoutEffect（绘制前归零，旧滚动位置不闪帧）；ref 类型含 null，
+  // 挂载后必非空，这里只做类型收窄
+  useLayoutEffect(() => {
+    if (scrollRef.current !== null) scrollRef.current.scrollTop = 0
+  }, [section])
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div ref={scrollRef} className="scrollbar-gutter-stable h-full overflow-y-auto">
       {Section ? (
         <Section />
       ) : (
