@@ -138,18 +138,18 @@ function SkillDialog({
               onChange={(e) => setBody(e.target.value)}
               placeholder={'1. …\n2. …'}
               rows={10}
-              className="mt-1.5 font-mono text-[12px]"
+              className="mt-1.5 font-mono text-xs"
             />
           </div>
         </div>
         {(formError ?? saveError) !== null && (
-          <div className="mt-3 text-[13px] text-destructive">{formError ?? saveError}</div>
+          <div className="mt-3 text-sm text-destructive">{formError ?? saveError}</div>
         )}
         <DialogFooter>
-          <Button variant="ghost" size="sm" disabled={saving} onClick={onClose}>
+          <Button variant="ghost" size="default" disabled={saving} onClick={onClose}>
             取消
           </Button>
-          <Button size="sm" disabled={saving} onClick={save}>
+          <Button size="default" disabled={saving} onClick={save}>
             {saving ? '保存中…' : '保存'}
           </Button>
         </DialogFooter>
@@ -330,33 +330,33 @@ export function SkillSection() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索技能"
-              className="h-full w-full min-w-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-placeholder"
+              className="h-full w-full min-w-0 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder"
             />
           </div>
         </>
       }
     >
       {skills === null ? (
-        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-[13px] text-muted-foreground">加载中…</div>
+        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">加载中…</div>
       ) : count === 0 ? (
         userScope ? (
           <div className="mt-3 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-12 text-center">
             <div className="text-sm font-medium">还没有技能</div>
-            <div className="text-[13px] text-muted-foreground">新建一枚，或把 SKILL.md 技能包放进 ~/.cogent/skills（自动发现）。</div>
+            <div className="text-xs text-muted-foreground">新建一枚，或把 SKILL.md 技能包放进 ~/.cogent/skills（自动发现）。</div>
             <div className="mt-2 flex items-center gap-2">
-              <Button size="sm" disabled={busy} onClick={openCreate}>
+              <Button size="default" disabled={busy} onClick={openCreate}>
                 <IconPlus className="size-4" />
                 新建技能
               </Button>
             </div>
           </div>
         ) : (
-          <div className="mt-3 rounded-xl border border-dashed border-border px-6 py-10 text-center text-[13px] text-muted-foreground">
+          <div className="mt-3 rounded-xl border border-dashed border-border px-6 py-10 text-center text-xs text-muted-foreground">
             该项目还没有技能 —— 可在本页新建（写入项目 .cogent/skills），或依赖用户级技能。
           </div>
         )
       ) : visible.length === 0 ? (
-        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-[13px] text-muted-foreground">
+        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">
           没有匹配「{query.trim()}」的技能
         </div>
       ) : (
@@ -364,10 +364,10 @@ export function SkillSection() {
           label={`已安装 ${count}`}
           actions={
             <>
-              <Button variant="outline" size="icon-sm" disabled={busy} onClick={() => void refresh()} aria-label="刷新">
+              <Button variant="outline" size="default" disabled={busy} onClick={() => void refresh()} aria-label="刷新">
                 <IconRefresh className="size-4" />
               </Button>
-              <Button size="sm" disabled={busy} onClick={openCreate}>
+              <Button size="default" disabled={busy} onClick={openCreate}>
                 <IconPlus className="size-4" />
                 新建
               </Button>
@@ -391,7 +391,7 @@ export function SkillSection() {
                 {/* 描述行截断时悬停看全文（Hint = shadcn Tooltip；原 title 是
                     路径但行显描述，语义错位已纠正 —— 路径在编辑弹窗看） */}
                 <Hint tip={s.description} side="top">
-                  <div className="mt-0.5 min-w-0 truncate text-[13px] text-muted-foreground">
+                  <div className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground">
                     {s.description}
                   </div>
                 </Hint>
@@ -406,10 +406,10 @@ export function SkillSection() {
                 {/* 生态目录条目（.agents，zcode 等工具装的）只读：启停可用，编辑/删除归原工具 */}
                 {(userScope || s.scope === 'project') && !s.eco ? (
                   <>
-                    <Button variant="ghost" size="icon-xs" disabled={busy} onClick={() => openEdit(s)} aria-label={`编辑 ${s.name}`}>
+                    <Button variant="ghost" size="default" disabled={busy} onClick={() => openEdit(s)} aria-label={`编辑 ${s.name}`}>
                       <IconPencil className="size-4" />
                     </Button>
-                    <Button variant="ghost" size="icon-xs" disabled={busy} onClick={() => remove(s)} aria-label={`删除 ${s.name}`}>
+                    <Button variant="ghost" size="default" disabled={busy} onClick={() => remove(s)} aria-label={`删除 ${s.name}`}>
                       <IconTrash className="size-4" />
                     </Button>
                   </>
@@ -418,7 +418,7 @@ export function SkillSection() {
                   /* 项目档专属：清除覆盖（inherit = 回落用户级求值） */
                   <Button
                     variant="ghost"
-                    size="icon-xs"
+                    size="default"
                     disabled={busy}
                     onClick={() => resetOverride(s)}
                     aria-label={`重置 ${s.name} 的项目覆盖`}
@@ -435,7 +435,7 @@ export function SkillSection() {
       {fileErrors.length > 0 && (
         <SettingsGroup label="配置诊断">
           {fileErrors.map((e, i) => (
-            <div key={i} className="px-5 py-3 text-[13px] leading-relaxed text-destructive">
+            <div key={i} className="px-5 py-3 text-sm leading-relaxed text-destructive">
               {e}
             </div>
           ))}
@@ -443,7 +443,7 @@ export function SkillSection() {
       )}
 
       {actionError !== null && (
-        <div className="mt-4 rounded-lg border border-destructive/30 px-4 py-3 text-[13px] text-destructive">
+        <div className="mt-4 rounded-lg border border-destructive/30 px-4 py-3 text-sm text-destructive">
           {actionError}
         </div>
       )}

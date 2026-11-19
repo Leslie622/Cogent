@@ -23,7 +23,7 @@ const attachmentVariants = cva(
       },
       variant: {
         default: "",
-        file: "h-[45px] w-fit min-w-0 max-w-[min(180px,100%)] flex-nowrap has-data-[slot=attachment-content]:py-1 has-data-[slot=attachment-remove]:pr-6",
+        file: "h-auto min-h-[45px] w-fit min-w-0 max-w-[min(180px,100%)] flex-nowrap has-data-[slot=attachment-content]:py-1 has-data-[slot=attachment-remove]:pr-6",
         image: "size-[45px] min-w-0 flex-nowrap overflow-hidden has-data-[slot=attachment-media]:p-0 [&>[data-slot=attachment-media]]:size-full [&>[data-slot=attachment-media]]:rounded-none [&>[data-slot=attachment-media]>img]:size-full",
       },
     },
@@ -199,7 +199,7 @@ function AttachmentRemove({ className, ...props }: React.ComponentProps<typeof B
 
 function AttachmentStatus({ className, state, ...props }: React.ComponentProps<"div"> & { state: "processing" | "error" }) {
   return <div data-slot="attachment-status" data-state={state}
-    className={cn("absolute inset-x-0 bottom-0 z-20 flex items-center justify-center gap-1 px-0.5 py-0.5 text-[10px] leading-tight data-[state=processing]:bg-background/90 data-[state=error]:bg-destructive data-[state=error]:text-destructive-foreground", className)} {...props} />
+    className={cn("absolute inset-x-0 bottom-0 z-20 flex items-center justify-center gap-1 px-0.5 py-0.5 text-xs leading-tight data-[state=processing]:bg-background/90 data-[state=error]:bg-destructive data-[state=error]:text-destructive-foreground", className)} {...props} />
 }
 
 function AttachmentGroup({ className, layout = "scroll", align = "start", ...props }: React.ComponentProps<"div"> & {

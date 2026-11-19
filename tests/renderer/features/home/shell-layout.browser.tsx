@@ -63,6 +63,19 @@ async function run() {
     await settleLayout()
     assert(rect('[data-home-tabs]').width >= 280, '宽窗未展开右侧标签页区')
     const style = (selector: string) => iframe.contentWindow!.getComputedStyle(doc.querySelector(selector)!)
+    for (const size of [11, 14, 16]) {
+      doc.documentElement.style.setProperty('--ui-font-size', `${size}px`)
+      await settleLayout()
+      const controls = doc.querySelectorAll<HTMLButtonElement>('.app-header-wide button')
+      assert(controls.length === 6, '头部文字入口数量异常')
+      for (const control of controls) {
+        const computed = iframe.contentWindow!.getComputedStyle(control)
+        assert(parseFloat(computed.fontSize) === size, `头部 ${control.textContent} 没有使用正文阶`)
+        assert(control.clientHeight - parseFloat(computed.paddingTop) - parseFloat(computed.paddingBottom) + 1 >= parseFloat(computed.lineHeight), '头部文字被固定高度裁切')
+      }
+    }
+    doc.documentElement.style.removeProperty('--ui-font-size')
+    await settleLayout()
     assert(style('main').borderTopLeftRadius === '14px', '内容主体未使用项目 radius-xl')
     assert(style('[data-slot=input-group]').borderTopLeftRadius === '10px', '输入框未使用 InputGroup 原生圆角')
     assert(style('button[aria-label="发送"]').borderTopLeftRadius === '8px', '发送按钮未使用 icon-sm 原生圆角')
@@ -108,7 +121,7 @@ async function run() {
     iframe.style.width = '1240px'
     await settleLayout()
     assert(rect('[data-sidebar-clip]').width === 0 && rect('[data-home-tabs]').width === 0, '手动收起的栏被放宽窗口误恢复')
-    report.textContent = `全部通过：自动折叠 / 放宽恢复 / 手动收起保留 / 400px 头部与上下文\n${JSON.stringify(rows, null, 2)}`
+    report.textContent = `全部通过：头部文字11/14/16px正文阶 / 自动折叠 / 放宽恢复 / 手动收起保留 / 400px 头部与上下文\n${JSON.stringify(rows, null, 2)}`
     iframe.style.width = '400px'
   } catch (error) {
     report.textContent = `${String(error)}\n${JSON.stringify(rows, null, 2)}`

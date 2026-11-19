@@ -144,7 +144,7 @@ export function ArchivedChatsSection() {
               if (next !== null) setProjectFilter(next)
             }}
           >
-            <SelectTrigger size="sm" aria-label="按项目筛选">
+            <SelectTrigger size="default" aria-label="按项目筛选">
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="start">
@@ -160,7 +160,7 @@ export function ArchivedChatsSection() {
           <Select value={sort} items={SORTS} onValueChange={(next) => {
             if (next !== null) setSort(next)
           }}>
-            <SelectTrigger size="sm" aria-label="排序">
+            <SelectTrigger size="default" aria-label="排序">
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="start">
@@ -181,14 +181,14 @@ export function ArchivedChatsSection() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索归档聊天"
-              className="h-full w-full min-w-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-placeholder"
+              className="h-full w-full min-w-0 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder"
             />
           </div>
           {/* 全部删除：跟随当前筛选 + 搜索的可见集（文案带数量让确认弹窗有锚） */}
           {visibleCount > 0 && (
             <Button
               variant="destructive"
-              size="sm"
+              size="default"
               disabled={deleting}
               onClick={() => {
                 if (visible !== null) setConfirming({ kind: 'all', ids: visible.map((s) => s.id) })
@@ -202,21 +202,21 @@ export function ArchivedChatsSection() {
       }
     >
       {archived === null ? (
-        <div className="mt-7 rounded-xl border border-border px-5 py-4 text-[13px] text-muted-foreground">
+        <div className="mt-7 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">
           加载中…
         </div>
       ) : total === 0 ? (
         /* 空态文案对齐主流产品（ChatGPT 同款口吻） */
         <div className="mt-7 flex flex-col items-center gap-1 rounded-xl border border-dashed border-border px-6 py-12 text-center">
           <div className="text-sm font-medium">没有已归档的聊天</div>
-          <div className="text-[13px] text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             归档的聊天会显示在此处。你可以在聊天操作中选择归档。
           </div>
         </div>
       ) : !visible || visibleCount === 0 ? (
         <div className="mt-7 flex flex-col items-center gap-1 rounded-xl border border-dashed border-border px-6 py-12 text-center">
           <div className="text-sm font-medium">没有匹配的归档聊天</div>
-          <div className="text-[13px] text-muted-foreground">调整搜索词或筛选条件再试。</div>
+          <div className="text-xs text-muted-foreground">调整搜索词或筛选条件再试。</div>
         </div>
       ) : (
         /* 行卡（divide-y）：标题 + 项目徽标 + 归档时间 | 恢复 / 删除 icon 钮 */
@@ -227,12 +227,12 @@ export function ArchivedChatsSection() {
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium">{chat.title}</span>
                   {chat.projectId !== undefined && projectNameById.has(chat.projectId) && (
-                    <span className="shrink-0 rounded-full bg-accent-foreground/5 px-2 py-0.5 text-[11px] text-muted-foreground">
+                    <span className="shrink-0 rounded-full bg-accent-foreground/5 px-2 py-0.5 text-xs text-muted-foreground">
                       {projectNameById.get(chat.projectId)}
                     </span>
                   )}
                 </div>
-                <div className="mt-0.5 text-[13px] text-muted-foreground">
+                <div className="mt-0.5 text-xs text-muted-foreground">
                   归档于 {new Date(chat.archivedAt ?? chat.updatedAt).toLocaleDateString()}
                 </div>
               </div>
@@ -240,7 +240,7 @@ export function ArchivedChatsSection() {
               <div className="flex shrink-0 items-center gap-1">
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="default"
                   aria-label={`恢复 ${chat.title}`}
                   disabled={deleting}
                   onClick={() => void restore(chat.id)}
@@ -249,7 +249,7 @@ export function ArchivedChatsSection() {
                 </Button>
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="default"
                   className="text-muted-foreground hover:text-destructive"
                   aria-label={`删除 ${chat.title}`}
                   disabled={deleting}

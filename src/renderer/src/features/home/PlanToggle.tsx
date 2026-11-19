@@ -54,7 +54,7 @@ export function PlanToggle({ session }: { session: HomeSession }) {
           className={cn(
             // pl-1：左内距压半（8→4px）—— 与分隔线/权限钮组的收紧（三块紧凑）；
             // h-7：工具行统一 28px 高（2026-11-16 定调），圆角走 xs 档原生不覆写
-            'group h-7 gap-1.5 pl-1 pr-2 text-[13px] text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground'
+            'group h-7 gap-1.5 pl-1 pr-2 text-xs text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground'
           )}
         >
           <IconClipboardList className="size-4.5" strokeWidth={2.25} />

@@ -50,7 +50,7 @@ function ProjectOption({
       type="button"
       onClick={onSelect}
       className={cn(
-        'flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-[13px] text-foreground outline-none',
+        'flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-sm text-foreground outline-none',
         ROW_HOVER,
         'focus-visible:bg-accent-foreground/5'
       )}
@@ -123,7 +123,7 @@ export function ProjectPicker({
                 variant="ghost"
                 size="xs"
                 className={cn(
-                  'group gap-1.5 px-1.5 font-normal text-[13px] text-foreground',
+                  'group gap-1.5 px-1.5 font-normal text-sm text-foreground',
                   ROW_HOVER
                 )}
               />
@@ -182,7 +182,7 @@ export function ProjectPicker({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜索项目"
-              className="h-full w-full min-w-0 border-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-placeholder"
+              className="h-full w-full min-w-0 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder"
             />
           </div>
           <div className="flex max-h-64 flex-col overflow-y-auto">
@@ -195,7 +195,7 @@ export function ProjectPicker({
               />
             ))}
             {filtered.length === 0 && (
-              <div className="px-3 py-2 text-[13px] text-muted-foreground">无匹配项目</div>
+              <div className="px-3 py-2 text-xs text-muted-foreground">无匹配项目</div>
             )}
           </div>
           {/* 新建项目行：转入创建弹窗（两步流），建完经 onCreated 回到选择流 */}
@@ -206,7 +206,7 @@ export function ProjectPicker({
               setCreateOpen(true)
             }}
             className={cn(
-              'flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-[13px] text-foreground outline-none',
+              'flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-sm text-foreground outline-none',
               ROW_HOVER,
               'focus-visible:bg-accent-foreground/5'
             )}

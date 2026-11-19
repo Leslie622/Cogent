@@ -140,7 +140,7 @@ export function BuiltinProviderDetail({
             })
           }
           placeholder="留空走官方端点；填中转/代理地址覆盖"
-          className="mt-1.5 rounded-lg text-[13px]"
+          className="mt-1.5 rounded-lg text-sm"
           autoComplete="off"
         />
       </div>

@@ -22,19 +22,17 @@ export function SettingsSidebar() {
     <div className="flex h-full flex-col">
       {/* 头部：路由标题（与 HomeSidebar 同款 16px 粗体） */}
       <div className="flex h-12 shrink-0 items-center pl-4">
-        <span className="text-[16px] font-semibold">设置</span>
+        <span className="text-base font-semibold">设置</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {/* 搜索框：裸 input 手搭（input-group 原语内层 input 高 36px 撑破 32px
-            容器还带聚焦 ring，弃用）—— 背景与下方列表 hover 同一黑 5% 软叠
-            （alpha 叠侧栏底，非固定灰值），聚焦无 outline；过滤属后续件 */}
+        {/* 搜索图标与原生输入共用胶囊底色，不另加聚焦描边；过滤属后续件。 */}
         <div className="flex h-8 items-center gap-2 rounded-full bg-accent-foreground/5 px-3">
           <IconSearch className="size-4 shrink-0 text-muted-foreground" />
           <input
             type="text"
             placeholder="搜索"
-            className="h-full w-full min-w-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-placeholder"
+            className="h-full w-full min-w-0 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder"
           />
         </div>
 
@@ -53,7 +51,7 @@ export function SettingsSidebar() {
                   onClick={() => setSection(id)}
                   aria-current={active ? 'true' : undefined}
                   className={cn(
-                    'flex h-8 w-full items-center gap-2 rounded-md px-2 text-[13px] text-foreground',
+                    'flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground',
                     ROW_HOVER,
                     active && ROW_ACTIVE,
                   )}

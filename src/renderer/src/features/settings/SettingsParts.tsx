@@ -12,7 +12,7 @@ import type { ReactNode } from 'react'
 
 /**
  * 设置详情页骨架：所有分区共用（不各自拼头部）。单列限宽容器 + 大标题
- * （居左 24px 粗体）+ 可选描述行（灰 13px）+ 可选工具行（计数/动作钮，
+ * （居左主标题阶）+ 可选描述行（小字阶）+ 可选工具行（计数/动作钮，
  * zcode MCP 页同位）。zcode 各设置页同款骨架：标题必在、描述按需、
  * 内容 = 若干 SettingsGroup 卡片垂直排。
  */
@@ -28,10 +28,10 @@ export function SettingsPage({
   children: ReactNode
 }) {
   return (
-    <div className="mx-auto w-full max-w-3xl px-10 py-8">
+    <div className="@container/settings mx-auto w-full max-w-3xl px-10 py-8">
       <h2 className="text-2xl font-semibold">{title}</h2>
       {desc !== undefined && (
-        <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{desc}</p>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{desc}</p>
       )}
       {toolbar !== undefined && <div className="mt-6 flex items-center gap-2">{toolbar}</div>}
       {children}
@@ -55,7 +55,7 @@ export function SettingsGroup({
     <section className="mt-8 first:mt-7">
       {(label !== undefined || actions !== undefined) && (
         <div className="flex items-center justify-between">
-          {label !== undefined && <h3 className="text-[15px] font-semibold">{label}</h3>}
+          {label !== undefined && <h3 className="text-base font-semibold">{label}</h3>}
           {actions !== undefined && <div className="flex items-center gap-1">{actions}</div>}
         </div>
       )}
@@ -66,7 +66,7 @@ export function SettingsGroup({
   )
 }
 
-/** 设置行：左 = 标题（14px medium，可带内联徽标 → ReactNode）+ 描述（13px 灰，
+/** 设置行：左 = 正文阶标题（可带内联徽标 → ReactNode）+ 小字阶描述（灰，
     可换行带链接），右 = 控件 */
 export function SettingsRow({
   title,
@@ -78,14 +78,14 @@ export function SettingsRow({
   children: ReactNode
 }) {
   return (
-    <div className="flex items-center gap-6 px-5 py-4">
+    <div className="flex flex-col items-stretch gap-3 px-5 py-4 @min-[36rem]/settings:flex-row @min-[36rem]/settings:items-center @min-[36rem]/settings:gap-6">
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">{title}</div>
         {desc && (
-          <div className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{desc}</div>
+          <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{desc}</div>
         )}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="min-w-0 max-w-full shrink-0">{children}</div>
     </div>
   )
 }

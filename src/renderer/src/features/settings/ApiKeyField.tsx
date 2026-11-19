@@ -53,8 +53,8 @@ export function ApiKeyField({ providerId }: { providerId: string }) {
         {committed !== '' && (
           <Button
             variant="ghost"
-            size="xs"
-            className="text-xs text-muted-foreground hover:text-foreground"
+            size="default"
+            className="text-muted-foreground hover:text-foreground"
             onClick={() => void clear()}
           >
             清除
@@ -69,7 +69,7 @@ export function ApiKeyField({ providerId }: { providerId: string }) {
           onBlur={() => void commit()}
           onKeyDown={(event) => event.key === 'Enter' && void commit()}
           placeholder="输入 API Key"
-          className="rounded-lg pr-9 text-[13px]"
+          className="rounded-lg pr-9 text-sm"
           autoComplete="off"
         />
         <button

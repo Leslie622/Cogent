@@ -119,7 +119,7 @@ function SectionHeader({
  *  纯提示不可交互，要弱于一切正文层级；顺带修掉旧 /80 透明度文字色
  *  （方针 3 禁） */
 function EmptyHint({ text }: { text: string }) {
-  return <div className="px-2 py-1.5 text-[13px] text-empty-hint">{text}</div>
+  return <div className="px-2 py-1.5 text-sm text-empty-hint">{text}</div>
 }
 
 /**
@@ -176,7 +176,7 @@ const ChatRow = memo(function ChatRow({
         <button
           type="button"
           className={cn(
-            'flex h-full min-w-0 flex-1 items-center gap-1.5 pr-4 text-[13px] text-foreground transition-[padding] duration-100',
+            'flex h-full min-w-0 flex-1 items-center gap-1.5 pr-4 text-sm text-foreground transition-[padding] duration-100',
             indent ? 'pl-8' : 'pl-2',
             'group-hover:pr-14 group-focus-within:pr-14 group-data-popup-open:pr-14 group-has-[[data-popup-open]]:pr-14',
             waitingApproval && 'pr-2!'
@@ -332,7 +332,7 @@ const ProjectRow = memo(function ProjectRow({
         >
           <CollapsibleTrigger
             render={<button type="button" />}
-            className="flex min-w-0 flex-1 items-center gap-2 pr-12 text-[13px] text-foreground"
+            className="flex min-w-0 flex-1 items-center gap-2 pr-12 text-sm text-foreground"
           >
             {/* 文件夹开/合两形态（IconFolder/IconFolderOpen，恢复此前语义）+
                 CrossFade：两个 svg 叠放，透明度交叉渐变 150ms —— 不回到三元
@@ -582,7 +582,7 @@ export function HomeSidebar() {
     <div className="flex h-full flex-col">
       {/* 头部：路由标题（首页 = 应用名）+ 搜索钮（行为空位） */}
       <div className="flex h-12 shrink-0 items-center justify-between pl-4 pr-2.5">
-        <span className="text-[16px] font-semibold">Cogent</span>
+        <span className="text-base font-semibold">Cogent</span>
         <Hint tip="搜索" side="bottom">
           <Button
             variant="ghost"

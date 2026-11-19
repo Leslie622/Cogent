@@ -34,7 +34,7 @@ function TodoRow({ item }: { item: TodoItem }) {
       <StatusIcon status={item.status} />
       <span
         className={cn(
-          'truncate text-[13px]',
+          'truncate text-sm',
           item.status === 'completed' ? 'text-muted-foreground line-through' : 'text-foreground'
         )}
       >
@@ -113,7 +113,7 @@ export function TodoStrip() {
                 字号比条目大半档（标题 14px / 计数 13px），标题压得住清单 */}
             <IconListCheck className="size-4.5 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground">任务清单</span>
-            <span className="text-[13px] tabular-nums text-muted-foreground">
+            <span className="text-xs tabular-nums text-muted-foreground">
               {done}/{todos.length}
             </span>
             <Button

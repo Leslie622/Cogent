@@ -26,6 +26,7 @@ import { DEFAULT_THEME_ID, useActiveTheme, useThemeStore } from '@/stores/theme'
 import type { HexColor } from '@/lib/hex-color'
 import {
   CODE_FONT_SIZES,
+  UI_FONT_SIZES,
   useAppearanceStore,
   useIsDarkMode,
   type ColorMode,
@@ -98,6 +99,8 @@ export function AppearanceSection() {
   // 外观偏好由公共窗口入口同步投影，分区只维护设置值。
   const colorMode = useAppearanceStore((s) => s.colorMode)
   const setColorMode = useAppearanceStore((s) => s.setColorMode)
+  const uiFontSize = useAppearanceStore((s) => s.uiFontSize)
+  const setUiFontSize = useAppearanceStore((s) => s.setUiFontSize)
   const showLineNumbers = useAppearanceStore((s) => s.showLineNumbers)
   const setShowLineNumbers = useAppearanceStore((s) => s.setShowLineNumbers)
   const codeWrap = useAppearanceStore((s) => s.codeWrap)
@@ -154,6 +157,20 @@ export function AppearanceSection() {
             </SelectContent>
           </Select>
         </SettingsRow>
+        <SettingsRow title="界面字号" desc="统一调整界面文字，保留标题与小字层级；聊天正文沿用内容主题">
+          <Select
+            value={String(uiFontSize)}
+            items={UI_FONT_SIZES.map((size) => ({ value: String(size), label: `${size} px` }))}
+            onValueChange={(next) => { if (next !== null) setUiFontSize(Number(next)) }}
+          >
+            <SelectTrigger aria-label="界面字号" className="w-44"><SelectValue /></SelectTrigger>
+            <SelectContent align="end">
+              <SelectGroup>
+                {UI_FONT_SIZES.map((size) => <SelectItem key={size} value={String(size)}>{size} px</SelectItem>)}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </SettingsRow>
         <SettingsRow title="强调色" desc="链接、模式标识与分屏光带的点缀色">
           <AccentControl />
         </SettingsRow>
@@ -186,7 +203,7 @@ export function AppearanceSection() {
         </SettingsRow>
         <SettingsRow
           title="代码字体大小"
-          desc="调整对话内容的代码块字号；跟随主题时采用当前内容样式"
+          desc="统一调整聊天代码块、工具输出和控制台代码；跟随主题时，未指定字号的代码使用 14px"
         >
           <Select
             value={codeFontSize === null ? 'theme' : String(codeFontSize)}

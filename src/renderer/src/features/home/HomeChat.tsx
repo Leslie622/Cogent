@@ -160,7 +160,7 @@ function ChatHeader({
             <div className="mt-3 flex items-center gap-2 border-t pt-3">
               <IconFolder className="size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] text-foreground">{project.name}</div>
+                <div className="truncate text-sm text-foreground">{project.name}</div>
                 {/* 主根路径（多根项目其余目录在工作区面板看，同信息区口径） */}
                 <div className="truncate text-xs text-muted-foreground">{project.cwds[0]}</div>
               </div>
@@ -168,7 +168,7 @@ function ChatHeader({
             {lastActiveAt !== undefined && (
               <div className="mt-3 flex items-center gap-2">
                 <IconClock className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate text-[13px] text-foreground">
+                <span className="truncate text-sm text-foreground">
                   最近活动 {relativeTime(lastActiveAt)}
                 </span>
               </div>
@@ -464,7 +464,7 @@ function ChatComposer({
                 <Button
                   variant="ghost"
                   size="xs"
-                  className="gap-1.5 px-1 font-normal text-[13px] text-foreground hover:bg-accent-foreground/5"
+                  className="gap-1.5 px-1 font-normal text-sm text-foreground hover:bg-accent-foreground/5"
                 >
                   <IconDeviceDesktop className="size-4.5 text-muted-foreground" />
                   {cwdBasename}
@@ -511,7 +511,7 @@ function ChatComposer({
               }
             }}
             placeholder="随心输入"
-            className="max-h-52 px-4 pt-5 pb-2 placeholder:text-placeholder"
+            className="content-typography max-h-52 px-4 pt-5 pb-2 placeholder:text-placeholder"
           />
           {/* gap-1：工具行三块（+ / 权限钮 / 计划 chip）紧凑（2026-11-16 用户
               定调，曾 gap-2 偏松）；分隔线自身 mx 已归零由本 gap 接管间距 */}

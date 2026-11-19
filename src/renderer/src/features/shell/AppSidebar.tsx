@@ -64,13 +64,13 @@ export function AppSidebar() {
             <Hint key={itemView} tip={label} side="right">
               <Button
                 variant="ghost"
-                size="icon"
+                size="icon-lg"
                 className={railButton(active)}
                 aria-label={label}
                 aria-current={active ? 'page' : undefined}
                 onClick={() => setView(itemView)}
               >
-                {active ? <IconFilled className="size-[19px]" /> : <Icon className="size-[19px]" />}
+                {active ? <IconFilled className="size-5" /> : <Icon className="size-5" />}
               </Button>
             </Hint>
           )
@@ -88,16 +88,16 @@ export function AppSidebar() {
               render={
                 <Button
                   variant="ghost"
-                  size="icon"
+                  size="icon-lg"
                   className={railButton(view === 'settings')}
                   aria-label="设置"
                 />
               }
             >
               {view === 'settings' ? (
-                <IconSettingsFilled className="size-[19px]" />
+                <IconSettingsFilled className="size-5" />
               ) : (
-                <IconSettings className="size-[19px]" />
+                <IconSettings className="size-5" />
               )}
             </DropdownMenuTrigger>
           </Hint>

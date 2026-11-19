@@ -69,10 +69,10 @@ export function ConsoleTimeline() {
     <div className="flex h-full min-w-0 flex-col">
       {/* 工具条：条数/运行态 + 跟随开关 */}
       <div className="flex h-9 shrink-0 items-center gap-2 border-b px-4">
-        <span className="text-[12px] tabular-nums text-muted-foreground">{visibleCount} 条</span>
+        <span className="text-xs tabular-nums text-muted-foreground">{visibleCount} 条</span>
         {entries.length > 0 && entries[0].seq > 1 && <span className="text-xs text-muted-foreground">仅显示留存尾部</span>}
         {running && (
-          <span className="flex items-center gap-1.5 text-[12px] text-emerald-600">
+          <span className="flex items-center gap-1.5 text-xs text-emerald-600">
             <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
             运行中
           </span>
@@ -80,7 +80,7 @@ export function ConsoleTimeline() {
         <Button
           variant="ghost"
           size="sm"
-          className="ml-auto h-7 gap-1.5 px-2 text-[12px]"
+          className="ml-auto h-7 gap-1.5 px-2 text-xs"
           aria-pressed={follow}
           onClick={() => setFollow(!follow)}
         >
@@ -112,7 +112,7 @@ export function ConsoleTimeline() {
 }
 
 function EmptyHint({ text }: { text: string }) {
-  return <p className="px-2 py-8 text-[13px] leading-relaxed text-muted-foreground">{text}</p>
+  return <p className="px-2 py-8 text-xs leading-relaxed text-muted-foreground">{text}</p>
 }
 
 /** 一个 run 的分组：头行（预览 + 状态）+ 条目行列表 */
@@ -135,7 +135,7 @@ function RunBlock({
 
   return (
     <DetailSection title={`Run #${group.run}${preview !== '' ? ` · ${preview}` : ''}`} appearance="row" trailing={
-        <span className={`ml-auto flex shrink-0 items-center gap-1.5 text-[12px] ${statusClass}`}>
+        <span className={`ml-auto flex shrink-0 items-center gap-1.5 text-xs ${statusClass}`}>
           {status === '进行中' && <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />}
           {status}
         </span>
@@ -174,14 +174,14 @@ function EntryRow({
           }`}
           onClick={() => void onSelect(entry.seq)}
         >
-          <span className="w-[86px] shrink-0 text-[11px] tabular-nums text-muted-foreground">
+          <span className="w-[86px] shrink-0 text-xs tabular-nums text-muted-foreground">
             {formatTime(entry.ts)}
           </span>
           <span className={`size-1.5 shrink-0 rounded-full ${dot}`} />
           <Icon className="size-[15px] shrink-0 text-muted-foreground" />
-          <span className="min-w-0 truncate text-[13px]">{entry.title}</span>
+          <span className="min-w-0 truncate text-sm">{entry.title}</span>
           {summary !== '' && (
-            <span className="min-w-0 truncate text-[12px] text-muted-foreground">{summary}</span>
+            <span className="min-w-0 truncate text-xs text-muted-foreground">{summary}</span>
           )}
         </button>
       </Hint>

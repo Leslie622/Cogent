@@ -38,11 +38,11 @@ function ModelRowActions({
   onDelete?: () => void
 }) {
   return (
-    <div className="ml-auto flex w-13 shrink-0 items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100">
+    <div className="ml-auto flex w-20 shrink-0 items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100">
       <Button
         variant="ghost"
-        size="icon-xs"
-        className="size-6 text-muted-foreground hover:bg-accent-foreground/15 hover:text-foreground"
+        size="default"
+        className="text-muted-foreground hover:bg-accent-foreground/15 hover:text-foreground"
         aria-label={`编辑模型 ${modelId}`}
         onClick={onEdit}
       >
@@ -51,8 +51,8 @@ function ModelRowActions({
       {onDelete && (
         <Button
           variant="ghost"
-          size="icon-xs"
-          className="size-6 text-muted-foreground hover:bg-accent-foreground/15 hover:text-foreground"
+          size="default"
+          className="text-muted-foreground hover:bg-accent-foreground/15 hover:text-foreground"
           aria-label={`删除模型 ${modelId}`}
           onClick={onDelete}
         >
@@ -87,8 +87,8 @@ export function ProviderModelRow({
     <div className="group flex h-12 min-w-0 items-center gap-2 px-4">
       {/* 显示一律 id（2026-11-10 定调，同聊天页模型菜单口径）：目录营销名与
           API id 不对应，所见即所传；自定义条目更是 id 输什么是什么 —— name 不参与呈现 */}
-      <span className="min-w-0 shrink truncate text-[13px]">{def.id}</span>
-      <ModelVisionBadge input={input} />
+      <span className="min-w-0 shrink truncate text-sm">{def.id}</span>
+      <ModelVisionBadge input={input} size="default" />
       <ModelBadges def={def} />
       <ModelRowActions modelId={def.id} onEdit={onEdit} onDelete={onDelete} />
       <Switch checked={enabled} onCheckedChange={onToggle} aria-label={`${def.id} 启用`} />
@@ -96,13 +96,12 @@ export function ProviderModelRow({
   )
 }
 
-/** 「添加模型」按钮（两个详情的模型列表头成对重复块收敛）：次级小按钮配方 */
+/** 「添加模型」按钮在两种供应商详情中共用，尺寸遵循设置页默认档。 */
 export function AddModelButton({ onClick }: { onClick: () => void }) {
   return (
     <Button
       variant="secondary"
-      size="xs"
-      className="h-7 gap-0.5 rounded-lg px-2.5 text-xs has-[>svg]:px-2 hover:bg-secondary/80"
+      size="default"
       onClick={onClick}
     >
       <IconPlus className="size-3.5" />

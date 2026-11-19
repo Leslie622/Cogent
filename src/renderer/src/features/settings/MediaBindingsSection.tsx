@@ -54,7 +54,7 @@ export function MediaBindingsSection({ servers }: { servers: McpServerSummary[] 
       <p className="px-5 py-4 text-sm text-muted-foreground">选择图片、视频和文档的分析服务。修改后新会话生效。</p>
       {(Object.keys(LABELS) as MediaCapability[]).map((kind) => <SettingsRow key={kind} title={LABELS[kind]}
         desc={bindings[kind] === undefined ? '未配置' : diagnostic(bindings[kind])}>
-        <Button variant="outline" size="sm" onClick={() => {
+        <Button variant="outline" size="default" onClick={() => {
           const value = bindings[kind] ?? EMPTY
           setForm({ ...value }); setFormats(value.formats.join(', ')); setLimit(value.maxBytes === undefined ? '' : String(value.maxBytes / 1024 / 1024)); setError(undefined); setEditing(kind)
         }}>配置</Button>

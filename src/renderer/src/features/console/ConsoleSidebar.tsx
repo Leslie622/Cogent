@@ -21,7 +21,7 @@ export function ConsoleSidebar() {
         <span className="mb-2 px-2 text-base font-semibold">会话</span>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {sessions.length === 0 ? (
-            <p className="px-2 py-6 text-[13px] leading-relaxed text-muted-foreground">
+            <p className="px-2 py-6 text-xs leading-relaxed text-muted-foreground">
               暂无会话。去主窗口发一条消息，这里就会出现观测记录。
             </p>
           ) : (
@@ -30,7 +30,7 @@ export function ConsoleSidebar() {
                 <li key={session.id}>
                   <button
                     type="button"
-                    className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] ${
+                    className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${
                       session.id === sessionId ? 'bg-foreground/5' : 'hover:bg-foreground/5'
                     }`}
                     onClick={() => void selectSession(session.id)}
@@ -53,7 +53,7 @@ export function ConsoleSidebar() {
           {LAYERS.map((layer) => (
             <li key={layer.id} className="flex h-8 items-center gap-2">
               <span className={`size-1.5 rounded-full ${layer.dot}`} />
-              <span className="text-[13px]">{layer.label}</span>
+              <span className="text-sm">{layer.label}</span>
               <Switch
                 size="sm"
                 className="ml-auto"

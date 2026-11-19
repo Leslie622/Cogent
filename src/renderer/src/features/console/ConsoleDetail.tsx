@@ -19,7 +19,7 @@ export function ConsoleDetail() {
   const detail = details[entry.seq]
   const overview = entry.overview ?? []
 
-  return <div key={`${sessionId}-${entry.seq}`} data-console-detail-scroll className="h-full min-h-0 space-y-5 overflow-auto overscroll-contain px-5 py-4 text-[13px] leading-5">
+  return <div key={`${sessionId}-${entry.seq}`} data-console-detail-scroll className="h-full min-h-0 space-y-5 overflow-auto overscroll-contain px-5 py-4 text-sm leading-normal">
     <h3 className="break-words font-semibold">{entry.title}</h3>
 
     <DetailSection title="记录信息" defaultOpen={!entry.hasDetail}>

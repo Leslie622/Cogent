@@ -62,7 +62,7 @@ function ProviderNavRow({
       onClick={onClick}
       aria-current={active ? 'true' : undefined}
       className={cn(
-        'flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-[13px] text-foreground',
+        'flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-sm text-foreground',
         'hover:bg-accent-foreground/5',
         active && 'bg-accent-foreground/5'
       )}
@@ -84,10 +84,10 @@ function ProviderNavRow({
 function CredentialsBanner({ error }: { error: string }) {
   return (
     <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-2.5">
-      <p className="text-[13px] font-medium text-destructive">
+      <p className="text-sm font-medium text-destructive">
         凭据文件不可读（如跨机器拷贝 ~/.cogent 后的加密不匹配），重新保存任意 API key 即会以全新文件恢复
       </p>
-      <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">{error}</p>
+      <p className="mt-0.5 text-xs leading-normal text-muted-foreground">{error}</p>
     </div>
   )
 }
@@ -158,14 +158,14 @@ export function ModelsSection() {
       <div className="shrink-0 px-10 pt-8">
         <h2 className="text-2xl font-semibold">模型设置</h2>
         <div className="mt-3 flex items-center justify-between gap-4">
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             管理自定义模型供应商与密钥配置，配置后可在聊天时选择使用。
           </p>
           <div className="flex shrink-0 items-center gap-2">
             <Hint tip="刷新模型目录" side="bottom">
               <Button
                 variant="outline"
-                size="icon-sm"
+                size="default"
                 className="rounded-full"
                 aria-label="刷新"
                 onClick={() => {
@@ -176,7 +176,7 @@ export function ModelsSection() {
                 <IconRefresh className="size-4" />
               </Button>
             </Hint>
-            <Button size="sm" className="gap-1 rounded-lg text-[13px]" onClick={addProvider}>
+            <Button size="default" className="gap-1 rounded-lg text-sm" onClick={addProvider}>
               <IconPlus className="size-4" />
               添加供应商
             </Button>

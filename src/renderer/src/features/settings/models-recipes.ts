@@ -7,13 +7,13 @@
  */
 
 /** 字段标签字号（模型分区表单字段统一 13px） */
-export const FIELD_LABEL = 'text-[13px]'
+export const FIELD_LABEL = 'text-sm'
 
 /** 字段块纵向间距（首个字段之后的每个字段块 mt-5） */
 export const FIELD_GAP = 'mt-5'
 
 /** 列表行/徽标共用配方（行容器 divide-y 分隔，圆角由外层容器裁） */
-export const BADGE = 'rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground'
+export const BADGE = 'rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground'
 
 /** 上下文窗口徽标文案：200000 → 200K，1048576 → 1M */
 export function formatContext(tokens: number): string {

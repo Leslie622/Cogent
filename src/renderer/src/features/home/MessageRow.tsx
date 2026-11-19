@@ -93,7 +93,7 @@ export function UsageLine({
   if (parts.length === 0) return null
   // select-none：统计行是 chrome（消息流容器放开的 select-text 只该落在
   // 正文上，UI 方针 5）—— 拖划正文不把数字行蓝选成片
-  return <div className="text-[11px] text-muted-foreground tabular-nums select-none">{parts.join(' · ')}</div>
+  return <div className="text-xs text-muted-foreground tabular-nums select-none">{parts.join(' · ')}</div>
 }
 
 /** 单条消息：用户 = 灰气泡右挂 + 时间戳/复制/编辑（纯文本，主流一致）；助手 =
@@ -114,11 +114,11 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
             ...(message.directories ?? []).map((directory) => ({ key: `directory:${directory.path}`, name: directory.name, size: 0, directory, status: 'ready' as const }))
           ]} />}
           {message.content !== '' && <Bubble variant="muted" align="end">
-            <BubbleContent>{message.content}</BubbleContent>
+            <BubbleContent className="content-typography">{message.content}</BubbleContent>
           </Bubble>}
           <MessageFooter className="gap-1 px-0">
             {/* 时间戳是 chrome：select-none（气泡正文保持可选，zcode 时间戳同款） */}
-            <span className="text-[11px] text-muted-foreground select-none">{formatTime(message.timestamp)}</span>
+            <span className="text-xs text-muted-foreground select-none">{formatTime(message.timestamp)}</span>
             <Button
               variant="ghost"
               size="icon-xs"

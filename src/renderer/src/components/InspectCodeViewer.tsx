@@ -51,7 +51,7 @@ export default function InspectCodeViewer({ content, format, label, raw, wrap, r
             'by word': '全词匹配', 'close': '关闭', 'Fold line': '折叠此行', 'Unfold line': '展开此行',
           }),
           EditorView.theme({
-            '&': { fontSize: '13px', backgroundColor: 'transparent', color: 'var(--foreground)' },
+            '&': { backgroundColor: 'transparent', color: 'var(--foreground)' },
             '.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.7' },
             '.cm-content': { padding: '12px 0' },
             '.cm-line': { paddingLeft: '8px', paddingRight: '12px' },
@@ -90,7 +90,7 @@ export default function InspectCodeViewer({ content, format, label, raw, wrap, r
     <Button variant="disclosure" size="console" disabled={raw} onClick={() => openSearchPanel(editor.current!)}>搜索</Button>
   </>
   const body = raw
-    ? <pre className={`p-3 font-mono text-[13px] leading-[1.7] ${wrap ? 'whitespace-pre-wrap break-words' : 'overflow-x-auto whitespace-pre'}`}>{content}</pre>
-    : <div ref={container} />
+    ? <pre className={`code-typography p-3 font-mono ${wrap ? 'whitespace-pre-wrap break-words' : 'overflow-x-auto whitespace-pre'}`}>{content}</pre>
+    : <div ref={container} className="code-typography" />
   return render(controls, body)
 }

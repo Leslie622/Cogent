@@ -52,13 +52,13 @@ export function HomeTabs() {
             key={label}
             type="button"
             className={cn(
-              'flex h-8 items-center gap-2 rounded-md px-2 text-[13px] text-foreground',
+              'flex h-8 items-center gap-2 rounded-md px-2 text-sm text-foreground',
               ROW_HOVER,
             )}
           >
             <Icon className="size-4 shrink-0 text-muted-foreground" />
             <span className="flex-1 text-left">{label}</span>
-            <span className="text-[11px] text-muted-foreground">{kbd}</span>
+            <span className="text-xs text-muted-foreground">{kbd}</span>
           </button>
         ))}
       </nav>

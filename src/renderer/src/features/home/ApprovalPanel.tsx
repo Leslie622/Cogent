@@ -159,7 +159,7 @@ function PendingApprovalCard({
       {/* 标题行：参考图灰色小字「需要权限」 */}
       <div className="text-sm font-medium text-foreground">需要权限</div>
       {/* 参数行：铅笔 + 等待确认状态 + 文件图标 + 文件名（深）+ 路径（灰） */}
-      <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[13px]">
+      <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-sm">
         <IconPencil className="size-4 shrink-0 text-muted-foreground" />
         <span className="shrink-0 text-muted-foreground">等待确认</span>
         <IconFileText className="size-4 shrink-0 text-muted-foreground" />
@@ -184,7 +184,7 @@ function PendingApprovalCard({
               i === selected ? 'bg-muted' : 'hover:bg-muted/60'
             )}
           >
-            <span className="w-4 shrink-0 text-[13px] tabular-nums text-muted-foreground">{i + 1}.</span>
+            <span className="w-4 shrink-0 text-xs tabular-nums text-muted-foreground">{i + 1}.</span>
             <span className="shrink-0">{option.label}</span>
             {option.switcher === true ? (
               <SwitchModeDropdown
@@ -212,7 +212,7 @@ function PendingApprovalCard({
                 }}
               />
             ) : null}
-            <span className="truncate text-[13px] text-muted-foreground">{option.desc}</span>
+            <span className="truncate text-xs text-muted-foreground">{option.desc}</span>
           </button>
         ))}
       </div>
@@ -237,7 +237,7 @@ function PendingApprovalCard({
           }
         }}
         placeholder="告诉模型接下来应该怎么做…"
-        className="mt-2.5 h-9 rounded-lg border-0 bg-muted/60 px-3 text-[13px] placeholder:text-muted-foreground focus-visible:ring-0"
+        className="mt-2.5 h-9 rounded-lg border-0 bg-muted/60 px-3 text-xs placeholder:text-muted-foreground focus-visible:ring-0"
       />
       {/* 底部行：ⓘ 快捷键提示（左）+ 确认主钮（右，深色石墨 = 发送钮同族） */}
       <div className="mt-3 flex items-center justify-between">

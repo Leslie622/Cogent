@@ -48,9 +48,9 @@ export function ConsoleApp() {
       >
         <div className="flex items-center gap-2">
           <IconTerminal2 className="size-[18px]" />
-          <span className="text-[13px]">运行时控制台</span>
+          <span className="text-sm">运行时控制台</span>
           {active !== undefined && (
-            <span className="text-[13px] text-muted-foreground">· {active.title}</span>
+            <span className="text-xs text-muted-foreground">· {active.title}</span>
           )}
         </div>
         <div className="ml-auto flex items-center gap-0.5 pr-2" style={NO_DRAG}>
@@ -87,7 +87,7 @@ export function ConsoleApp() {
       {/* 初载失败横幅（引擎不可用）：控制台是学习/排障窗口，静默空白最不可接受 */}
       {loadError !== null && (
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/5 px-4 py-2">
-          <p className="text-[13px] text-destructive">会话列表加载失败：{loadError}</p>
+          <p className="text-sm text-destructive">会话列表加载失败：{loadError}</p>
           <Button variant="outline" size="xs" onClick={() => void useConsoleStore.getState().load()}>
             重试
           </Button>

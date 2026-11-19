@@ -21,7 +21,7 @@ export function ScopeMenu({ state }: { state: ProjectScope }) {
   const current = state.items.find((i) => i.value === state.selectValue)?.label ?? '本机 · 用户'
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="作用域" />}>
+      <DropdownMenuTrigger render={<Button variant="outline" size="default" aria-label="作用域" />}>
         {current}
         <ChevronDownIcon className="size-4 text-muted-foreground" />
       </DropdownMenuTrigger>

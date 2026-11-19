@@ -90,7 +90,7 @@ function KindCard({
         <Icon className="size-5 text-muted-foreground/70" />
         <div className="mt-auto">
           <div className="text-sm font-medium">{card.title}</div>
-          <div className="mt-1 line-clamp-2 text-[13px] leading-snug text-muted-foreground/80">
+          <div className="mt-1 line-clamp-2 text-xs leading-snug text-muted-foreground/80">
             {card.description}
           </div>
         </div>
@@ -107,7 +107,7 @@ function KindCard({
       onClick={() => onSelect(card.kind)}
       className={cn(
         shell,
-        'cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+        'cursor-pointer outline-none  focus-visible:ring-2 focus-visible:ring-ring/40',
         selected
           ? 'border-transparent bg-muted text-foreground'
           : 'border-transparent bg-muted/40 hover:bg-muted/70 text-foreground'
@@ -116,7 +116,7 @@ function KindCard({
       <Icon className="size-5 text-foreground" />
       <div className="mt-auto">
         <div className="text-sm font-medium">{card.title}</div>
-        <div className="mt-1 line-clamp-2 text-[13px] leading-snug text-muted-foreground">
+        <div className="mt-1 line-clamp-2 text-xs leading-snug text-muted-foreground">
           {card.description}
         </div>
       </div>
@@ -280,7 +280,7 @@ export function ProjectDialog({
                 {cwds.map((dir) => (
                   <div
                     key={dir}
-                    className="group flex h-11 items-center gap-2.5 px-4 text-[13px] text-foreground"
+                    className="group flex h-11 items-center gap-2.5 px-4 text-sm text-foreground"
                   >
                     <IconFolder className="size-4 shrink-0 text-muted-foreground" />
                     {/* basename 为主显示（参考图样式），悬停看全路径（Hint） */}
@@ -304,7 +304,7 @@ export function ProjectDialog({
                   type="button"
                   onClick={() => void addDirectory()}
                   className={cn(
-                    'flex h-11 items-center gap-2.5 px-4 text-[13px] text-foreground outline-none',
+                    'flex h-11 items-center gap-2.5 px-4 text-sm text-foreground outline-none',
                     'hover:bg-accent-foreground/5 focus-visible:bg-accent-foreground/5'
                   )}
                 >
@@ -364,21 +364,21 @@ function TrustConfirmDialog({
           信任层必须窄于外层 sm:max-w-xl 的创建弹窗） */}
       <DialogContent className="sm:max-w-md gap-4 rounded-2xl [&>button]:hidden">
         <DialogHeader className="items-center">
-          <DialogTitle className="text-xl font-bold">信任这些文件夹吗？</DialogTitle>
+          <DialogTitle className="text-base font-bold">信任这些文件夹吗？</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col items-center gap-1">
           {cwds.map((dir) => (
             <Hint key={dir} tip={dir} side="top">
-              <div className="max-w-full truncate text-[13px] text-foreground">{dir}</div>
+              <div className="max-w-full truncate text-sm text-foreground">{dir}</div>
             </Hint>
           ))}
         </div>
-        <p className="text-center text-[13px] leading-relaxed text-muted-foreground">
+        <p className="text-center text-xs leading-relaxed text-muted-foreground">
           Cogent 可以读取、编辑和运行这些文件夹中的文件。即使模型未发出请求，
           文件夹设置也可能触发代码自动运行。请仅在你信任列出的每个文件夹时继续。
         </p>
         <div className="flex flex-col gap-2">
-          {/* 主钮：黑底白字整宽（参考图），focus ring 即蓝圈（键盘可达） */}
+          {/* 主钮保持整宽，键盘聚焦沿用全局内描边。 */}
           <Button
             className="h-10 rounded-full bg-foreground text-background hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-ring/50"
             onClick={onTrust}

@@ -10,7 +10,7 @@ function Table({ className, variant = "default", ...props }: React.ComponentProp
     >
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom", variant === "inspect" ? "text-[13px] leading-5 [&_th]:h-auto [&_th]:py-2 [&_th]:font-normal [&_td]:py-2" : "text-sm", className)}
+        className={cn("w-full caption-bottom", variant === "inspect" ? "text-sm leading-normal [&_th]:h-auto [&_th]:py-2 [&_th]:font-normal [&_td]:py-2" : "text-sm", className)}
         {...props}
       />
     </div>

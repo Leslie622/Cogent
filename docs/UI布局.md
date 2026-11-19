@@ -19,8 +19,10 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 ```
 
 - header 的“运行时控制台”和“内嵌页面”入口位于“帮助”右侧，使用中文文字按钮
-  （Button ghost / sm），不配图标；与前四个菜单按钮同处一个 `gap-1` 容器，
-  统一 `h-7 px-2`，不额外加左间距；窗口 ≤760px 时文字菜单收进“应用菜单”，保留窗口控制三钮。
+  （Button ghost / header，正文阶默认14px），不配图标；与前四个菜单按钮同处一个 `gap-1` 容器，
+  按钮本体统一最小 `h-7` 与 `px-2`，不额外加左间距；窗口 ≤760px 时文字菜单收进“应用菜单”，保留窗口控制三钮。
+- `app-sidebar` 上区路由钮与底部设置钮统一使用 `Button ghost / icon-lg`（36×36px），
+  图标为 20px（`size-5`），普通态与激活态尺寸一致。
 - `content-sidebar` 是普通 flex 像素宽块，不进 react-resizable-panels（RRP）；
   CSS 保证缩放时像素宽稳定，避免百分比尺寸经 JS 校正产生脏帧。
 - `SidebarResizeHandle` 使用 pointer capture + rAF 直写宽度；拖过下限有阻力，
@@ -45,8 +47,8 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 | 文字 | 实色 token；次级 `muted-foreground`，placeholder `--placeholder`；层级靠实色深浅 |
 | 语义色 | destructive 错误红；warning 琥珀 `oklch(0.666 0.155 70)`；chrome-accent 品牌蓝 `#0231fa` |
 | 圆角 | 内容主体左上角 `--radius-xl`；输入框 `InputGroup` 原生 `rounded-lg`；发送/停止钮 `Button icon-sm` 原生圆角；其余按组件变体，信息区条只圆上两角 |
-| 字号 | 页面标题 24/semibold、侧栏标题 16/semibold、行标题 14/medium、正文与说明 13、时间 11–12 |
-| 字体 | Inter + HarmonyOS Sans SC；代码 JetBrains Mono，中文注释回落鸿蒙；13px 中文用 400 |
+| 字号 | 默认小字/说明 12、正文/列表 14、分组/侧栏/弹窗标题 16、页面标题 24；分别用 text-xs / text-sm / text-base / text-2xl，界面基准 11–16px 统一派生，小字最低 10px |
+| 字体 | Inter + HarmonyOS Sans SC；代码 JetBrains Mono，中文注释回落鸿蒙；常规中文用 400 |
 
 Electron 通过 `disable-lcd-text` 启动参数关闭 LCD 文字抗锯齿。
 启动参数的对照验证需完整重启应用；字体清晰度与 DPI 的最终结论在实际 Electron 验证。
@@ -82,10 +84,10 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 | 侧栏折叠 | `CollapsibleContent variant="navigation"`，200ms ease-out；keepMounted，收起 inert，结束后 hidden |
 | 等待确认 tag | 占行尾动作簇的位置，常显；emerald `/15` 背景 + 实色深绿文字 + 小呼吸点 |
 | 输入区 | 白卡、InputGroup 原生圆角、薄边、无投影、聚焦无反馈；新聊天上方显示项目信息区 |
-| 附件区 | 同一 InputGroup 内、正文上方的 block-start addon；空时不占位。输入区 AttachmentGroup 自动换行，最高 160px，超过后纵向滚动；不加边缘渐隐 mask，单卡也完整显示；图片和文件卡外层统一 rounded-lg（10px）；图片用 Attachment image 变体的 45px 正方形缩略图，不显示文件名/大小/读取说明，简短导入/错误状态放底部，重试放左上；文件/视频用 sm、file 变体，高 45px、按内容收缩且最大宽度 180px，文件名单行省略，悬停显示全名；关闭统一用 AttachmentRemove 放右上角，悬停卡片或按钮获键盘焦点时显示，图片/文件同位置同尺寸，文件预留按钮位置避免遮挡或跳动；输入与历史沿用同一尺寸规则 |
+| 附件区 | 同一 InputGroup 内、正文上方的 block-start addon；空时不占位。输入区 AttachmentGroup 自动换行，最高 160px，超过后纵向滚动；不加边缘渐隐 mask，单卡也完整显示；图片和文件卡外层统一 rounded-lg（10px）；图片用 Attachment image 变体的 45px 正方形缩略图，不显示文件名/大小/读取说明，简短导入/错误状态放底部，重试放左上；文件/视频用 sm、file 变体，最小高 45px、按内容收缩且最大宽度 180px，文件名单行省略，悬停显示全名；关闭统一用 AttachmentRemove 放右上角，悬停卡片或按钮获键盘焦点时显示，图片/文件同位置同尺寸，文件预留按钮位置避免遮挡或跳动；输入与历史沿用同一尺寸规则 |
 | 附件反馈 | 排队项显示“等待导入”/图片“等待中”，复制项显示进度；部分接收后的未添加数量位于输入卡底部，ghost/xs按钮打开Popover查看全部文件名与原因，明细最高160px纵向滚动，icon-xs按钮清除提示；不在正常就绪卡添加内部机制说明 |
-| 目录引用 | 加号用InputGroupButton icon-xs触发DropdownMenu，含“添加图片或文件”“引用文件夹”；目录沿用45px高、最大180px、10px圆角文件卡，文件夹图标、名称、路径副标题，整卡可打开目录；无大小/另存，移除仍右上hover显示；历史与普通文件同行靠右 |
-| 底部工具行 | +、权限、计划 chip、上下文、模型；加号为InputGroupButton icon-xs，其余文字操作Button xs原生档、h-7；图标沿组件档位 |
+| 目录引用 | 加号触发DropdownMenu，含“添加图片或文件”“引用文件夹”；目录沿用最小45px高、最大180px、10px圆角文件卡，文件夹图标、名称、路径副标题，整卡可打开目录；无大小/另存，移除仍右上hover显示；历史与普通文件同行靠右 |
+| 底部工具行 | +、权限、计划 chip、上下文、模型；加号为InputGroupButton icon-sm（28×28px），与发送/停止钮等高；其余文字操作Button xs原生档、h-7；图标沿组件档位 |
 | 项目胶囊 | 触发钮内左图标原位交叉渐变为 X；16px 定宽叠层，不能另起独立关闭钮 |
 | 会话信息卡 | 项目会话标题整体用非交互 span 触发 hover-card，延迟 400ms；标题全文、项目/主根、最近活动 |
 | 审批面板 | 替换输入区；竖排全宽选项、附言条、键盘提示与确认钮；裁决痕迹单行入过程流 |
@@ -101,7 +103,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   操作使用 AttachmentAction 定位/另存。文件卡正常只显示文件名和大小，导入中/失败才显示状态，
   不在卡片或悬停里展示保存、解析工具、处理路线等内部说明；未解析引用的发送钮
   保留图标，Hint/aria-label 改“作为文件发送”。对话拖入用局部遮罩，不做全窗上传层。
-- 模型选项与当前模型子菜单入口、设置模型行按有效 input 显示“视觉”Badge sm（16px高、10px字号）；关闭能力后标签同步移除。模型菜单不显示“输入：…（模型声明）”说明行；
+- 模型选项与当前模型子菜单入口、设置模型行按有效 input 显示“视觉”Badge sm（最小16px高、小字阶）；关闭能力后标签同步移除。模型菜单不显示“输入：…（模型声明）”说明行；
   `DropdownMenuLabel` 使用 Base UI 的分组上下文，不能直接挂在 Content 下。
   PDF/视频不冒充模型能力；MCP 设置用
   SettingsGroup/SettingsRow + Dialog 配置三类分析绑定，显示服务/输入方式诊断。
@@ -124,7 +126,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 ## 设置页与通用组件
 
 - 运行时控制台 Run 标题和右侧状态共用整条折叠按钮；详情分区使用 Button
-  disclosure 变体与 console 尺寸，展开不铺灰底。常规文字、按钮、代码统一13px，
+  disclosure 变体与 console 尺寸，展开不铺灰底。文字与按钮走界面阶，代码走独立代码字号，
   主标题仅加粗；页头仅留主标题，类别与时间归入“记录信息”的两列 Table inspect
   变体。字段为行表头，值可换行；仅表格保留行分隔线。详情外边距20px、分区间距20px，
   折叠箭头、正文块共用左基线，按钮内距由负外边距抵消，不叠加多层缩进。
@@ -134,7 +136,10 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 
 - 通用设置骨架 `SettingsPage`：`max-w-3xl px-10 py-8` 单列，标题/可选描述/
   工具行/内容；`SettingsGroup` 为带组标题的 rounded-xl 描边卡 + divide-y；
-  `SettingsRow` 左说明、右原生控件。路径行等宽截断并提供更改钮。
+  `SettingsRow` 左说明、右原生控件。设置页及其弹窗的 Button、SelectTrigger、Toggle
+  和模型能力徽标统一使用 default；包括 MCP 服务器弹窗的保存／取消与列表行操作。
+  调用处不再用高度／边长覆写尺寸档；模型行编辑／删除动作簇保留 w-20 占位以避免悬停跳动。
+  路径行等宽截断并提供更改钮。
 - 外观的两行字体按钮显示中英文字体名，分别打开 Dialog。弹窗依次为语言 Tabs、
   两槽当前字体、填满内容区的紧凑搜索框、可滚动列表、中英文预览和保存／取消区。
   当前字体与搜索框以留白衔接；默认档显示具体字体名，「默认」标签使用 Badge sm；打开时聚焦英文页签，不聚焦搜索框。
@@ -155,7 +160,8 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   项目级和用户级的操作差异见 [MCP座](模块/MCP座.md)、[技能座](模块/技能座.md)。
 - MCP 弹窗使用 Tabs 的表单/JSON 双模式；技能编辑使用 name/description/等宽正文。
   引擎校验错误留在弹窗内，文件诊断独立组卡，空态为虚线引导卡。
-- 设置侧栏分“基础设置 / Agent 能力”，顶部标题和搜索；未实现分区保持占位。
+- 设置侧栏分“基础设置 / Agent 能力”，分区列表项使用正文阶（默认14px，`text-sm`）；顶部标题和搜索；
+  未实现分区保持占位。
 - ProviderLogo 使用 `@lobehub/icons` 按名导入；单色随 currentColor，彩色走 `.Color`，
   自定义 provider 为黑底首字。尺寸用 CSS 变量 + 本体选择器，避免 Button 把后代 SVG 钉成 16px。
 - StopSlider：25px 块状轨道、4×19px 拇指、31 格刻度；档位吸附/相邻键盘步进或自由值，
@@ -246,6 +252,7 @@ scroll，给容器挂 `data-scrolling`，静默 600ms 后摘除；悬停 13px �
 | 方向变体 | 核对实际 data 属性；Slider/Tabs/Separator 用 `data-[orientation=…]`，裸 data-horizontal 存在选择器不命中 |
 | Tailwind 过渡 | v4 scale/rotate 是独立属性，任意 transition 清单必须包含实际属性；别只写 transform |
 | 原语与调用点 | 同属性的基态/激活/hover 在同一层维护；高特异性调用点覆写会压死原语 hover |
+| 组合按钮尺寸 | InputGroupButton 把 size 同时传给 Button 原语，不能只覆写外层宽高；否则底层默认 min-h-8 会把 24px 图标钮撑成 24×32px |
 | JSX 文字 | 属性内的引号使用合法转义或中文弯引号，避免裸引号截断属性 |
 
 ### 分栏与滑杆

@@ -264,8 +264,8 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
           分割线且上下收紧 mt-3/pt-3 */}
       <PopoverContent align="end" sideOffset={8} className="w-64 gap-0 rounded-2xl p-3.5">
         <div className="flex items-baseline justify-between">
-          <span className="text-[13px] font-semibold">上下文容量</span>
-          <span className="text-[11px] text-muted-foreground tabular-nums">
+          <span className="text-sm font-semibold">上下文容量</span>
+          <span className="text-xs text-muted-foreground tabular-nums">
             {approximate ? '≈' : ''}{formatTokens(used)}/{formatTokens(contextWindow)}（{pctLabel}%）
           </span>
         </div>

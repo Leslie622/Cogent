@@ -67,7 +67,7 @@ function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFoc
         实现计划待审批
       </div>
       {/* 方案预览：滚动限高（长方案不撑爆面板；全文模型侧有，面板预览够用） */}
-      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-xl bg-muted/40 p-3 text-[13px] leading-relaxed text-foreground">
+      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-xl bg-muted/40 p-3 text-sm leading-relaxed text-foreground">
         {pending.plan}
       </pre>
       <div className="mt-3 flex flex-col gap-1">
@@ -83,9 +83,9 @@ function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFoc
               i === selected ? 'bg-muted' : 'hover:bg-muted/60'
             )}
           >
-            <span className="w-4 shrink-0 text-[13px] tabular-nums text-muted-foreground">{i + 1}.</span>
+            <span className="w-4 shrink-0 text-xs tabular-nums text-muted-foreground">{i + 1}.</span>
             <span className="shrink-0">{option.label}</span>
-            <span className="truncate text-[13px] text-muted-foreground">{option.desc}</span>
+            <span className="truncate text-xs text-muted-foreground">{option.desc}</span>
           </button>
         ))}
       </div>
@@ -109,7 +109,7 @@ function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFoc
           }
         }}
         placeholder="拒绝时的修改意见（模型会按此修订）…"
-        className="mt-2.5 h-9 rounded-lg border-0 bg-muted/60 px-3 text-[13px] placeholder:text-muted-foreground focus-visible:ring-0"
+        className="mt-2.5 h-9 rounded-lg border-0 bg-muted/60 px-3 text-xs placeholder:text-muted-foreground focus-visible:ring-0"
       />
       <div className="mt-3 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">

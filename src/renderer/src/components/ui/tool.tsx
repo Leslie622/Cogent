@@ -55,7 +55,7 @@ function DiffBlock({ diff }: { diff: string }) {
   const lines = diff.split('\n')
   return (
     <CodeBlock size="sm">
-      <CodeBlockContent wrap className="max-h-64 font-mono text-xs leading-5">
+      <CodeBlockContent wrap className="max-h-64 font-mono">
         {lines.map((line, i) => (
           <div
             key={i}
@@ -88,7 +88,7 @@ function ProgressTail({ progress }: { progress: string }) {
       >
         <span className="progress-sweep absolute inset-y-0 w-1/3 rounded-full bg-foreground/50" />
       </span>
-      <div className="font-mono text-[11px] leading-4 text-muted-foreground">
+      <div className="code-typography font-mono text-muted-foreground">
         {[tail[0] ?? '', tail[1] ?? ''].map((line, i) => (
           <div key={i} className="truncate">
             {line === '' ? '\u00A0' : line}
@@ -112,7 +112,7 @@ function ErrorStatus({ message }: { message?: string }) {
       <Tooltip>
         <TooltipTrigger
           render={
-            <span className="shrink-0 cursor-help whitespace-nowrap text-[11px] text-destructive underline decoration-dotted underline-offset-2" />
+            <span className="shrink-0 cursor-help whitespace-nowrap text-xs text-destructive underline decoration-dotted underline-offset-2" />
           }
         >
           执行失败
@@ -184,7 +184,7 @@ export function ToolCard({
         <span className="min-w-0 truncate font-mono text-xs">{primary}</span>
       )}
       {counts !== undefined && (
-        <span className="shrink-0 font-mono text-[11px] tabular-nums">
+        <span className="shrink-0 font-mono text-xs tabular-nums">
           <span className="text-emerald-600 dark:text-emerald-400">+{counts.added}</span>{' '}
           <span className="text-red-600 dark:text-red-400">-{counts.removed}</span>
         </span>

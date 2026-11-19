@@ -10,7 +10,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "lint": "eslint .",
+    "lint": "node scripts/check-typography.mjs && eslint .",
     "typecheck": "tsc --noEmit --composite false -p tsconfig.node.json && tsc --noEmit --composite false -p tsconfig.web.json",
     "test": "node tests/run-tests.mjs run",
     "test:watch": "node tests/run-tests.mjs --project node --project web --watch",

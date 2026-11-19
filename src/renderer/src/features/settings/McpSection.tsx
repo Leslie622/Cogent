@@ -98,15 +98,15 @@ function ImportDialog({
             onChange={(e) => setText(e.target.value)}
             placeholder={'{\n  "mcpServers": {\n    "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }\n  }\n}'}
             rows={8}
-            className="mt-1.5 font-mono text-[12px]"
+            className="mt-1.5 font-mono text-xs"
           />
         </div>
-        {formError !== null && <div className="mt-3 text-[13px] leading-relaxed text-destructive">{formError}</div>}
+        {formError !== null && <div className="mt-3 text-sm leading-relaxed text-destructive">{formError}</div>}
         <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" size="default" onClick={onClose}>
             取消
           </Button>
-          <Button size="sm" onClick={run}>
+          <Button size="default" onClick={run}>
             导入
           </Button>
         </DialogFooter>
@@ -259,7 +259,7 @@ export function McpSection() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索 MCP 服务器"
-              className="h-full w-full min-w-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-placeholder"
+              className="h-full w-full min-w-0 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder"
             />
           </div>
         </>
@@ -267,16 +267,16 @@ export function McpSection() {
     >
       {servers !== null && userScope && <MediaBindingsSection servers={servers} />}
       {servers === null ? (
-        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-[13px] text-muted-foreground">加载中…</div>
+        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">加载中…</div>
       ) : count === 0 ? (
         userScope ? (
           /* 空态（zcode 形态）：虚线卡 + 主副文案 + 新建/导入双入口 */
           <div className="mt-3 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-12 text-center">
             <div className="text-sm font-medium">尚未安装 MCP 服务器</div>
-            <div className="text-[13px] text-muted-foreground">手动新建服务器，或导入已有配置。</div>
+            <div className="text-xs text-muted-foreground">手动新建服务器，或导入已有配置。</div>
             <div className="mt-2 flex items-center gap-2">
               <Button
-                size="sm"
+                size="default"
                 disabled={busy}
                 onClick={() => {
                   setEditing(null)
@@ -286,19 +286,19 @@ export function McpSection() {
                 <IconPlus className="size-4" />
                 新建 MCP 服务器
               </Button>
-              <Button variant="outline" size="sm" disabled={busy} onClick={() => setImportOpen(true)}>
+              <Button variant="outline" size="default" disabled={busy} onClick={() => setImportOpen(true)}>
                 <IconDownload className="size-4" />
                 导入
               </Button>
             </div>
           </div>
         ) : (
-          <div className="mt-3 rounded-xl border border-dashed border-border px-6 py-10 text-center text-[13px] text-muted-foreground">
+          <div className="mt-3 rounded-xl border border-dashed border-border px-6 py-10 text-center text-xs text-muted-foreground">
             没有可覆盖的服务器 —— 先在「本机 · 用户」作用域添加 MCP 服务器。
           </div>
         )
       ) : visible.length === 0 ? (
-        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-[13px] text-muted-foreground">
+        <div className="mt-3 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">
           没有匹配「{query.trim()}」的服务器
         </div>
       ) : (
@@ -306,17 +306,17 @@ export function McpSection() {
           label={`已安装 ${count}`}
           actions={
             <>
-              <Button variant="outline" size="icon-sm" disabled={busy} onClick={() => void refresh()} aria-label="刷新">
+              <Button variant="outline" size="default" disabled={busy} onClick={() => void refresh()} aria-label="刷新">
                 <IconRefresh className="size-4" />
               </Button>
               {userScope && (
                 <>
-                  <Button variant="outline" size="sm" disabled={busy} onClick={() => setImportOpen(true)}>
+                  <Button variant="outline" size="default" disabled={busy} onClick={() => setImportOpen(true)}>
                     <IconDownload className="size-4" />
                     导入
                   </Button>
                   <Button
-                    size="sm"
+                    size="default"
                     disabled={busy}
                     onClick={() => {
                       setEditing(null)
@@ -348,7 +348,7 @@ export function McpSection() {
                   <span className={BADGE}>{s.exposure}</span>
                   {s.overrideApplied === true && <span className={BADGE}>项目覆盖</span>}
                 </div>
-                <div className="mt-0.5 truncate text-[13px] text-muted-foreground">
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">
                   {s.detail}
                   {s.description !== undefined ? ` · ${s.description}` : ''}
                 </div>
@@ -364,7 +364,7 @@ export function McpSection() {
                   <>
                     <Button
                       variant="ghost"
-                      size="icon-xs"
+                      size="default"
                       disabled={busy}
                       onClick={() => {
                         setEditing(s.def)
@@ -374,7 +374,7 @@ export function McpSection() {
                     >
                       <IconPencil className="size-4" />
                     </Button>
-                    <Button variant="ghost" size="icon-xs" disabled={busy} onClick={() => remove(s)} aria-label={`删除 ${s.name}`}>
+                    <Button variant="ghost" size="default" disabled={busy} onClick={() => remove(s)} aria-label={`删除 ${s.name}`}>
                       <IconTrash className="size-4" />
                     </Button>
                   </>
@@ -383,7 +383,7 @@ export function McpSection() {
                     /* 项目档专属：清除覆盖（空 patch = 回落用户级） */
                     <Button
                       variant="ghost"
-                      size="icon-xs"
+                      size="default"
                       disabled={busy}
                       onClick={() => void applyOverride(s.name, {})}
                       aria-label={`重置 ${s.name} 的项目覆盖`}
@@ -401,7 +401,7 @@ export function McpSection() {
       {fileErrors.length > 0 && (
         <SettingsGroup label="配置诊断">
           {fileErrors.map((e, i) => (
-            <div key={i} className="px-5 py-3 text-[13px] leading-relaxed text-destructive">
+            <div key={i} className="px-5 py-3 text-sm leading-relaxed text-destructive">
               {e}
             </div>
           ))}
@@ -409,7 +409,7 @@ export function McpSection() {
       )}
 
       {actionError !== null && (
-        <div className="mt-4 rounded-lg border border-destructive/30 px-4 py-3 text-[13px] text-destructive">
+        <div className="mt-4 rounded-lg border border-destructive/30 px-4 py-3 text-sm text-destructive">
           {actionError}
         </div>
       )}

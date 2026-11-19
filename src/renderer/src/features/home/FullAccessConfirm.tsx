@@ -88,7 +88,7 @@ export function FullAccessConfirm({
           />
         </div>
 
-        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+        <p className="mt-3 text-xs leading-normal text-muted-foreground">
           这些操作可能造成数据丢失或泄露。请仅在信任任务内容时启用。你可以随时切回其他权限模式。
         </p>
 

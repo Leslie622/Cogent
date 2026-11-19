@@ -54,7 +54,7 @@ const BUDGET_PLACEHOLDER: Record<'minimal' | 'low' | 'medium' | 'high', string> 
 
 /** 对话框 chip 统一配方：13px 中文 400 字重（小号中文禁 500，组件默认 500 要压掉）
     + 选中黑 10% 软叠（三组 chip 同款） */
-const CHIP_BASE = 'text-[13px] font-normal'
+const CHIP_BASE = 'text-sm font-normal'
 const CHIP_PRESSED = 'aria-pressed:bg-foreground/10 aria-pressed:text-foreground'
 
 /** 添加/编辑模型对话框（扁平字段）：模型 ID / 上下文窗口（滑杆）/ 最大输出
@@ -174,7 +174,7 @@ export function ModelDialog({
               onChange={(event) => setId(event.target.value)}
               onBlur={() => prefillFromCatalog(id)}
               placeholder="如 deepseek-chat"
-              className="mt-1.5 rounded-lg text-[13px]"
+              className="mt-1.5 rounded-lg text-sm"
               autoComplete="off"
               disabled={lockId}
             />
@@ -200,7 +200,7 @@ export function ModelDialog({
               onChange={(event) => setMaxTokens(event.target.value)}
               placeholder="如 8192"
               inputMode="numeric"
-              className="mt-1.5 rounded-lg text-[13px]"
+              className="mt-1.5 rounded-lg text-sm"
               autoComplete="off"
             />
           </div>
@@ -208,13 +208,13 @@ export function ModelDialog({
             <label className={FIELD_LABEL}>输入类型</label>
             <div className="mt-1.5 flex gap-2">
               {/* 文本恒选（聊天模型的前提，不可取消）；图片可开关 */}
-              <Toggle variant="outline" size="sm" pressed disabled className={cn(CHIP_BASE, 'gap-1.5', CHIP_PRESSED)}>
+              <Toggle variant="outline" size="default" pressed disabled className={cn(CHIP_BASE, 'gap-1.5', CHIP_PRESSED)}>
                 <IconCheck className="size-3.5" />
                 文本
               </Toggle>
               <Toggle
                 variant="outline"
-                size="sm"
+                size="default"
                 pressed={imageInput}
                 onPressedChange={setImageInput}
                 className={cn(CHIP_BASE, 'gap-1.5', CHIP_PRESSED, !imageInput && 'text-muted-foreground')}
@@ -236,7 +236,7 @@ export function ModelDialog({
                   <Hint key={level.id} tip={level.id} side="bottom">
                     <Toggle
                       variant="outline"
-                      size="sm"
+                      size="default"
                       pressed={thinkingLevels.includes(level.id)}
                       onPressedChange={(on) =>
                         setThinkingLevels((levels) =>
@@ -278,7 +278,7 @@ export function ModelDialog({
                             onChange={(event) => setBudgets((b) => ({ ...b, [level]: event.target.value }))}
                             placeholder={BUDGET_PLACEHOLDER[level]}
                             inputMode="numeric"
-                            className="rounded-lg text-[13px]"
+                            className="rounded-lg text-sm"
                             autoComplete="off"
                           />
                           <p className="mt-1 text-center text-xs text-muted-foreground">

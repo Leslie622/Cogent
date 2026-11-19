@@ -61,14 +61,14 @@ function SoundFileRow({ kind, title, desc }: { kind: NotifyKind; title: string; 
       <div className="flex items-center gap-2">
         {/* 当前声音源：自定义文件名截断显示，缺省即默认合成 */}
         <span className="max-w-40 truncate text-xs text-muted-foreground">{file ?? '默认合成音'}</span>
-        <Button variant="outline" size="sm" onClick={() => void pick()}>
+        <Button variant="outline" size="default" onClick={() => void pick()}>
           选择文件
         </Button>
-        <Button variant="ghost" size="sm" onClick={preview}>
+        <Button variant="ghost" size="default" onClick={preview}>
           试听
         </Button>
         {file !== null && (
-          <Button variant="ghost" size="sm" onClick={reset}>
+          <Button variant="ghost" size="default" onClick={reset}>
             恢复默认
           </Button>
         )}
@@ -160,7 +160,7 @@ export function NotificationsSection() {
                 <span className="flex flex-wrap items-center gap-1.5">
                   系统通知设置
                   {/* 黄牌：OS 无变更事件（快照），明确查到系统层关了才亮 */}
-                  <span className="rounded bg-amber-100 px-1 py-px text-[11px] font-normal text-amber-700 dark:bg-amber-400/15 dark:text-amber-400">
+                  <span className="rounded bg-amber-100 px-1 py-px text-xs font-normal text-amber-700 dark:bg-amber-400/15 dark:text-amber-400">
                     系统已关闭 Cogent 通知，请到系统设置中开启
                   </span>
                 </span>
@@ -172,7 +172,7 @@ export function NotificationsSection() {
           >
             <Button
               variant="outline"
-              size="sm"
+              size="default"
               onClick={() => void window.cogent.openNotificationSettings()}
             >
               打开系统设置

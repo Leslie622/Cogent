@@ -205,7 +205,7 @@ function PendingQuestionCard({ pending, autoFocus }: { pending: PendingQuestion;
               )}
               <span className="shrink-0 text-foreground">{option.label}</span>
               {option.description !== undefined && (
-                <span className="truncate text-[13px] text-muted-foreground">{option.description}</span>
+                <span className="truncate text-xs text-muted-foreground">{option.description}</span>
               )}
             </button>
           )
@@ -247,7 +247,7 @@ function PendingQuestionCard({ pending, autoFocus }: { pending: PendingQuestion;
               }
             }}
             placeholder="输入你的回答..."
-            className="h-8 rounded-lg border-0 bg-transparent px-0 text-[13px] placeholder:text-muted-foreground focus-visible:ring-0"
+            className="h-8 rounded-lg border-0 bg-transparent px-0 text-xs placeholder:text-muted-foreground focus-visible:ring-0"
           />
         </div>
       </div>

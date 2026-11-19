@@ -31,7 +31,7 @@ export function CompactionBar({ message }: { message: ChatMessage }) {
           上下文已压缩
           {tokensBefore !== undefined && (
             /* token 变化小字：等宽对齐（同工具卡摘要/审批痕迹的口径） */
-            <span className="flex items-center gap-1 font-mono text-[11px] tabular-nums">
+            <span className="flex items-center gap-1 font-mono text-xs tabular-nums">
               {formatTokens(tokensBefore)}
               {tokensAfter !== undefined && (
                 <>
@@ -71,13 +71,13 @@ export function PrunedBar({ item }: { item: PrunedItem }) {
             <IconFileScissorsFilled />
           </TraceIcon>
           已裁剪 {item.entries.length} 处工具输出
-          <span className="flex items-center gap-1 font-mono text-[11px] tabular-nums">
+          <span className="flex items-center gap-1 font-mono text-xs tabular-nums">
             −{formatTokens(saved)} 字符
           </span>
         </TraceLine>
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent className="select-text">
-        <div className="flex flex-col gap-1 font-mono text-[11px] tabular-nums">
+        <div className="flex flex-col gap-1 font-mono text-xs tabular-nums">
           {item.entries.map((e) => (
             <div key={e.toolCallId}>
               {e.toolCallId}：{formatTokens(e.originalChars)} → {formatTokens(e.prunedChars)}

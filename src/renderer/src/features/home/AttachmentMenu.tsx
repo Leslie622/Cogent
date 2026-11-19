@@ -7,7 +7,7 @@ export function AttachmentMenu({ disabled, onAdd, onError }: {
   disabled: boolean; onAdd: (paths: string[]) => void; onError: (error: unknown) => void
 }) {
   return <DropdownMenu>
-    <DropdownMenuTrigger render={<InputGroupButton size="icon-xs" disabled={disabled} aria-label="添加附件" />}><IconPlus /></DropdownMenuTrigger>
+    <DropdownMenuTrigger render={<InputGroupButton size="icon-sm" disabled={disabled} aria-label="添加附件" />}><IconPlus /></DropdownMenuTrigger>
     <DropdownMenuContent align="start" side="top">
       <DropdownMenuItem onClick={() => { void window.cogent.pickAttachments().then(onAdd, onError) }}><IconFile />添加图片或文件</DropdownMenuItem>
       <DropdownMenuItem onClick={() => { void window.cogent.pickDirectory().then((path) => { if (path !== null) onAdd([path]) }, onError) }}><IconFolder />引用文件夹</DropdownMenuItem>

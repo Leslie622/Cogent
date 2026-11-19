@@ -73,7 +73,7 @@ export function ModeItem({
           （Filled 变体更 crisp 但两个盾牌无实心版，混用粗细不一，不取） */}
       <Icon className="size-4.5 shrink-0" strokeWidth={2.25} />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[13px]">{meta.label}</span>
+        <span className="text-sm">{meta.label}</span>
         <span className="text-xs text-muted-foreground">{meta.desc}</span>
       </div>
       {mode === current && <IconCheck className="size-4 shrink-0" />}
@@ -88,7 +88,7 @@ function PlanItem({ active, onToggle }: { active: boolean; onToggle: () => void 
     <DropdownMenuItem onClick={onToggle} className="gap-2.5 py-2">
       <IconClipboardList className="size-4.5 shrink-0" strokeWidth={2.25} />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[13px]">计划模式</span>
+        <span className="text-sm">计划模式</span>
         <span className="text-xs text-muted-foreground">
           {active ? '开启中：只读约束生效' : '只读：阅读与分析，不修改文件'}
         </span>
@@ -171,7 +171,7 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
               // 与 + 钮的间距由 addon 的 gap-1 统一接管（曾 ml-2+gap-2 双层叠加）；
               // h-7：工具行统一 28px 高（2026-11-16 定调，曾 h-6 偏扁），圆角走
               // xs 档原生不覆写
-              'h-7 gap-1.5 pl-2 pr-1 text-[13px] hover:bg-accent-foreground/5',
+              'h-7 gap-1.5 pl-2 pr-1 text-sm hover:bg-accent-foreground/5',
               current === 'auto'
                 ? 'text-warning hover:text-warning'
                 : current === 'autonomous'

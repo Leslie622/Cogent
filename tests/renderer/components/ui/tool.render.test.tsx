@@ -90,7 +90,7 @@ describe('ToolCard 失败态（§3.3：不红整行，行尾状态词 + hover To
 
 describe('ToolCard bash 进度尾行（§3.4 定高两行槽）', () => {
   it('运行中且有 progress：尾部快照恒两行（不足补空 —— 行数翻动不推挤下方）', () => {
-    const { container } = render(
+    const { rerender } = render(
       <ToolCard
         name="powershell"
         summary="powershell(npm test)"
@@ -98,8 +98,11 @@ describe('ToolCard bash 进度尾行（§3.4 定高两行槽）', () => {
         progress={'只有一行输出'}
       />
     )
-    const tail = container.querySelector('.font-mono.text-\\[11px\\]')
+    const tail = screen.getByText('只有一行输出').parentElement
     expect(tail).not.toBeNull()
     expect(tail?.children).toHaveLength(2)
+    rerender(<ToolCard name="powershell" summary="powershell(npm test)" status="running" progress={'旧行\n倒数第二行\n最后一行'} />)
+    expect(screen.queryByText('旧行')).not.toBeInTheDocument()
+    expect(screen.getByText('最后一行').parentElement?.children).toHaveLength(2)
   })
 })

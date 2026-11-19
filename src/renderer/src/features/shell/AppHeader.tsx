@@ -22,7 +22,6 @@ import {
   IconSquare,
   IconX,
 } from '@tabler/icons-react'
-import { cn } from 'cn'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -78,8 +77,8 @@ export function AppHeader({
             <Button
               key={label}
               variant="ghost"
-              size="sm"
-              className={cn(CHROME_HOVER, 'h-7 px-2')}
+              size="header"
+              className={CHROME_HOVER}
             >
               {label}
             </Button>
@@ -87,8 +86,8 @@ export function AppHeader({
           {/* 运行时控制台开独立单例窗口，已开则聚焦 */}
           <Button
             variant="ghost"
-            size="sm"
-            className={cn(CHROME_HOVER, 'h-7 px-2')}
+            size="header"
+            className={CHROME_HOVER}
             onClick={() => void window.cogent.openConsole()}
           >
             运行时控制台
@@ -96,8 +95,8 @@ export function AppHeader({
           {/* 内嵌页面使用独立窗口承载 webview 沙箱 */}
           <Button
             variant="ghost"
-            size="sm"
-            className={cn(CHROME_HOVER, 'h-7 px-2')}
+            size="header"
+            className={CHROME_HOVER}
             onClick={() => void window.cogent.openEmbedded()}
           >
             内嵌页面

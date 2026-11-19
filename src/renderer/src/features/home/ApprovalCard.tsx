@@ -30,7 +30,7 @@ export function ApprovalCard({ item }: { item: ApprovalItem }) {
       </TraceIcon>
       {/* 摘要含路径（等宽对齐，同工具卡）；run 终态替换后它就是这段裁决的全部痕迹 */}
       <TraceTitle className="font-mono text-xs">{item.summary}</TraceTitle>
-      <span className="text-[11px]">{SETTLED_LABEL[item.status]}</span>
+      <span className="text-xs">{SETTLED_LABEL[item.status]}</span>
     </TraceLine>
   )
 }

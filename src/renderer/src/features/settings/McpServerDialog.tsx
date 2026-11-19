@@ -316,20 +316,20 @@ export function McpServerDialog({
                   }}
                   placeholder={'{\n  "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }\n}'}
                   rows={12}
-                  className="mt-1.5 font-mono text-[12px]"
+                  className="mt-1.5 font-mono text-xs"
                 />
               </div>
             </TabsContent>
           </div>
         </Tabs>
 
-        {formError !== null && <div className="mt-3 text-[13px] text-destructive">{formError}</div>}
+        {formError !== null && <div className="mt-3 text-sm text-destructive">{formError}</div>}
 
         <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" size="default" onClick={onClose}>
             取消
           </Button>
-          <Button size="sm" onClick={save}>
+          <Button size="default" onClick={save}>
             保存
           </Button>
         </DialogFooter>

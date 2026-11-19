@@ -103,7 +103,7 @@ export function Reasoning({
       <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
       <TraceCollapsibleContent>
         {/* 限高 + 内部滚动 + 底部跟随：思考全文不再撑开消息流布局 */}
-        <div ref={scrollRef} className="max-h-60 overflow-y-auto text-[13px] whitespace-pre-wrap">
+        <div ref={scrollRef} className="content-typography max-h-60 overflow-y-auto whitespace-pre-wrap">
           {text}
         </div>
       </TraceCollapsibleContent>

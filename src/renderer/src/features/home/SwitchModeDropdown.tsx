@@ -67,7 +67,7 @@ export function SwitchModeDropdown({
             role="button"
             tabIndex={0}
             className={cn(
-              'flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] hover:bg-accent-foreground/10',
+              'flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-sm hover:bg-accent-foreground/10',
               value === 'auto'
                 ? 'text-warning'
                 : value === 'autonomous'

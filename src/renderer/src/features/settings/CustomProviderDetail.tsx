@@ -121,7 +121,7 @@ export function CustomProviderDetail({
             render={
               <Button
                 variant="ghost"
-                size="icon-sm"
+                size="default"
                 className="text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
                 aria-label="更多操作"
               />
@@ -145,7 +145,7 @@ export function CustomProviderDetail({
           onChange={(event) => setBaseUrl(event.target.value)}
           onBlur={() => baseUrl.trim() !== def.baseUrl && patch({ baseUrl: baseUrl.trim() })}
           placeholder="https://api.example.com"
-          className="mt-1.5 rounded-lg text-[13px]"
+          className="mt-1.5 rounded-lg text-sm"
           autoComplete="off"
         />
       </div>
@@ -177,7 +177,7 @@ export function CustomProviderDetail({
                 <Hint key={option.value ?? 'none'} tip={option.label} side="bottom">
                   <Toggle
                     variant="outline"
-                    size="sm"
+                    size="default"
                     pressed={def.compat?.thinkingTokenBudgetField === option.value}
                     onPressedChange={(on) =>
                       on &&
@@ -189,7 +189,7 @@ export function CustomProviderDetail({
                       })
                     }
                     className={cn(
-                      'text-[13px] font-normal',
+                      'text-sm font-normal',
                       'aria-pressed:bg-foreground/10 aria-pressed:text-foreground'
                     )}
                   >
@@ -214,7 +214,7 @@ export function CustomProviderDetail({
           <AddModelButton onClick={() => setDialog({ initial: null })} />
         </div>
         {modelRows.length === 0 ? (
-          <p className="mt-2 text-[13px] text-muted-foreground">
+          <p className="mt-2 text-xs text-muted-foreground">
             添加端点上可用的模型，配置后才会出现在聊天的模型菜单里。
           </p>
         ) : (
