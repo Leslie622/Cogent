@@ -1,6 +1,7 @@
 /**
- * 设置 · 外观分区：「界面样式」一组（深浅色 / 对话内容主题 / 代码行号 /
- * 换行）。偏好落 localStorage（appearance/theme 两个 persist store——
+ * 设置 · 外观分区：「界面样式」（应用级：深浅色 / 界面字号 / 强调色）与
+ * 「对话」（内容区：双字体 / 字号 / 内容主题 / 代码行号 / 换行）两组。
+ * 偏好落 localStorage（appearance/theme 两个 persist store——
  * 纯渲染端视觉偏好不进 settings.json，theme store 先例定调）。
  * 对话内容主题（首个落地件，docs/技术笔记/对话内容主题.md）：下拉（内置
  * 「默认」+ 已导入）+ 导入（file picker 选 .themd.json，parseThemeFile
@@ -9,7 +10,7 @@
  * 报错引新件（与计划文档「toast 报错」的偏差，行内更朴素且不抢焦点）。
  */
 import { useRef, useState } from 'react'
-import { IconChevronDown, IconFileImport, IconTrash } from '@tabler/icons-react'
+import { IconArrowBackUp, IconChevronDown, IconFileImport, IconTrash } from '@tabler/icons-react'
 import { ColorPicker } from '@/components/ColorPicker'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -47,28 +48,26 @@ const FOLLOW_THEME = '跟随主题'
 function AccentControl() {
   const accent = useAppearanceStore((s) => s.accent)
   const setAccent = useAppearanceStore((s) => s.setAccent)
+  const isDark = useIsDarkMode()
+  // default 档无存储色值，按钮 HEX 与取色种子共用明暗回落（暗档为 CSS 变量蓝的近似）
+  const shownAccent: HexColor = accent === 'default' ? (isDark ? '#5f9cff' : '#0231fa') : accent
   const [pickerSeed, setPickerSeed] = useState<HexColor>('#0231fa')
   return (
     <div className="flex flex-wrap items-center justify-end gap-1.5" role="group" aria-label="强调色">
-      <Popover
-        onOpenChange={(open) => {
-          if (open) {
-            const dark = document.documentElement.classList.contains('dark')
-            setPickerSeed(accent === 'default' ? (dark ? '#5f9cff' : '#0231fa') : accent)
-          }
-        }}
-      >
+      <Popover onOpenChange={(open) => { if (open) setPickerSeed(shownAccent) }}>
         <PopoverTrigger
           aria-label="选择颜色"
           render={<Button variant="outline" />}
           className="group"
         >
+          {/* 圆角长方形色块：棋盘底衬出透明度，颜色读 --chrome-accent（含默认档明暗） */}
           <span
             aria-hidden="true"
-            className="size-5 shrink-0 overflow-hidden rounded-md bg-muted bg-[conic-gradient(var(--border)_25%,transparent_0_50%,var(--border)_0_75%,transparent_0)] bg-size-[8px_8px]"
+            className="h-5 w-7 shrink-0 overflow-hidden rounded-sm bg-muted bg-[conic-gradient(var(--border)_25%,transparent_0_50%,var(--border)_0_75%,transparent_0)] bg-size-[8px_8px]"
           >
             <span className="block size-full rounded-[inherit] border border-foreground/10 bg-(--chrome-accent)" />
           </span>
+          <span className="font-mono">{shownAccent}</span>
           <IconChevronDown
             aria-hidden="true"
             className="size-3 shrink-0 text-muted-foreground motion-safe:transition-transform group-data-popup-open:rotate-180"
@@ -78,8 +77,15 @@ function AccentControl() {
           <ColorPicker key={pickerSeed} initialColor={pickerSeed} onChange={setAccent} />
         </PopoverContent>
       </Popover>
-      <Button variant="ghost" size="default" disabled={accent === 'default'} onClick={() => setAccent('default')}>
-        恢复默认
+      {/* 图标钮与 McpSection 重置钮同款（ghost + IconArrowBackUp），无文字 */}
+      <Button
+        variant="ghost"
+        size="default"
+        disabled={accent === 'default'}
+        onClick={() => setAccent('default')}
+        aria-label="恢复默认强调色"
+      >
+        <IconArrowBackUp className="size-4" />
       </Button>
     </div>
   )
@@ -174,6 +180,8 @@ export function AppearanceSection() {
         <SettingsRow title="强调色" desc="链接、模式标识与分屏光带的点缀色">
           <AccentControl />
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup label="对话">
         <SettingsRow
           title="内容字体"
           desc="分别设置对话正文的英文和中文字体"
@@ -233,11 +241,8 @@ export function AppearanceSection() {
           </Select>
         </SettingsRow>
         <SettingsRow
-          title="对话内容"
-          desc={
-            importError ??
-            '对话内容（Markdown）的主题观感，主题包来自 Themd 主题工场导出（.themd.json）；删除当前主题自动回落默认'
-          }
+          title="Markdown 主题"
+          desc={importError ?? '对话内容的观感，主题包来自 Themd 主题工场'}
         >
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -253,7 +258,7 @@ export function AppearanceSection() {
                 }
               }}
             >
-              <SelectTrigger aria-label="对话内容主题" className="w-44">
+              <SelectTrigger aria-label="Markdown 主题" className="w-44">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent align="end" className="min-w-44">
