@@ -40,6 +40,28 @@
   background: transparent;
   border: none;
   backdrop-filter: none;
+  /* 复制/下载钮默认隐身、悬停代码块才现身（2026-11-19 用户定调：常驻抢视线）；
+     visibility 而非只 opacity —— 隐身区域不能拦截对下方代码的选取/点击 */
+  opacity: 0;
+  visibility: hidden;
+  gap: 4px;
+  transition:
+    opacity 120ms ease,
+    visibility 120ms ease;
+}
+/* 悬停或键盘聚焦代码块时露出（focus-within：Tab 聚到按钮也要看得见） */
+.md-body [data-streamdown='code-block']:is(:hover, :focus-within) [data-streamdown='code-block-actions'] {
+  opacity: 1;
+  visibility: visible;
+}
+/* 图标随隐身态缩一档：14 → 12、钮内距 p-1 → 2px（原语内联 Tailwind 无定制口，
+   作用域选择器压过单一 utility 的特异性即可） */
+.md-body [data-streamdown='code-block-actions'] button {
+  padding: 2px;
+}
+.md-body [data-streamdown='code-block-actions'] button svg {
+  width: 12px;
+  height: 12px;
 }
 .md-body [data-streamdown='code-block'] pre {
   background: transparent !important;
@@ -60,12 +82,53 @@ html[data-code-wrap] .md-body [data-streamdown='code-block'] pre {
   overflow-wrap: anywhere;
 }
 
-/* 只去宿主包装壳；标准 table 自身由 Themd 表格规则完整控制。 */
+/* 只去宿主包装壳；标准 table 自身由 Themd 表格规则完整控制。
+   滚动容器（wrapper 内最后一个 div，无 data 属性）自带 border/圆角/白底，
+   与 table 自身边框叠成双层线与错位双圆角，一并让位；
+   Themd 的 table 底距 1.5em 在包装内会撑出容器底部空白，间距职责已归
+   wrapper 的外距，此处清零。 */
 .md-body [data-streamdown='table-wrapper'] {
   border: none;
   border-radius: var(--t-table-radius, 0);
   padding: 0;
   background: transparent;
+  /* 操作行改为绝对定位浮层的锚点（见下一段） */
+  position: relative;
+}
+/* 表格操作钮（复制/下载/全屏）与代码块操作钮同款（2026-11-19 用户定调，
+   配方同步自上面 code-block-actions 段，改一处记得同步另一处）：
+   浮到表格右上角、悬停才现身、图标缩一档。行原是表格上方常驻条 ——
+   绝对定位出流后不再占位，未悬停时表格上方无空白条；
+   :has(> button) 只命中操作行（其子是 button），不误中滚动容器（其子是 table）。 */
+.md-body [data-streamdown='table-wrapper'] > div:has(> button) {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 10;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 120ms ease,
+    visibility 120ms ease;
+}
+.md-body [data-streamdown='table-wrapper']:is(:hover, :focus-within) > div:has(> button) {
+  opacity: 1;
+  visibility: visible;
+}
+.md-body [data-streamdown='table-wrapper'] > div:has(> button) button {
+  padding: 2px;
+}
+.md-body [data-streamdown='table-wrapper'] > div:has(> button) button svg {
+  width: 12px;
+  height: 12px;
+}
+.md-body [data-streamdown='table-wrapper'] > div:last-child {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.md-body [data-streamdown='table'] {
+  margin-bottom: 0;
 }
 .md-body [data-streamdown='table-header'] { background: transparent; }
 .md-body table :is(thead, tbody, tr, th, td) { font-size: inherit; }
