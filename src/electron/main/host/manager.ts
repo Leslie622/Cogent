@@ -31,10 +31,8 @@ import type { AppStatus } from '../../../shared/ipc'
 /** 引擎 Node 版本下限 = pi 的 engines 要求 */
 const MIN_NODE: readonly [number, number, number] = [22, 19, 0]
 /**
- * 握手超时：给足 Windows 冷启动余量（2026-11-11 验收实录：偶发启动握手
- * 超时、手动重试即好 —— 冷启动时 Defender 实时扫描 host.js 大捆绑包
- * 可拖慢 Node 起进程数秒，5s 不够；二次启动文件已热所以必成。真正的
- * 引擎崩溃重启策略按本文件头注「后续加」，此处只放宽窗口不加重试）
+ * 握手覆盖进程启动、模块加载、运行时恢复与凭据同步；超时本身不能证明卡点。
+ * 保留阶段日志定位慢在哪一步，不把偶发超时直接归因于杀毒扫描或自动重试掩盖。
  */
 const HANDSHAKE_TIMEOUT_MS = 15_000
 
@@ -134,6 +132,8 @@ export class HostManager {
       windowsHide: true
     })
     this.child = child
+    let startupStage = '尚未收到 Host 启动阶段日志'
+    console.info(`[main] host starting (bin ${this.opts.nodeBin}, entry ${this.opts.entryPath})`)
 
     child.once('error', (error) => this.close(error.message))
     child.once('exit', (code) => {
@@ -143,6 +143,7 @@ export class HostManager {
     // stdio 配置为 pipe，Node 类型重载已把流标记为非空，无需断言
     createInterface({ input: child.stdout }).on('line', (line) => this.onLine(line))
     createInterface({ input: child.stderr }).on('line', (line) => {
+      if (line.startsWith('[startup] ')) startupStage = line
       console.error('[host]', line)
     })
 
@@ -153,7 +154,7 @@ export class HostManager {
         ...(this.opts.handshakeCredentials ? { credentials: this.opts.handshakeCredentials } : {})
       }),
       HANDSHAKE_TIMEOUT_MS,
-      '引擎握手'
+      () => `引擎握手超时（${HANDSHAKE_TIMEOUT_MS}ms）；最后阶段：${startupStage}`
     )
     // 握手失败（超时/进程秒退/发回错误帧）必须收尾：杀子进程 + 拒绝在途请求 +
     // 落 failed 态。不清理的话超时路径会留下孤儿进程且 status 永卡 'starting'
@@ -164,7 +165,7 @@ export class HostManager {
     } catch (error) {
       // stop() 默认落 'stopped'（正常关停语义），这里是失败路径：显式改写 failed
       // + 错误信息（与下方版本守卫失败路径的收尾姿势一致）
-      this.stop()
+      this.terminate((error as Error).message)
       this.status = { state: 'failed', nodeVersion: null, error: (error as Error).message }
       throw error
     }
@@ -172,7 +173,7 @@ export class HostManager {
     try {
       ensureNodeVersion(info.node, MIN_NODE)
     } catch (error) {
-      this.stop()
+      this.terminate((error as Error).message)
       this.status = { state: 'failed', nodeVersion: info.node, error: (error as Error).message }
       throw error
     }
@@ -205,10 +206,15 @@ export class HostManager {
 
   /** 停止引擎（窗口关闭/版本守卫失败时调用）；幂等。 */
   stop(): void {
+    this.terminate(null)
+  }
+
+  /** 启动失败时保留原始原因，让并发 IPC 请求的拒绝信息能指回握手故障。 */
+  private terminate(error: string | null): void {
     this.manualStop = true
     this.child?.kill()
     this.child = null
-    this.close(null)
+    this.close(error)
   }
 
   /** 关停收尾：拒绝全部在途请求、落状态。幂等。 */
@@ -278,12 +284,12 @@ function isAtLeast(actual: number[], min: readonly [number, number, number]): bo
   return true
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number, message: () => string): Promise<T> {
   let timer: NodeJS.Timeout | undefined
   return Promise.race([
     promise,
     new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label}超时（${ms}ms）`)), ms)
+      timer = setTimeout(() => reject(new Error(message())), ms)
     })
   ]).finally(() => clearTimeout(timer))
 }

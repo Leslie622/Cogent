@@ -66,3 +66,22 @@ npm/corepack（引擎是打包产物，依赖在应用 node_modules，用不到�
   electron import）；仅兜底到 execPath 时补设 `ELECTRON_RUN_AS_NODE=1`。
 - `.gitignore` 加 `resources/runtime/`（二进制不入库，换机器重跑脚本）。
 - 与协议/审批/存储无交集 —— 引擎进程的启动前置件，对它们透明。
+
+## 6. 握手超时如何定位
+
+15 秒覆盖整个启动链，不能凭超时就认定 Node 版本、杀毒扫描或最近改动是原因。
+wrapper 在动态 import 前输出阶段日志，能区分“还没进入 Host 模块”和模块内的
+运行时初始化；main 同时输出实际二进制路径，避免只在成功后才能确认运行时来源。
+各阶段使用 `process.uptime()` 的累计时间，输出走 stderr，保留 stdout 的协议边界。
+最后收到的阶段只是等待区间的证据，不是更细粒度根因的证明。
+
+对照 pi：`reference/pi/packages/coding-agent/src/core/model-runtime.ts:218`
+的 `ModelRuntime.create` 先读模型配置，再初始化运行时并等待 refresh；`:252`
+仅在 `allowModelNetwork === true` 时开启目录网络刷新。Cogent 未传该开关，不能
+把 create 的等待直接解释成远程目录下载。模型缓存读取经
+`reference/pi/packages/coding-agent/src/core/models-store.ts:75` 走文件锁，
+其等待与过期窗口在 `core/auth-storage.ts:122` 是 30 秒；这说明需检查锁路径，
+不说明每次启动都会等待该锁。只有实际阶段与复现证据吻合，才能据此归因。
+
+收尾由 HostManager 拥有：握手失败 → 终止子进程 → 拒绝并发请求 → failed。
+拒绝信息携带原始原因，避免一串无上下文的 `host closed` 掩盖首个错误。

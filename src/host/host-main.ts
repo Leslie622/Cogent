@@ -110,6 +110,11 @@ void Promise.allSettled([
 ])
 
 async function main(): Promise<void> {
+  // 只记录阶段与进程启动后的累计耗时，凭据、请求参数和会话内容不进启动日志。
+  const startup = (stage: string): void => {
+    process.stderr.write(`[startup] +${Math.round(process.uptime() * 1000)}ms ${stage}\n`)
+  }
+  startup('初始化模型运行时')
   // pi 运行时（模型目录 + 鉴权 + 请求路由）：底层配**空 CredentialStore** ——
   // Cogent 的 key 真源是壳侧 safeStorage（经 initialize/credentials.set 进
   // 引擎内存表），绝不让 pi 读写 ~/.pi 的 auth.json（探针实证的内存方案：
@@ -122,6 +127,7 @@ async function main(): Promise<void> {
     settled: () => Promise.resolve(undefined)
   }
   const modelRuntime = await ModelRuntime.create({ credentials: emptyCredentialStore })
+  startup('恢复本地存储与会话')
 
   /** 引擎单例：凭据表 + 本地 JSON 存储 + 项目注册表 + 会话运行时（构造即恢复盘上数据） */
   const credentials = new CredentialRegistry()
@@ -149,6 +155,7 @@ async function main(): Promise<void> {
     modelRuntime,
     STORAGE_ROOT
   )
+  startup('装配请求路由')
 
   /**
    * 凭据 → pi 运行时联动（内存 overlay 单向同步）：凭据表的每次变更同步
@@ -189,6 +196,7 @@ async function main(): Promise<void> {
    * 握手：宿主确认链路可用，服务上报运行时信息（宿主据此做 Node 版本守卫）。
    */
   async function handleInitialize(params: unknown): Promise<InitializeResult> {
+    startup('收到 initialize，校验并同步凭据')
     // 信任边界：params 是外部输入，在此做唯一一次显式校验。
     const p = params as Partial<InitializeParams>
     if (typeof p.client !== 'string' || typeof p.protocolVersion !== 'number') {
@@ -205,6 +213,7 @@ async function main(): Promise<void> {
         Object.entries(p.credentials).map(([providerId, c]) => applyRuntimeKey(providerId, c.apiKey))
       )
     }
+    startup('initialize 完成')
     return {
       service: 'cogent-agent',
       protocolVersion: PROTOCOL_VERSION,
@@ -856,6 +865,7 @@ async function main(): Promise<void> {
   // 默认不开（D2：loopback 且按需），开门即要 token。rootSecret 启动新生成、
   // 不出进程。实际监听地址打到 stderr（冒烟脚本与 main 双通道之一）。
   if (process.env.COGENT_HTTP_RPC === '1') {
+    startup('启动 HTTP 监听')
     const portEnv = process.env.COGENT_HTTP_PORT
     const port = portEnv === undefined ? 0 : Number(portEnv)
     // env 是外部输入，入口处显式校验（畸形值拒启好过 serve 内部报晦涩错）
@@ -901,6 +911,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => {
     process.exit(0)
   })
+  startup('stdio 就绪，等待 initialize')
 }
 
 // 启动失败（ModelRuntime 建不起来等）让进程显式死掉并留诊断 —— 引擎进程

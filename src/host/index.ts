@@ -21,4 +21,6 @@ import { join } from 'node:path'
 // 覆盖（冒烟测试 / 并存调试）
 process.env.PI_CODING_AGENT_DIR ??= join(process.env.COGENT_HOME || join(homedir(), '.cogent'), 'pi')
 
+// 必须在动态 import 前留痕：依赖模块求值卡住时，host-main 的任何日志都还执行不到。
+process.stderr.write(`[startup] +${Math.round(process.uptime() * 1000)}ms 加载 Host 模块（node ${process.version}）\n`)
 await import('./host-main')
