@@ -4,7 +4,7 @@
  * localStorage 是对的层（跨设备同步是真墙：引擎侧无设置同步通道）。
  * 「默认」主题是常量而非存储档：Theme-Leslie 令牌集（2026-11-18 用户
  * 拍板固化为内置观感底座），不占用户存储、不可删除；用户主题包相对
- * Streamdown 原生做稀疏差异，不叠在本底座上（两套观感混合是语义污染）。
+ * Themd 基础样式做稀疏差异，不叠在本底座上（两套观感混合是语义污染）。
  * 持久化读取是信任边界（约定.md §1.1）：merge 时校验形状，损坏档剔除
  * 并报错，激活 id 指向已剔除档时回落默认。
  */
@@ -20,6 +20,9 @@ const DEFAULT_THEME: ThemeFile = {
   id: DEFAULT_THEME_ID,
   name: '默认',
   tokens: {
+    // 聊天默认密度是宿主选择；导入主题的空缺项仍使用 Themd 基础值。
+    'root.size': '14px',
+    'codeBlock.size': '14px',
     'p.align': 'start',
     'del.thickness': '2px',
     'a.hoverColor': '#3b82f6',
@@ -51,6 +54,8 @@ const DEFAULT_THEME: ThemeFile = {
   /* 暗色套：整面替换语义（theme-file.ts）—— 与明暗无关的键（字体/尺寸/
      边框样式）照抄，只暗化亮面刺眼值（浅底色 → 暗底色、饱和色提亮度） */
   dark: {
+    'root.size': '14px',
+    'codeBlock.size': '14px',
     'p.align': 'start',
     'del.thickness': '2px',
     'a.hoverColor': '#60a5fa',

@@ -1,0 +1,55 @@
+/* 用户设置是独立最终层；只在对应显式变量存在时生效，跟随主题时零覆盖。 */
+@layer cogent-user {
+[style*="--cogent-user-root-font:"] .md-body,
+[style*="--cogent-user-root-font:"] .md-body :where(p, ul, ol, li, blockquote, table, thead, tbody, tr, th, td) {
+  font-family: var(--cogent-user-root-font) !important;
+}
+[style*="--cogent-user-heading-font:"] .md-body :where(h1,h2,h3,h4,h5,h6) {
+  font-family: var(--cogent-user-heading-font) !important;
+}
+[style*="--cogent-user-h1-font:"] .md-body h1 {
+  font-family: var(--cogent-user-h1-font) !important;
+}
+[style*="--cogent-user-h2-font:"] .md-body h2 {
+  font-family: var(--cogent-user-h2-font) !important;
+}
+[style*="--cogent-user-h3-font:"] .md-body h3 {
+  font-family: var(--cogent-user-h3-font) !important;
+}
+[style*="--cogent-user-h4-font:"] .md-body h4 {
+  font-family: var(--cogent-user-h4-font) !important;
+}
+[style*="--cogent-user-h5-font:"] .md-body h5 {
+  font-family: var(--cogent-user-h5-font) !important;
+}
+[style*="--cogent-user-h6-font:"] .md-body h6 {
+  font-family: var(--cogent-user-h6-font) !important;
+}
+[style*="--cogent-user-strong-font:"] .md-body strong {
+  font-family: var(--cogent-user-strong-font) !important;
+}
+[style*="--cogent-user-em-font:"] .md-body em {
+  font-family: var(--cogent-user-em-font) !important;
+}
+[style*="--cogent-user-del-font:"] .md-body :where(del,s) {
+  font-family: var(--cogent-user-del-font) !important;
+}
+[style*="--cogent-user-a-font:"] .md-body a {
+  font-family: var(--cogent-user-a-font) !important;
+}
+[style*="--cogent-user-inline-code-font:"] .md-body :not(pre) > code {
+  font-family: var(--cogent-user-inline-code-font) !important;
+}
+[style*="--cogent-user-code-font:"] .md-body pre,
+[style*="--cogent-user-code-font:"] .md-body pre code,
+[style*="--cogent-user-code-font:"] .md-body pre code * {
+  font-family: var(--cogent-user-code-font) !important;
+}
+[style*="--cogent-user-code-size:"] .md-body pre {
+  font-size: var(--cogent-user-code-size) !important;
+}
+[style*="--cogent-user-code-size:"] .md-body pre code,
+[style*="--cogent-user-code-size:"] .md-body pre code * {
+  font-size: inherit !important;
+}
+}

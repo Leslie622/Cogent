@@ -1,0 +1,582 @@
+/*
+ * 基础样式表 = 「极简」主题。
+ * 每条样式通过 var(--t-*, 回落值) 消费令牌；变量未注入时回落值生效，
+ * 因此回落值的集合就是极简主题的完整观感。
+ * 变量名必须与 lib/theme/tokens.ts 的 TOKEN_VAR 一致。
+ */
+
+.themd-prose {
+  /* 合并字体栈由编译器产出(latin+cjk 拼合);未设令牌时回落系统栈,
+     由各平台自己的 UI 字体呈现(Windows: Segoe UI/微软雅黑,macOS: 苹方) */
+  font-family: var(--t-root-font, system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif);
+  font-size: var(--t-root-size, 16px);
+  line-height: var(--t-root-leading, 1.6);
+  letter-spacing: var(--t-root-spacing, normal);
+  color: var(--t-root-color, var(--foreground));
+  background: var(--t-root-bg, transparent);
+  max-width: var(--t-root-width, 48rem);
+}
+
+.themd-prose p {
+  margin-bottom: var(--t-p-margin-bottom, 0.8em);
+  text-align: var(--t-p-align, start);
+  text-indent: var(--t-p-indent, 0);
+}
+
+/* ---------- 标题 ---------- */
+
+.themd-prose h1,
+.themd-prose h2,
+.themd-prose h3,
+.themd-prose h4,
+.themd-prose h5,
+.themd-prose h6 {
+  font-weight: var(--t-heading-weight, 650);
+  line-height: var(--t-heading-leading, 1.3);
+  color: var(--t-heading-color, inherit);
+  margin-top: var(--t-heading-margin-top, 1.6em);
+  margin-bottom: var(--t-heading-margin-bottom, 0.6em);
+}
+
+.themd-prose :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}
+
+.themd-prose h1 {
+  font-family: var(--t-h1-font, var(--t-heading-font, inherit));
+  font-size: var(--t-h1-size, 2em);
+  color: var(--t-h1-color, var(--t-heading-color, inherit));
+  border-bottom: var(--t-h1-border-width, 0) solid var(--t-h1-border-color, oklch(0.9 0 0));
+  padding-bottom: var(--t-h1-padding-bottom, 0);
+}
+.themd-prose h2 {
+  font-family: var(--t-h2-font, var(--t-heading-font, inherit));
+  font-size: var(--t-h2-size, 1.5em);
+  color: var(--t-h2-color, var(--t-heading-color, inherit));
+  border-bottom: var(--t-h2-border-width, 0) solid var(--t-h2-border-color, oklch(0.9 0 0));
+  padding-bottom: var(--t-h2-padding-bottom, 0);
+}
+.themd-prose h3 { font-family: var(--t-h3-font, var(--t-heading-font, inherit)); font-size: var(--t-h3-size, 1.22em); color: var(--t-h3-color, var(--t-heading-color, inherit)); }
+.themd-prose h4 { font-family: var(--t-h4-font, var(--t-heading-font, inherit)); font-size: var(--t-h4-size, 1.05em); color: var(--t-h4-color, var(--t-heading-color, inherit)); }
+.themd-prose h5 { font-family: var(--t-h5-font, var(--t-heading-font, inherit)); font-size: var(--t-h5-size, 1em); color: var(--t-h5-color, var(--t-heading-color, inherit)); }
+.themd-prose h6 { font-family: var(--t-h6-font, var(--t-heading-font, inherit)); font-size: var(--t-h6-size, 0.9em); color: var(--t-h6-color, var(--t-heading-color, inherit)); }
+
+/* ---------- 行内元素 ---------- */
+
+.themd-prose strong {
+  font-family: var(--t-strong-font, inherit);
+  font-weight: var(--t-strong-weight, 700);
+  color: var(--t-strong-color, inherit);
+  background: var(--t-strong-bg, transparent);
+  padding: var(--t-strong-padding, 0);
+  margin: var(--t-strong-margin, 0);
+  border-radius: 4px;
+}
+.themd-prose em {
+  font-family: var(--t-em-font, inherit);
+  font-weight: var(--t-em-weight, inherit);
+  font-style: var(--t-em-style, italic);
+  color: var(--t-em-color, inherit);
+  background: var(--t-em-bg, transparent);
+  padding: var(--t-em-padding, 0);
+  margin: var(--t-em-margin, 0);
+  border-radius: 4px;
+}
+/* TipTap Strike mark 渲染为 <s>,静态预览/markdown-it 输出 <del>:两标签都要覆盖。
+   text-underline-offset 只对下划线生效(CSS 规范无 line-through-offset),
+   所以「离文字距离/粗细」用背景渐变自绘删除线:随每行文字、位置粗细全可控;
+   与背景色共存时用两层 background-image 叠加,线色取 --t-del-text-color。 */
+.themd-prose del,
+.themd-prose s {
+  font-family: var(--t-del-font, inherit);
+  font-weight: var(--t-del-weight, inherit);
+  color: var(--t-del-color, inherit);
+  text-decoration-color: var(--t-del-text-color, currentColor);
+  background: var(--t-del-bg, transparent);
+  padding: var(--t-del-padding, 0);
+  margin: var(--t-del-margin, 0);
+  border-radius: 4px;
+}
+/* 自绘态:设置了 offset(垂直位置)或 thickness(粗细)任一即启用,
+   线 = 渐变层,颜色 = 删除线颜色令牌(回落 currentColor),再叠背景色层 */
+.themd-prose del,
+.themd-prose s {
+  text-decoration-line: var(--t-del-line, line-through);
+}
+.themd-prose[style*="--t-del-offset"],
+.themd-prose[style*="--t-del-thickness"] {
+  --t-del-line: none;
+}
+.themd-prose[style*="--t-del-offset"] del,
+.themd-prose[style*="--t-del-offset"] s,
+.themd-prose[style*="--t-del-thickness"] del,
+.themd-prose[style*="--t-del-thickness"] s {
+  text-decoration-line: none;
+  background-image:
+    linear-gradient(var(--t-del-text-color, currentColor), var(--t-del-text-color, currentColor)),
+    var(--t-del-bg-image, none);
+  background-size:
+    100% var(--t-del-thickness, 1px),
+    auto;
+  /* 线默认垂直居中;background-position 百分比参照(盒高-线高),center=50% 即居中;
+     设了 offset 时从居中位置上下偏移,正值下移、负值上移 */
+  background-position:
+    0 calc(50% + var(--t-del-offset, 0px)),
+    0 0;
+  background-repeat: no-repeat, no-repeat;
+  background-color: var(--t-del-bg, transparent);
+}
+
+/* a.underline 令牌值 always/hover/none 由编译器展开为两个变量;
+   hover 文字色/下划线色未设置时回落常态值(即不变色) */
+.themd-prose a {
+  font-family: var(--t-a-font, inherit);
+  font-weight: var(--t-a-weight, inherit);
+  color: var(--t-a-color, inherit);
+  text-decoration-line: var(--t-a-underline-line, underline);
+  text-decoration-color: var(--t-a-underline-color, currentColor);
+  text-decoration-thickness: var(--t-a-underline-height, auto);
+  text-underline-offset: 0.2em;
+  background: var(--t-a-bg, transparent);
+  padding: var(--t-a-padding, 0);
+  margin: var(--t-a-margin, 0);
+  border-radius: 4px;
+  /* hover 动画:仅设置了过渡时长时注入(回落 0s 也成立,动画属性未列时不产生过渡) */
+  transition:
+    color var(--t-a-transition, 0s),
+    text-decoration-color var(--t-a-transition, 0s),
+    background-color var(--t-a-transition, 0s),
+    text-decoration-line var(--t-a-transition, 0s);
+}
+.themd-prose a:hover {
+  color: var(--t-a-hover-color, var(--t-a-color, inherit));
+  text-decoration-line: var(--t-a-hover-underline, underline);
+  text-decoration-color: var(--t-a-hover-line-color, var(--t-a-underline-color, currentColor));
+}
+
+.themd-prose :not(pre) > code {
+  font-family: var(--t-inline-code-font, ui-monospace, 'Cascadia Mono', Consolas, monospace);
+  font-size: var(--t-inline-code-size, 0.875em);
+  font-weight: var(--t-inline-code-weight, inherit);
+  color: var(--t-inline-code-color, inherit);
+  background: var(--t-inline-code-bg, oklch(0.96 0 0));
+  padding: var(--t-inline-code-padding, 0.2em 0.35em);
+  margin: var(--t-inline-code-margin, 0);
+  border-radius: var(--t-inline-code-radius, 4px);
+  border: var(--t-inline-code-border-width, 0) solid var(--t-inline-code-border-color, oklch(0.9 0 0));
+}
+
+/* ---------- 代码块 ---------- */
+
+/* 规范包装(契约 §3 本家形态):div.themd-code > 语言标签行 + pre>code。
+ * header 行样式全部从既有 --t-code-* 令牌派生,不新增主题令牌;
+ * 类名属本家命名空间(可移植 CSS 包公开面,贴到无此 DOM 的目标端自然休眠)。 */
+.themd-prose .themd-code {
+  position: relative;
+  margin-bottom: 1.25em;
+}
+/* 非 pre 直接子的 pre(老结构兜底,理论上不再出现)保持独立间距 */
+.themd-prose pre {
+  background: var(--t-code-bg, oklch(0.97 0 0));
+  padding: var(--t-code-padding, 1em 1.25em);
+  border-radius: var(--t-code-radius, 8px);
+  border: var(--t-code-border-width, 0) solid var(--t-code-border-color, oklch(0.9 0 0));
+  overflow-x: auto;
+  margin-bottom: 1.25em;
+}
+.themd-prose .themd-code pre {
+  margin-bottom: 0;
+}
+.themd-prose .themd-code-lang {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  font-family: var(--font-ui-sans, sans-serif);
+  font-size: 0.7em;
+  line-height: 1.4;
+  color: color-mix(in oklch, currentColor 45%, transparent);
+  padding: 0.5em 0.9em;
+  border: var(--t-code-border-width, 0) solid var(--t-code-border-color, oklch(0.9 0 0));
+  border-bottom: none;
+  background: color-mix(in oklch, var(--t-code-bg, oklch(0.97 0 0)) 60%, transparent);
+  border-radius: var(--t-code-radius, 8px) var(--t-code-radius, 8px) 0 0;
+  user-select: none;
+}
+/* 左侧品牌图标(官方色,不受文字色影响);两侧同构:svg 是 header 直接子 */
+.themd-prose .themd-code-lang > svg {
+  flex: none;
+  display: block;
+  border-radius: 2px;
+}
+/* 按钮区推到最右:语言(图标+名)贴左 */
+.themd-prose .themd-code-lang .themd-code-actions {
+  margin-left: auto;
+}
+.themd-prose .themd-code-lang-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  cursor: pointer;
+  position: relative;
+}
+.themd-prose .themd-code-lang-name:hover {
+  color: color-mix(in oklch, currentColor 80%, transparent);
+}
+/* Popover 锚点:绝对定位铺满语言文本(display:contents 无布局框,Radix 量不到位置) */
+.themd-prose .themd-code-lang-anchor {
+  position: absolute;
+  inset: 0;
+}
+/* pre 的圆角让给 header:包装有 border 时 pre 顶角必须方,否则露底 */
+.themd-prose .themd-code:has(> .themd-code-lang) pre {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+/* header 按钮区(交互层,应用内注入,规范 HTML 不含) */
+.themd-prose .themd-code-lang .themd-code-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+}
+.themd-prose .themd-code-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9em;
+  height: 1.9em;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: color-mix(in oklch, currentColor 70%, transparent);
+  cursor: pointer;
+  opacity: 0.8;
+}
+.themd-prose .themd-code-btn:hover {
+  opacity: 1;
+  background: color-mix(in oklch, currentColor 10%, transparent);
+}
+.themd-prose .themd-code-btn-active,
+.themd-prose .themd-code-btn-done {
+  opacity: 1;
+  color: var(--chrome-accent, var(--primary));
+}
+.themd-prose pre code {
+  font-family: var(--t-code-font, ui-monospace, 'Cascadia Mono', Consolas, monospace);
+  font-size: var(--t-code-size, 0.875em);
+  line-height: var(--t-code-leading, 1.6);
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  color: inherit;
+}
+/* hljs 主题表自带底色/前景色，交给上面的令牌控制 */
+.themd-prose pre code.hljs {
+  background: transparent;
+  padding: 0;
+}
+/* 换行临时态(header 按钮切换,不持久化;默认不折行横向滚动) */
+.themd-prose .themd-code.themd-code-wrap pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: hidden;
+}
+/* header 总开关(设置/导出复用):类挂容器根,只藏观感层 */
+.themd-code-chrome-off .themd-prose .themd-code-lang {
+  display: none;
+}
+.themd-code-chrome-off .themd-prose .themd-code:has(> .themd-code-lang) pre {
+  border-top-left-radius: var(--t-code-radius, 8px);
+  border-top-right-radius: var(--t-code-radius, 8px);
+}
+
+/* ---------- 列表 ---------- */
+
+/* Tailwind preflight 全局 list-style:none,这里显式恢复圆点/编号 */
+.themd-prose ul,
+.themd-prose ol {
+  padding-left: var(--t-list-indent, 1.5em);
+  margin-bottom: var(--t-list-margin-bottom, 1.25em);
+  list-style-position: var(--t-list-position, outside);
+}
+.themd-prose ul {
+  list-style-type: var(--t-ul-marker-shape, disc);
+}
+.themd-prose ul ul {
+  list-style-type: var(--t-ul-marker-shape2, circle);
+}
+.themd-prose ul ul ul {
+  list-style-type: var(--t-ul-marker-shape3, square);
+}
+/* 有序列表编号样式:必须用 longhand——list-style 简写会把 position 重置回 outside,
+   令 --t-list-position 对 ol 失效 */
+.themd-prose ol {
+  list-style-type: var(--t-ol-marker-style, decimal);
+}
+.themd-prose ol ol {
+  list-style-type: var(--t-ol-marker-style2, lower-alpha);
+}
+.themd-prose ol ol ol {
+  list-style-type: var(--t-ol-marker-style3, lower-roman);
+}
+/* 列表文字：链式回落到正文根,设置后 ul/ol 全层级生效(规则直接命中每层 li,不逐层叠乘) */
+.themd-prose li {
+  font-size: var(--t-li-font-size, var(--t-root-size, 16px));
+  line-height: var(--t-li-leading, var(--t-root-leading, 1.6));
+  color: var(--t-li-color, var(--t-root-color, var(--foreground)));
+}
+.themd-prose li + li {
+  margin-top: var(--t-li-spacing, 0.375em);
+}
+.themd-prose li > p {
+  margin-bottom: 0.375em;
+}
+/* 圆点大小全层级统一;颜色/自定义符号逐级：未设级回落到一级。
+   自定义符号经 ::marker content 自绘(Chromium 能力),设了就盖过形状令牌 */
+.themd-prose ul li::marker {
+  font-size: var(--t-ul-marker-size, 1em);
+}
+.themd-prose ul > li::marker {
+  color: var(--t-ul-marker, currentColor);
+  content: var(--t-ul-marker-text, normal);
+}
+.themd-prose ul ul > li::marker {
+  color: var(--t-ul-marker-color2, var(--t-ul-marker, currentColor));
+  content: var(--t-ul-marker-text2, var(--t-ul-marker-text, normal));
+}
+.themd-prose ul ul ul > li::marker {
+  color: var(--t-ul-marker-color3, var(--t-ul-marker, currentColor));
+  content: var(--t-ul-marker-text3, var(--t-ul-marker-text, normal));
+}
+.themd-prose ol li::marker {
+  color: var(--t-ol-marker, currentColor);
+  font-size: var(--t-ol-marker-size, 1em);
+}
+/* 编号自定义:{n} 模板在控件层编译为 counter() 值存储,未设回落 normal 走 list-style-type;
+   counter 第二参引用编号样式令牌,样式下拉对自定义模板同样生效 */
+.themd-prose ol > li::marker {
+  content: var(--t-ol-marker-text, normal);
+}
+.themd-prose ol ol > li::marker {
+  content: var(--t-ol-marker-text2, var(--t-ol-marker-text, normal));
+}
+.themd-prose ol ol ol > li::marker {
+  content: var(--t-ol-marker-text3, var(--t-ol-marker-text, normal));
+}
+
+/* mermaid 图表:居中 + 自适应宽(预览/导出/编辑面同源;独立 HTML 导出
+   内嵌本文件,规则在应用内部 index.css 时导出件从未吃到——2026-11-03 审出) */
+.themd-prose .themd-mermaid {
+  text-align: center;
+}
+.themd-prose .themd-mermaid svg {
+  max-width: 100%;
+}
+
+/* 任务列表：去掉圆点,勾选框自绘(appearance:none 拆掉原生绘制,DOM 不动,
+   点击/键盘/打印交互全部保留);各部件走 task.* 令牌 */
+.themd-prose ul:has(> li.task-list-item) {
+  list-style: none;
+  padding-left: 0.25em;
+}
+.themd-prose input.task-list-item-checkbox {
+  appearance: none;
+  width: var(--t-task-size, 1em);
+  height: var(--t-task-size, 1em);
+  border: var(--t-task-border-width, 1px) solid var(--t-task-border-color, oklch(0.7 0 0));
+  border-radius: var(--t-task-radius, 3px);
+  margin: -0.17em 0.5em 0 0;
+  vertical-align: middle;
+  box-sizing: border-box;
+  cursor: pointer;
+  /* 未勾底色与文字色一致:深色主题下不会出现刺眼白块 */
+  background-color: transparent;
+}
+/* 勾选标记:内嵌 SVG 白对勾(input 上伪元素兼容性不可靠),底色吃 accent */
+.themd-prose input.task-list-item-checkbox:checked {
+  background-color: var(--t-task-accent, oklch(0.55 0 0));
+  border-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3 8.5L6.5 12L13 4.5' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: 78%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+/* 未勾项文字色:todoColor 未设置时不变(保持正文色) */
+.themd-prose li.task-list-item:has(> input:not(:checked)),
+.themd-prose li.task-list-item:has(> p > input:not(:checked)) {
+  color: var(--t-task-todo-color, inherit);
+}
+/* 已勾项文字完成态:doneColor 未设置时不变(保持正文色) */
+.themd-prose li.task-list-item:has(> input:checked),
+.themd-prose li.task-list-item:has(> p > input:checked) {
+  color: var(--t-task-done-color, inherit);
+}
+/* 任务项内段落:紧凑形态项内无 p(裸文本),宽松形态/编辑面(PM 内容模型
+   恒为段落)有 p——两形态观感一致,项内段落零边距,项距统一吃 li 层间距 */
+.themd-prose li.task-list-item > p {
+  margin: 0;
+}
+
+/* ---------- 引用 ---------- */
+
+.themd-prose blockquote {
+  border-left: var(--t-quote-border-width, 3px) solid var(--t-quote-border-color, oklch(0.9 0 0));
+  background: var(--t-quote-bg, transparent);
+  color: var(--t-quote-color, inherit);
+  border-radius: var(--t-quote-radius, 0);
+  padding: var(--t-quote-padding, 0.25em 1em);
+  font-style: var(--t-quote-style, normal);
+  margin: 1.5em 0 1.25em;
+}
+.themd-prose blockquote p {
+  margin-bottom: 0;
+}
+.themd-prose blockquote p + p {
+  margin-top: 0.75em;
+}
+
+/* ---------- 提示块(GFM Alerts:> [!NOTE] 等) ---------- */
+/* 强调色令牌一色三用:左边框/图标+标题色/背景(color-mix 派生半透明,深浅由 bgOpacity 参数化) */
+
+.themd-prose .themd-callout {
+  border-left: var(--t-callout-border-width, 3px) solid var(--t-callout-note, oklch(0.55 0.16 255));
+  background: color-mix(in oklab, var(--t-callout-note, oklch(0.55 0.16 255)) var(--t-callout-bg-opacity, 8%), transparent);
+  border-radius: var(--t-callout-radius, 6px);
+  padding: var(--t-callout-padding, 0.75em 1em);
+  margin: 1.5em 0 1.25em;
+}
+.themd-prose .themd-callout > * {
+  margin-bottom: 0;
+}
+.themd-prose .themd-callout > * + * {
+  margin-top: 0.75em;
+}
+.themd-prose .themd-callout-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-weight: 600;
+  font-size: 0.9em;
+  line-height: 1;
+  color: var(--t-callout-note, oklch(0.55 0.16 255));
+}
+.themd-prose .themd-callout-icon {
+  flex-shrink: 0;
+}
+
+.themd-prose .themd-callout-tip,
+.themd-prose .themd-callout-tip .themd-callout-title {
+  border-left-color: var(--t-callout-tip, oklch(0.6 0.15 150));
+  color: var(--t-callout-tip, oklch(0.6 0.15 150));
+}
+.themd-prose .themd-callout-tip {
+  background: color-mix(in oklab, var(--t-callout-tip, oklch(0.6 0.15 150)) var(--t-callout-bg-opacity, 8%), transparent);
+}
+.themd-prose .themd-callout-important,
+.themd-prose .themd-callout-important .themd-callout-title {
+  border-left-color: var(--t-callout-important, oklch(0.55 0.2 300));
+  color: var(--t-callout-important, oklch(0.55 0.2 300));
+}
+.themd-prose .themd-callout-important {
+  background: color-mix(in oklab, var(--t-callout-important, oklch(0.55 0.2 300)) var(--t-callout-bg-opacity, 8%), transparent);
+}
+.themd-prose .themd-callout-warning,
+.themd-prose .themd-callout-warning .themd-callout-title {
+  border-left-color: var(--t-callout-warning, oklch(0.6 0.13 75));
+  color: var(--t-callout-warning, oklch(0.6 0.13 75));
+}
+.themd-prose .themd-callout-warning {
+  background: color-mix(in oklab, var(--t-callout-warning, oklch(0.6 0.13 75)) var(--t-callout-bg-opacity, 8%), transparent);
+}
+.themd-prose .themd-callout-caution,
+.themd-prose .themd-callout-caution .themd-callout-title {
+  border-left-color: var(--t-callout-caution, oklch(0.58 0.19 25));
+  color: var(--t-callout-caution, oklch(0.58 0.19 25));
+}
+.themd-prose .themd-callout-caution {
+  background: color-mix(in oklab, var(--t-callout-caution, oklch(0.58 0.19 25)) var(--t-callout-bg-opacity, 8%), transparent);
+}
+
+/* ---------- 表格 ---------- */
+
+.themd-prose table {
+  width: 100%;
+  /* collapse(默认)下圆角不生效;要圆角/单元格间隙需 separate + 圆角令牌。
+     外框线宽跟随单元格线宽令牌——全表线宽统一,否则内粗外细。
+     overflow hidden 把直角单元格裁进圆角弧内(separate+圆角时单元格边框
+     会戳出弧线,标准圆角表格配方) */
+  border-collapse: var(--t-table-collapse, collapse);
+  border-spacing: 0;
+  border: var(--t-cell-border-width, 1px) solid var(--t-table-border-color, oklch(0.9 0 0));
+  border-radius: var(--t-table-radius, 0);
+  overflow: hidden;
+  margin-bottom: 1.5em;
+  display: table;
+  font-size: 0.95em;
+}
+.themd-prose th,
+.themd-prose td {
+  /* 行横线/竖线独立开关,线宽共用,颜色统一吃 --t-table-border-color——
+     颜色不得由单元格令牌自带:collapse 下同宽的单元格边框会压过表格边框,
+     简写省略颜色时回落 currentColor 会把外围边框整圈带走 */
+  border-top: var(--t-cell-border-width, 1px) var(--t-cell-row-line, solid) var(--t-table-border-color, oklch(0.9 0 0));
+  border-right: var(--t-cell-border-width, 1px) var(--t-cell-col-line, none) var(--t-table-border-color, oklch(0.9 0 0));
+  padding: var(--t-cell-padding, 0.5em 0.85em);
+  text-align: left;
+}
+/* 最后一列的竖线让位给表格自身边框:separate 模式下两者平行各画一条,
+   会叠成双线(collapse 会合并所以仅 separate 暴露) */
+.themd-prose th:last-child,
+.themd-prose td:last-child {
+  border-right: none;
+}
+.themd-prose tbody tr:hover {
+  background: var(--t-row-hover, transparent);
+}
+.themd-prose thead th {
+  background: var(--t-th-bg, transparent);
+  font-weight: var(--t-th-weight, 600);
+  border-top: none;
+}
+.themd-prose tbody tr:nth-child(2n) {
+  background: var(--t-table-stripe, transparent);
+}
+/* 实时编辑(TipTap)的表格没有 thead:表头行 = tbody 首行 th。下面是同一组令牌
+   对两种 DOM 的等价选择器;预览/导出(markdown-it 产出 thead)不会命中。 */
+.themd-prose tbody > tr:first-child > th {
+  background: var(--t-th-bg, transparent);
+  font-weight: var(--t-th-weight, 600);
+  border-top: none;
+}
+/* 表头行计入 tbody 后 nth-child(2n) 整体错一行:跳过表头行,与预览条纹对齐 */
+.themd-prose tbody:has(> tr:first-child > th) tr:nth-child(2n) {
+  background: transparent;
+}
+.themd-prose tbody:has(> tr:first-child > th) tr:nth-child(2n + 3) {
+  background: var(--t-table-stripe, transparent);
+}
+
+/* ---------- 分割线 / 图片 ---------- */
+
+.themd-prose hr {
+  border: none;
+  height: var(--t-hr-thickness, 1px);
+  background: var(--t-hr-color, oklch(0.9 0 0));
+  margin: var(--t-hr-margin, 2em 0);
+  padding: var(--t-hr-padding, 0);
+}
+.themd-prose img {
+  max-width: var(--t-img-max-width, 100%);
+  width: var(--t-img-width, auto);
+  height: var(--t-img-height, auto);
+  /* 上下外边距:留白独立可调;左右间距由水平对齐(margin-inline)接管,互不干扰 */
+  margin-block: var(--t-img-margin, 0);
+  /* 图片是块级(preflight),水平对齐走 margin-inline:左 0 / 中 auto / 右 0 auto */
+  margin-inline: var(--t-img-align, 0);
+  border-radius: var(--t-img-radius, 4px);
+  border: var(--t-img-border-width, 0) solid var(--t-img-border-color, oklch(0.9 0 0));
+  box-shadow: var(--t-img-shadow, none);
+  /* 点击进灯箱放大(PreviewPane / ThemeStudio 完整预览) */
+  cursor: zoom-in;
+}

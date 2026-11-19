@@ -2,12 +2,9 @@ import { TOKEN_VAR, type ThemeTokens, type TokenKey } from './tokens'
 
 /**
  * 令牌 → CSS 变量（自 Themd 平移，字体拼合/继承链展开逻辑原样）。
- * 链路只有这一条：theme store 的 tokens → compileTokens → 消息流容器
- * style 注入（亮色）/ <style> 块（暗色 + extraCss，见 ThemeApplier）。
- * 未设置的键不产出变量，globals.css 消费表的 var() 回落值即 Streamdown
- * 原生观感。dark 参数：主题有暗色令牌套且当前处于暗色模式（外观设置切
- * html.dark，2026-11-18 上线）时，用 dark 套编译，产物同样走容器
- * inline style（ChatTheme 单管道）。
+ * theme store → 按明暗选套 → 合并用户覆盖 → 消息流容器 inline style。
+ * 未设置的键不产出变量；默认值由 Themd 本地基准与宿主暗色适配消费。
+ * dark 套整面替换，extraCss 独立注入；用户最终优先层见 user-overrides.ts。
  */
 export function compileTokens(
   tokens: ThemeTokens,
@@ -120,23 +117,23 @@ const FONT_STACKS: [string, string][] = [
 /**
  * 字体族名集合 → font-family 栈文本。
  * latin 在前 cjk 在后,浏览器按字符自动分流(西文字体缺汉字时落到中文字体)。
- * 族名去引号统一保存,含空格的重新加引号;跨 latin/cjk 的重复族去重。
+ * 本机字体的族名是字面量，不能当作通用族关键字或逗号分隔的字体栈。
  */
+export function quoteFontFamily(family: string): string {
+  return `'${family.replace(/['\\\n\r\f]/g, (char) => `\\${char.charCodeAt(0).toString(16)} `)}'`
+}
+
 function joinFontStack(latin: string | undefined, cjk: string | undefined, fallbackTail: string): string {
-  const families: string[] = []
-  const pushAll = (v: string | undefined) => {
-    for (const f of (v ?? '').split(',')) {
-      const t = f.trim().replace(/^['"]|['"]$/g, '')
-      if (t && !families.includes(t)) families.push(t)
+  const families = new Set<string>()
+  for (const stack of [latin, cjk, fallbackTail]) {
+    for (const part of stack?.match(/(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^,])+/g) ?? []) {
+      const family = part.trim()
+      if (!family) continue
+      const quoted = /^(?:".*"|'.*')$/.test(family)
+      families.add(quoted || !/\s/.test(family) ? family : quoteFontFamily(family))
     }
   }
-  pushAll(latin)
-  pushAll(cjk)
-  for (const t of fallbackTail.split(',')) {
-    const clean = t.trim().replace(/^['"]|['"]$/g, '')
-    if (clean && !families.includes(clean)) families.push(clean)
-  }
-  return families.map((f) => (/\s/.test(f) ? `'${f}'` : f)).join(', ')
+  return [...families].join(', ')
 }
 
 /**

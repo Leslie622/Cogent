@@ -1,0 +1,100 @@
+/* Themd 与 Streamdown 的结构适配；默认几何在生成基准，暗色只补缺省色。 */
+.md-body {
+  --md-default-border: oklch(0.9 0 0);
+  --md-default-inline-bg: oklch(0.96 0 0);
+  --md-default-code-bg: oklch(0.97 0 0);
+  --md-default-task-border: oklch(0.7 0 0);
+}
+.dark .md-body {
+  --md-default-border: var(--border);
+  --md-default-inline-bg: var(--muted);
+  --md-default-code-bg: var(--muted);
+  --md-default-task-border: var(--muted-foreground);
+}
+
+/* 代码板底色在滚动容器上，包含 gutter；pre 透明避免 Shiki 内联底色形成两截。 */
+.md-body [data-streamdown='code-block'] {
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  gap: 0;
+  margin-bottom: 1.25em;
+}
+.md-body [data-streamdown='code-block-body'] {
+  font-size: inherit;
+  background: var(--t-code-bg, var(--md-default-code-bg));
+  border: var(--t-code-border-width, 0) solid var(--t-code-border-color, var(--md-default-border));
+  border-radius: 0 0 var(--t-code-radius, 8px) var(--t-code-radius, 8px);
+  padding: 0;
+}
+.md-body [data-streamdown='code-block-header'] {
+  background: var(--t-code-bg, var(--md-default-code-bg));
+  color: color-mix(in oklch, currentColor 45%, transparent);
+  border-radius: var(--t-code-radius, 8px) var(--t-code-radius, 8px) 0 0;
+  padding: 0.45em 0.9em;
+  height: auto;
+  min-height: 2.5rem;
+}
+.md-body [data-streamdown='code-block-actions'] {
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+}
+.md-body [data-streamdown='code-block'] pre {
+  background: transparent !important;
+  border: none;
+  border-radius: 0;
+  padding: var(--t-code-padding, 1em 1.25em);
+  margin: 0;
+  font-family: var(--t-code-font, var(--font-mono));
+  font-size: var(--t-code-size, 0.875em);
+  line-height: var(--t-code-leading, 1.6);
+}
+.md-body pre code {
+  font-family: inherit;
+  line-height: inherit;
+}
+html[data-code-wrap] .md-body [data-streamdown='code-block'] pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 只去宿主包装壳；标准 table 自身由 Themd 表格规则完整控制。 */
+.md-body [data-streamdown='table-wrapper'] {
+  border: none;
+  border-radius: var(--t-table-radius, 0);
+  padding: 0;
+  background: transparent;
+}
+.md-body [data-streamdown='table-header'] { background: transparent; }
+.md-body table :is(thead, tbody, tr, th, td) { font-size: inherit; }
+.md-body [data-streamdown='table-body'],
+.md-body [data-streamdown='table-row'] { border-bottom: none; }
+.md-body [data-streamdown='table-cell'],
+.md-body [data-streamdown='table-header-cell'] { border-bottom: none; }
+
+/* 图片蒙版依附 wrapper，间距与水平对齐必须留在 wrapper，避免蒙版盖到留白上。 */
+.md-body [data-streamdown='image-wrapper'] {
+  display: block;
+  width: var(--t-img-width, fit-content);
+  max-width: var(--t-img-max-width, 100%);
+  margin-block: var(--t-img-margin, 0);
+  margin-inline: var(--t-img-align, 0);
+}
+.md-body [data-streamdown='image'] {
+  width: 100%;
+  max-width: 100%;
+  display: block;
+  margin: 0;
+  cursor: auto;
+}
+
+/* 工具栏保持界面阶，不随正文主题的字号与字体变化。 */
+.md-body [data-streamdown='code-block-header'],
+.md-body [data-streamdown='code-block-actions'] {
+  --text-xs: var(--ui-text-xs);
+  --text-sm: var(--ui-text-sm);
+  --text-base: var(--ui-text-base);
+  font-family: var(--font-sans);
+}

@@ -13,7 +13,9 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   root: resolve('.'),
   resolve: {
-    alias: { '@': resolve('src/renderer/src') }
+    alias: { '@': resolve('src/renderer/src'), '@shared': resolve('src/shared') }
   },
-  plugins: [react(), tailwindcss()]
+  plugins: [react(), tailwindcss()],
+  optimizeDeps: { entries: ['tests/renderer/**/*.browser.html'] },
+  server: { watch: { ignored: ['**/reference/**', '**/out/**'] } }
 })

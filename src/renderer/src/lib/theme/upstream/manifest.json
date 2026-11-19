@@ -1,0 +1,10 @@
+{
+  "revision": "d73cc8d57d45fc183a94ae3bd40c81d740664a21",
+  "files": {
+    "src/lib/theme/tokens.ts": "ea7baa6c5323c3c90cd196db8aaa86da46f2c16591d6eb1038167386d5dd32e6",
+    "src/lib/theme/compile.ts": "03e4277169acfac54c3ac4f33eb5d6e058526eb3155ed0c32a608711d113415f",
+    "src/lib/theme/defaults.ts": "221c114c20f5d1a457b6ae8f1fed501a9d6e442315e726a8665acf8c042de4d0",
+    "src/styles/theme-base.css": "2e1f06ed39ad3518859c297bb89d9ed2f1dcae53b48209034f1f5f1eb609a52a",
+    "src/lib/theme/portable-css.ts": "7c5256bba25e0f72da656b7ed2942b388222f2e8e6854cb2e5a73f274d6e6f40"
+  }
+}

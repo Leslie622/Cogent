@@ -32,6 +32,8 @@ requestRender 当成重新核实了整套缓存或虚拟化。
 
 1. `rehypePlugins` 是覆盖语义。Block adapter 追加插件时继承实际传下的 raw/sanitize/
    harden 管线，不自己仿造默认数组。原始 HTML 始终经过原库清洗。
+   主题提示块适配在导出的完整默认管线后追加固定枚举变换，静态与流式一致；
+   流式 Block 再追加 reveal，不能将主题转换误挂到仅流式会经过的接口。
 2. streaming 与 static 是不同解析语义。只关 isAnimating 不等于完成结算，最终必须切
    static 才还原未闭合强调、行内 code 和链接的字面结果。
 3. 代码高亮输出是按行结构化 JSX、前缀 grammarState 可复用，新增行可做 mount-only
@@ -60,5 +62,6 @@ Tailwind v4 自动扫描不进入 node_modules，必须 `@source` Streamdown dis
 
 `src/renderer/src/components/ui/markdown.tsx` 管渲染与 Block adapter；
 `features/home/MessageRow.tsx` 管消息级复用；`stores/chat/delta-batcher.ts` 管合批；
-`globals.css` 管样式消费。默认清洗、分块重整、节点保留与最终语义由
+`lib/theme/{themd-base,content,user-overrides}.css` 管主题消费，`globals.css` 管公共阶与动效。
+默认清洗、分块重整、节点保留与最终语义由
 `tests/renderer/components/ui/` 中的渲染合同测试验证；实际像素和帧率仍需浏览器/真机测量。

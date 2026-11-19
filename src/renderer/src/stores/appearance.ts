@@ -2,72 +2,73 @@
  * 外观偏好 store（zustand + persist → localStorage: cogent-appearance）——
  * 与 theme store 同层定调：纯渲染端视觉偏好，不进引擎/协议/settings.json
  * （跨设备同步是真墙：引擎侧无设置同步通道）。
- * 消费点：App 层 effect（html.dark / html[data-code-wrap] / --chrome-accent）、
+ * 消费点：共享 appearance-dom（明暗/换行/强调色/字号，覆盖所有窗口）、
  * markdown.tsx（lineNumbers / shikiTheme）、ChatTheme（isDark 选套 +
  * buildUserTokens 用户覆盖合并进编译）。
  * 持久化读取是信任边界（约定.md §1.1）：merge 校验字段形状，坏档回落默认。
  */
 import { create } from 'zustand'
+import { useSyncExternalStore } from 'react'
 import { persist } from 'zustand/middleware'
+import { isHexColor, type HexColor } from '@/lib/hex-color'
+import { quoteFontFamily } from '@/lib/theme/compile'
 import type { ThemeTokens } from '@/lib/theme/tokens'
 
-/** 界面明暗三档；system = 跟随 OS（matchMedia 监听在 App 层 effect） */
+export type LocalFontId = `local:${string}`
+export const LOCAL_FONT_PREFIX = 'local:'
+export type FontChoice = 'theme' | 'system-ui' | 'ui-monospace' | LocalFontId
+export type FontScript = 'latin' | 'cjk'
+export type FontPair = Record<FontScript, FontChoice>
+
+function isLocalFont(value: string): value is LocalFontId {
+  return value.startsWith(LOCAL_FONT_PREFIX) && value.slice(LOCAL_FONT_PREFIX.length).trim() !== ''
+}
+
+/** 界面明暗三档；system = 跟随 OS（由共享外观投影监听） */
 export type ColorMode = 'light' | 'dark' | 'system'
 
-/** 内容字体档：id → (拉丁族, 中文族)；theme = 跟随主题不覆盖 */
-type ContentFontId = 'theme' | 'inter' | 'segoe' | 'georgia' | 'system'
-const CONTENT_FONTS: Record<Exclude<ContentFontId, 'theme'>, { label: string; latin: string; cjk: string }> = {
-  inter: { label: 'Inter + 鸿蒙', latin: 'Inter', cjk: 'HarmonyOS Sans SC' },
-  segoe: { label: 'Segoe UI + 微软雅黑', latin: 'Segoe UI', cjk: 'Microsoft YaHei' },
-  georgia: { label: 'Georgia + 宋体（衬线）', latin: 'Georgia', cjk: 'SimSun' },
-  system: { label: '系统界面字体', latin: 'system-ui', cjk: 'system-ui' },
+const THEME_FONTS: FontPair = { latin: 'theme', cjk: 'theme' }
+const LEGACY_CONTENT_FONTS = new Map<string, FontPair>([
+  ['inter', { latin: 'local:Inter', cjk: 'local:HarmonyOS Sans SC' }],
+  ['segoe', { latin: 'local:Segoe UI', cjk: 'local:Microsoft YaHei' }],
+  ['georgia', { latin: 'local:Georgia', cjk: 'local:SimSun' }],
+  ['system', { latin: 'system-ui', cjk: 'system-ui' }],
+])
+const LEGACY_CODE_FONTS = new Map<string, FontPair>([
+  ['jetbrains', { latin: 'local:JetBrains Mono', cjk: 'theme' }],
+  ['consolas', { latin: 'local:Consolas', cjk: 'theme' }],
+  ['cascadia', { latin: 'local:Cascadia Code', cjk: 'theme' }],
+  ['mono', { latin: 'ui-monospace', cjk: 'theme' }],
+])
+
+function readFontChoice(value: unknown): FontChoice {
+  if (typeof value === 'string' && (value === 'system-ui' || value === 'ui-monospace' || isLocalFont(value))) {
+    return value
+  }
+  return 'theme'
 }
 
-/** 代码字体档：id → 等宽族；theme = 跟随主题不覆盖 */
-type CodeFontId = 'theme' | 'jetbrains' | 'consolas' | 'cascadia' | 'mono'
-const CODE_FONTS: Record<Exclude<CodeFontId, 'theme'>, { label: string; latin: string }> = {
-  jetbrains: { label: 'JetBrains Mono', latin: 'JetBrains Mono' },
-  consolas: { label: 'Consolas', latin: 'Consolas' },
-  cascadia: { label: 'Cascadia Code', latin: 'Cascadia Code' },
-  mono: { label: '系统等宽', latin: 'ui-monospace' },
+function readFontPair(value: unknown, legacy: ReadonlyMap<string, FontPair>): FontPair {
+  if (typeof value === 'string') {
+    return legacy.get(value) ?? { latin: readFontChoice(value), cjk: 'theme' }
+  }
+  if (typeof value !== 'object' || value === null) return THEME_FONTS
+  return {
+    latin: 'latin' in value ? readFontChoice(value.latin) : 'theme',
+    cjk: 'cjk' in value ? readFontChoice(value.cjk) : 'theme',
+  }
 }
 
-/** 强调色板：每色亮/暗双值（深底下同亮度色会糊，按面调两档）；default = 品牌蓝不覆盖 */
-type AccentId = 'default' | 'violet' | 'green' | 'teal' | 'orange' | 'red' | 'pink'
-const ACCENTS: Record<Exclude<AccentId, 'default'>, { label: string; light: string; dark: string }> = {
-  violet: { label: '紫', light: '#7c3aed', dark: '#a78bfa' },
-  green: { label: '绿', light: '#059669', dark: '#34d399' },
-  teal: { label: '青', light: '#0d9488', dark: '#2dd4bf' },
-  orange: { label: '橙', light: '#ea580c', dark: '#fb923c' },
-  red: { label: '红', light: '#dc2626', dark: '#f87171' },
-  pink: { label: '粉', light: '#db2777', dark: '#f472b6' },
-}
+type Accent = 'default' | HexColor
 
-/** UI 侧枚举出口（下拉/色板渲染用；保持 id 序 = 展示序） */
-export const CONTENT_FONT_OPTIONS = (Object.keys(CONTENT_FONTS) as Array<Exclude<ContentFontId, 'theme'>>).map(
-  (id) => ({ value: id, label: CONTENT_FONTS[id].label }),
-)
-export const CODE_FONT_OPTIONS = (Object.keys(CODE_FONTS) as Array<Exclude<CodeFontId, 'theme'>>).map((id) => ({
-  value: id,
-  label: CODE_FONTS[id].label,
-}))
-export const ACCENT_OPTIONS = (Object.keys(ACCENTS) as Array<Exclude<AccentId, 'default'>>).map((id) => ({
-  value: id,
-  label: ACCENTS[id].label,
-  light: ACCENTS[id].light,
-  dark: ACCENTS[id].dark,
-}))
 /** 代码字号档（px）；null = 跟随主题/回落 */
-export const CODE_FONT_SIZES = [12, 13, 14, 15, 16, 17, 18] as const
-
-/** 强调色取值（按当前明暗选面）；default 档返回 null = 不覆盖变量（用主题两面的品牌蓝） */
-export function accentValue(id: AccentId, dark: boolean): string | null {
-  if (id === 'default') return null
-  return dark ? ACCENTS[id].dark : ACCENTS[id].light
-}
+export const CODE_FONT_SIZES = Array.from({ length: 17 }, (_value, index) => index + 8)
+export const UI_FONT_SIZES = [11, 12, 13, 14, 15, 16] as const
+export const DEFAULT_UI_FONT_SIZE = 14
 
 interface AppearanceState {
   colorMode: ColorMode
+  uiFontSize: number
   /** 对话内容代码块行号（Streamdown lineNumbers prop；默认关 = 主流聊天惯例） */
   showLineNumbers: boolean
   /** 代码长行自动换行（html[data-code-wrap] 门控 → pre-wrap；默认关 = 横向滚动） */
@@ -75,18 +76,18 @@ interface AppearanceState {
   /** 代码字号（px；null = 跟随主题与回落） */
   codeFontSize: number | null
   /** 对话内容字体档（root.fontLatin/Cjk 覆盖） */
-  contentFont: ContentFontId
-  /** 代码字体档（codeBlock/inlineCode 的 fontLatin 覆盖） */
-  codeFont: CodeFontId
-  /** 强调色档（--chrome-accent 覆盖，亮暗双值） */
-  accent: AccentId
+  contentFont: FontPair
+  /** 代码字体档（codeBlock/inlineCode 共用两槽） */
+  codeFont: FontPair
+  accent: Accent
   setColorMode: (mode: ColorMode) => void
+  setUiFontSize: (size: number) => void
   setShowLineNumbers: (show: boolean) => void
   setCodeWrap: (wrap: boolean) => void
   setCodeFontSize: (size: number | null) => void
-  setContentFont: (font: ContentFontId) => void
-  setCodeFont: (font: CodeFontId) => void
-  setAccent: (accent: AccentId) => void
+  setContentFont: (font: FontPair) => void
+  setCodeFont: (font: FontPair) => void
+  setAccent: (accent: Accent) => void
 }
 
 /** 明暗裁决（纯函数）：dark 直选；system 看 OS；App effect 与 main.tsx 防闪白共用 */
@@ -94,37 +95,55 @@ export function isDarkMode(mode: ColorMode, systemDark: boolean): boolean {
   return mode === 'dark' || (mode === 'system' && systemDark)
 }
 
+function subscribeSystemDark(onChange: () => void): () => void {
+  const media = window.matchMedia('(prefers-color-scheme: dark)')
+  media.addEventListener('change', onChange)
+  return () => media.removeEventListener('change', onChange)
+}
+
+export function useIsDarkMode(): boolean {
+  const mode = useAppearanceStore((state) => state.colorMode)
+  const systemDark = useSyncExternalStore(
+    subscribeSystemDark,
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+    () => false,
+  )
+  return isDarkMode(mode, systemDark)
+}
+
 /** 用户覆盖 → 主题令牌（ChatTheme 编译前合并；优先级 用户 > 主题包 > 消费表回落） */
-export function buildUserTokens(a: {
-  codeFontSize: number | null
-  contentFont: ContentFontId
-  codeFont: CodeFontId
-}): ThemeTokens {
+export function buildUserTokens(a: Pick<AppearanceState, 'codeFontSize' | 'contentFont' | 'codeFont'>): ThemeTokens {
   const tokens: ThemeTokens = {}
   if (a.codeFontSize !== null) tokens['codeBlock.size'] = `${a.codeFontSize}px`
-  if (a.contentFont !== 'theme') {
-    tokens['root.fontLatin'] = CONTENT_FONTS[a.contentFont].latin
-    tokens['root.fontCjk'] = CONTENT_FONTS[a.contentFont].cjk
-  }
-  if (a.codeFont !== 'theme') {
-    const latin = CODE_FONTS[a.codeFont].latin
-    tokens['codeBlock.fontLatin'] = latin
-    tokens['inlineCode.fontLatin'] = latin
+  for (const [script, suffix] of [['latin', 'fontLatin'], ['cjk', 'fontCjk']] as const) {
+    const content = a.contentFont[script]
+    const code = a.codeFont[script]
+    if (content !== 'theme') tokens[`root.${suffix}`] = fontFamily(content)
+    if (code !== 'theme') {
+      tokens[`codeBlock.${suffix}`] = fontFamily(code)
+      tokens[`inlineCode.${suffix}`] = fontFamily(code)
+    }
   }
   return tokens
+}
+
+function fontFamily(font: Exclude<FontChoice, 'theme'>): string {
+  return isLocalFont(font) ? quoteFontFamily(font.slice(LOCAL_FONT_PREFIX.length)) : font
 }
 
 export const useAppearanceStore = create<AppearanceState>()(
   persist(
     (set) => ({
       colorMode: 'light',
+      uiFontSize: DEFAULT_UI_FONT_SIZE,
       showLineNumbers: false,
       codeWrap: false,
       codeFontSize: null,
-      contentFont: 'theme',
-      codeFont: 'theme',
+      contentFont: THEME_FONTS,
+      codeFont: THEME_FONTS,
       accent: 'default',
       setColorMode: (colorMode) => set({ colorMode }),
+      setUiFontSize: (uiFontSize) => set({ uiFontSize }),
       setShowLineNumbers: (showLineNumbers) => set({ showLineNumbers }),
       setCodeWrap: (codeWrap) => set({ codeWrap }),
       setCodeFontSize: (codeFontSize) => set({ codeFontSize }),
@@ -135,11 +154,15 @@ export const useAppearanceStore = create<AppearanceState>()(
     {
       name: 'cogent-appearance',
       merge: (persisted, current) => {
-        const raw = persisted as Partial<AppearanceState> | undefined
+        const raw = persisted as Partial<Record<keyof AppearanceState, unknown>> | undefined
         return {
           ...current,
           colorMode:
             raw?.colorMode === 'dark' || raw?.colorMode === 'system' ? raw.colorMode : 'light',
+          uiFontSize:
+            typeof raw?.uiFontSize === 'number' && (UI_FONT_SIZES as readonly number[]).includes(raw.uiFontSize)
+              ? raw.uiFontSize
+              : DEFAULT_UI_FONT_SIZE,
           showLineNumbers: raw?.showLineNumbers === true,
           codeWrap: raw?.codeWrap === true,
           // 字号是受控下拉写入的整数；越界/非整（手改档）按"跟随主题"处理
@@ -148,18 +171,9 @@ export const useAppearanceStore = create<AppearanceState>()(
             (CODE_FONT_SIZES as readonly number[]).includes(raw.codeFontSize)
               ? raw.codeFontSize
               : null,
-          contentFont:
-            raw?.contentFont !== undefined && (raw.contentFont === 'theme' || raw.contentFont in CONTENT_FONTS)
-              ? raw.contentFont
-              : 'theme',
-          codeFont:
-            raw?.codeFont !== undefined && (raw.codeFont === 'theme' || raw.codeFont in CODE_FONTS)
-              ? raw.codeFont
-              : 'theme',
-          accent:
-            raw?.accent !== undefined && (raw.accent === 'default' || raw.accent in ACCENTS)
-              ? raw.accent
-              : 'default',
+          contentFont: readFontPair(raw?.contentFont, LEGACY_CONTENT_FONTS),
+          codeFont: readFontPair(raw?.codeFont, LEGACY_CODE_FONTS),
+          accent: isHexColor(raw?.accent, true) ? raw.accent : 'default',
         }
       },
     },

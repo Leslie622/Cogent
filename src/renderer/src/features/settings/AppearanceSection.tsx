@@ -9,8 +9,10 @@
  * 报错引新件（与计划文档「toast 报错」的偏差，行内更朴素且不抢焦点）。
  */
 import { useRef, useState } from 'react'
-import { IconFileImport, IconTrash } from '@tabler/icons-react'
+import { IconChevronDown, IconFileImport, IconTrash } from '@tabler/icons-react'
+import { ColorPicker } from '@/components/ColorPicker'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -20,15 +22,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DEFAULT_THEME_ID, useThemeStore } from '@/stores/theme'
+import { DEFAULT_THEME_ID, useActiveTheme, useThemeStore } from '@/stores/theme'
+import type { HexColor } from '@/lib/hex-color'
 import {
-  ACCENT_OPTIONS,
-  CODE_FONT_OPTIONS,
   CODE_FONT_SIZES,
-  CONTENT_FONT_OPTIONS,
   useAppearanceStore,
+  useIsDarkMode,
   type ColorMode,
 } from '@/stores/appearance'
+import { FontPicker, readSystemFonts, type SystemFonts } from './FontPicker'
 import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
 
 /** 明暗三档（UI 文案；system = 跟随 OS 设置） */
@@ -41,42 +43,51 @@ const COLOR_MODES: Array<{ value: ColorMode; label: string }> = [
 /** 跟随主题档（字体/字号下拉的首项统一文案） */
 const FOLLOW_THEME = '跟随主题'
 
-/** 强调色板（行内一排色块；shadcn 无 color-picker 件，小组件照 ShortcutKbd
-    先例落在本文件）：默认档以品牌蓝图钉代表（值 = 不覆盖变量） */
-function AccentSwatches() {
+function AccentControl() {
   const accent = useAppearanceStore((s) => s.accent)
   const setAccent = useAppearanceStore((s) => s.setAccent)
-  const colorMode = useAppearanceStore((s) => s.colorMode)
-  // 色块预览按当前面取值（深色面看亮档），选中态 ring 2px
-  const dark = colorMode === 'dark'
+  const [pickerSeed, setPickerSeed] = useState<HexColor>('#0231fa')
   return (
-    <div className="flex items-center gap-1.5" role="group" aria-label="强调色">
-      <button
-        type="button"
-        aria-label="默认（品牌蓝）"
-        onClick={() => setAccent('default')}
-        className={`size-5 rounded-full ring-offset-2 ring-offset-background ${
-          accent === 'default' ? 'ring-2 ring-ring' : ''
-        }`}
-        style={{ background: dark ? 'oklch(0.72 0.21 264)' : '#0231fa' }}
-      />
-      {ACCENT_OPTIONS.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-label={option.label}
-          onClick={() => setAccent(option.value)}
-          className={`size-5 rounded-full ring-offset-2 ring-offset-background ${
-            accent === option.value ? 'ring-2 ring-ring' : ''
-          }`}
-          style={{ background: dark ? option.dark : option.light }}
-        />
-      ))}
+    <div className="flex flex-wrap items-center justify-end gap-1.5" role="group" aria-label="强调色">
+      <Popover
+        onOpenChange={(open) => {
+          if (open) {
+            const dark = document.documentElement.classList.contains('dark')
+            setPickerSeed(accent === 'default' ? (dark ? '#5f9cff' : '#0231fa') : accent)
+          }
+        }}
+      >
+        <PopoverTrigger
+          aria-label="选择颜色"
+          render={<Button variant="outline" />}
+          className="group"
+        >
+          <span
+            aria-hidden="true"
+            className="size-5 shrink-0 overflow-hidden rounded-md bg-muted bg-[conic-gradient(var(--border)_25%,transparent_0_50%,var(--border)_0_75%,transparent_0)] bg-size-[8px_8px]"
+          >
+            <span className="block size-full rounded-[inherit] border border-foreground/10 bg-(--chrome-accent)" />
+          </span>
+          <IconChevronDown
+            aria-hidden="true"
+            className="size-3 shrink-0 text-muted-foreground motion-safe:transition-transform group-data-popup-open:rotate-180"
+          />
+        </PopoverTrigger>
+        <PopoverContent aria-label="强调色选择器" align="end" className="w-64 gap-2.5 p-3">
+          <ColorPicker key={pickerSeed} initialColor={pickerSeed} onChange={setAccent} />
+        </PopoverContent>
+      </Popover>
+      <Button variant="ghost" size="default" disabled={accent === 'default'} onClick={() => setAccent('default')}>
+        恢复默认
+      </Button>
     </div>
   )
 }
 
 export function AppearanceSection() {
+  const theme = useActiveTheme()
+  const isDark = useIsDarkMode()
+  const fontTokens = isDark && theme.dark ? theme.dark : theme.tokens
   const themes = useThemeStore((s) => s.themes)
   const activeThemeId = useThemeStore((s) => s.activeThemeId)
   const setActive = useThemeStore((s) => s.setActive)
@@ -84,7 +95,7 @@ export function AppearanceSection() {
   const removeTheme = useThemeStore((s) => s.removeTheme)
   const [importError, setImportError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  // 外观偏好（appearance store；DOM 落点 html.dark / data-code-wrap / 强调色由 App 层挂）
+  // 外观偏好由公共窗口入口同步投影，分区只维护设置值。
   const colorMode = useAppearanceStore((s) => s.colorMode)
   const setColorMode = useAppearanceStore((s) => s.setColorMode)
   const showLineNumbers = useAppearanceStore((s) => s.showLineNumbers)
@@ -97,6 +108,16 @@ export function AppearanceSection() {
   const setContentFont = useAppearanceStore((s) => s.setContentFont)
   const codeFont = useAppearanceStore((s) => s.codeFont)
   const setCodeFont = useAppearanceStore((s) => s.setCodeFont)
+  const [systemFonts, setSystemFonts] = useState<SystemFonts>({ options: [], status: 'idle' })
+
+  const loadSystemFonts = () => {
+    if (systemFonts.status === 'loading' || systemFonts.status === 'ready') return
+    setSystemFonts({ options: [], status: 'loading' })
+    void readSystemFonts().then(
+      (options) => setSystemFonts({ options, status: 'ready' }),
+      () => setSystemFonts({ options: [], status: 'failed' }),
+    )
+  }
 
   const onPickFile = async (file: File | undefined) => {
     if (!file) return
@@ -133,61 +154,39 @@ export function AppearanceSection() {
             </SelectContent>
           </Select>
         </SettingsRow>
-        <SettingsRow title="强调色" desc="链接、模式标识与分屏光带的点缀色；色板按明暗双值切换">
-          <AccentSwatches />
+        <SettingsRow title="强调色" desc="链接、模式标识与分屏光带的点缀色">
+          <AccentControl />
         </SettingsRow>
         <SettingsRow
           title="内容字体"
-          desc="对话内容正文的字体；跟随主题时不覆盖主题包设定"
+          desc="分别设置对话正文的英文和中文字体"
         >
-          <Select
+          <FontPicker
+            label="内容字体"
+            kind="content"
             value={contentFont}
-            items={[{ value: 'theme', label: FOLLOW_THEME }, ...CONTENT_FONT_OPTIONS]}
-            onValueChange={(next) => {
-              if (next !== null) setContentFont(next)
-            }}
-          >
-            <SelectTrigger aria-label="内容字体" className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              <SelectGroup>
-                <SelectItem value="theme">{FOLLOW_THEME}</SelectItem>
-                {CONTENT_FONT_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            themeName={theme.name}
+            tokens={fontTokens}
+            systemFonts={systemFonts}
+            onOpen={loadSystemFonts}
+            onSave={setContentFont}
+          />
         </SettingsRow>
-        <SettingsRow title="代码字体" desc="代码块与行内代码的等宽字体">
-          <Select
+        <SettingsRow title="代码字体" desc="分别设置代码块与行内代码的英文和中文字体">
+          <FontPicker
+            label="代码字体"
+            kind="code"
             value={codeFont}
-            items={[{ value: 'theme', label: FOLLOW_THEME }, ...CODE_FONT_OPTIONS]}
-            onValueChange={(next) => {
-              if (next !== null) setCodeFont(next)
-            }}
-          >
-            <SelectTrigger aria-label="代码字体" className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              <SelectGroup>
-                <SelectItem value="theme">{FOLLOW_THEME}</SelectItem>
-                {CODE_FONT_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            themeName={theme.name}
+            tokens={fontTokens}
+            systemFonts={systemFonts}
+            onOpen={loadSystemFonts}
+            onSave={setCodeFont}
+          />
         </SettingsRow>
         <SettingsRow
           title="代码字体大小"
-          desc="代码块的基础字号；跟随主题时与正文字号一致"
+          desc="调整对话内容的代码块字号；跟随主题时采用当前内容样式"
         >
           <Select
             value={codeFontSize === null ? 'theme' : String(codeFontSize)}
@@ -223,7 +222,7 @@ export function AppearanceSection() {
             '对话内容（Markdown）的主题观感，主题包来自 Themd 主题工场导出（.themd.json）；删除当前主题自动回落默认'
           }
         >
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Select
               value={activeThemeId}
               items={[
@@ -261,7 +260,6 @@ export function AppearanceSection() {
             />
             <Button
               variant="outline"
-              size="sm"
               aria-label="导入主题包"
               onClick={() => fileInputRef.current?.click()}
             >
@@ -270,7 +268,6 @@ export function AppearanceSection() {
             </Button>
             <Button
               variant="outline"
-              size="sm"
               aria-label="删除当前主题"
               // 默认主题不可删（内置常量，不占用户存储）
               disabled={activeThemeId === DEFAULT_THEME_ID}

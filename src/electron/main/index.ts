@@ -1,5 +1,6 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, shell } from 'electron'
+import { pathToFileURL } from 'node:url'
+import { app, BrowserWindow, shell, type WebContents } from 'electron'
 import { HostManager } from './host/manager'
 import { refreshMcpAccessFile } from './host/mcp-access'
 import { resolveEngineNode } from './host/runtime'
@@ -100,10 +101,28 @@ function createWindow(): void {
   // 「关闭窗口时」分流（quit 放行 / minimize 藏到托盘 / ask 推 renderer 弹窗）
   installCloseBehavior(mainWindow)
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+  const rendererFile = join(import.meta.dirname, '../renderer/index.html')
+  const devRendererUrl = process.env.ELECTRON_RENDERER_URL
+  const rendererDocument = new URL(devRendererUrl ?? pathToFileURL(rendererFile).href).href.split('#')[0]
+  const { session } = mainWindow.webContents
+  // 默认 Session 也供其他窗口使用；仅主窗口应用文档的顶层可枚举字体，其他权限保留原默认行为。
+  const allowPermission = (permission: string, contents: WebContents | null, details: {
+    isMainFrame: boolean
+    requestingUrl?: string
+  }): boolean =>
+    permission !== 'local-fonts' || (details.isMainFrame &&
+      contents === mainWindow?.webContents && details.requestingUrl?.split('#')[0] === rendererDocument)
+  session.setPermissionCheckHandler((contents, permission, _origin, details) =>
+    allowPermission(permission, contents, details),
+  )
+  session.setPermissionRequestHandler((contents, permission, callback, details) =>
+    callback(allowPermission(permission, contents, details)),
+  )
+
+  if (devRendererUrl) {
+    void mainWindow.loadURL(devRendererUrl)
   } else {
-    void mainWindow.loadFile(join(import.meta.dirname, '../renderer/index.html'))
+    void mainWindow.loadFile(rendererFile)
   }
 }
 
