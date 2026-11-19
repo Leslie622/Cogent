@@ -171,7 +171,7 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
               // 与 + 钮的间距由 addon 的 gap-1 统一接管（曾 ml-2+gap-2 双层叠加）；
               // h-7：工具行统一 28px 高（2026-11-16 定调，曾 h-6 偏扁），圆角走
               // xs 档原生不覆写
-              'h-7 gap-1.5 pl-2 pr-1 text-sm hover:bg-accent-foreground/5',
+              'h-7 gap-1.5 pl-2 pr-1 text-xs hover:bg-accent-foreground/5',
               current === 'auto'
                 ? 'text-warning hover:text-warning'
                 : current === 'autonomous'
@@ -185,7 +185,7 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
         {/* 档位图标 17px（2026-11-16 与模型触发钮厂商标同步定 17；曾 size-4.5=18） */}
         <TriggerIcon className="size-[17px]" strokeWidth={2.25} />
         <span className="composer-label">{MODES[current].label}</span>
-        {/* 箭头不单独给色 —— 继承按钮主体色，与主体统一；随主体大一号（14→15px） */}
+        {/* 箭头不单独给色 —— 继承按钮主体色，与主体统一；随主体大一号（12→14px） */}
         <IconChevronDown className="composer-chevron size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="min-w-64">
