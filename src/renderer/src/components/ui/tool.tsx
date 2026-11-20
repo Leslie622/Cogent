@@ -33,6 +33,7 @@ import {
 import { CodeBlock, CodeBlockContent } from '@/components/ui/code-block'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useAppearanceStore } from '@/stores/appearance'
 import { askUserSummary, diffCount, mcpDisplayName, parseToolSummary, toolKindLabel, type ToolDisplayStatus } from './tool-display'
 
 export type ToolStatus = ToolDisplayStatus
@@ -166,13 +167,16 @@ export function ToolCard({
   // 开合只在"有输出可看"时有意义；运行中/拒绝是单行（官方同款），
   // 折叠状态留给完成/失败态
   const [open, setOpen] = useState(false)
+  const showDetails = useAppearanceStore((state) => state.outputVerbosity === 'high')
   const toolIcon = TOOL_ICON[name] ?? <TerminalIcon />
   const kindLabel = toolKindLabel(name, status)
   // 主文案：MCP 显示 server.tool（裸工具名无识别量），ask_user 数问题数
   // （参数是 questions 数组，裸剥壳会给用户看原始 JSON），其余剥 summary 壳
   const primary =
-    mcpDisplayName(name) ?? (name === 'ask_user' ? askUserSummary(summary) : parseToolSummary(name, summary))
-  const counts = diff !== undefined ? diffCount(diff) : undefined
+    mcpDisplayName(name) ?? (showDetails
+      ? (name === 'ask_user' ? askUserSummary(summary) : parseToolSummary(name, summary))
+      : name)
+  const counts = showDetails && diff !== undefined ? diffCount(diff) : undefined
 
   /** 头行（icon + 类别词 + 主文案 + 尾标）；running 的扫光由 TraceLine
    *  data-status=running 对 trace-title 的 shimmer 带出（类别词即标题） */
@@ -189,10 +193,13 @@ export function ToolCard({
           <span className="text-red-600 dark:text-red-400">-{counts.removed}</span>
         </span>
       )}
-      {status === 'error' && <ErrorStatus message={result} />}
+      {status === 'error' && <ErrorStatus message={showDetails ? result : undefined} />}
       {status === 'blocked' && <TraceDescription>已拒绝</TraceDescription>}
     </TraceLine>
   )
+
+  // 简洁档不挂载具体内容及展开入口；只改变显示，不丢弃工具记录。
+  if (!showDetails) return line
 
   if (status === 'running' || status === 'blocked') {
     // 运行中：类别词扫光、图标静态（zcode 定调）；拒绝：置灰单行。

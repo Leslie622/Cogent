@@ -14,6 +14,8 @@
 import { Children, useEffect, useState } from 'react'
 import { WorkingSpinner } from '@/components/WorkingSpinner'
 import { MessageScrollerPinnedRow } from '@/components/ui/message-scroller'
+import { useAppearanceStore } from '@/stores/appearance'
+import { formatDuration, type DurationPrecision } from '@/lib/format-duration'
 import {
   TraceCollapsible,
   TraceCollapsibleContent,
@@ -24,22 +26,14 @@ import {
   TraceTitle,
 } from '@/components/ui/trace'
 
-/** 时长统一 s 两位小数（2026-11-11 用户定调：不显 ms，码表口径亚秒可见 ——
- *  6ms → 0.01s、140ms → 0.14s、2400ms → 2.40s）。
- *  定义在此导出给 MessageRow 的 UsageLine / Reasoning 的时长尾标共用
- *  （单一实现避免多处口径漂移） */
-export function formatDuration(ms: number): string {
-  return `${(ms / 1000).toFixed(2)}s`
-}
-
 /** 回合终态 */
 export type RunPhase = 'done' | 'stopped' | 'failed'
 
 /** 头条文案：done 带墙钟时长（数据缺失兜底不带数）；stopped/failed 用状态词 */
-function headerLabel(phase: RunPhase, durationMs: number | undefined): string {
+function headerLabel(phase: RunPhase, durationMs: number | undefined, precision: DurationPrecision): string {
   if (phase === 'stopped') return '已停止'
   if (phase === 'failed') return '出错了'
-  return durationMs !== undefined ? `已工作 ${formatDuration(durationMs)}` : '已工作'
+  return durationMs !== undefined ? `已工作 ${formatDuration(durationMs, precision)}` : '已工作'
 }
 
 /** 工作行局部时钟：只更新工作行自身，不惊动外层流式树。
@@ -49,6 +43,7 @@ function headerLabel(phase: RunPhase, durationMs: number | undefined): string {
  *  相符。focus/visibility 即刻对齐：被环境节流的残余路径下，看向窗口瞬间
  *  数字就是准的 */
 function useElapsed(startTs: number): string {
+  const precision = useAppearanceStore((state) => state.durationPrecision)
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 100)
@@ -61,7 +56,7 @@ function useElapsed(startTs: number): string {
       document.removeEventListener('visibilitychange', refresh)
     }
   }, [startTs])
-  return formatDuration(Math.max(now - startTs, 0))
+  return formatDuration(Math.max(now - startTs, 0), precision)
 }
 
 /** 回合过程轨迹：终态头条 + 折叠体（children = 过程项，间距在此统一 ——
@@ -78,11 +73,12 @@ export function RunTrace({
 }) {
   // undefined = 未被用户动过，交出控制权跟随默认（D4）
   const [open, setOpen] = useState<boolean | undefined>(undefined)
+  const precision = useAppearanceStore((state) => state.durationPrecision)
   const header = (
     <TraceLine status={phase === 'failed' ? 'error' : undefined}>
       {/* 终态头条一律不带图标（2026-11-18 用户定调）：状态词自足，failed 的
           异常性由整行红字（TraceLine data-status=error）承担 */}
-      <TraceTitle>{headerLabel(phase, durationMs)}</TraceTitle>
+      <TraceTitle>{headerLabel(phase, durationMs, precision)}</TraceTitle>
     </TraceLine>
   )
   // 无过程体（纯文本回合）：头条单行直出，不挂折叠机构（空折叠体 + 箭头是噪音）

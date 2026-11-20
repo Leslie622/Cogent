@@ -13,7 +13,8 @@ import { Message, MessageContent, MessageFooter } from '@/components/ui/message'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Markdown } from '@/components/ui/markdown'
 import { Reasoning } from '@/components/ui/reasoning'
-import { formatDuration } from '@/components/ui/run-trace'
+import { formatDuration } from '@/lib/format-duration'
+import { useAppearanceStore } from '@/stores/appearance'
 import { formatTokens } from './ContextIndicator'
 import { CompactionBar } from './CompactionBar'
 import type { MessageUsage } from '@/env.d'
@@ -59,7 +60,8 @@ export function formatCost(usd: number, estimated?: boolean): string {
 /**
  * assistant 消息元信息行（shadcn message 的 footer 位）：输入/输出 token +
  * 缓存读/写 + 成本 + 模型耗时（+ 工具耗时，回合聚合行）。数据无则整行不渲染 ——
- * 流式占位没有 usage，统计行随 run.completed 在回答完成时出现。零值省略：
+ * 流式占位没有 usage，统计行随 run.completed 在回答完成时出现；简洁模式整行隐藏。
+ * 零值省略：
  * 无缓存命中的回答不显示缓存项、无定价模型不显示成本（"没发生"与"值为 0"
  * 在此同义，常显一排 0 是噪音）。时长呈现：单条消息/纯工具回合只有模型时长，
  * 裸数字（主流形态）；回合聚合行带工具打点时两者并挂标签（`5.7s 模型 ·
@@ -75,6 +77,9 @@ export function UsageLine({
   /** 工具执行墙钟（区间并集，TurnGroup sumToolMs）；仅回合聚合行传入 */
   toolMs?: number
 }) {
+  const precision = useAppearanceStore((state) => state.durationPrecision)
+  const showDetails = useAppearanceStore((state) => state.outputVerbosity === 'high')
+  if (!showDetails) return null
   const parts: string[] = []
   if (usage) {
     parts.push(`↑ ${formatTokens(usage.input)}`, `↓ ${formatTokens(usage.output)}`)
@@ -85,9 +90,9 @@ export function UsageLine({
   }
   if (durationMs !== undefined) {
     if (toolMs !== undefined) {
-      parts.push(`${formatDuration(durationMs)} 模型`, `${formatDuration(toolMs)} 工具`)
+      parts.push(`${formatDuration(durationMs, precision)} 模型`, `${formatDuration(toolMs, precision)} 工具`)
     } else {
-      parts.push(formatDuration(durationMs))
+      parts.push(formatDuration(durationMs, precision))
     }
   }
   if (parts.length === 0) return null

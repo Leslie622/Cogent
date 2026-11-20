@@ -109,7 +109,7 @@ describe('TurnGroup 零内容组', () => {
   })
 
   it('live 相位：乐观消息刚上屏就有唯一流内工作行与码表', () => {
-    const turn: ChatTurn = { user: userMsg('u1'), items: [] }
+    const turn: ChatTurn = { user: userMsg('u1', Date.now()), items: [] }
     const { container } = render(<TurnGroup turn={turn} phase="live" />)
     const source = container.querySelector('[data-slot="live-working-line-source"]')!
     expect(screen.getAllByText('工作中')).toHaveLength(1)

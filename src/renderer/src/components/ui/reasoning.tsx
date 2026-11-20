@@ -7,7 +7,8 @@
  * 自动展开让逐 token 增长不断撑高布局，是工作中行上下跳动的主源）；
  * 展开态限高内部滚动 + 底部跟随（贴近底部才吸底，上翻即停），纯文本渲染
  * （不走 Markdown —— 每 chunk 重跑解析是卡顿源）。
- * 开合语义：用户手动优先，缺省收起；完成态标题「思考」+「持续了 Xs」尾标。
+ * 开合语义：详细模式用户手动优先、缺省收起；简洁模式仅留状态与耗时，
+ * 不挂摘要、全文或展开入口。完成态标题「思考」+「持续了 Xs」尾标。
  */
 import { useEffect, useRef, useState } from 'react'
 import { BrainIcon } from 'lucide-react'
@@ -21,7 +22,8 @@ import {
   TraceLine,
   TraceTitle,
 } from '@/components/ui/trace'
-import { formatDuration } from '@/components/ui/run-trace'
+import { formatDuration } from '@/lib/format-duration'
+import { useAppearanceStore } from '@/stores/appearance'
 
 /** 流式摘要取末个非空行（zcode resolveReasoningStreamingSummary 同款）：
  *  思考文本常以换行分段，末行即"正在想什么"的当下快照 */
@@ -50,6 +52,8 @@ export function Reasoning({
   durationMs?: number
 }) {
   const [open, setOpen] = useState(defaultOpen)
+  const precision = useAppearanceStore((state) => state.durationPrecision)
+  const showDetails = useAppearanceStore((state) => state.outputVerbosity === 'high')
   const summaryRef = useRef<HTMLSpanElement>(null)
   const [summaryOverflowing, setSummaryOverflowing] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -62,7 +66,7 @@ export function Reasoning({
     viewport.scrollLeft = viewport.scrollWidth
     const overflowing = viewport.scrollWidth > viewport.clientWidth + 1
     setSummaryOverflowing((prev) => (prev === overflowing ? prev : overflowing))
-  }, [text, open])
+  }, [text, open, showDetails])
 
   // 展开态底部跟随：贴近底部（<24px）时新内容吸底；用户上翻即停跟随
   useEffect(() => {
@@ -71,7 +75,7 @@ export function Reasoning({
     if (viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 24) {
       viewport.scrollTop = viewport.scrollHeight
     }
-  }, [text, open])
+  }, [text, open, showDetails])
 
   const line = (
     <TraceLine status={running ? 'running' : undefined}>
@@ -79,7 +83,7 @@ export function Reasoning({
         <BrainIcon />
       </TraceIcon>
       <TraceTitle className="shrink-0">{running ? '正在思考' : '思考'}</TraceTitle>
-      {running && !open && text.length > 0 && (
+      {showDetails && running && !open && text.length > 0 && (
         <span
           ref={summaryRef}
           className={cn(
@@ -91,12 +95,12 @@ export function Reasoning({
         </span>
       )}
       {!running && durationMs !== undefined && (
-        <TraceDescription>持续了 {formatDuration(durationMs)}</TraceDescription>
+        <TraceDescription>持续了 {formatDuration(durationMs, precision)}</TraceDescription>
       )}
     </TraceLine>
   )
 
-  if (text.length === 0) return line
+  if (!showDetails || text.length === 0) return line
 
   return (
     <TraceCollapsible open={open ?? false} onOpenChange={setOpen}>
