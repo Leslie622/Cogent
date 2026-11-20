@@ -82,6 +82,8 @@ declare global {
       getSettings: () => Promise<AppSettingsFile>
       /** 写会话级偏好（字段合并） */
       saveSettings: (partial: Partial<Omit<AppSettingsFile, 'version'>>) => Promise<{ ok: true }>
+      /** 扫描存储根统计占用（设置页·存储分区）；形状与 shared/ipc.ts 镜像 */
+      getStorageUsage: () => Promise<StorageUsageResult>
       /** 窗口控制（自绘 header 专用） */
       minimizeWindow: () => Promise<void>
       toggleMaximizeWindow: () => Promise<void>
@@ -179,6 +181,20 @@ export interface AppSettingsFile {
 export interface NotifyToastPayload {
   title: string
   body: string
+}
+
+/** 存储占用快照（与 shared/ipc.ts 的 StorageUsageResult/Entry 镜像）：
+ *  顶层条目字节数事实，归类/排序/格式化在 features/settings/storage-view.ts */
+export interface StorageUsageEntry {
+  name: string
+  dir: boolean
+  bytes: number
+}
+
+export interface StorageUsageResult {
+  root: string
+  totalBytes: number
+  entries: StorageUsageEntry[]
 }
 
 /** 会话摘要（与 protocol SessionSummary 镜像；optional 字段=未设置） */

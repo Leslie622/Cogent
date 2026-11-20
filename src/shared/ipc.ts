@@ -45,6 +45,8 @@ export const IPC = {
   settingsGet: 'settings:get',
   /** renderer → main：写会话级偏好（字段合并语义，落 ~/.cogent/settings.json） */
   settingsSave: 'settings:save',
+  /** renderer → main：扫描存储根统计磁盘占用（设置页·存储分区；只读，无载荷） */
+  storageUsage: 'storage:usage',
   /** renderer → main：弹系统目录选择框（创建项目/工作区绑定用）；返回所选绝对路径或 null */
   workspacePickDirectory: 'workspace:pick-directory',
   /** renderer → main：系统默认程序打开路径/目录（项目「在资源管理器中打开」等）；
@@ -83,6 +85,22 @@ export const IPC = {
   /** main → renderer：最大化状态变化（payload: boolean isMaximized） */
   windowState: 'window:state-changed'
 } as const
+
+/** 存储根顶层条目（storage:usage 响荷）：目录条目的 bytes = 递归累计 */
+export interface StorageUsageEntry {
+  /** 顶层文件名 / 目录名（如 sessions、settings.json） */
+  name: string
+  dir: boolean
+  bytes: number
+}
+
+/** storage:usage 响荷：存储根绝对路径 + 顶层条目占用（totalBytes = 条目之和）。
+ * 归类成展示分类是渲染层的纯函数（features/settings/storage-view.ts），壳契约只报事实 */
+export interface StorageUsageResult {
+  root: string
+  totalBytes: number
+  entries: StorageUsageEntry[]
+}
 
 /** toast 载荷：文案由 renderer 生成（main 无语言上下文，学 zcode 拒绝兜底文案） */
 export interface NotifyToastPayload {

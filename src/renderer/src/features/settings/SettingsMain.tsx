@@ -13,6 +13,7 @@ import { AppearanceSection } from './AppearanceSection'
 import { NotificationsSection } from './NotificationsSection'
 import { ModelsSection } from './ModelsSection'
 import { ArchivedChatsSection } from './ArchivedChatsSection'
+import { StorageSection } from './StorageSection'
 import { McpSection } from './McpSection'
 import { SkillSection } from './SkillSection'
 import { findSettingsItem } from './data'
@@ -25,6 +26,7 @@ const SECTIONS: Partial<Record<SettingsSectionId, ComponentType>> = {
   notifications: NotificationsSection,
   models: ModelsSection,
   'archived-chats': ArchivedChatsSection,
+  storage: StorageSection,
   connections: McpSection,
   skills: SkillSection,
 }

@@ -176,6 +176,16 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 - 通知页三组：通知（三行触发条件，Select/Switch）+ 提醒方式（toast/提示音
   两个正交 Switch + 系统设置跳转按钮，Linux 隐藏）+ 提示音（音量/音调滑杆
   w-40 + 三类声音源行：文件名截断显示 + 选择/试听/恢复默认）。
+- 存储页两组：空间占用 = 总量行（正文阶 + semibold tabular-nums 数值，行尾
+  outline icon-sm 刷新钮）+ 分类分段条（h-4 rounded-sm，2026-11-20 用户定调弃胶囊；
+  条高仅 16px，CSS 把 ≥8px 圆角钳成半圆，sm 6px 才收得出方角端头；段宽按字节
+  flexGrow 分配，免百分比取整误差；空根不画）+ 图例（size-2 色点 + 标签 + 小字阶
+  数值）+ 「占用明细」折叠（裸 button 组头、箭头 -90° 旋转语言，开合走
+  Collapsible 导航变体 200ms 过渡，归档组同款；行只有两档 —— 会话转录单列 +
+  「其他」聚合，不铺内部条目清单）；数据文件夹 =
+  SettingsRow + 等宽路径（select-text、break-all）+ 浏览钮（default 档）。
+  分类色板真源在 storage-view.ts（amber/emerald/blue/violet + 主题灰做
+  「配置与其他」，深色档提亮一档）。
 - 模型设置单独用 master-detail：页头同走 `SettingsHeader`（与其余分区同列位，
   切页标题不跳位），主体卡与页头同列（外层 `mx-auto max-w-3xl px-10`，卡片边 =
   列边，同其余分区组卡的对齐语言；zcode 官方 master-detail 亦同容器无限宽例外）。

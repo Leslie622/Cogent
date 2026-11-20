@@ -7,6 +7,7 @@ import {
   type NotifyKind,
   type NotifyToastPayload,
   type SettingsFile,
+  type StorageUsageResult,
   type WindowCloseAnswer
 } from '../../shared/ipc'
 import type {
@@ -109,6 +110,8 @@ const api = {
   /** 写会话级偏好（字段合并） */
   saveSettings: (partial: Partial<Omit<SettingsFile, 'version'>>): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.settingsSave, partial),
+  /** 扫描存储根统计占用（设置页·存储分区）；根路径 + 顶层条目字节数 */
+  getStorageUsage: (): Promise<StorageUsageResult> => ipcRenderer.invoke(IPC.storageUsage),
   /** 打开（或聚焦已开的）运行时控制台窗口 */
   openConsole: (): Promise<void> => ipcRenderer.invoke(IPC.consoleOpen),
   /** 打开（或聚焦已开的）内嵌页面 demo 窗口（webview 容器，阶段 3a） */

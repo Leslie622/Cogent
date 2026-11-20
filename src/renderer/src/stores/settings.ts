@@ -15,6 +15,7 @@ export type SettingsSectionId =
   | 'computer-control'
   | 'shortcuts'
   | 'archived-chats'
+  | 'storage'
   | 'plugins'
   | 'connections'
   | 'skills'
