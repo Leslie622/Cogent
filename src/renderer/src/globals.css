@@ -98,6 +98,10 @@
   --sidebar-ring: oklch(0.708 0 0);
   /* 分屏线光带强调色（拖拽反馈）：亮色饱和蓝，暗色提亮一档降刺激 */
   --chrome-accent: #0231fa;
+  /* 输入卡浮层投影：shadcn 无官方阴影 token（Tailwind 内置刻度明暗同值），
+     按颜色 token 同款模式自建 —— @theme inline 映射成 shadow-composer 工具类；
+     浅深色分别取值，深色提黑 alpha 才可见（浅色 0.05 投到深底上直接消失） */
+  --composer-shadow: 0 4px 12px rgb(0 0 0 / 0.05);
 }
 
 .dark {
@@ -136,6 +140,8 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
   --chrome-accent: oklch(0.72 0.21 264);
+  /* 深色投影：同几何提黑 alpha（0.05 在深底上不可见），仍为黑色不反白光 */
+  --composer-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
 }
 
 /* Streamdown（markdown 渲染）的 Tailwind 类在包的 dist 里 —— v4 自动扫描不进
@@ -207,6 +213,8 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  /* 阴影 token：原始值在 :root/.dark 分档，这里只映射（shadow-composer 类） */
+  --shadow-composer: var(--composer-shadow);
 }
 
 /* ── 分屏线光带（拖拽时跟随指针；hooks/use-divider-glow 逐帧直写变量） ──
@@ -241,11 +249,16 @@
   transition: background-color 0.18s linear;
 }
 
-/* ── chrome L 面（头部+应用侧栏）底色：薄荷绿微渐变 ──
-   参考稿取色后按用户意见调淡（同色相 ~150°，仅明度/饱和度递减的"呼吸感"底）；
-   深色模式属后续件 */
+/* ── chrome L 面（头部+应用侧栏）底色 ──
+   亮色：薄荷绿微渐变（参考稿取色后按用户意见调淡，同色相 ~150°，
+   仅明度/饱和度递减的"呼吸感"底）。
+   深色不用皮肤（2026-11-20 用户定调）：中性暗底直接取 --sidebar
+   （比主背景亮一档保层级），不另设暗色渐变 */
 .chrome-surface {
   background: linear-gradient(135deg, #e0f3e9 0%, #eef7f2 45%, #fbfdfb 100%);
+}
+.dark .chrome-surface {
+  background: var(--sidebar);
 }
 
 /* ── 滚动渐隐（scroll-fade-*）：内容滚出视口边界处透明度渐隐，不硬截断 ──

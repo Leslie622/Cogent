@@ -15,8 +15,9 @@ const inputGroupVariants = cva(
         default: "has-disabled:bg-input/50 has-disabled:opacity-50 dark:bg-input/30 dark:has-disabled:bg-input/80",
         // 空输入只禁用发送钮，不能让整张输入卡随它一起变灰；深色用抬亮的卡面保持层次。
         // 聊天卡圆角比原生表单大两档（rounded-2xl，对齐 zcode composer；twMerge 盖掉基类 rounded-lg）。
-        // 阴影换 1px 黑色环形（2026-11-19 用户定调，浅深色同值，取代原双层投影）。
-        composer: "z-10 rounded-2xl border-foreground/10 bg-background shadow-[0_0_0_1px_rgb(0_0_0/0.05)] dark:border-white/12 dark:bg-card",
+        // 浮层投影走 globals.css 的 shadow-composer token（2026-11-20 取代 1px 环形，
+        // 浅深色各取一档 —— 深色同几何提黑 alpha，值与色板一起维护在主题层）。
+        composer: "z-10 rounded-2xl border-foreground/10 bg-background shadow-composer dark:border-white/12 dark:bg-card",
       },
     },
     defaultVariants: {

@@ -42,10 +42,10 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 
 | 对象 | 配方 |
 | --- | --- |
-| header + app-sidebar | `.chrome-surface`，135° 薄荷渐变 `#e0f3e9 → #eef7f2 → #fbfdfb` |
+| header + app-sidebar | `.chrome-surface`：亮色 135° 薄荷渐变 `#e0f3e9 → #eef7f2 → #fbfdfb`；深色不用皮肤，中性暗底 `--sidebar` |
 | content-sidebar / main | `--content-sidebar`（`#f2f8f4`）/ 纯白，形成层级 |
 | hover / active | 黑低透明软叠 `bg-foreground/5` 或 `bg-accent-foreground/5`；active 保持同一深度 |
-| 行内小钮 | 白卡上 hover `/5`，已有行底上 `/15` |
+| 行内小钮 | 一律原生 ghost（hover `bg-muted`）；软叠配方只属于自绘行，不落在 Button 调用点 |
 | 文字 | 实色 token；次级 `muted-foreground`，placeholder `--placeholder`；层级靠实色深浅 |
 | 语义色 | destructive 错误红；warning 琥珀 `oklch(0.666 0.155 70)`；chrome-accent 品牌蓝 `#0231fa` |
 | 聚焦 | 组件共用 `--focus-width: 1px` 与 `--focus-color` 内贴实线，浅色 `oklch(0.556 0 0)`、深色 `oklch(0.708 0 0)`，默认 150ms 淡入淡出；已有动效的控件沿用其时长，reduced-motion 直接切换。原生 input 保留调用处样式；对话输入卡 composer 不显示聚焦描边，普通 Input、Textarea、InputGroup 保留统一效果 |
@@ -92,7 +92,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 | 聊天重命名 | 聊天右键菜单“重命名”打开 Dialog + Input；预填并聚焦全选；原生取消/保存按钮，Enter 保存、Esc 关闭；错误留在弹窗 |
 | 侧栏折叠 | `CollapsibleContent variant="navigation"`，200ms ease-out；keepMounted，收起 inert，结束后 hidden |
 | 等待确认 tag | 占行尾动作簇的位置，常显；emerald `/15` 背景 + 实色深绿文字 + 小呼吸点 |
-| 输入区 | `InputGroup variant="composer"`：`rounded-2xl` 大圆角、薄边、1px 黑色环形阴影 `0 0 0 1px rgba(0,0,0,0.05)`（浅深色同值）；浅色白卡，深色用抬亮的 card 底色。发送钮禁用不降低整卡透明度；聚焦不改变描边、底色与阴影。新聊天的灰色信息条两侧内收 16px、下沿被输入卡覆盖 12px，形成前后叠层；外观原理见[输入区外观](技术笔记/输入区外观.md) |
+| 输入区 | `InputGroup variant="composer"`：`rounded-2xl` 大圆角、薄边、浮层投影 `shadow-composer` token（浅 `0 4px 12px rgb(0 0 0/0.05)`，深同几何提黑 alpha 0.4；shadcn 无官方阴影 token，自建于 globals.css）；浅色白卡，深色用抬亮的 card 底色。发送钮禁用不降低整卡透明度；聚焦不改变描边、底色与阴影。新聊天的灰色信息条两侧内收 16px、下沿被输入卡覆盖 12px，形成前后叠层；外观原理见[输入区外观](技术笔记/输入区外观.md) |
 | 附件区 | 同一 InputGroup 内、正文上方的 block-start addon；空时不占位。输入区 AttachmentGroup 自动换行，最高 160px，超过后纵向滚动；不加边缘渐隐 mask，单卡也完整显示；图片和文件卡外层统一 rounded-lg（10px）；图片用 Attachment image 变体的 45px 正方形缩略图，不显示文件名/大小/读取说明，简短导入/错误状态放底部，重试放左上；文件/视频用 sm、file 变体，最小高 45px、按内容收缩且最大宽度 180px，文件名单行省略，悬停显示全名；关闭统一用 AttachmentRemove 放右上角，悬停卡片或按钮获键盘焦点时显示，图片/文件同位置同尺寸，文件预留按钮位置避免遮挡或跳动；输入与历史沿用同一尺寸规则 |
 | 附件反馈 | 排队项显示“等待导入”/图片“等待中”，复制项显示进度；部分接收后的未添加数量位于输入卡底部，ghost/xs按钮打开Popover查看全部文件名与原因，明细最高160px纵向滚动，icon-xs按钮清除提示；不在正常就绪卡添加内部机制说明 |
 | 目录引用 | 加号触发DropdownMenu，含“添加图片或文件”“引用文件夹”；目录沿用最小45px高、最大180px、10px圆角文件卡，文件夹图标、名称、路径副标题，整卡可打开目录；无大小/另存，移除仍右上hover显示；历史与普通文件同行靠右 |
@@ -204,7 +204,8 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   配标题扫光和 tabular-nums 码表；停止在途文字为“正在停止”。
 - WorkingSpinner 保留 css-loaders l5 的整盒三角、伪元素继承、4s/2s 和质心转轴
   `50% 66%`；叠加 3s 呼吸，三层延迟为 0/-1/-2s。本体透明度与伪元素相乘，
-  形成整体明暗及层间错相。前景色跟主题，1em 派生尺寸，光学上提 0.075em。
+  形成整体明暗及层间错相。前景色跟主题，1em 派生尺寸（text-xs 档，比行内
+  正文小一号），光学上提 0.075em。
   替换动效只动本组件与 `.working-spinner` CSS，保持 WorkingLine 接线。
   三角绕质心转 120° 会映射回自身，分相方案不能制造不同叶片位置。
 - 工具图标保持静态，类别词运行态扫光；失败仅“执行失败”点状下划线为红，

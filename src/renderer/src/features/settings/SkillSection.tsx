@@ -333,7 +333,7 @@ export function SkillSection() {
           <div className="text-sm">
             技能 <span className="text-muted-foreground">{count}</span>
           </div>
-          <div className="ml-auto flex h-8 w-56 items-center gap-2 rounded-full bg-accent-foreground/5 px-3">
+          <div className="ml-auto flex h-8 w-56 items-center gap-2 rounded-lg bg-accent-foreground/5 px-3">
             <IconSearch className="size-4 shrink-0 text-muted-foreground" />
             <input
               type="text"
@@ -347,10 +347,10 @@ export function SkillSection() {
       }
     >
       {skills === null ? (
-        <div className="mt-8 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">加载中…</div>
+        <div className="mt-8 rounded-lg border border-border px-5 py-4 text-xs text-muted-foreground">加载中…</div>
       ) : count === 0 ? (
         userScope ? (
-          <div className="mt-8 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-12 text-center">
+          <div className="mt-8 flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-12 text-center">
             <div className="text-sm font-medium">还没有技能</div>
             <div className="text-xs text-muted-foreground">新建一枚，或把 SKILL.md 技能包放进 ~/.cogent/skills（自动发现）。</div>
             <div className="mt-2 flex items-center gap-2">
@@ -361,12 +361,12 @@ export function SkillSection() {
             </div>
           </div>
         ) : (
-          <div className="mt-8 rounded-xl border border-dashed border-border px-6 py-10 text-center text-xs text-muted-foreground">
+          <div className="mt-8 rounded-lg border border-dashed border-border px-6 py-10 text-center text-xs text-muted-foreground">
             该项目还没有技能 —— 可在本页新建（写入项目 .cogent/skills），或依赖用户级技能。
           </div>
         )
       ) : visible.length === 0 ? (
-        <div className="mt-8 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">
+        <div className="mt-8 rounded-lg border border-border px-5 py-4 text-xs text-muted-foreground">
           没有匹配「{query.trim()}」的技能
         </div>
       ) : (

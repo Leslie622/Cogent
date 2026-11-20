@@ -30,7 +30,6 @@ import {
   IconSquare,
   IconStack2Filled,
 } from '@tabler/icons-react'
-import { cn } from 'cn'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
@@ -87,8 +86,6 @@ import { groupTurns, TurnGroup, type TurnPhase } from './TurnGroup'
 // ConversationIndex/ModelMenu 经本文件取消息渲染形状 —— 再导出保持既有导入路径
 export type { MessageLike } from './MessageRow'
 
-/** 白底行/钮 hover：黑 5% 软叠（全局配方，同 content-sidebar 行） */
-const HOVER = 'hover:bg-accent-foreground/5 hover:text-foreground'
 const EMPTY_TURN_OUTCOMES: SessionBucket['turnOutcomes'] = {}
 
 /** 相对时间文案（信息卡「最近活动」行用）：刚刚 / N 分钟前 / N 小时前 /
@@ -143,7 +140,7 @@ function ChatHeader({
           >
             {/* 图标是按钮（同「更多」钮 ghost 同款，hover 出底）；点击行为空位
                 —— 同头部「更多」钮先占位后接线的惯例 */}
-            <Button variant="ghost" size="icon-sm" className={cn(HOVER, 'text-muted-foreground')} aria-label={`项目：${project.name}`}>
+            <Button variant="ghost" size="icon-sm" aria-label={`项目：${project.name}`}>
               <IconFolder className="size-4.5" />
             </Button>
             <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
@@ -179,7 +176,7 @@ function ChatHeader({
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
       )}
       <Hint tip="更多" side="bottom">
-        <Button variant="ghost" size="icon-sm" className={cn(HOVER, 'text-muted-foreground')} aria-label="更多">
+        <Button variant="ghost" size="icon-sm" aria-label="更多">
           <IconDots className="size-4" />
         </Button>
       </Hint>
@@ -188,7 +185,6 @@ function ChatHeader({
         <Button
           variant="ghost"
           size="icon-sm"
-          className={cn(HOVER, 'text-muted-foreground')}
           aria-label={tabsCollapsed ? '展开标签页区' : '折叠标签页区'}
           disabled={tabsToggleDisabled}
           onClick={onToggleTabs}
@@ -464,7 +460,7 @@ function ChatComposer({
                 <Button
                   variant="ghost"
                   size="xs"
-                  className="gap-1.5 px-1 font-normal text-sm text-foreground hover:bg-accent-foreground/5"
+                  className="gap-1.5 px-1 font-normal text-sm"
                 >
                   <IconDeviceDesktop className="size-4.5 text-muted-foreground" />
                   {cwdBasename}

@@ -8,7 +8,9 @@ export function AttachmentMenu({ disabled, onAdd, onError }: {
 }) {
   return <DropdownMenu>
     <DropdownMenuTrigger render={<InputGroupButton size="icon-sm" disabled={disabled} aria-label="添加附件" />}><IconPlus /></DropdownMenuTrigger>
-    <DropdownMenuContent align="start" side="top">
+    {/* w-auto 覆写原语 w-(--anchor-width)（锚点是 icon-sm 小圆钮，不覆写
+        面板被压到按钮宽，「添加图片或文件」会折行）；min-w-max 保证面板永不窄于内容 */}
+    <DropdownMenuContent align="start" side="top" className="w-auto min-w-max">
       <DropdownMenuItem onClick={() => { void window.cogent.pickAttachments().then(onAdd, onError) }}><IconFile />添加图片或文件</DropdownMenuItem>
       <DropdownMenuItem onClick={() => { void window.cogent.pickDirectory().then((path) => { if (path !== null) onAdd([path]) }, onError) }}><IconFolder />引用文件夹</DropdownMenuItem>
     </DropdownMenuContent>

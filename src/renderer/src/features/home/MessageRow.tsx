@@ -122,7 +122,7 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
             <Button
               variant="ghost"
               size="icon-xs"
-              className="size-6 text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
+              className="size-6"
               aria-label="复制"
               onClick={() => void navigator.clipboard.writeText(message.content)}
             >
@@ -132,7 +132,7 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
             <Button
               variant="ghost"
               size="icon-xs"
-              className="size-6 text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
+              className="size-6"
               aria-label="编辑"
             >
               <IconPencil className="size-3.5" />

@@ -261,8 +261,8 @@ export function McpSection() {
           <div className="text-sm">
             服务器 <span className="text-muted-foreground">{count}</span>
           </div>
-          {/* 搜索框：与侧栏同款裸 input 手搭（黑 5% 软叠胶囊底） */}
-          <div className="ml-auto flex h-8 w-56 items-center gap-2 rounded-full bg-accent-foreground/5 px-3">
+          {/* 搜索框：与侧栏同款裸 input 手搭（黑 5% 软叠底）；圆角 lg 档与表单控件统一 */}
+          <div className="ml-auto flex h-8 w-56 items-center gap-2 rounded-lg bg-accent-foreground/5 px-3">
             <IconSearch className="size-4 shrink-0 text-muted-foreground" />
             <input
               type="text"
@@ -277,11 +277,11 @@ export function McpSection() {
     >
       {servers !== null && userScope && <MediaBindingsSection servers={servers} />}
       {servers === null ? (
-        <div className="mt-8 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">加载中…</div>
+        <div className="mt-8 rounded-lg border border-border px-5 py-4 text-xs text-muted-foreground">加载中…</div>
       ) : count === 0 ? (
         userScope ? (
           /* 空态（zcode 形态）：虚线卡 + 主副文案 + 新建/导入双入口 */
-          <div className="mt-8 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-12 text-center">
+          <div className="mt-8 flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-12 text-center">
             <div className="text-sm font-medium">尚未安装 MCP 服务器</div>
             <div className="text-xs text-muted-foreground">手动新建服务器，或导入已有配置。</div>
             <div className="mt-2 flex items-center gap-2">
@@ -303,12 +303,12 @@ export function McpSection() {
             </div>
           </div>
         ) : (
-          <div className="mt-8 rounded-xl border border-dashed border-border px-6 py-10 text-center text-xs text-muted-foreground">
+          <div className="mt-8 rounded-lg border border-dashed border-border px-6 py-10 text-center text-xs text-muted-foreground">
             没有可覆盖的服务器 —— 先在「本机 · 用户」作用域添加 MCP 服务器。
           </div>
         )
       ) : visible.length === 0 ? (
-        <div className="mt-8 rounded-xl border border-border px-5 py-4 text-xs text-muted-foreground">
+        <div className="mt-8 rounded-lg border border-border px-5 py-4 text-xs text-muted-foreground">
           没有匹配「{query.trim()}」的服务器
         </div>
       ) : (

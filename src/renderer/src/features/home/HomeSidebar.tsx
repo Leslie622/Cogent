@@ -63,9 +63,6 @@ import { useHomeStore } from '@/stores/home'
 const ACTIONS =
   'absolute right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 group-data-popup-open:opacity-100 group-has-[[data-popup-open]]:opacity-100'
 
-/** 行内动作钮：24px 热区（icon-xs），hover 底比行底再深一档（/15）才可辨 */
-const ACTION_BUTTON = 'text-muted-foreground hover:bg-accent-foreground/15 hover:text-foreground'
-
 /** 行 hover / active 底色：黑低透明软叠，active 与 hover 同色（用户定的规则：
     选中态不加深，就是"常驻的 hover 色"，同 ChatGPT）；深度 5% */
 /** 菜单开着时同色保持（2026-11-11 用户反馈：右键/「更多」菜单弹出后鼠标移出行，
@@ -202,8 +199,7 @@ const ChatRow = memo(function ChatRow({
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    className={ACTION_BUTTON}
-                    aria-label={chat.pinnedAt ? '取消置顶' : '置顶聊天'}
+                                        aria-label={chat.pinnedAt ? '取消置顶' : '置顶聊天'}
                     onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}
                   >
                     {chat.pinnedAt ? <IconPinFilled className="size-4" /> : <IconPin className="size-4" />}
@@ -215,8 +211,7 @@ const ChatRow = memo(function ChatRow({
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    className={ACTION_BUTTON}
-                    aria-label="归档聊天"
+                                        aria-label="归档聊天"
                     onClick={() => onArchive(chat.id)}
                   >
                     <IconArchive className="size-4" />
@@ -361,7 +356,7 @@ const ProjectRow = memo(function ProjectRow({
               {/* Hint 包外层（塞 render 里 children 被吞，ProjectPicker 同教训） */}
               <Hint tip="更多" side="top">
                 <DropdownMenuTrigger
-                  render={<Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多" />}
+                  render={<Button variant="ghost" size="icon-xs" aria-label="更多" />}
                 >
                   <IconDots className="size-4" />
                 </DropdownMenuTrigger>
@@ -383,8 +378,7 @@ const ProjectRow = memo(function ProjectRow({
               <Button
                 variant="ghost"
                 size="icon-xs"
-                className={ACTION_BUTTON}
-                aria-label="新建聊天"
+                                aria-label="新建聊天"
                 onClick={() => onStartChat(projectId)}
               >
                 <IconMessagePlus className="size-4" />
@@ -587,7 +581,7 @@ export function HomeSidebar() {
           <Button
             variant="ghost"
             size="icon-xs"
-            className="size-7 text-muted-foreground hover:bg-accent-foreground/7 hover:text-foreground"
+            className="size-7"
             aria-label="搜索"
           >
             <IconSearch className="size-4" />
@@ -672,14 +666,13 @@ export function HomeSidebar() {
             open={projectsOpen}
             actions={
               <>
-                <Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多">
+                <Button variant="ghost" size="icon-xs" aria-label="更多">
                   <IconDots className="size-4" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className={ACTION_BUTTON}
-                  aria-label="创建项目"
+                                    aria-label="创建项目"
                   onClick={() => setCreateOpen(true)}
                 >
                   <IconFolderPlus className="size-4" />
@@ -722,15 +715,14 @@ export function HomeSidebar() {
             open={recentOpen}
             actions={
               <>
-                <Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多">
+                <Button variant="ghost" size="icon-xs" aria-label="更多">
                   <IconDots className="size-4" />
                 </Button>
                 {/* 最近无项目归属：同顶部"新聊天" = 无项目发起 */}
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className={ACTION_BUTTON}
-                  aria-label="新建聊天"
+                                    aria-label="新建聊天"
                   onClick={() => startNew()}
                 >
                   <IconMessagePlus className="size-4" />

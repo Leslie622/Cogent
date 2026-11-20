@@ -26,8 +26,9 @@ export function SettingsSidebar() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {/* 搜索图标与原生输入共用胶囊底色，不另加聚焦描边；过滤属后续件。 */}
-        <div className="flex h-8 items-center gap-2 rounded-full bg-accent-foreground/5 px-3">
+        {/* 搜索图标与原生输入共用软叠底色，不另加聚焦描边；过滤属后续件。
+            圆角 lg 档（2026-11-20 用户定调）：与表单控件统一，弃胶囊。 */}
+        <div className="flex h-8 items-center gap-2 rounded-lg bg-accent-foreground/5 px-3">
           <IconSearch className="size-4 shrink-0 text-muted-foreground" />
           <input
             type="text"

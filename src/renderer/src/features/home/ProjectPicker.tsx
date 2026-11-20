@@ -175,8 +175,9 @@ export function ProjectPicker({
           sideOffset={8}
           className="w-auto min-w-60 max-w-80 gap-1 rounded-2xl p-1.5"
         >
-          {/* 搜索行：灰底胶囊，图标+输入；无独立确认，过滤即时生效 */}
-          <div className="flex h-9 items-center gap-2 rounded-xl bg-muted/60 px-3">
+          {/* 搜索行：灰底，图标+输入；无独立确认，过滤即时生效。圆角 lg 档
+              （2026-11-20 用户定调）与设置页搜索框、表单控件统一，弃胶囊 */}
+          <div className="flex h-9 items-center gap-2 rounded-lg bg-muted/60 px-3">
             <IconSearch className="size-4 shrink-0 text-muted-foreground" />
             <input
               value={query}

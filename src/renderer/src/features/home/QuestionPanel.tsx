@@ -247,7 +247,7 @@ function PendingQuestionCard({ pending, autoFocus }: { pending: PendingQuestion;
               }
             }}
             placeholder="输入你的回答..."
-            className="h-8 rounded-lg border-0 bg-transparent px-0 text-xs placeholder:text-muted-foreground"
+            className="h-8 rounded-lg border-0 bg-transparent px-0 text-xs placeholder:text-placeholder"
           />
         </div>
       </div>

@@ -171,7 +171,7 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
               // 与 + 钮的间距由 addon 的 gap-1 统一接管（曾 ml-2+gap-2 双层叠加）；
               // h-7：工具行统一 28px 高（2026-11-16 定调，曾 h-6 偏扁），圆角走
               // xs 档原生不覆写
-              'h-7 gap-1.5 pl-2 pr-1 text-xs hover:bg-accent-foreground/5',
+              'h-7 gap-1.5 pl-2 pr-1 text-xs',
               current === 'auto'
                 ? 'text-warning hover:text-warning'
                 : current === 'autonomous'
