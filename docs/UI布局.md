@@ -312,6 +312,7 @@ scroll，给容器挂 `data-scrolling`，静默 600ms 后摘除；悬停 13px �
 | Select 窄触发器 | `w-[var(--anchor-width,fit-content)] min-w-0`；不写代际相关的固定宽度补偿 |
 | 菜单强调色 | warning 在 item 本体设 variant，并从 focus 通配染色排除；不能靠后代类对抗 |
 | 菜单 lg 尺寸 | Context 传尺寸，原语条件拼字面类；`[[data-size=lg]_&]` 经构建提取曾无产物 |
+| 菜单分隔线 | DropdownMenuSeparator 保留 h-px 占位，用 border-t border-border 画线；由浏览器统一取整边框宽度，避免 125% 缩放下背景色细条随纵向位置变成 1 / 2 行物理像素。原理见[菜单分隔线](技术笔记/菜单分隔线.md) |
 | 弹窗关闭 | Base UI AlertDialogAction 是裸 Button；确认回调显式 `onOpenChange(false)` |
 | 菜单开着保行高亮 | 自身 `data-popup-open:` + 后代 `has-[[data-popup-open]]:`；portal 外焦点不可靠 |
 | InputGroup 全宽 | 纵向 items-center 布局里全宽子元素显式 w-full |
