@@ -1,5 +1,7 @@
-/** 聊天重命名表单：草稿归弹窗，持久化由 chat store 发起；失败保留输入供重试。 */
+/** 聊天重命名表单：草稿归弹窗，持久化由 chat store 发起；失败保留输入供重试，
+ *  成功弹「重命名成功」短语 toast（2026-11-20 用户定调：不加详情，短反馈）。 */
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -21,6 +23,7 @@ export function RenameChatDialog({ chat, onClose }: { chat: SessionSummary; onCl
     setError(null)
     try {
       await rename(chat.id, title.trim())
+      toast.success('重命名成功')
       onClose()
     } catch (cause) {
       // IPC / 磁盘保存属于外部边界，错误留在表单，不能关窗伪装保存成功。

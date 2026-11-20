@@ -90,12 +90,8 @@ export function RunTrace({
   return (
     <TraceCollapsible open={open ?? false} onOpenChange={setOpen}>
       <TraceCollapsibleTrigger>{header}</TraceCollapsibleTrigger>
-      {/* 分割线**常驻**（2026-11-16 用户定调）：不随折叠体收起 —— 收起态
-          也是「头条 + 线」的完整行。挂在触发器与面板之间（折叠机构外，
-          不参与开合动画）：线到头条间距 mt-2 恒定，线到条目间距 = 折叠体
-          内层 pt（决定 17 既定，随开合收拢）。进面板内则收起即 hidden，
-          常驻语义即破（回归钉 turn-group.render.test.tsx） */}
-      <div data-slot="run-trace-divider" className="mt-2 border-t" />
+      {/* 头条下分割线已取消（2026-11-20 用户定调，推翻 11-16 的常驻线）：
+          收起态即单行头条。折叠体展开后的纵向分隔由内层 pt 承担 */}
       <TraceCollapsibleContent>
         <div className="flex flex-col gap-3">{children}</div>
       </TraceCollapsibleContent>

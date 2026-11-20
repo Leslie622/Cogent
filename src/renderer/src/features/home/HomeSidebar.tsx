@@ -10,8 +10,8 @@
  * 新聊天入口始终回到同一未发送草稿；首条消息由 submit 物化。
  * 分区标题带折叠箭头（折叠态常显、展开态 hover 显现）；标题行 hover 浮现
  * [更多 ⋯ + 创建类] 双钮（项目=创建项目弹窗、最近=新建聊天）；项目行 hover
- * 浮现 [更多 + 新建聊天]；聊天行动作 [置顶 + 归档]（置顶真接线 setPinned，
- * 归档仍空位）。
+ * 浮现 [更多 + 新建聊天]；聊天行动作 [置顶 + 归档]（置顶接线 setPinned，
+ * 归档弹带撤销的 sonner toast）。
  * 布局手法：行 = 相对定位容器（hover 底色 + group），主点击区是占满的 button，
  * 动作钮 absolute 贴其右 —— 避免 button 嵌 button（非法结构）。
  */
@@ -34,6 +34,7 @@ import {
   IconTrash,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { toast } from 'sonner'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -530,9 +531,35 @@ export function HomeSidebar() {
     [startNewChat]
   )
 
-  /** 归档（回收站语义）：归档的活动会话 → 视图落 kind:'new'（chat store 内已处理） */
+  /** 归档（回收站语义）：归档的活动会话 → 视图落 kind:'new'（chat store 内已处理）。
+   *  成功弹 sonner 带「撤销」action：撤销 = archive(false)（store 恢复时重拉
+   *  session.list 回主栏）；归档时正开着的会话撤销连视图一起还原
+   *  （selectSession + openChat，对齐 load() 的选中/视图配对）。归档失败只进
+   *  控制台 —— 菜单流不打断的既定口径（移动/删除同款） */
   const archiveChat = useCallback((chatId: string) => {
-    void useChatStore.getState().archive(chatId, true)
+    const { sessions, activeSessionId, archive } = useChatStore.getState()
+    const title = sessions.find((s) => s.id === chatId)?.title
+    const wasActive = activeSessionId === chatId
+    void archive(chatId, true).then(
+      () => {
+        toast.success('已归档', {
+          description: title,
+          duration: 5000,
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void (async () => {
+                await useChatStore.getState().archive(chatId, false)
+                if (!wasActive) return
+                await useChatStore.getState().selectSession(chatId)
+                useHomeStore.getState().openChat(chatId)
+              })()
+            }
+          }
+        })
+      },
+      (error: unknown) => console.error('[archive] 归档失败', error)
+    )
   }, [])
 
   /** 会话置顶二值切换（id 签名直传 ChatRow） */

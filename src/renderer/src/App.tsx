@@ -8,6 +8,8 @@
  */
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Toaster } from '@/components/ui/sonner'
+import { useErrorToast } from '@/hooks/use-error-toast'
 import { useScrollbarAutoHide } from '@/hooks/use-scrollbar-auto-hide'
 import { useEngineStore } from '@/stores/engine'
 import { bindEngineEvents, useChatStore } from '@/stores/chat'
@@ -58,6 +60,8 @@ function EngineFailureBanner() {
 export default function App() {
   // 滚动条「不滚动即隐藏」的全局行为，挂载一次（样式侧见 globals.css）
   useScrollbarAutoHide()
+  // 会话错误 toast（对话区错误条退役，2026-11-20）：监听活动会话 lastError
+  useErrorToast()
   useEffect(() => {
     // 事件订阅先行（避免 load 期间漏事件），再拉初始数据
     // （load 内部已把失败落 error 状态，void 不产生 unhandled rejection）
@@ -73,6 +77,9 @@ export default function App() {
       <EngineFailureBanner />
       {/* 「关闭窗口时」询问（ask 档）：main close 拦截器点火，全局挂一份 */}
       <CloseAskDialog />
+      {/* 全局 toast 出口（sonner）：错误通知等，任意页面可见；
+          顶部居中（2026-11-20 用户定调，跟 shadcn 文档 demo） */}
+      <Toaster position="top-center" />
     </>
   )
 }

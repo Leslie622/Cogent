@@ -106,6 +106,24 @@ describe('聊天重命名状态', () => {
   })
 })
 
+describe('归档与恢复', () => {
+  it('恢复重拉主列表（归档撤销 toast 的刷新收口），不带导航副作用', async () => {
+    const a = { id: 'a1', title: 'A', createdAt: 1, updatedAt: 1 }
+    const b = { id: 'b1', title: 'B', createdAt: 2, updatedAt: 2 }
+    useChatStore.setState({ sessions: [a], activeSessionId: a.id })
+    engineRequest.mockImplementation((method) =>
+      method === 'session.list' ? Promise.resolve([a, b]) : Promise.resolve(undefined))
+    await useChatStore.getState().archive(a.id, true)
+    expect(useChatStore.getState().sessions.map((s) => s.id)).toEqual([])
+    expect(useChatStore.getState().activeSessionId).toBeNull()
+    await useChatStore.getState().archive(a.id, false)
+    expect(engineRequest).toHaveBeenCalledWith('session.archive', { sessionId: a.id, archived: false })
+    expect(useChatStore.getState().sessions.map((s) => s.id)).toEqual(['a1', 'b1'])
+    // 恢复不自动选中（选中/视图还原由撤销发起方决定，见 HomeSidebar）
+    expect(useChatStore.getState().activeSessionId).toBeNull()
+  })
+})
+
 describe('compaction 事件序列（D9 保留式 store 手术）', () => {
   it('started → completed：折叠条落在压缩时刻已存在的内容之后（=「正在压缩」状态条的位置），旧消息一条不删', () => {
     // fake 钟把 bar.timestamp 钉在 10000：q2(300) 是压缩前刚发的 —— bar 应落它

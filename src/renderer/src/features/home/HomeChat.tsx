@@ -57,7 +57,6 @@ import { AttachmentCards, isReferenceOnlyAttachment } from './AttachmentCards'
 import { unwrapIpcError } from '@/lib/ipc'
 import {
   EMPTY_MESSAGES,
-  selectLastError,
   selectRunning,
   selectStopping,
   selectLastRunOutcome,
@@ -201,8 +200,9 @@ function ChatHeader({
 }
 
 /** 对话流：消息源 = chat store 活动会话（引擎事件流驱动，含流式占位与工具卡行），
-    渲染期按回合分组（TurnGroup 管两态呈现）。截断/失败提示条挂在消息末尾
-    （stopReason=length 是正常结束的附属信息，不是错误） */
+    渲染期按回合分组（TurnGroup 管两态呈现）。截断动作条挂在消息末尾
+    （stopReason=length 是正常结束的附属信息，不是错误）；运行/操作失败
+    （lastError）不进对话流，App 层 useErrorToast 弹 toast 呈现 */
 function ChatMessages() {
   const activeSessionId = useChatStore((s) => s.activeSessionId)
   const messages = useChatStore(
@@ -220,7 +220,6 @@ function ChatMessages() {
   const truncated = useChatStore(selectTruncated)
   // 压缩进行中（完备化 D8）：started→completed 窗口，消息流内状态条
   const compacting = useChatStore(selectCompacting)
-  const lastError = useChatStore(selectLastError)
 
   // 结果属于用户回合；新提问只改变当前live，不能把旧中止/失败改成done。
   // 仅末尾无user兜底组沿用会话最近结果，其他未知结果默认done。
@@ -305,7 +304,6 @@ function ChatMessages() {
               </Button>
             </div>
           )}
-          {lastError && <div className="text-center text-xs text-destructive">{lastError}</div>}
         </MessageScrollerContent>
       </MessageScrollerViewport>
       {/* 索引轨道只标注内容消息（工具卡不是刻度目标，过滤掉） */}
@@ -430,7 +428,7 @@ function ChatComposer({
           scrollToEnd()
         }
       } catch {
-        return // 失败态已由 store 落（错误条 + 运行位复位），原文留在输入框
+        return // 失败态已由 store 落（错误 toast + 运行位复位），原文留在输入框
       }
     })()
   }

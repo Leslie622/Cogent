@@ -258,24 +258,24 @@ describe('HomeChat 的真实停止终态接线', () => {
     expect(el1.isConnected).toBe(true)
   })
 
-  it('点过停止但收到真实 error，头条显示出错了并保留错误文案', async () => {
+  it('点过停止但收到真实 error，头条显示出错了，详情走 toast 不进对话区', async () => {
     render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止' })); await Promise.resolve() })
     act(() => { emit({ method: 'run.failed', params: {
       sessionId: SID, reason: 'error', message: '真实连接故障', messages: [completed]
     } }) })
     expect(screen.getByText('出错了')).toBeInTheDocument()
-    expect(screen.getByText('真实连接故障')).toBeInTheDocument()
+    expect(screen.queryByText('真实连接故障')).not.toBeInTheDocument()
     expect(screen.queryByText('已停止')).not.toBeInTheDocument()
   })
 
-  it('完成后操作报错只显示错误条，不把成功回合改成失败', async () => {
+  it('完成后操作报错不改成功回合，详情不进对话区（App 层 toast 呈现）', async () => {
     render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
     await act(async () => { emit({ method: 'run.completed', params: { sessionId: SID, messages: [completed] } }); await Promise.resolve() })
     engineRequest.mockRejectedValueOnce(new Error('手动压缩失败'))
     await act(async () => { await useChatStore.getState().compactNow() })
     expect(screen.getByText('已工作 0.10s')).toBeInTheDocument()
-    expect(screen.getByText('手动压缩失败')).toBeInTheDocument()
+    expect(screen.queryByText('手动压缩失败')).not.toBeInTheDocument()
     expect(screen.queryByText('出错了')).not.toBeInTheDocument()
   })
 
@@ -399,7 +399,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
     expect(screen.getByText('已工作 0.10s')).toBeInTheDocument()
     expect(screen.queryByText('出错了')).not.toBeInTheDocument()
     expect(screen.queryByText('没有受理的新问题')).not.toBeInTheDocument()
-    expect(screen.getByText('本次提交被拒绝')).toBeInTheDocument()
+    expect(screen.queryByText('本次提交被拒绝')).not.toBeInTheDocument()
   })
 
   it('相同提问文本的两个user回合分别保留自己的停止和完成结果', async () => {
@@ -427,7 +427,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
     await act(async () => { await useChatStore.getState().continueGeneration() })
     expect(screen.queryByText('已停止')).not.toBeInTheDocument()
     expect(screen.getByText('出错了')).toBeInTheDocument()
-    expect(screen.getByText('本次续写被拒绝')).toBeInTheDocument()
+    expect(screen.queryByText('本次续写被拒绝')).not.toBeInTheDocument()
     expect(screen.getByText('保留的旧前缀')).toBeInTheDocument()
   })
 

@@ -119,6 +119,17 @@ describe('TurnGroup 零内容组', () => {
     expect(source.closest('[aria-hidden="true"]')).toBeNull()
   })
 
+  it('live 零内容组不渲染空过程容器（工作中→出错了瞬时翻相零高度跳动回归）', () => {
+    // 空容器会多吃一个 gap-3：回合底缘比终态「出错了」头条高 12px，贴底
+    // 跟随时立马失败会让上方内容整体下沉 —— 断言用户泡与工作行之间无空盒子
+    const turn: ChatTurn = { user: userMsg('u1'), items: [] }
+    const { container } = render(<TurnGroup turn={turn} phase="live" />)
+    const children = Array.from(container.children)
+    expect(children).toHaveLength(2)
+    expect(children[0].getAttribute('data-message-id')).toBe('u1')
+    expect(children[1].getAttribute('data-slot')).toBe('live-working-line-source')
+  })
+
   it.each([
     ['done', '已工作'],
     ['stopped', '已停止'],
@@ -179,14 +190,12 @@ describe('TurnGroup 终态头条（已工作时长口径）', () => {
   })
 })
 
-describe('TurnGroup 已工作头条下分割线常驻（决定 18：不随折叠收起）', () => {
-  it('divider 存在且在折叠面板外 —— 放回面板内则收起态 hidden，常驻即破', () => {
-    // 两条 assistant：末条为终答，前条进过程体 —— 有过程才有折叠机构与分割线
+describe('TurnGroup 已工作头条下分割线已取消（2026-11-20 定调，推翻决定 18 的常驻线）', () => {
+  it('头条后直接进折叠面板，不存在 run-trace-divider', () => {
+    // 两条 assistant：末条为终答，前条进过程体 —— 有过程才有折叠机构
     const turn: ChatTurn = { user: userMsg('u1'), items: [assistantMsg('a1', 3_000), assistantMsg('a2', 5_100)] }
     const { container } = render(<TurnGroup turn={turn} phase="done" />)
-    const divider = container.querySelector('[data-slot=run-trace-divider]')
-    expect(divider).not.toBeNull()
-    expect(divider?.closest('[data-slot=trace-collapsible-content]')).toBeNull()
+    expect(container.querySelector('[data-slot=run-trace-divider]')).toBeNull()
   })
 })
 

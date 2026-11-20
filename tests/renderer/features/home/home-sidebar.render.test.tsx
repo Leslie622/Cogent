@@ -1,4 +1,4 @@
-/** 侧栏导航：新聊天去重、会话整行热区与独立动作。 */
+/** 侧栏导航：新聊天去重、会话整行热区、独立动作与归档撤销 toast。 */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,6 +10,12 @@ import { EMPTY_DRAFT, useAttachmentStore } from '@/stores/attachments'
 
 vi.mock('@/features/home/ProjectDialog', () => ({ ProjectDialog: () => null }))
 
+// 类型化 mock（hoisted：vi.mock 工厂提升到 import 前，普通 const 引用不到）
+const { toastSuccess } = vi.hoisted(() => ({
+  toastSuccess: vi.fn<(message: string, options?: unknown) => string | number>()
+}))
+vi.mock('sonner', () => ({ toast: { success: toastSuccess } }))
+
 const initialChat = useChatStore.getState()
 const initialHome = useHomeStore.getState()
 const initialProject = useProjectStore.getState()
@@ -20,6 +26,7 @@ beforeEach(() => {
   useChatStore.setState(initialChat, true)
   useHomeStore.setState(initialHome, true)
   useProjectStore.setState(initialProject, true)
+  toastSuccess.mockClear()
   engineRequest.mockReset().mockImplementation((method) => {
     if (method === 'project.list') return Promise.resolve([])
     if (method === 'session.create') {
@@ -133,6 +140,25 @@ describe('会话行点击区域', () => {
     expect(useChatStore.getState().activeSessionId).toBeNull()
     expect(useHomeStore.getState().session.kind).toBe('new')
     await waitFor(() => expect(useProjectStore.getState().loaded).toBe(true))
+  })
+
+  it('归档成功弹带撤销的 toast；撤销走恢复，非活动会话不带视图还原', async () => {
+    const archive = vi.fn().mockResolvedValue(undefined)
+    const selectSession = vi.fn().mockResolvedValue(undefined)
+    useChatStore.setState({ sessions: [oldSession], archive, selectSession })
+    render(<HomeSidebar />)
+    fireEvent.click(screen.getByRole('button', { name: '归档聊天' }))
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1))
+    const [message, options] = toastSuccess.mock.calls[0]
+    expect(message).toBe('已归档')
+    const opts = options as { description?: string; action: { label: string; onClick: () => void } }
+    expect(opts.description).toBe('已有聊天')
+    expect(opts.action.label).toBe('撤销')
+    opts.action.onClick()
+    await waitFor(() => expect(archive).toHaveBeenCalledTimes(2))
+    expect(archive).toHaveBeenLastCalledWith(oldSession.id, false)
+    // 归档的不是活动会话（activeSessionId 为 null）：撤销不替用户开会话
+    expect(selectSession).not.toHaveBeenCalled()
   })
 })
 

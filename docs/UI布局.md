@@ -78,7 +78,14 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   [界面聚焦样式](技术笔记/界面聚焦样式.md)。
 - 必须核对的定制：slider 的 `thumbAlignment` / `thumbOnKeyDown` / marks 几何；
   dropdown 的 warning 变体和 lg 尺寸；dialog 限高与中段滚动；code-block 的图标修正；
-  trace/collapsible 的挂载与轨道；tabs/separator 的 orientation 属性。
+  trace/collapsible 的挂载与轨道；tabs/separator 的 orientation 属性；
+  sonner 的主题源改 appearance store（剥 next-themes）、宽度按条定（错误
+  toast 按条覆盖 `--width` 560px，其余缺省 356px）、字体对齐应用
+  （fontFamily inherit + text-sm!/text-xs! 挂统一字号档）、
+  richColors 按类型着色
+  （sonner 内置调色板）、action 槽同色淡底（静息 `bg-current/10`、hover
+  加深，图标 text-inherit —— 随 toast 类型着色不串灰；`!` 后缀工具类压
+  sonner 样式表）。位置由调用处定（App 挂 `top-center`）。
 - registry 源的 `IconPlaceholder` 改为实际图标；`cn-menu-target`、
   `cn-menu-translucent`、`cn-font-heading` 是 CLI style marker，不是待补的 CSS 类。
   安装后清理未用 import、文档站私有引用，并验证构建产物。
@@ -205,7 +212,8 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 [流式呈现动效](技术笔记/流式呈现动效.md)，真机矩阵见 [消息验收](测试用例/消息呈现.md)。
 
 - 用户消息灰气泡，助手平铺；消息段和过程行统一 `gap-3`、回合容器左右零内边距。
-  空正文不挂容器，避免纯思考段多吃间距。
+  空正文不挂容器，避免纯思考段多吃间距；零工作项的 live 也不渲染空过程容器
+  （空盒多吃一个 gap，与终态头条栈高不齐，瞬时失败翻相会跳）。
 - 运行态过程单行化，工作行位于流底，图标是 `WorkingSpinner` 三叶动效，
   配标题扫光和 tabular-nums 码表；停止在途文字为“正在停止”。
 - WorkingSpinner 保留 css-loaders l5 的整盒三角、伪元素继承、4s/2s 和质心转轴
@@ -217,7 +225,8 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 - 工具图标保持静态，类别词运行态扫光；失败仅“执行失败”点状下划线为红，
   Tooltip 提供原因/复制，整行不染红。bash 进度为定高两行尾部 + 扫光细条。
 - 思考默认单行收起，摘要横向滚动并渐隐；展开限高内部滚动。
-- 终态“已工作 / 已停止 / 出错了”头条下分割线常驻；折叠内容与头条同级无导线。
+- 终态“已工作 / 已停止 / 出错了”头条，下无分割线（2026-11-20 取消常驻线）；
+  折叠内容与头条同级无导线。
   轨道必须 `minmax(0,0fr) ↔ minmax(0,1fr)`，内层纵向 padding 同曲线收拢；
   keepMounted，折叠体内部不套 content-visibility 包装。
 - 消息流保留库布局/回底钮，关闭库 autoScroll，跟随由本地 controller 独占。
