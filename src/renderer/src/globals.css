@@ -80,10 +80,8 @@
   /* 聚焦单独用实色，避免与装饰描边、滑杆底色等 ring 消费点互相牵动。 */
   --focus-color: oklch(0.556 0 0);
   --focus-width: 1px;
-  /* chrome 底色（UI 重写期：头部+应用侧栏的融合 L 面）：参考稿为薄荷绿微渐变
-     （见 .chrome-surface，135° 同色相仅明度递减），token 留中档薄荷作纯色回退。
-     按用户意见两轮调淡；chrome 面上的 hover/active 用 foreground 低透明叠层
-     （黑 alpha 软叠，同 ChatGPT），不用本 token 系块底 */
+  /* 首帧前的薄荷缺省；共享外观投影按皮肤与明暗写入同名变量。 */
+  --chrome-surface: linear-gradient(135deg, #e0f3e9 0%, #eef7f2 45%, #fbfdfb 100%);
   --sidebar: #eef7f2;
   /* 内容区侧栏底：比 chrome L 面浅一档（浅于外部、深于纯白主体，三层递进：
      薄荷渐变 L → 更浅的侧栏 → 纯白主体）；实色不用 alpha */
@@ -125,13 +123,13 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
   --focus-color: oklch(0.708 0 0);
-  /* 深色 chrome 与主背景仅一档之差，保持中性 */
-  --sidebar: oklch(0.205 0 0);
+  --chrome-surface: linear-gradient(135deg, #1b3a35 0%, #1b2f2b 45%, #17221f 100%);
+  --sidebar: #1b2f2b;
   /* 亮面自定义灰系（placeholder/空态/内容侧栏）——深色补齐暗面值，
       否则深底下仍是亮灰/亮绿一块（2026-11-18 深色上线时补） */
   --placeholder: oklch(0.55 0 0);
   --empty-hint: oklch(0.45 0 0);
-  --content-sidebar: oklch(0.205 0.008 160);
+  --content-sidebar: #20302b;
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -249,16 +247,9 @@
   transition: background-color 0.18s linear;
 }
 
-/* ── chrome L 面（头部+应用侧栏）底色 ──
-   亮色：薄荷绿微渐变（参考稿取色后按用户意见调淡，同色相 ~150°，
-   仅明度/饱和度递减的"呼吸感"底）。
-   深色不用皮肤（2026-11-20 用户定调）：中性暗底直接取 --sidebar
-   （比主背景亮一档保层级），不另设暗色渐变 */
+/* 头部与应用侧栏共用连续的 L 面；亮暗都消费所选皮肤，不再由深色选择器截断。 */
 .chrome-surface {
-  background: linear-gradient(135deg, #e0f3e9 0%, #eef7f2 45%, #fbfdfb 100%);
-}
-.dark .chrome-surface {
-  background: var(--sidebar);
+  background: var(--chrome-surface);
 }
 
 /* ── 滚动渐隐（scroll-fade-*）：内容滚出视口边界处透明度渐隐，不硬截断 ──

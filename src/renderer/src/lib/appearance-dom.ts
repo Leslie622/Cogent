@@ -1,12 +1,19 @@
 /** 所有窗口共用的外观投影；首帧先应用，存储事件重读后让已打开的控制台同步。 */
 import { isDarkMode, useAppearanceStore } from '@/stores/appearance'
+import { interfaceSkinVariables } from '@/lib/interface-skins'
 
 export function bindAppearanceDom(): () => void {
   const root = document.documentElement
   const media = window.matchMedia('(prefers-color-scheme: dark)')
   const apply = () => {
-    const { colorMode, codeWrap, accent, uiFontSize, codeFontSize } = useAppearanceStore.getState()
-    root.classList.toggle('dark', isDarkMode(colorMode, media.matches))
+    const { colorMode, interfaceSkin, codeWrap, accent, uiFontSize, codeFontSize } = useAppearanceStore.getState()
+    const dark = isDarkMode(colorMode, media.matches)
+    root.classList.toggle('dark', dark)
+    root.dataset.interfaceSkin = interfaceSkin
+    const skin = interfaceSkinVariables(interfaceSkin, dark)
+    root.style.setProperty('--chrome-surface', skin['--chrome-surface'])
+    root.style.setProperty('--sidebar', skin['--sidebar'])
+    root.style.setProperty('--content-sidebar', skin['--content-sidebar'])
     root.toggleAttribute('data-code-wrap', codeWrap)
     root.style.setProperty('--ui-font-size', `${uiFontSize}px`)
     if (codeFontSize === null) root.style.removeProperty('--app-code-size')

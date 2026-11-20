@@ -2,7 +2,7 @@
  * 外观偏好 store（zustand + persist → localStorage: cogent-appearance）——
  * 与 theme store 同层定调：纯渲染端视觉偏好，不进引擎/协议/settings.json
  * （跨设备同步是真墙：引擎侧无设置同步通道）。
- * 消费点：共享 appearance-dom（明暗/换行/强调色/字号，覆盖所有窗口）、
+ * 消费点：共享 appearance-dom（明暗/皮肤/换行/强调色/字号，覆盖所有窗口）、
  * ToolCard / 轨迹与统计行（输出详细程度/耗时精度）、markdown.tsx（lineNumbers / shikiTheme）、ChatTheme（isDark 选套 +
  * buildUserTokens 用户覆盖合并进编译）。
  * 持久化读取是信任边界（约定.md §1.1）：merge 校验字段形状，坏档回落默认。
@@ -14,6 +14,7 @@ import { isHexColor, type HexColor } from '@/lib/hex-color'
 import { quoteFontFamily } from '@/lib/theme/compile'
 import type { ThemeTokens } from '@/lib/theme/tokens'
 import type { DurationPrecision } from '@/lib/format-duration'
+import { DEFAULT_INTERFACE_SKIN, isInterfaceSkinId, type InterfaceSkinId } from '@/lib/interface-skins'
 
 export type OutputVerbosity = 'low' | 'high'
 
@@ -73,6 +74,7 @@ interface AppearanceState {
   outputVerbosity: OutputVerbosity
   durationPrecision: DurationPrecision
   colorMode: ColorMode
+  interfaceSkin: InterfaceSkinId
   uiFontSize: number
   /** 对话内容代码块行号（Streamdown lineNumbers prop；默认关 = 主流聊天惯例） */
   showLineNumbers: boolean
@@ -88,6 +90,7 @@ interface AppearanceState {
   setOutputVerbosity: (verbosity: OutputVerbosity) => void
   setDurationPrecision: (precision: DurationPrecision) => void
   setColorMode: (mode: ColorMode) => void
+  setInterfaceSkin: (skin: InterfaceSkinId) => void
   setUiFontSize: (size: number) => void
   setShowLineNumbers: (show: boolean) => void
   setCodeWrap: (wrap: boolean) => void
@@ -144,6 +147,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       outputVerbosity: 'high',
       durationPrecision: 2,
       colorMode: 'light',
+      interfaceSkin: DEFAULT_INTERFACE_SKIN,
       uiFontSize: DEFAULT_UI_FONT_SIZE,
       showLineNumbers: false,
       codeWrap: false,
@@ -154,6 +158,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       setOutputVerbosity: (outputVerbosity) => set({ outputVerbosity }),
       setDurationPrecision: (durationPrecision) => set({ durationPrecision }),
       setColorMode: (colorMode) => set({ colorMode }),
+      setInterfaceSkin: (interfaceSkin) => set({ interfaceSkin }),
       setUiFontSize: (uiFontSize) => set({ uiFontSize }),
       setShowLineNumbers: (showLineNumbers) => set({ showLineNumbers }),
       setCodeWrap: (codeWrap) => set({ codeWrap }),
@@ -173,6 +178,7 @@ export const useAppearanceStore = create<AppearanceState>()(
             raw?.durationPrecision === 0 || raw?.durationPrecision === 1 ? raw.durationPrecision : 2,
           colorMode:
             raw?.colorMode === 'dark' || raw?.colorMode === 'system' ? raw.colorMode : 'light',
+          interfaceSkin: isInterfaceSkinId(raw?.interfaceSkin) ? raw.interfaceSkin : DEFAULT_INTERFACE_SKIN,
           uiFontSize:
             typeof raw?.uiFontSize === 'number' && (UI_FONT_SIZES as readonly number[]).includes(raw.uiFontSize)
               ? raw.uiFontSize

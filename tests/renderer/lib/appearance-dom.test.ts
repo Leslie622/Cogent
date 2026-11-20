@@ -4,12 +4,14 @@ import { bindAppearanceDom } from '@/lib/appearance-dom'
 import { buildUserTokens, CODE_FONT_SIZES, UI_FONT_SIZES, useAppearanceStore } from '@/stores/appearance'
 
 let unbind = () => {}
-const media = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }
+const media = { matches: false, addEventListener: vi.fn<(type: string, listener: () => void) => void>(), removeEventListener: vi.fn() }
 
 beforeEach(() => {
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue(media))
   document.documentElement.removeAttribute('style')
-  useAppearanceStore.setState({ uiFontSize: 14, codeFontSize: null, colorMode: 'light', codeWrap: false, accent: 'default' })
+  media.matches = false
+  media.addEventListener.mockClear()
+  useAppearanceStore.setState({ uiFontSize: 14, codeFontSize: null, colorMode: 'light', interfaceSkin: 'mint', codeWrap: false, accent: 'default' })
 })
 
 afterEach(() => {
@@ -42,6 +44,63 @@ it('已打开的另一窗口从 storage 事件重读数值，数值代码覆盖�
   expect(document.documentElement.style.getPropertyValue('--ui-font-size')).toBe('11px')
   expect(document.documentElement.style.getPropertyValue('--app-code-size')).toBe('8px')
   expect(buildUserTokens(useAppearanceStore.getState())['codeBlock.size']).toBe('8px')
+})
+
+it('深色继续响应皮肤，切明暗保留选择与独立强调色', () => {
+  unbind = bindAppearanceDom()
+  const root = document.documentElement
+  const store = useAppearanceStore.getState()
+  store.setAccent('#123abc')
+  store.setInterfaceSkin('sea')
+  expect(root.dataset.interfaceSkin).toBe('sea')
+  const lightSurface = root.style.getPropertyValue('--chrome-surface')
+  const lightSidebar = root.style.getPropertyValue('--content-sidebar')
+  store.setColorMode('dark')
+  expect(root.classList.contains('dark')).toBe(true)
+  const darkSurface = root.style.getPropertyValue('--chrome-surface')
+  const darkSidebar = root.style.getPropertyValue('--content-sidebar')
+  expect(darkSurface).not.toBe(lightSurface)
+  expect(darkSidebar).not.toBe(lightSidebar)
+  store.setInterfaceSkin('parchment')
+  expect(root.style.getPropertyValue('--chrome-surface')).not.toBe(darkSurface)
+  expect(root.style.getPropertyValue('--content-sidebar')).not.toBe(darkSidebar)
+  expect(root.style.getPropertyValue('--chrome-accent')).toBe('#123abc')
+  expect(useAppearanceStore.getState().colorMode).toBe('dark')
+  store.setInterfaceSkin('sea')
+  store.setColorMode('light')
+  expect(root.style.getPropertyValue('--chrome-surface')).toBe(lightSurface)
+  expect(root.style.getPropertyValue('--content-sidebar')).toBe(lightSidebar)
+})
+
+it('跟随系统换套且不重写皮肤偏好，同源窗口重读皮肤并在首帧恢复', async () => {
+  useAppearanceStore.setState({ colorMode: 'system', interfaceSkin: 'honey' })
+  unbind = bindAppearanceDom()
+  const root = document.documentElement
+  const lightSurface = root.style.getPropertyValue('--chrome-surface')
+  media.matches = true
+  media.addEventListener.mock.calls[0][1]()
+  expect(root.classList.contains('dark')).toBe(true)
+  expect(root.style.getPropertyValue('--chrome-surface')).not.toBe(lightSurface)
+  expect(useAppearanceStore.getState()).toMatchObject({ interfaceSkin: 'honey', colorMode: 'system' })
+  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { interfaceSkin: 'dusk', colorMode: 'dark' }, version: 0 }))
+  window.dispatchEvent(new StorageEvent('storage', { key: 'cogent-appearance', storageArea: localStorage }))
+  await Promise.resolve()
+  expect(root.dataset.interfaceSkin).toBe('dusk')
+  const savedSurface = root.style.getPropertyValue('--chrome-surface')
+  unbind()
+  root.style.removeProperty('--chrome-surface')
+  await useAppearanceStore.persist.rehydrate()
+  unbind = bindAppearanceDom()
+  expect(root.style.getPropertyValue('--chrome-surface')).toBe(savedSurface)
+})
+
+it.each([
+  [undefined, 'mint'], ['constructor', 'mint'], ['unknown', 'mint'], [42, 'mint'],
+  ['forest', 'forest'], ['mint', 'mint'], ['honey', 'honey'], ['parchment', 'parchment'], ['sea', 'sea'], ['dusk', 'dusk'],
+])('读取皮肤偏好 %s，旧档和非法值回原薄荷，合法选择保留', async (stored, expected) => {
+  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { interfaceSkin: stored }, version: 0 }))
+  await useAppearanceStore.persist.rehydrate()
+  expect(useAppearanceStore.getState().interfaceSkin).toBe(expected)
 })
 
 it.each([

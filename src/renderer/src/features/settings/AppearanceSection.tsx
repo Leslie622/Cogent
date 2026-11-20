@@ -1,5 +1,5 @@
 /**
- * 设置 · 外观分区：「界面样式」（应用级：深浅色 / 界面字号 / 强调色）与
+ * 设置 · 外观分区：「界面样式」（应用级：深浅色 / 主题色 / 界面字号 / 强调色）与
  * 「对话」（内容区：双字体 / 字号 / 内容主题 / 代码行号 / 换行）两组。
  * 偏好落 localStorage（appearance/theme 两个 persist store——
  * 纯渲染端视觉偏好不进 settings.json，theme store 先例定调）。
@@ -12,6 +12,7 @@
 import { useRef, useState } from 'react'
 import { IconArrowBackUp, IconChevronDown, IconFileImport, IconTrash } from '@tabler/icons-react'
 import { ColorPicker } from '@/components/ColorPicker'
+import { InterfaceSkinPicker } from '@/components/InterfaceSkinPicker'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
@@ -25,6 +26,7 @@ import {
 } from '@/components/ui/select'
 import { DEFAULT_THEME_ID, useActiveTheme, useThemeStore } from '@/stores/theme'
 import type { HexColor } from '@/lib/hex-color'
+import { interfaceThemeColors } from '@/lib/interface-skins'
 import {
   CODE_FONT_SIZES,
   UI_FONT_SIZES,
@@ -73,8 +75,8 @@ function AccentControl() {
             className="size-3 shrink-0 text-muted-foreground motion-safe:transition-transform group-data-popup-open:rotate-180"
           />
         </PopoverTrigger>
-        <PopoverContent aria-label="强调色选择器" align="end" className="w-64 gap-2.5 p-3">
-          <ColorPicker key={pickerSeed} initialColor={pickerSeed} onChange={setAccent} />
+        <PopoverContent aria-label="强调色选择器" align="end" variant="color-picker">
+          <ColorPicker key={pickerSeed} initialColor={pickerSeed} themeColors={interfaceThemeColors(isDark)} onChange={setAccent} />
         </PopoverContent>
       </Popover>
       {/* 图标钮与 McpSection 重置钮同款（ghost + IconArrowBackUp），无文字 */}
@@ -105,6 +107,8 @@ export function AppearanceSection() {
   // 外观偏好由公共窗口入口同步投影，分区只维护设置值。
   const colorMode = useAppearanceStore((s) => s.colorMode)
   const setColorMode = useAppearanceStore((s) => s.setColorMode)
+  const interfaceSkin = useAppearanceStore((s) => s.interfaceSkin)
+  const setInterfaceSkin = useAppearanceStore((s) => s.setInterfaceSkin)
   const uiFontSize = useAppearanceStore((s) => s.uiFontSize)
   const setUiFontSize = useAppearanceStore((s) => s.setUiFontSize)
   const showLineNumbers = useAppearanceStore((s) => s.showLineNumbers)
@@ -163,6 +167,13 @@ export function AppearanceSection() {
             </SelectContent>
           </Select>
         </SettingsRow>
+        <div className="space-y-3 px-5 py-4">
+          <div>
+            <div className="text-sm font-medium">主题色</div>
+            <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">为头部和两侧栏添一点色彩，随深浅模式自动适配</div>
+          </div>
+          <InterfaceSkinPicker value={interfaceSkin} dark={isDark} onValueChange={setInterfaceSkin} />
+        </div>
         <SettingsRow title="界面字号" desc="统一调整界面文字，保留标题与小字层级；聊天正文沿用内容主题">
           <Select
             value={String(uiFontSize)}

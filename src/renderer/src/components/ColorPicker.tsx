@@ -53,8 +53,9 @@ function ColorChannelInput({ label, value, max, onChange }: {
   )
 }
 
-export function ColorPicker({ initialColor, onChange }: {
+export function ColorPicker({ initialColor, themeColors, onChange }: {
   initialColor: HexColor
+  themeColors: ReadonlyArray<{ name: string; color: HexColor }>
   onChange: (color: HexColor) => void
 }) {
   const [hsva, setHsva] = useState(() => hexToHsva(initialColor))
@@ -123,7 +124,8 @@ export function ColorPicker({ initialColor, onChange }: {
       <Swatch
         colors={PRESET_COLORS}
         color={rgbHex}
-        className="gap-1.5"
+        className="grid-cols-[repeat(10,1rem)] justify-between gap-y-1.5"
+        style={{ display: 'grid' }}
         role="group"
         aria-label="预设色"
         rectRender={({ color, checked }) => (
@@ -138,6 +140,32 @@ export function ColorPicker({ initialColor, onChange }: {
           />
         )}
       />
+      <div role="group" aria-label="主题色" className="space-y-2 border-t border-border pt-2.5">
+        <div className="text-xs font-medium text-foreground">主题色</div>
+        <Swatch
+          colors={themeColors.map(({ name, color }) => ({ title: name, color }))}
+          color={rgbHex}
+          className="grid-cols-[repeat(3,max-content)] justify-between gap-y-1"
+          style={{ display: 'grid' }}
+          rectRender={({ title, color, checked }) => (
+            <button
+              type="button"
+              title={`${title} ${color}`}
+              aria-label={`主题色 ${title}`}
+              aria-pressed={checked}
+              className="group flex min-w-0 items-center justify-start gap-1.5 rounded-sm py-1 text-left text-xs text-muted-foreground hover:text-foreground aria-pressed:text-foreground"
+              onClick={() => change({ ...hexToHsva(color), a: hsva.a })}
+            >
+              <span
+                aria-hidden="true"
+                className="size-4 shrink-0 rounded-sm border border-foreground/15 group-aria-pressed:ring-2 group-aria-pressed:ring-ring group-aria-pressed:ring-offset-1 group-aria-pressed:ring-offset-popover"
+                style={{ background: color }}
+              />
+              <span className="whitespace-nowrap">{title}</span>
+            </button>
+          )}
+        />
+      </div>
     </>
   )
 }
