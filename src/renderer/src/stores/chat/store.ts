@@ -307,7 +307,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       await window.cogent.engineRequest('agent.submit', { sessionId, text, model, thinkingLevel, provider,
         ...(attachments.length > 0 && { attachmentIds: attachments.map((a) => a.id) }),
-        ...((attachments.length > 0 || directories.length > 0) && { inputId: userMessage.id }),
+        inputId: userMessage.id,
         ...(directories.length > 0 && { directories }) })
       return sessionId
     } catch (error) {

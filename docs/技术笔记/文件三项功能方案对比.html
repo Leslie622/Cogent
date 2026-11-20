@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>&#x6587;&#x4ef6;&#x94fe;&#x63a5;&#x3001;&#x4ea7;&#x7269;&#x5361;&#x7247;&#x4e0e;&#x6539;&#x52a8;&#x5217;&#x8868;&#xff1a;&#x56db;&#x65b9;&#x5bf9;&#x6bd4;&#x4e0e;&#x6700;&#x7ec8;&#x9009;&#x62e9;</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+
+        </head>
+        <body class="vscode-body vscode-light">
+<aside style="border:1px solid #888;padding:12px;margin:12px 0"><strong>研究对比展示件，非当前实施入口。</strong>本页保留拆分前的导出内容。三个功能按①正文文件链接→②产物文件卡片→③本轮改动列表分别实施验收；①功能验收已收尾，②产物文件卡片实施方案单独审阅和提交。现状见<a href="../模块/正文文件链接.md">正文文件链接模块</a>，后续顺序见<a href="../计划/文件三项功能路线图.md">路线图</a>，研究依据见<a href="文件引用与改动追踪.md">技术笔记</a>。</aside>
+            <span id="markdown-mermaid" aria-hidden="true" data-config="{&quot;darkModeTheme&quot;:&quot;vscode&quot;,&quot;lightModeTheme&quot;:&quot;vscode&quot;,&quot;maxTextSize&quot;:50000,&quot;clickDrag&quot;:&quot;alt&quot;,&quot;showControls&quot;:&quot;onHoverOrFocus&quot;,&quot;resizable&quot;:true,&quot;maxHeight&quot;:&quot;&quot;}"></span>
+				<h1 id="文件链接产物卡片与改动列表四方对比与最终选择">文件链接、产物卡片与改动列表：四方对比与最终选择</h1>
+<blockquote>
+<p>状态：决策审阅稿，尚未实现，也不代表用户已批准实施。
+本文按用户确定的三个功能，比较 ZCode、deepseek-harness、方案 A、方案 B，再给出最终选择和理由。
+A、B 按当前原稿比较；本文中的修正不倒算成任何原稿已经具备的能力。</p>
+</blockquote>
+<h2 id="先看结论">先看结论</h2>
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>最终选择</th>
+<th>主要原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 正文文件链接</td>
+<td>标准 Markdown 链接；采用 A 的内部编码，借用 ZCode 的 Windows 原文恢复；反引号文件名采用 Harness 的唯一匹配</td>
+<td>保留原始路径含义，避免安全管线改写后猜目标；又不要求模型学习专用引用语法</td>
+</tr>
+<tr>
+<td>② 产物文件卡片</td>
+<td>采用 B 的单槽 <code>report_outputs</code>，结合 Harness 的事实校验和 A/B 的交付副本；撤回正文推断自动出卡的共同条目</td>
+<td>模型明确决定“交付什么”，Host 确认“文件确实可用”；避免把参考资料或普通源码修改当作产物</td>
+</tr>
+<tr>
+<td>③ 本轮改动列表</td>
+<td>保留 A/B 的“工作区首尾原始字节快照＋文件工具目标捕获”；补全嵌套调用、续写、持久化和恢复规则</td>
+<td>同时覆盖文件工具与范围内 shell/MCP 的修改，不依赖 Git；代价是自己承担扫描、存储和回收成本</td>
+</tr>
+</tbody>
+</table>
+<p>最终界面仍然只有用户确定的三块：<strong>正文里的链接 → 正文下的产物卡 → 卡片下的全部改动列表</strong>。
+同一文件可以同时出现三处；“能预览什么”不决定“能交付什么”。</p>
+<h2 id="1-对比口径">1. 对比口径</h2>
+<ul>
+<li><strong>方案 A</strong>：<a href="C:/Users/u/Desktop/Cogent/docs/计划/文件三项功能路线图.md">我此前的实施计划</a>。</li>
+<li><strong>方案 B</strong>：<a href="C:/Users/u/Desktop/%E6%96%87%E4%BB%B6%E9%93%BE%E6%8E%A5%E4%BA%A7%E7%89%A9%E5%8D%A1%E7%89%87%E4%B8%8E%E6%94%B9%E5%8A%A8%E5%88%97%E8%A1%A8-%E7%8B%AC%E7%AB%8B%E6%96%B9%E6%A1%88.md">另一位 Agent 的独立方案</a>。</li>
+<li><strong>ZCode / Harness</strong>：下文比较本次实读的具体链路，不把一个模块的限制扩大成整个产品的能力边界。</li>
+<li>上游是已存在的实现；A、B 是设计承诺。A、B 写了更多功能，不等于已经比上游更稳定、更快。</li>
+</ul>
+<p>文中 Host 指 Cogent 的后台进程；快照是保存当时的文件状态，基线是用来比较的起点。</p>
+<p>本次核对的本地源码版本：ZCode <code>c5904686ea8341826b3affe5d993d06a134fa779</code>；
+Harness <code>e8f7b93a344964de3dca1ace9e72b6e4d6de87cb</code>；
+pi <code>74dcca7d4140403eaa81c3e7124e73b63a0cb106</code>。
+既有跨产品资料与实验见<a href="C:/Users/u/Desktop/Cogent/docs/%E6%8A%80%E6%9C%AF%E7%AC%94%E8%AE%B0/%E6%96%87%E4%BB%B6%E5%BC%95%E7%94%A8%E4%B8%8E%E6%94%B9%E5%8A%A8%E8%BF%BD%E8%B8%AA.md">技术笔记</a>；本文重点重新核对影响四方选择的源码。</p>
+<h2 id="2--聊天正文里的文件链接">2. ① 聊天正文里的文件链接</h2>
+<h3 id="21-四种做法">2.1 四种做法</h3>
+<table>
+<thead>
+<tr>
+<th>对象</th>
+<th>白话解释：怎样把文字变成可点击文件</th>
+<th>优点</th>
+<th>问题与代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ZCode</td>
+<td>识别 Markdown 链接，拆出路径与行列；在 Markdown 安全处理前，把盘符、file URL 等改成能通过的路径形态；点击交给文件查看器或系统动作</td>
+<td>已处理不少 Windows、相对路径和安全插件的实际兼容问题；不需要额外工具调用</td>
+<td>路径经过改写后可能丢失相对／绝对含义，需要补规则还原；当前所查聊天点击链没有继续传递已解析的行列</td>
+</tr>
+<tr>
+<td>Harness</td>
+<td>在 Markdown 语法树上识别本地目标，交给聊天的文件打开器；反引号里的名字只在本轮真实产出／申报文件中唯一命中时变成按钮</td>
+<td>“显示哪个文件”由掌握真实文件的业务层决定；同名歧义不乱跳；本地链接在流式期间保持不可点击</td>
+<td>行号能交给打开器，但列号被消耗后不定位；反引号匹配不包含所有读过的文件；其自有渲染器不能直接搬进 Cogent 的 Streamdown</td>
+</tr>
+<tr>
+<td>A</td>
+<td>正文仍写普通 Markdown；渲染时把本地目标装进一个内部片段链接，通过安全管线后解出原目标，再向 Host 请求打开；已读／写文件也进入反引号匹配词表</td>
+<td>原始 <code>./</code>、<code>../</code>、盘符、百分号与定位信息可以完整传递；历史消息绑定原来的工作区；定位与预览设计较完整</td>
+<td>要维护一个小型编解码约定；原稿只提出路线，没有验证当前 Streamdown 是否保留这种编码</td>
+</tr>
+<tr>
+<td>B</td>
+<td>基本沿用 ZCode 的办法：盘符补 <code>/</code>、裸相对路径补 <code>./</code>，渲染时再解析；其他链接、词表、打开面板与 A 接近</td>
+<td>参考实现明确，适配步骤具体；少一层内部载荷编码</td>
+<td>同样需要解决安全管线改写后的路径歧义；“未闭合链接天然是文本”的假设不成立；PDF 被一起降成了文字内容预览</td>
+</tr>
+</tbody>
+</table>
+<p>源码依据：
+<a href="C:/Users/u/Desktop/Cogent/reference/zcode/packages/ui/src/lib/markdownFileLink.ts:179">ZCode 路径与行列解析</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/zcode/packages/ui/src/components/ai-elements/message.tsx:765">安全处理前改写</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/zcode/packages/ui/src/lib/windowsFileLinkEscapeRemarkPlugin.ts:59">Windows 原文恢复</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/zcode/packages/ui/src/components/ai-elements/message.tsx:1450">点击目标结构</a>；
+<a href="C:/Users/u/Desktop/Cogent/reference/deepseek-harness/packages/client/ui-primitives/src/markdown/file-link.ts:23">Harness 解析器</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/deepseek-harness/packages/client/ui-primitives/src/markdown/render.tsx:627">流式与点击路由</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/deepseek-harness/packages/client/ui-deliverables/src/client/turn-deliverables.ts:269">唯一文件名匹配</a>。</p>
+<h3 id="22-a-和-b-的真正差异怎样保住原本指向哪里">2.2 A 和 B 的真正差异：怎样保住“原本指向哪里”</h3>
+<p>比如模型写 <code>[文件](./src/app.ts)</code>，意思是“当前项目里的 src/app.ts”；
+<code>[文件](/src/app.ts)</code> 则可能指系统绝对路径。两者不能在清洗后混成一个意思。</p>
+<p>这次用 Cogent 当前 Streamdown 跑了 9 个输入，关键观察如下：</p>
+<table>
+<thead>
+<tr>
+<th>输入目标</th>
+<th>默认管线交给自定义链接组件的目标</th>
+<th>先用 A 的片段编码封装</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>./src/app.ts:12:3</code></td>
+<td><code>/src/app.ts:12:3</code></td>
+<td>解码后仍是原目标</td>
+</tr>
+<tr>
+<td><code>../shared/app.ts</code></td>
+<td><code>/shared/app.ts</code></td>
+<td>保留 <code>../</code>，之后再按消息原工作区解析</td>
+</tr>
+<tr>
+<td><code>C:/Users/u/report.pdf</code>、<code>file:///C:/Users/u/report.pdf</code></td>
+<td>本次未进入自定义链接组件</td>
+<td>能传到组件并解回原目标</td>
+</tr>
+<tr>
+<td>未闭合的 <code>[结果](./out/repo</code></td>
+<td><code>streamdown:incomplete-link</code></td>
+<td>仍是这个未完成标记，必须禁用打开</td>
+</tr>
+</tbody>
+</table>
+<p>因此，B 的路径改写<strong>可以工作</strong>，ZCode 已经为它补了相应规则；但它不是没有额外约定。
+ZCode 自己就有“<code>./foo</code> 被改成 <code>/foo</code>，再判断是否应拼回工作区”的分支。
+Cogent 新增这一能力时，选择 A 的封装方式更直接：先保留原目标，后面不需要猜前导 <code>/</code> 是怎么来的。</p>
+<p>本次探针只验证 href 的传递行为，不代表已完成 Windows 反斜杠恢复、Host 权限、Electron 点击与完整预览验收。
+代码及原始结果：<a href="C:/Users/u/Desktop/Cogent/tmp/file-feature-research/four-way-link-probe.mjs">探针</a>、
+<a href="C:/Users/u/Desktop/Cogent/tmp/file-feature-research/four-way-link-probe-result.json">结果</a>。
+上游对应歧义处理见<a href="C:/Users/u/Desktop/Cogent/reference/zcode/packages/ui/src/lib/markdownFileLink.ts:288">ZCode 相对路径还原</a>。</p>
+<h3 id="23-最终做法与理由">2.3 最终做法与理由</h3>
+<ol>
+<li><strong>让模型写标准链接，内部采用 A 的封装。</strong> 在安全处理前保存原始本地目标，编码为专用片段；自定义组件解码后交给 Host。
+内部编码不写进模型回答或历史转录，不新增模型要学习的 citation 指令；Host 仍核对会话与文件范围，编码本身不授予读盘权限。
+拆封装只还原传输内容；文件名中的百分号再按目标语法解码一次，不能把字面 <code>%20</code> 误变成空格。</li>
+<li><strong>Windows 恢复借用 ZCode 的方法。</strong> 反斜杠可能在 Markdown 解析期已被当作转义吃掉，须按原文位置恢复并校验，不能在点击时猜。
+同时保留 Streamdown 默认安全插件；完整链接可在流式中打开，未完成标记不可打开，不逐 token 查询磁盘。</li>
+<li><strong>反引号文件名借用 Harness 的唯一匹配。</strong> 词表扩展到本轮真实读过、写过、申报过及记录到变化的文件。
+两个根都有 <code>index.ts</code> 时，单写这个名字不自动选一个；完整路径仍可点击。代码围栏、命令和链接内部不再嵌套文件按钮。</li>
+<li><strong>三个入口共用一个打开器。</strong> 相对路径绑定消息当时的主根；点击默认右侧只读面板，窄窗用 Dialog；支持行、列、范围、复制、定位、系统打开、另存和已配置编辑器。
+旧消息缺少历史根信息时明示按当前根解析，不假装能还原从未保存的来源。</li>
+</ol>
+<p>共用预览采用 A 的能力划分：源码只读定位；Markdown 渲染／源码切换；图片缩放；<strong>PDF 按页视觉预览</strong>；
+Office 复用现有 worker 做文字、工作表和页序内容预览；音视频使用可解码的原生控件；其他类型仍有文件信息与系统动作。
+PDF 与 Office 分开，是因为现有 PDF.js 可以渲染 PDF 页面，Office 的原生排版另需引擎。
+这两者都还需要界面接入和资源管理，并非“已有解析器，接一个 fileId 就全部完成”。HTML／脚本默认显示源码。</p>
+<h2 id="3--正文下方的产物文件卡片">3. ② 正文下方的产物文件卡片</h2>
+<h3 id="31-四种做法">3.1 四种做法</h3>
+<table>
+<thead>
+<tr>
+<th>对象</th>
+<th>谁决定“交付哪些文件”</th>
+<th>多次申报、历史与故障</th>
+<th>优点与代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ZCode</td>
+<td>从本轮助手各段正文提取链接、路径、citation，再按支持类型、是否改动和存在性筛选</td>
+<td>最新助手行完成或被打断后可建卡；Markdown/HTML 要匹配本轮有效改动，Office/PDF 等不要求；所查卡片链按源路径打开</td>
+<td>不多调用工具，但回答措辞和类型表会影响出卡；引用既有 PDF 作参考也可能出卡；卡片不是严格的交付声明</td>
+</tr>
+<tr>
+<td>Harness</td>
+<td>模型调用 <code>present({files:[{path,description?}]})</code>，Host 校验存在且为普通文件后记结构化事件</td>
+<td>本轮多次调用累积不同路径，同路径取最后说明；不能用空数组清空；声明可回放，但不复制字节，打开的是当前源文件</td>
+<td>交付意图清楚、校验扎实、UI 不依赖正文解析；源文件后来删除或改写，原交付内容无法由声明保证</td>
+</tr>
+<tr>
+<td>A</td>
+<td><code>report_outputs({deliverables,byproducts?})</code>，分交付文件和过程文件；每次完整替换</td>
+<td>允许清空；失败不抹旧声明；保存交付副本；停止／失败保留已确认产物；已有下一次模型调用时提醒一次，收尾可推断补卡</td>
+<td>语义较丰富、历史保证较完整；双槽是否值得尚缺使用场景，且推断出卡与明确声明的优先级没有写清</td>
+</tr>
+<tr>
+<td>B</td>
+<td><code>report_outputs({deliverables})</code>，只有交付文件，其他变化交给列表</td>
+<td>替换、清空、校验、副本与 A 接近；取消催报，保留推断补卡</td>
+<td>工具更简单，符合当前需求；推断依然可能把普通修改当产物，甚至把显式清空的卡补回来</td>
+</tr>
+</tbody>
+</table>
+<p>源码依据：
+<a href="C:/Users/u/Desktop/Cogent/reference/zcode/packages/ui/src/lib/assistantFileReferences.ts:154">ZCode 提取引用</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/zcode/packages/ui/src/lib/assistantPreviewCards.ts:333">类型与改动门槛</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/zcode/packages/ui/src/v4/useAssistantPreviewCardsForRow.ts:66">完成或打断条件</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/zcode/packages/ui/src/lib/assistantPreviewCardValidation.ts:44">存在性筛选</a>；
+<a href="C:/Users/u/Desktop/Cogent/reference/deepseek-harness/packages/deliverables/tool-present/src/index.ts:78">Harness 校验与事件</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/deepseek-harness/packages/client/ui-deliverables/src/client/turn-deliverables.ts:255">多次申报合并</a>。</p>
+<p>两个例子能看清差异：</p>
+<ul>
+<li>“我参考了这个旧 PDF”：正文链接应可点；是否要出产物卡，应取决于有没有明确交付它。ZCode 的这条候选链不能严格区分。</li>
+<li>“把这个既有 ZIP 交给我”：它没被本轮修改，也未必能内置预览，但依然应有产物卡。Harness 和 A/B 的申报路线能表达这个意思。</li>
+</ul>
+<h3 id="32-对-ab-的取舍">3.2 对 A、B 的取舍</h3>
+<p><strong>接受 B 的单槽简化。</strong> 当前需求只需要模型说清交付哪些文件；全部变化已经有独立列表。
+如果还需要“这是过程文件”的说明，将来可以作为元数据增加，不必现在就让模型填写第二组文件。
+不过，A 的 byproducts 本来只是列表标签，不等于第二种卡片；B 用“避免第二种卡片”否定它，理由不够准确。</p>
+<p><strong>保留 A 的一次条件提醒，撤回 A/B 的自动推断出卡。</strong> 已知一个路径真实且唯一，只能证明“它指向谁”，不能证明“它要交付”。
+例如改了一个源码文件、最终回答提到它，A/B 的推断就可能把它升成产物；显式清空后再推断还会破坏撤回语义。
+这也是 A 的缺口，不能只批评 B。</p>
+<p>明确交付应走结构化工具。提醒只搭载已有下一次模型调用，不为收尾再启动一次模型循环；
+仍漏报时，正文链接和改动列表照常可用，但不把推测包装成已申报卡片。
+代价是少数漏报会少一张卡；需要用实际任务检查申报成功率，不能声称系统提示已保证永不漏报。</p>
+<h3 id="33-最终做法与理由">3.3 最终做法与理由</h3>
+<ol>
+<li><strong>工具只有一组 <code>deliverables</code>。</strong> 每项路径和简短说明，允许各类可访问普通文件，包括既有文件、脚本、ZIP 和临时目录内文件。
+修改源码默认进入改动列表；用户要求把源码交给他时也能申报。是否能预览，不作为是否能交付的门槛。</li>
+<li><strong>声明有明确状态。</strong> “未申报”和“已申报空清单”不同；每次有效调用完整替换。
+有一项不合法就反馈具体原因、不发布这次替换，上一份有效清单继续有效；空数组是成功撤回。</li>
+<li><strong>像 Harness 一样先验证，再确认。</strong> Host 解析实际目标、核对读取范围、存在性和普通文件；符号链接到真实目标后重新检查。
+工具回执给模型看，结构化记录给界面用，前端不解析回执里的自然语言。</li>
+<li><strong>像 A/B 一样保留交付版本。</strong> 申报时存一个已确认副本，收尾复核最终版；源文件消失则保留最近确认版并说明。
+卡片默认预览／另存交付副本，“打开当前原文件”单独选择；超副本预算仍可交付当前源文件，但明确没有历史副本。</li>
+<li><strong>成功、停止、失败都结算已确认结果。</strong> 卡片附带所属回合状态，不能因为任务失败就丢掉已完成文件，也不能把半成品说成已完成成果。
+<code>ask_user</code> 挂起不等于回合结束；等待期间用正文链接查看，收尾才在固定尾部呈现卡片。</li>
+<li><strong>提示与撤回规则互不冲突。</strong> 系统提示要求终答前申报；有文件活动、仍未申报且已有下一次模型调用时，最多提醒一次“如有需要交付的文件，请申报”。
+已有有效声明，包括空清单，就不催报、不由正文自动追加。工具失败后的正常模型纠错不算强开的额外循环。</li>
+</ol>
+<p>这样卡片的含义很稳定：<strong>模型说要交付，Host 已确认可用</strong>。正文提到某文件、工具写过某文件，都不会自动替代这两个条件。</p>
+<h2 id="4--卡片下方的本轮改动列表">4. ③ 卡片下方的本轮改动列表</h2>
+<h3 id="41-四种做法">4.1 四种做法</h3>
+<table>
+<thead>
+<tr>
+<th>对象</th>
+<th>怎样知道“改了什么”</th>
+<th>净统计、历史与恢复</th>
+<th>优点与代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ZCode</td>
+<td>所查回合汇总链从成功工具结果中提取文件路径、修改前后文本和 patch，逐次保存 checkpoint，并按文件合并</td>
+<td>保留首次 before、末次 after；缺 after 时累计过程 patch 行数；文本 diff 超时会落到空 hunks；checkpoint 可持久审查并做版本校验回退</td>
+<td>对有结构化结果的文件工具接线直接，归因较明确；普通 shell/MCP 任意写盘不会自动进入这条汇总链；累计行数不能总当净行数</td>
+</tr>
+<tr>
+<td>Harness</td>
+<td>回合前后分别用私有 Git index／对象目录拍工作区树；文件工具还在真正写入前复制精确目标，补 Git 忽略文件和根外目标</td>
+<td>比较两棵树和补充副本，得到净变化；无 Git 时只有文件工具捕获；改动摘要和比较只活到 Session 释放／Host 重启；内容比较超时会返回带 coarse 标记的整文件替换</td>
+<td>范围内 shell/MCP 副作用也能被发现；复用 Git 的树和统计能力；有 Git、忽略规则、嵌套仓库与临时存储边界</td>
+</tr>
+<tr>
+<td>A</td>
+<td>首尾扫描显式工作区，直接保存原始字节和文件清单；文件工具另捕获目标；自己计算净差异</td>
+<td>无 Git 也可扫描；保存历史两侧；定义未知／缺席、模式变化、续写原始基线与版本回收；撤销／重做另做校验</td>
+<td>覆盖与历史目标较完整，但实现最多：遍历、哈希、存储、差异、回收都自己承担；原稿微基准不是完整性能验收</td>
+</tr>
+<tr>
+<td>B</td>
+<td>同样采用首尾原始字节快照＋工具目标捕获，代码按文件域集中拆分</td>
+<td>净变化、预算、历史 diff、撤销与 A 接近；回合历史绑定、手动继续基线继承、嵌套工具挂接及重做规则较简略</td>
+<td>模块边界更直观，但核心算法并没有比 A 更轻；少写生命周期细节，不等于少了这些实现成本</td>
+</tr>
+</tbody>
+</table>
+<p>源码依据：
+<a href="C:/Users/u/Desktop/Cogent/reference/zcode/apps/zcode-cli/packages/core/src/runtime/methods/tools.ts:173">ZCode checkpoint 入口</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/zcode/apps/zcode-cli/packages/core/src/runtime/helpers/turn-file-changes.ts:7">首尾合并与统计分支</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/zcode/apps/zcode-cli/packages/core/src/runtime/methods/file-rewind.ts:406">回退前版本核对</a>；
+<a href="C:/Users/u/Desktop/Cogent/reference/deepseek-harness/packages/deliverables/workspace-changes/src/git.ts:143">Harness 私有 Git 快照</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/deepseek-harness/packages/deliverables/workspace-changes/src/recorder.ts:300">树与工具捕获合并</a>、
+<a href="C:/Users/u/Desktop/Cogent/reference/deepseek-harness/packages/deliverables/workspace-changes/README.md:44">覆盖与存续边界</a>。</p>
+<p>这里的“净变化”是开始与结束比较，而不是把每次编辑的数字相加：</p>
+<ul>
+<li>原来已有用户修改，本轮只再加一行，就只统计这一行；不能拿 Git HEAD 当本轮起点。</li>
+<li>A→B→C→A，最后内容回到原样，就不列为本轮净修改。</li>
+<li>shell 在工作区生成了文件，即使模型没提到，也应进入覆盖范围内的列表。</li>
+<li>产物本轮也发生了变化，上面的产物卡保留，下面的列表同样保留它。</li>
+</ul>
+<h3 id="42-为什么仍选原始字节而不直接用-harness-的-git-快照">4.2 为什么仍选原始字节，而不直接用 Harness 的 Git 快照</h3>
+<p>Harness 的思路值得采用：<strong>先有起点，再允许工具执行；收尾比较终点；工具精确捕获补漏</strong>。
+它的 Git 快照也没有必要改用户 index、分支或 refs，不能把“用了 Git”说成“会破坏仓库”。</p>
+<p>Cogent 选原始字节有三个具体收益：非 Git 文件夹与没有 Git 的机器使用同一套逻辑；
+产物副本和改动历史共用内容存储；原始 CRLF、BOM 与二进制不用经过 Git 的文本属性和过滤器。
+Git 也能绕过这些转换保留字节，选择原始字节是减少两套语义与配置维护，不是认定 Git 做不到。</p>
+<p>代价同样明确：Git 提供的部分扫描、索引和对象管理，现在要自己处理。
+<strong>这条路线需要实现一套受限的文件版本记录能力，工作量明显超过列表 UI。</strong>
+A、B 都承担这个成本；没有完整扫描性能结果前，不能把二者判为比 Harness 更快。
+若整体性能不达标，应优化扫描／索引或重新评估 Git 加速，不能为了维护既有决定而放弃实测。</p>
+<h3 id="43-最终捕获与统计做法">4.3 最终捕获与统计做法</h3>
+<ol>
+<li><strong>范围先定清楚。</strong> 冻结本轮显式绑定的工作区根，重叠根去重；不扫描整个 Home。
+排除版本库内部、依赖缓存和 Cogent 自己的存储，不按 <code>.gitignore</code> 全部排除，避免漏掉 tmp/out 中的真实产物。
+嵌套仓库登记为边界，需要跟踪其内部时显式绑定；目录符号链接不自动跟随扩大全量扫描。</li>
+<li><strong>首次获准的潜在写盘工具执行前，共同等待基线。</strong> write/edit、shell 和 MCP 执行都覆盖，不猜 shell 命令是否只读。
+直接调用与嵌套 <code>ctx.executeTool</code> 走同一个捕获协调器，审批与最终参数确认后再捕获，拒绝不伪造变化。
+纯问答不扫描；记录观察窗口的实际起止时间，不假装是整个用户输入时段的原子快照。</li>
+<li><strong>范围快照为主，工具目标捕获补漏。</strong> 有全范围基线时不能被后来的工具 before 覆盖，否则会丢掉此前 shell 的修改。
+根外或排除区内的明确工具目标单独捕获；失败工具也检查实际 after。
+根外文件若先被未知 shell 改过，后来才被文件工具发现，不能声称已知道整轮最初版本，必须注明覆盖起点和缺失。</li>
+<li><strong>保存原始字节，另算展示差异。</strong> 内容按 SHA-256 去重，清单保存路径、类型、模式、hash 和内容是否可用。
+区分“确认不存在”“存在但未读完”“未遍历到”；不完整扫描不能据此报删除，未知 before 不能直接当作新建。
+读前后状态不稳定时重试一次，仍不稳就标未知，不把整个工作区说成瞬时冻结。</li>
+<li><strong>只显示首尾净变化。</strong> 文本在 worker 计算 <code>+N -M</code>；二进制、超大、未知编码或超时保留条目并显示“—／未统计”。
+编码、换行、模式、链接目标变化即使没有文本增删也要有条目；内容相同且唯一配对的删除／新增可显示为按内容匹配的改名，歧义仍分开。
+快照看到的并发修改称“本轮工作区更改”，不宣称一定由 Agent 独占造成。</li>
+<li><strong>成功、失败、停止均收尾。</strong> 等正在进行的捕获完成或记录明确失败，再冻结 after、持久化摘要并释放运行状态。
+统计可显示“整理中”并按 revision 更新；旧查询不能覆盖新结果。Host 崩溃后只展示已保存版本，不能拿重启时的磁盘冒充当时终点。</li>
+</ol>
+<p>实现挂点依据：pi 的 <a href="C:/Users/u/Desktop/Cogent/reference/pi/packages/coding-agent/src/core/agent-session.ts:718">可等待 tool_call／tool_result</a>；
+Cogent 的<a href="C:/Users/u/Desktop/Cogent/src/host/runtime/hook-seat.ts:7">直接与嵌套两条审批入口</a>。
+pi edit 的展示 diff 可以继续用于工具过程卡，但 write 不提供旧内容，不能把工具展示文本当作完整历史事实源。</p>
+<h3 id="44-历史预算和恢复必须一起说清">4.4 历史、预算和恢复必须一起说清</h3>
+<p><strong>历史绑定采用 A 的明确规则。</strong> 每个真实用户输入一个 turnId；实际 user entry id 与 turnId 持久关联，纯文本也绑定。
+自动续写和手动继续仍属于同一用户回合；每次执行有自己的 executionId。
+手动继续复用原始基线和最后有效产物声明，发布同一回合的新 revision，不从中间状态重算一轮。
+可继续的截断回合保留原始基线，直到完成或下一个真实用户输入；继续前的外部变化单独记录观察区间。
+原始消息 DOM key 不改，旧历史没有的 before 不回填假 diff。</p>
+<pre><code class="language-text">真实用户消息 → 实际 entry id ↔ turnId（持久关联）
+                                ├─ 第一次执行：原始基线 → 收尾版本 1
+                                └─ 手动继续：同一基线 → 收尾版本 2
+界面仍是一轮；产物与改动按最新 revision 更新，历史文件两侧由 Host 保存。
+</code></pre>
+<p>现有可复用缝见<a href="C:/Users/u/Desktop/Cogent/src/host/kernel/pi-session-factory.ts:198">真实 entry 写入回调</a>。
+B 也提到了这个缝，但尚未写出持久映射与继续时的基线继承，不能把增加一个 optional turnId 字段视为全部接通。</p>
+<p><strong>存储长期只保留有用版本。</strong> 原始对象库同时服务交付副本和历史 diff；正常收尾后释放未变化文件的基线内容租约，
+长期保留变化文件两侧、交付版本和必要清单。仍可继续的截断回合暂留原始基线。
+否则每轮把整份工作区内容永久引用住，哪怕有去重也会让存储预算过早耗尽。
+删除会话才释放其引用；预览、活动扫描、恢复日志持租约；不悄悄删除仍被历史引用的版本。</p>
+<p>初始预算沿用 A 的建议值，集中配置：2 路文件 I/O、每根最多 20,000 文件、内容副本 20 MiB／文件、
+交付副本 100 MiB／文件、哈希上限 100 MiB／文件、每轮新增对象 256 MiB、全库 2 GiB、首尾扫描各 10 秒。
+这些是待实测的护栏，不是性能成绩；超限保留路径和真实覆盖状态，不能变成“没有修改”。
+必须验证完整遍历、读取、写副本、哈希、diff 与 UI，而非只跑内存／哈希微基准。</p>
+<p><strong>审查与恢复沿用 A/B 的方向，补齐契约。</strong> 默认打开冻结 before/after 的只读 diff，可切统一／双栏；当前文件另有打开动作。
+单文件／整轮撤销和重做继续纳入，但单独作为需要完整测试的批次，不再称作便宜附赠功能：</p>
+<ul>
+<li>撤销校验当前存在性、类型、模式和内容是否符合 after；重做对照 before 及上次恢复结果。后续编辑冲突就拒绝覆盖。</li>
+<li>新建的撤销是删除已匹配的 after，删除的撤销是恢复 before；改名核对两端，不得覆盖新路径上后来出现的文件。</li>
+<li>符号链接、硬链接或缺少完整副本的项可以审查，但影响范围不清时不可自动恢复。</li>
+<li>整轮先预检，执行前复核；逐项持久记录恢复日志。中途失败只对仍符合预期版本的已执行项补偿，不强行覆盖后来变化。</li>
+<li>Cogent 内部恢复与同路径操作协调；外部进程仍可能并发写入，不承诺跨文件的原子事务，也不把 hash 预检说成绝对消除了竞态。</li>
+<li>恢复只改变文件，不回退聊天；磁盘状态与不可完成项必须如实反馈。恢复日志未结清时，重启不能伪装整轮已恢复。</li>
+</ul>
+<h2 id="5-实施约束与待验证项">5. 实施约束与待验证项</h2>
+<p>建议实施顺序仍是：文件身份与存储 → 正文链接与共用预览 → 申报与产物卡 → 快照与净统计 → 列表、审查与恢复 → 完整联动验收。
+本轮没有启动实现；本文是新的决策审阅入口，A/B 保留用于对照。用户认可后再把选定内容统一回写实施计划，避免两份计划同时指挥代码。</p>
+<p>审阅时重点看四个结果：文件链接打开的是正确目标；卡片确实表达明确交付；列表算的是声明范围内的首尾净变化；
+停止、继续、重启、超预算和用户后改时仍保持上述含义。预算数值、申报成功率和恢复可靠性，都要靠后续实现测试证明。</p>
+
+
+
+        </body>
+        </html>

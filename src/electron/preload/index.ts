@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { FileActionRequest } from '../../shared/files'
 import {
   IPC,
   type AppStatus,
@@ -29,6 +30,8 @@ type CustomProvidersPayload = { providers: CustomProviderDef[]; overrides: Provi
  * 暴露的 API 形状即 CogentApi，renderer 侧类型由此导出。
  */
 const api = {
+  fileAction: (request: FileActionRequest): Promise<{ canceled: boolean }> => ipcRenderer.invoke(IPC.filesAction, request),
+  configureFileEditor: (): Promise<{ canceled: boolean }> => ipcRenderer.invoke(IPC.filesConfigureEditor),
   filePath: (file: File): string => webUtils.getPathForFile(file),
   pickAttachments: (): Promise<string[]> => ipcRenderer.invoke(IPC.attachmentsPick),
   clipboardFiles: (): Promise<string[]> => ipcRenderer.invoke(IPC.attachmentsClipboard),

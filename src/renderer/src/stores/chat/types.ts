@@ -6,6 +6,7 @@
  */
 import type { ChatMessage, MessageUsage, PermissionMode, SessionSummary, TodoItem } from '@/env.d'
 import type { AttachmentRef, DirectoryRef } from '@shared/attachments'
+import type { FileReference } from '@shared/files'
 
 /** 引擎 SessionSummary 的 renderer 侧直接镜像（env.d.ts），不再本地重复声明 */
 export type { SessionSummary }
@@ -16,6 +17,7 @@ export type { SessionSummary }
  * 展平生成（flattenSegments）—— 两条来源同一形状，渲染单一（components/ui/tool）。
  */
 export interface ToolItem {
+  fileRefs?: FileReference[]
   /** = 引擎 callId（事件流与终态配对键，跨 run 唯一） */
   id: string
   /** 判别字段：消息列表元素联合（ChatMessage 无此字段） */

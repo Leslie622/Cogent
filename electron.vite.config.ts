@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { pdfAssets } from './scripts/pdf-assets'
 
 export default defineConfig({
   // main 双入口：index = Electron 主进程；host = Host（独立 Node 引擎进程）。
@@ -49,6 +50,6 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [react(), tailwindcss(), pdfAssets()]
   }
 })

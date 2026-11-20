@@ -40,6 +40,8 @@ import { adaptCompactionToWindow } from '../runtime/compaction'
 import type { McpSettingsPatch } from '../runtime/mcp-config'
 import { COGENT_TOOL_NAMES, MCP_TOOL_ALLOWLIST } from '../runtime/tool-meta'
 import { isAttachmentRef, isDirectoryRef, type AttachmentRef, type DirectoryRef } from '../../shared/attachments'
+import type { FileContext, FileReference } from '../../shared/files'
+import { toolFileReferences } from '../runtime/files/paths'
 
 /** 呈现元数据跟随用户条目；不把上传/预览信息塞进模型内容块。 */
 export interface AttachmentInput {
@@ -50,7 +52,7 @@ export interface AttachmentInput {
   attachments: AttachmentRef[]
   directories?: DirectoryRef[]
 }
-export type AttachmentMessage = AgentMessage & { attachmentInput?: AttachmentInput }
+export type AttachmentMessage = AgentMessage & { attachmentInput?: AttachmentInput; fileContext?: FileContext; toolFileRefs?: Record<string, FileReference[]> }
 
 /**
  * 投影源里的压缩条：pi 的 CompactionSummaryMessage 不带 usage
@@ -83,14 +85,29 @@ export const PI_AGENT_DIR_NAME = 'pi'
  * CompactionBarSource），影子区/多代压缩条全部保留。找不到会话文件返回
  * undefined（新会话未跑过、或已删除）。
  */
-export function readPiTranscript(cwd: string, hostRoot: string, sessionId: string): AgentMessage[] | undefined {
+export function readPiTranscript(cwd: string, hostRoot: string, sessionId: string): AttachmentMessage[] | undefined {
   const sessionDir = piSessionDir(cwd, join(hostRoot, PI_AGENT_DIR_NAME))
   const file = PiSessionManager.findById(cwd, sessionId, sessionDir)
   if (file === undefined) return undefined
   const messages: AttachmentMessage[] = []
   const branch = PiSessionManager.open(file, sessionDir).getBranch()
   const inputs = new Map<string, AttachmentInput>()
+  const contexts = new Map<string, FileContext>()
+  const references: Record<string, FileReference[]> = {}
   for (const entry of branch) {
+    if (entry.type === 'custom' && entry.customType === 'cogent.file-context.v1') {
+      const data = entry.data as Partial<FileContext>
+      if (data.version !== 1 || typeof data.turnId !== 'string' || typeof data.userEntryId !== 'string' || typeof data.cwd !== 'string' ||
+        typeof data.platform !== 'string' || !Array.isArray(data.roots) || !data.roots.every((root) => typeof root === 'string')) throw new Error('文件来源元数据损坏')
+      contexts.set(data.userEntryId, data as FileContext)
+    }
+    if (entry.type === 'custom' && entry.customType === 'cogent.file-refs.v1') {
+      const data = entry.data as { callId?: unknown; refs?: unknown }
+      if (typeof data.callId !== 'string' || !Array.isArray(data.refs) || !data.refs.every((ref: unknown): ref is FileReference =>
+        typeof ref === 'object' && ref !== null && 'path' in ref && typeof ref.path === 'string' &&
+        (!('turnId' in ref) || typeof ref.turnId === 'string'))) throw new Error('工具文件引用元数据损坏')
+      references[data.callId] = data.refs
+    }
     if (entry.type === 'custom' && entry.customType === 'cogent.attachment-input.v1') {
       const data = entry.data as Partial<AttachmentInput>
       if (data.version !== 1 || typeof data.userEntryId !== 'string' || typeof data.text !== 'string' ||
@@ -99,10 +116,13 @@ export function readPiTranscript(cwd: string, hostRoot: string, sessionId: strin
       inputs.set(data.userEntryId, data as AttachmentInput)
     }
   }
+  let context: FileContext | undefined
   for (const entry of branch) {
     if (entry.type === 'message') {
       const input = inputs.get(entry.id)
-      messages.push(input === undefined ? entry.message : { ...entry.message, attachmentInput: input })
+      if (entry.message.role === 'user') context = contexts.get(entry.id) ?? (typeof entry.message.content === 'string' && entry.message.content.startsWith('[cogent:continue]') ? context : undefined)
+      messages.push({ ...entry.message, ...(input !== undefined && { attachmentInput: input }),
+        ...(context !== undefined && { fileContext: context }), toolFileRefs: references })
     } else if (entry.type === 'compaction') {
       const bar: CompactionBarSource = {
         role: 'compactionSummary',
@@ -135,7 +155,8 @@ export interface ApprovalBridge {
 
 export interface PiSessionOptions {
   /** appendMessage 返回后才有真实条目 id；公开 message_end 尚早于持久化。 */
-  onUserEntry?: (entryId: string) => Omit<AttachmentInput, 'userEntryId'> | undefined
+  onUserEntry?: (entryId: string, cwd: string) => { attachment?: Omit<AttachmentInput, 'userEntryId'>; fileContext?: FileContext } | undefined
+  onFileReferences?: (callId: string, refs: FileReference[]) => void
   /** 会话主根（pi 的 cwd：项目发现 + 会话目录编码；无绑定根时调用方兜底主目录） */
   cwd: string
   /** Cogent Host 根（pi 域 = <hostRoot>/pi） */
@@ -199,10 +220,27 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
   piSessionManager.appendMessage = (message) => {
     const id = appendMessage(message)
     if (message.role === 'user') {
-      const input = opts.onUserEntry?.(id)
-      if (input !== undefined) piSessionManager.appendCustomEntry('cogent.attachment-input.v1', { ...input, userEntryId: id })
+      const input = opts.onUserEntry?.(id, piSessionManager.getCwd())
+      if (input?.attachment !== undefined) piSessionManager.appendCustomEntry('cogent.attachment-input.v1', { ...input.attachment, userEntryId: id })
+      if (input?.fileContext !== undefined) piSessionManager.appendCustomEntry('cogent.file-context.v1', input.fileContext)
     }
     return id
+  }
+  // 扩展结果事件覆盖直接和嵌套工具；只记录成功且有明确路径的操作，不碰摘要文本。
+  const fileHooks: import('@earendil-works/pi-coding-agent').InlineExtension = {
+    name: 'cogent-file-references', factory: (pi) => {
+      pi.on('tool_result', (event, ctx) => {
+        if (event.isError) return
+        const branch = piSessionManager.getBranch()
+        const last = branch.findLast((entry) => entry.type === 'custom' && entry.customType === 'cogent.file-context.v1')
+        if (last?.type !== 'custom') return
+        const context = { ...(last.data as FileContext), cwd: ctx.cwd }
+        const refs = toolFileReferences(event.toolName, event.input, context)
+        if (refs.length === 0) return
+        piSessionManager.appendCustomEntry('cogent.file-refs.v1', { callId: event.toolCallId, refs })
+        opts.onFileReferences?.(event.toolCallId, refs)
+      })
+    }
   }
 
     // 压缩参数小窗自适应：pi 的 reserve/keep 固定默认对小窗模型
@@ -251,7 +289,7 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
         : []),
       // 钩子座（4d）：段注入（before_agent_start）等 Host 干预的具名注册地
       // （装配形状与「审批为何不走扩展」的墙见 runtime/hook-seat.ts 头注）
-      createCogentHooks({ sections: opts.sections, nestedApproval: opts.approval })
+      createCogentHooks({ sections: opts.sections, nestedApproval: opts.approval }), fileHooks
     ]
   })
   await resourceLoader.reload()

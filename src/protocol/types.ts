@@ -16,6 +16,7 @@
 export const PROTOCOL_VERSION = 3
 
 import type { AttachmentMethods } from '../shared/attachments'
+import type { FileMethods, FileInternalMethods, FileContext, FileReference } from '../shared/files'
 
 // ———— JSON-RPC 2.0 极简子集 ————
 
@@ -181,6 +182,7 @@ export interface ContextEstimate {
  * 未执行（审批拒绝 / 计划模式只读拦截 / 中止 —— 模型收到的是 error 结果 + 原因）。
  */
 export interface ToolCallRecord {
+  fileRefs?: FileReference[]
   /** pi toolCall 块 id（事件流与历史回查的配对键） */
   callId: string
   name: string
@@ -214,6 +216,8 @@ export interface ToolCallRecord {
  * 完整块结构化（phase/签名透传等）仍是路线第 1 项，届时继续以 optional 字段扩展。
  */
 export interface ChatMessage {
+  turnId?: string
+  fileContext?: FileContext
   attachments?: import('../shared/attachments').AttachmentRef[]
   directories?: import('../shared/attachments').DirectoryRef[]
   id: string
@@ -1027,7 +1031,7 @@ export interface CapabilityIssueResult {
 /**
  * method 注册表：键名即线上协议。新增 method = 在此加一行 + 服务端加 handler。
  */
-export interface ProtocolMethods extends AttachmentMethods {
+export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInternalMethods {
   initialize: { params: InitializeParams; result: InitializeResult }
   'session.list': { params: Record<string, never>; result: SessionSummary[] }
   'session.create': { params: { title?: string; permissionMode?: PermissionMode; planEnabled?: boolean; cwd?: string; projectId?: string }; result: SessionSummary }
@@ -1086,7 +1090,8 @@ export interface ProtocolMethods extends AttachmentMethods {
 // ———— 事件映射（host → 宿主；骨架期先定形状，随实现细化） ————
 
 export interface ProtocolEvents {
-  'run.started': { sessionId: string }
+  'files.invalidated': Record<string, never>
+  'run.started': { sessionId: string; turnId?: string }
   'run.completed': {
     sessionId: string
     /** 最终完整 assistant 回复；renderer 用它替换流式累积，免拼 delta */
@@ -1150,7 +1155,7 @@ export interface ProtocolEvents {
    * diff = edit 工具的展示 diff（与 ToolCallRecord.diff 同源，流式路径数据源，
    * 2026-11-11 additive）。
    */
-  'tool.completed': { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string }
+  'tool.completed': { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string; fileRefs?: FileReference[] }
   /**
    * 工具执行中的流式进度（D5 定稿，additive）：长时工具
    *（当前 = bash）的尾部输出快照，引擎侧 100ms 节流。text = 滚动快照全文

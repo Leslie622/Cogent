@@ -28,7 +28,7 @@ requestRender 当成重新核实了整套缓存或虚拟化。
 | LobeChat / Cherry Studio（原笔记调研） | React 组件树与 Shiki 是共享技术方向；产品版本与内部缓存策略不能仅从使用同一库推断 |
 | Streamdown 2.7.1 | remend 修未闭合片段、块级 memo、异步 Shiki 高亮与默认安全管线；Cogent 购买解析能力，自己只加必要 adapter |
 
-## 3. 依赖的三条合同
+## 3. 依赖合同
 
 1. `rehypePlugins` 是覆盖语义。Block adapter 追加插件时继承实际传下的 raw/sanitize/
    harden 管线，不自己仿造默认数组。原始 HTML 始终经过原库清洗。
@@ -38,6 +38,9 @@ requestRender 当成重新核实了整套缓存或虚拟化。
    static 才还原未闭合强调、行内 code 和链接的字面结果。
 3. 代码高亮输出是按行结构化 JSX、前缀 grammarState 可复用，新增行可做 mount-only
    淡入。它依赖具体 DOM 合同，升级 Streamdown 时需要相应测试。
+4. processor 按插件函数名和参数缓存，Streamdown 根 memo 又不比较 remarkPlugins。
+   捕获文件词表的插件既需要独立函数名，也需要通过受比较的 data 属性传递词表身份；只更新插件数组不够。
+   不能给 Streamdown 换 key 来强制刷新，否则会丢正文节点和渐显状态。回归包含空词表→真实词表、跨聊天及 live→static。
 
 依据：`node_modules/streamdown/dist/index.d.ts:590,687-690,716-731` 与
 `dist/chunk-7TTQLYRW.js:17-20,40`；高亮依据
@@ -49,8 +52,9 @@ requestRender 当成重新核实了整套缓存或虚拟化。
 属于同类解析问题。`@streamdown/code` 用 Shiki，各语言按需懒加载；代码等宽字体随包
 带 JetBrains Mono，中文回落鸿蒙。语言 chunk 多不意味着所有语言都在启动路径执行。
 
-链接点击 preventDefault 后交给 window.open，让 Electron 的 setWindowOpenHandler
-走系统浏览器。裸 a 窗口内导航不会自动经过这条守卫。链接色、字重和下划线归对话内容主题
+本地链接在 remark 阶段封装为内部片段，清洗后交 FileLink；Windows 原文恢复、唯一文件词表和图片委托
+见[文件引用笔记](文件引用与改动追踪.md#9-cogent-正文链接的实现取舍)。网页链接点击 preventDefault 后交给 window.open，让 Electron 的 setWindowOpenHandler
+走系统浏览器，脚注保留文内跳转。裸 a 窗口内导航不会自动经过这条守卫。链接色、字重和下划线归对话内容主题
 消费表，不在 Markdown 组件硬编码品牌色。默认外链确认弹窗、行号和库内 animated 关闭，
 自有 reveal 的必要性与边界在对应笔记解释。
 

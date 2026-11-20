@@ -226,6 +226,8 @@ export class HostManager {
       pending.reject(new Error(error ? `host closed: ${error}` : 'host closed'))
     }
     this.pending.clear()
+    // 旧 fileId 与预览字节属于被关闭的 Host；主窗口应立即回收，正文仍可在新服务重新解析。
+    if (this.eventSink !== null) this.emitEvent({ jsonrpc: '2.0', method: 'files.invalidated', params: {} })
     this.status = {
       state: this.manualStop ? 'stopped' : 'failed',
       nodeVersion: this.status.nodeVersion,

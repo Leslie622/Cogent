@@ -200,6 +200,22 @@ function submit(text = '准备期停止的问题') {
 }
 
 describe('真实 pi 准备期取消与终态内容', () => {
+  it('纯文本与真实 user entry 保存文件来源，历史回读保留相同回合和 cwd', async () => {
+    manager.submit(sessionId, '纯文本来源', MODEL, 'off', PROVIDER, [], 'file-turn')
+    await waitTerminals(1)
+    const messages = manager.messages(sessionId)
+    const user = messages.find((message) => message.role === 'user')!
+    const assistant = messages.find((message) => message.role === 'assistant')!
+    expect(user.turnId).toBe('file-turn'); expect(assistant.turnId).toBe('file-turn')
+    expect(user.fileContext?.cwd).toBe(root)
+    expect(user.fileContext?.platform).toBe(process.platform)
+    expect(user.fileContext?.roots).toEqual([root])
+    const entry = hooks.sessions[0].sessionManager.getBranch().find((entry) => entry.type === 'message' && entry.message.role === 'user')!
+    expect(user.fileContext?.userEntryId).toBe(entry.id)
+    expect(readPiTranscript(root, root, sessionId)?.find((message) => message.role === 'user')?.fileContext).toEqual(user.fileContext)
+    expect(manager.fileContext(sessionId, 'file-turn').saved).toBe(true)
+    expect(() => manager.fileContext(sessionId, 'made-up')).toThrow('回合不存在')
+  })
   it('历史图片请求超额时零新增HTTP，异步原回调变换后的有效载荷才被记录', async () => {
     manager.syncCustomProviders([{ id: PROVIDER, name: '请求额度', baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`, models: [],
       modelDefs: [{ id: MODEL, input: ['text','image'], contextWindow: 128000, maxTokens: 4096 }] }], [])
@@ -300,6 +316,9 @@ describe('真实 pi 准备期取消与终态内容', () => {
     expect(manager.messages(sessionId).filter((message) => message.role === 'user').map((message) => message.content))
       .toEqual(['准备期停止的问题'])
     expect(readPiTranscript(root, root, sessionId)?.filter((message) => message.role === 'user')).toHaveLength(1)
+    const saved = manager.messages(sessionId).find((message) => message.role === 'user')!
+    expect(saved.fileContext?.cwd).toBe(root)
+    expect(saved.turnId).toBeTypeOf('string')
     submit('停止后的下一问')
     await waitTerminals(2)
     expect(requests).toHaveLength(1)

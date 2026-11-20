@@ -12,7 +12,10 @@
  * 切分/聚合全是纯函数；TurnGroup memo 按项引用比较 —— 流式 delta 只重渲染
  * 活动回合，历史回合零重渲染。
  */
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
+import type { FileReference } from '@shared/files'
+import { FileLink, FileLinkContext } from './files/FileLink'
+import { literalFileTarget } from '@/lib/file-links'
 import { MessageScrollerItem } from '@/components/ui/message-scroller'
 import { Reasoning } from '@/components/ui/reasoning'
 import { RunTrace, WorkingLine } from '@/components/ui/run-trace'
@@ -244,7 +247,7 @@ function sumToolMs(items: MessageItem[]): number | undefined {
 const ProcessItem = memo(function ProcessItem({ item }: { item: MessageItem }) {
   if (item.type === 'tool') {
     return (
-      <ToolCard
+      <><ToolCard
         name={item.name}
         summary={item.summary}
         status={item.status}
@@ -252,6 +255,8 @@ const ProcessItem = memo(function ProcessItem({ item }: { item: MessageItem }) {
         progress={item.progress}
         diff={item.diff}
       />
+      {item.fileRefs?.map((ref) => <div className="ml-7" key={ref.path}><FileLink target={literalFileTarget(ref.path)}>{ref.path}</FileLink></div>)}
+      </>
     )
   }
   if (item.type === 'approval') {
@@ -272,7 +277,7 @@ const ProcessItem = memo(function ProcessItem({ item }: { item: MessageItem }) {
   return <MessageRow message={item} />
 })
 
-function TurnGroupImpl({ turn, phase, stopping = false }: { turn: ChatTurn; phase: TurnPhase; stopping?: boolean }) {
+function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phase: TurnPhase; stopping?: boolean }) {
   // 回合外压缩条独立行（手动「立即压缩」/idle，groupTurns 按「bar 之后
   // 无工作项」判出）：不套「已工作」头条/统计行 —— 那是一个 run 的语义，
   // 压缩不是 run，且它是用户的显式动作、要直接可见。组内可带 L1 prune
@@ -421,10 +426,20 @@ function TurnGroupImpl({ turn, phase, stopping = false }: { turn: ChatTurn; phas
 
 /** 比较按项引用：groupTurns 每次渲染重建数组/回合对象，但历史回合的项引用
  *  稳定 —— 流式 delta 只让活动回合比较失败重渲染，历史回合全部短路 */
+function TurnGroupImpl(props: { turn: ChatTurn; phase: TurnPhase; stopping?: boolean; sessionId?: string }) {
+  const serialized = JSON.stringify(props.turn.items.flatMap((item) => item.type === 'tool' ? item.fileRefs ?? [] : []))
+  const refs = useMemo(() => JSON.parse(serialized) as FileReference[], [serialized])
+  const source = props.turn.items.find((item): item is ChatMessage => item.type === undefined && item.turnId !== undefined)
+  const turnId = props.turn.user?.turnId ?? source?.turnId
+  const scope = useMemo(() => props.sessionId === undefined ? null : { sessionId: props.sessionId, turnId, refs }, [props.sessionId, turnId, refs])
+  return <FileLinkContext.Provider value={scope}><TurnGroupBody {...props} /></FileLinkContext.Provider>
+}
+
 export const TurnGroup = memo(
   TurnGroupImpl,
   (prev, next) =>
     prev.phase === next.phase &&
+    prev.sessionId === next.sessionId &&
     prev.stopping === next.stopping &&
     prev.turn.user === next.turn.user &&
     prev.turn.items.length === next.turn.items.length &&

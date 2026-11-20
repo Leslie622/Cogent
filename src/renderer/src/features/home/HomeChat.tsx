@@ -264,6 +264,7 @@ function ChatMessages() {
             // 必有首项 —— 压缩条组带 bar、尾部兜底组先 push 再填 items）
             <div key={turn.user?.id ?? turn.items[0].id} className="flex min-w-0 flex-col gap-3">
               <TurnGroup
+                sessionId={activeSessionId ?? undefined}
                 turn={turn}
                 phase={turn === turns.at(-1) && running
                   ? 'live'

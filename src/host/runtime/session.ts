@@ -98,6 +98,7 @@ import { resolveWithinRoots } from './write-boundary'
 import { AttachmentService } from './attachments'
 import type { AttachmentRef, DirectoryRef } from '../../shared/attachments'
 import type { AttachmentMessage } from '../kernel/pi-session-factory'
+import type { FileContext, FileReference } from '../../shared/files'
 import { AttachmentConfig } from './attachment-config'
 import { createReadAttachmentTool } from './read-attachment'
 
@@ -110,6 +111,7 @@ export type Notify = KernelNotifier
  * Cogent 的私域，pi 不知情，落在本文件。
  */
 interface StoredSession {
+  piCwd?: string
   version: 2
   summary: SessionSummary
   /** 任务清单（交互座 4c）：todo_write 的活清单快照；缺省 = 无清单。模型侧另有转录回放兜底 */
@@ -127,10 +129,11 @@ interface StoredSession {
 function asStoredSession(
   doc: unknown,
   id: string
-): { summary: SessionSummary; todos?: TodoItem[]; plan?: PlanRecord; legacyTranscript?: AgentMessage[] } {
+): { summary: SessionSummary; piCwd?: string; todos?: TodoItem[]; plan?: PlanRecord; legacyTranscript?: AgentMessage[] } {
   if (typeof doc !== 'object' || doc === null) throw new Error(`会话文档形状不合法（sessions/${id}.json）`)
   const d = doc as {
     version?: unknown
+    piCwd?: unknown
     summary?: SessionSummary
     todos?: unknown
     plan?: unknown
@@ -139,6 +142,7 @@ function asStoredSession(
   if (d.version !== 2 && d.version !== 1) {
     throw new Error(`会话文档版本不合法（sessions/${id}.json），请手工处理后重启`)
   }
+  if (d.piCwd !== undefined && typeof d.piCwd !== 'string') throw new Error(`会话内核 cwd 损坏（sessions/${id}.json）`)
   if (typeof d.summary?.id !== 'string') {
     throw new Error(`会话文档形状不合法（sessions/${id}.json），请手工处理后重启`)
   }
@@ -161,6 +165,7 @@ function asStoredSession(
   }
   return {
     summary,
+    ...(d.piCwd !== undefined && { piCwd: d.piCwd }),
     ...(d.todos !== undefined && { todos: d.todos as TodoItem[] }),
     ...(d.plan !== undefined && { plan: d.plan as PlanRecord }),
     ...(d.version === 1 && { legacyTranscript: d.transcript as AgentMessage[] })
@@ -169,6 +174,8 @@ function asStoredSession(
 
 /** 内存态会话：pi 内核惰性 —— 恢复的会话在首次 submit/compact 时才装配 */
 interface Session {
+  /** pi 转录目录锚点独立于可变项目根；不把新项目配置当旧工具 cwd。 */
+  piCwd?: string
   summary: SessionSummary
   /** 任务清单（交互座 4c）：todo_write 全量替换维护；随会话文档持久化（todo_write 落笔即 persist） */
   todos: TodoItem[]
@@ -338,6 +345,9 @@ function readGitBranch(cwd: string): string | null {
  * 续写链的全窗口，也是 submit 忙判定的单一账本（见 submit）。
  */
 interface StreamingState {
+  turnId?: string
+  fileContext?: FileContext
+  fileReferences: Map<string, FileReference[]>
   attachmentInput?: { inputId: string; text: string; attachments: AttachmentRef[]; directories?: DirectoryRef[]; bound: boolean }
   images?: import('@earendil-works/pi-ai').ImageContent[]
   attachmentPreparation?: AbortController
@@ -609,6 +619,7 @@ export class SessionManager implements CogentKernel {
         const doc = asStoredSession(this.storage.get(SESSION_COLLECTION, id), id)
         this.sessions.set(doc.summary.id, {
           summary: doc.summary,
+          piCwd: doc.piCwd,
           todos: doc.todos ?? [],
           ...(doc.plan !== undefined && { plan: doc.plan }),
           ...(doc.legacyTranscript !== undefined && { legacyTranscript: doc.legacyTranscript })
@@ -827,7 +838,7 @@ export class SessionManager implements CogentKernel {
   messages(sessionId: string): ChatMessage[] {
     const session = this.requireSession(sessionId)
     const source: AgentMessage[] =
-      readPiTranscript(this.workspaceRoots(session)[0] ?? homedir(), this.hostRoot, sessionId) ??
+      readPiTranscript(session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir(), this.hostRoot, sessionId) ??
       session.legacyTranscript ??
       []
     const projected = toChatMessages(source)
@@ -849,6 +860,16 @@ export class SessionManager implements CogentKernel {
       }
     }
     return projected
+  }
+
+  /** 文件服务按明确回合取来源；历史回查不装配 pi，旧数据降级事实由调用方标明。 */
+  fileContext(sessionId: string, turnId?: string): { context: Pick<FileContext, 'cwd' | 'roots' | 'platform'>; saved: boolean } {
+    const session = this.requireSession(sessionId)
+    const active = this.streaming.get(sessionId)
+    const context = active?.turnId === turnId ? active?.fileContext : undefined
+    const saved = context ?? (turnId === undefined ? undefined : readPiTranscript(session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir(), this.hostRoot, sessionId)?.find((message) => message.fileContext?.turnId === turnId)?.fileContext)
+    if (turnId !== undefined && saved === undefined) throw new Error('文件来源尚未保存或该回合不存在，请稍后重试')
+    return saved === undefined ? { context: { cwd: session.pi?.sessionManager.getCwd() ?? this.workspaceRoots(session).at(0) ?? homedir(), roots: this.workspaceRoots(session), platform: process.platform }, saved: false } : { context: saved, saved: true }
   }
 
   /**
@@ -980,9 +1001,11 @@ export class SessionManager implements CogentKernel {
     session.summary.updatedAt = Date.now()
     this.persist(sessionId)
 
-    this.notify('run.started', { sessionId })
+    this.notify('run.started', { sessionId, turnId: inputId })
     this.ensureInspector(session).runStarted(text, this.ensureSystemPrompt(session), thinkingLevel ?? 'off')
     const streaming: StreamingState = {
+      turnId: inputId,
+      fileReferences: new Map(),
       messageId: `m-${crypto.randomUUID()}`,
       stopRequested: false,
       baseSegments: [],
@@ -1214,6 +1237,7 @@ export class SessionManager implements CogentKernel {
     session.summary.updatedAt = Date.now()
     this.notify('run.started', { sessionId })
     const streaming: StreamingState = {
+      fileReferences: new Map(),
       messageId: `m-${crypto.randomUUID()}`,
       stopRequested: false,
       baseSegments: [],
@@ -1230,9 +1254,11 @@ export class SessionManager implements CogentKernel {
       const pi = await this.ensurePiSession(session)
       if (!this.ownsRun(session, streaming)) return { ok: true }
       // 显示转录保留压缩影子区，不能只用模型上下文裁剪后的旧回答做替换。
-      const source = readPiTranscript(this.workspaceRoots(session)[0] ?? homedir(), this.hostRoot, sessionId) ?? pi.agent.state.messages
+      const source = readPiTranscript(session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir(), this.hostRoot, sessionId) ?? pi.agent.state.messages
       const projected = toChatMessages(source)
       const userAt = projected.findLastIndex((message) => message.role === 'user')
+      streaming.turnId = projected[userAt]?.turnId
+      streaming.fileContext = projected[userAt]?.fileContext
       streaming.baseSegments = projected.slice(userAt + 1).filter((message) => message.role === 'assistant')
       if (this.finishPreparingRun(session, pi, streaming)) return { ok: true }
       const last = pi.agent.state.messages.at(-1)
@@ -1636,16 +1662,23 @@ export class SessionManager implements CogentKernel {
       // pi 的 cwd = 工作区主根（无绑定时主目录兜底，同 toolRoots 语义）：
       // 项目发现（.gitignore/AGENTS.md）与会话目录编码都锚在它上；
       // 工具集 = pi 内置（tool-meta 的 COGENT_TOOL_NAMES，shell 按平台）
-      cwd: boundRoots[0] ?? homedir(),
+      cwd: session.piCwd ?? boundRoots.at(0) ?? homedir(),
       hostRoot: this.hostRoot,
       sessionId,
-      onUserEntry: () => {
-        const input = this.streaming.get(sessionId)?.attachmentInput
-        if (input === undefined || input.bound) return undefined
+      onUserEntry: (entryId, cwd) => {
+        const run = this.streaming.get(sessionId)
+        if (run === undefined || run.input === null || run.fileContext !== undefined) return undefined
+        const fileContext: FileContext = { version: 1, turnId: run.turnId!, userEntryId: entryId, cwd, roots: this.workspaceRoots(session), platform: process.platform }
+        run.fileContext = fileContext
+        session.piCwd = cwd
+        this.persist(sessionId)
+        const input = run.attachmentInput
+        if (input === undefined || input.bound) return { fileContext }
         input.bound = true
-        return { version: 1, inputId: input.inputId, text: input.text, attachments: input.attachments,
-          ...(input.directories !== undefined && { directories: input.directories }) }
+        return { fileContext, attachment: { version: 1, inputId: input.inputId, text: input.text, attachments: input.attachments,
+          ...(input.directories !== undefined && { directories: input.directories }) } }
       },
+      onFileReferences: (callId, refs) => { this.streaming.get(sessionId)?.fileReferences.set(callId, refs) },
       modelRuntime: this.modelRuntime,
       systemPrompt: this.ensureSystemPrompt(session),
       // 自定义段每回合活算（factory 的 before_agent_start 钩子消费）：权限
@@ -1822,6 +1855,7 @@ export class SessionManager implements CogentKernel {
     const doc: StoredSession = {
       version: SESSION_FILE_VERSION,
       summary: session.summary,
+      ...(session.piCwd !== undefined && { piCwd: session.piCwd }),
       // 空清单不落字段（旧文档形状不变；清单事件本身就是"清空"的真相源）
       ...(session.todos.length > 0 && { todos: session.todos }),
       ...(session.plan !== undefined && { plan: session.plan })
@@ -1926,6 +1960,8 @@ export class SessionManager implements CogentKernel {
                 // （宿主把段直接铺进消息列表作 React key）
                 id: `${streaming.messageId}-${streaming.segments.length}`,
                 role: 'assistant',
+                turnId: streaming.turnId,
+                fileContext: streaming.fileContext,
                 content: streaming.text,
                 thinking: streaming.thinking || undefined,
                 toolCalls: streaming.tools.length > 0 ? streaming.tools.map((t) => ({ ...t })) : undefined,
@@ -2009,7 +2045,9 @@ export class SessionManager implements CogentKernel {
         const summary = summarizeToolResult(event.result)
         const diff = extractResultDiff(event.result)
         const record = streaming.tools.find((t) => t.callId === event.toolCallId)
+        const fileRefs = [...streaming.fileReferences].filter(([id]) => id === event.toolCallId || id.startsWith(event.toolCallId + '/')).flatMap(([, refs]) => refs)
         if (record !== undefined) {
+          if (fileRefs.length > 0) record.fileRefs = fileRefs
           record.status = event.isError ? 'error' : 'ok'
           record.resultSummary = summary
           if (diff !== undefined) record.diff = diff
@@ -2022,6 +2060,7 @@ export class SessionManager implements CogentKernel {
           callId: event.toolCallId,
           isError: event.isError,
           summary,
+          ...(fileRefs.length > 0 && { fileRefs }),
           diff
         })
         return
@@ -2267,6 +2306,8 @@ export function toChatMessages(messages: Array<AttachmentMessage | CompactionBar
         // （React key 重复），投影位置在单写者下稳定且跨加载不变
         id: `u-${result.length}`,
         role: 'user',
+        turnId: message.fileContext?.turnId,
+        fileContext: message.fileContext,
         content: (message as AttachmentMessage).attachmentInput?.text ?? text,
         ...((message as AttachmentMessage).attachmentInput !== undefined && { attachments: (message as AttachmentMessage).attachmentInput!.attachments }),
         ...((message as AttachmentMessage).attachmentInput?.directories !== undefined && { directories: (message as AttachmentMessage).attachmentInput!.directories }),
@@ -2286,6 +2327,7 @@ export function toChatMessages(messages: Array<AttachmentMessage | CompactionBar
         const paired = results.get(block.id)
         toolCalls.push({
           callId: block.id,
+          fileRefs: Object.entries(message.toolFileRefs ?? {}).filter(([id]) => id === block.id || id.startsWith(block.id + '/')).flatMap(([, refs]) => refs),
           name: block.name,
           kind: meta?.kind ?? 'read',
           summary: meta !== undefined ? meta.summarize(block.arguments) : `${block.name}(?)`,
@@ -2322,6 +2364,8 @@ export function toChatMessages(messages: Array<AttachmentMessage | CompactionBar
       result.push({
         id: `a-${result.length}`,
         role: 'assistant',
+        turnId: message.fileContext?.turnId,
+        fileContext: message.fileContext,
         content,
         thinking: thinking || undefined,
         // 用量三件套同投影：pi 转录的 assistant 消息 usage 必有，历史会话与

@@ -26,6 +26,7 @@ export function flattenSegments(segments: ChatMessage[]): MessageItem[] {
         status: call.status,
         resultSummary: call.resultSummary,
         diff: call.diff,
+        fileRefs: call.fileRefs,
         startedAt: call.startedAt,
         endedAt: call.endedAt
       })

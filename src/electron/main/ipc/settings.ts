@@ -32,6 +32,7 @@ function readAll(): SettingsFile {
     }
     return {
       version: 1,
+      fileEditor: typeof raw.fileEditor === 'string' ? raw.fileEditor : undefined,
       activeModelId: raw.activeModelId,
       activeProviderId: raw.activeProviderId,
       thinkingLevel: raw.thinkingLevel,
@@ -99,6 +100,7 @@ function writeAll(settings: SettingsFile): void {
  * 带了但类型不对 = 越界，直接抛错（约定 §1.1"越界即抛"）
  */
 function assertPatchShape(patch: Partial<Record<keyof SettingsFile, unknown>>): void {
+  if (patch.fileEditor !== undefined && (typeof patch.fileEditor !== 'string' || patch.fileEditor.includes('\0'))) throw new Error('编辑器路径必须是字符串')
   if (patch.activeModelId !== undefined && typeof patch.activeModelId !== 'string') {
     throw new Error('settings:save 的 activeModelId 必须是 string')
   }

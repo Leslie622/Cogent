@@ -10,12 +10,17 @@
  * src/protocol，属于引擎协议而非壳契约），故此处按需内联渲染所需的最小形状。
  */
 import type { AttachmentMethods, AttachmentRef, DirectoryRef } from '@shared/attachments'
+import type { FileMethods, FileContext, FileReference, FileActionRequest } from '@shared/files'
+type FileParams = { [K in keyof FileMethods]: FileMethods[K]['params'] }
+type FileResults = { [K in keyof FileMethods]: FileMethods[K]['result'] }
 type AttachmentParams = { [K in keyof AttachmentMethods]: AttachmentMethods[K]['params'] }
 type AttachmentResults = { [K in keyof AttachmentMethods]: AttachmentMethods[K]['result'] }
 
 declare global {
   interface Window {
     cogent: {
+      fileAction: (request: FileActionRequest) => Promise<{ canceled: boolean }>
+      configureFileEditor: () => Promise<{ canceled: boolean }>
       filePath: (file: File) => string
       pickAttachments: () => Promise<string[]>
       clipboardFiles: () => Promise<string[]>
@@ -111,6 +116,7 @@ declare global {
 /** 引擎方法名（renderer 可触达的子集；白名单在 main 侧 ipc/engine.ts 收窄 ——
     providers.custom.sync 已退出：自定义 provider 的写路径只有 custom-providers:set） */
 export type EngineMethod =
+  | keyof FileMethods
   | keyof AttachmentMethods
   | 'session.list'
   | 'session.create'
@@ -150,6 +156,7 @@ export type EngineMethod =
  * 版本字段由 main 维护，renderer 只读写业务字段。
  */
 export interface AppSettingsFile {
+  fileEditor?: string
   version: 1
   activeModelId?: string
   activeProviderId?: string
@@ -217,7 +224,7 @@ export interface ProjectSummary {
 }
 
 /** 与 protocol/types.ts 对应 method 的参数形状（renderer 侧镜像声明） */
-export interface EngineMethodParams extends AttachmentParams {
+export interface EngineMethodParams extends AttachmentParams, FileParams {
   'session.list': Record<string, never>
   'session.create': { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode; planEnabled?: boolean }
   'session.delete': { sessionId: string }
@@ -259,7 +266,7 @@ export interface TodoItem {
 }
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
-export interface EngineMethodResult extends AttachmentResults {
+export interface EngineMethodResult extends AttachmentResults, FileResults {
   'session.list': SessionSummary[]
   'session.create': SessionSummary
   'session.delete': { deleted: boolean }
@@ -351,7 +358,8 @@ export interface SkillSummary {
  * bug（'sessionId' in event 永假 → 事件被静默丢弃），类型必须忠实于运行时形状。
  */
 export type EngineEvent =
-  | { method: 'run.started'; params: { sessionId: string } }
+  | { method: 'files.invalidated'; params: Record<string, never> }
+  | { method: 'run.started'; params: { sessionId: string; turnId?: string } }
   | {
       method: 'run.completed'
       params: {
@@ -385,7 +393,7 @@ export type EngineEvent =
       params: { sessionId: string; messageId: string; delta: string; kind?: 'text' | 'thinking' }
     }
   | { method: 'tool.started'; params: { sessionId: string; callId: string; name: string; kind: string; summary?: string } }
-  | { method: 'tool.completed'; params: { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string } }
+  | { method: 'tool.completed'; params: { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string; fileRefs?: FileReference[] } }
   | { method: 'tool.progress'; params: { sessionId: string; callId: string; text: string } }
   | {
       method: 'approval.request'
@@ -477,6 +485,8 @@ export interface InspectEntryDetail {
 }
 
 export interface ChatMessage {
+  turnId?: string
+  fileContext?: FileContext
   attachments?: AttachmentRef[]
   directories?: DirectoryRef[]
   id: string
@@ -514,6 +524,7 @@ export interface ChatMessage {
 
 /** 工具调用投影（工具卡数据形状；与 protocol ToolCallRecord 镜像） */
 export interface ToolCallRecord {
+  fileRefs?: FileReference[]
   callId: string
   name: string
   /** 'read' | 'write' | 'edit' | 'exec' | 'network'（与 protocol ToolKind 镜像） */

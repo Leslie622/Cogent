@@ -14,20 +14,24 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect } from 'vitest'
 import { bundledNodeBin, resolveEngineNodeBin } from '../../src/electron/main/host/runtime'
+import type { FileContext, FileReference } from '../../src/shared/files'
 
 // ———— 协议帧形状（引擎侧 truth，测试只读关心的字段） ————
 
 /** 会话消息（session.messages / run.completed.messages 的断言子集） */
 export interface ChatMessageLike {
+  turnId?: string
+  fileContext?: FileContext
   role: string
   content: string
-  toolCalls?: Array<{ name: string; status: string; resultSummary?: string; diff?: string }>
+  toolCalls?: Array<{ name: string; status: string; resultSummary?: string; diff?: string; fileRefs?: FileReference[] }>
   compaction?: { tokensBefore?: number; tokensAfter?: number }
   [key: string]: unknown
 }
 
 /** 事件帧 params 的断言子集（索引签名兜住未列字段） */
 export interface SmokeEventParams {
+  fileRefs?: FileReference[]
   sessionId?: string
   callId?: string
   requestId?: string

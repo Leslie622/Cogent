@@ -44,7 +44,7 @@ afterEach(async () => {
 describe('鉴权（2b：开门即要 token）', () => {
   it('admin 也不能经 HTTP 导入或读取桌面附件', async () => {
     const { base, token } = await start()
-    for (const method of ['attachments.importPath', 'attachments.begin', 'attachments.resolve', 'attachments.saveDraft']) {
+    for (const method of ['attachments.importPath', 'attachments.begin', 'attachments.resolve', 'attachments.saveDraft', 'files.resolve', 'files.readText', 'files.readChunk', 'files.parseDocument', 'files.actionTarget', 'files.cancel']) {
       const response = await fetch(base + '/rpc', { method: 'POST', headers: { authorization: `Bearer ${token('admin')}` },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { path: 'C:/secret.txt' } }) })
       expect(response.status).toBe(403)

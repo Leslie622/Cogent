@@ -18,11 +18,13 @@
     "theme:check": "node scripts/themd-theme.mjs --check",
     "test:theme-browser": "node scripts/check-theme-browser.mjs",
     "test:chat-layout-browser": "node scripts/check-chat-layout-browser.mjs",
+    "test:file-links-electron": "node scripts/check-file-links-electron.mjs",
     "fetch:runtime": "node scripts/fetch-runtime.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/language": "^6.13.1",
     "@codemirror/search": "^6.7.2",

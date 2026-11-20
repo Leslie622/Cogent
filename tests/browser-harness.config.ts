@@ -9,13 +9,14 @@ import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vite'
+import { pdfAssets } from '../scripts/pdf-assets'
 
 export default defineConfig({
   root: resolve('.'),
   resolve: {
     alias: { '@': resolve('src/renderer/src'), '@shared': resolve('src/shared') }
   },
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), pdfAssets()],
   optimizeDeps: { entries: ['tests/renderer/**/*.browser.html'] },
   server: { watch: { ignored: ['**/reference/**', '**/out/**'] } }
 })

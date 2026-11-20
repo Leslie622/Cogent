@@ -24,6 +24,17 @@ export function bindEngineEvents(): () => void {
     if ('sessionId' in event.params) messageDeltas.flush(event.params.sessionId)
     else if (event.method === 'session.summaryChanged') messageDeltas.flush(event.params.summary.id)
     switch (event.method) {
+      case 'run.started': {
+        const { sessionId, turnId } = event.params
+        if (turnId === undefined) return
+        useChatStore.setState((state) => {
+          const bucket = state.bySession[sessionId]
+          if (bucket === undefined) return state
+          const user = bucket.messages.findLast((item) => item.type === undefined && item.role === 'user')
+          return patchBucket(state, sessionId, (b) => ({ ...b, messages: b.messages.map((item) => item === user ? { ...item, turnId } : item) }))
+        })
+        return
+      }
       case 'tool.started': {
         const { sessionId, callId, name, kind, summary } = event.params
         useChatStore.setState((state) =>
@@ -51,7 +62,7 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'tool.completed': {
-        const { sessionId, callId, isError, summary, diff } = event.params
+        const { sessionId, callId, isError, summary, diff, fileRefs } = event.params
         useChatStore.setState((state) => {
           const bucket = state.bySession[sessionId]
           if (bucket === undefined) return state
@@ -66,7 +77,7 @@ export function bindEngineEvents(): () => void {
                 ...bucket,
                 messages: bucket.messages.map((m): MessageItem =>
                   m.type === 'tool' && m.id === callId
-                    ? { ...m, status: nextStatus, resultSummary: summary, diff, progress: undefined }
+                    ? { ...m, status: nextStatus, resultSummary: summary, diff, fileRefs, progress: undefined }
                     : m
                 )
               }

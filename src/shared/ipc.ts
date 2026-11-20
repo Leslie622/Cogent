@@ -7,6 +7,8 @@
  */
 
 export const IPC = {
+  filesAction: 'files:action',
+  filesConfigureEditor: 'files:configure-editor',
   attachmentsPick: 'attachments:pick',
   attachmentsClipboard: 'attachments:clipboard',
   attachmentsPreview: 'attachments:preview',
@@ -139,6 +141,7 @@ export interface CredentialsStatus {
  * （漏 activeProviderId）—— 形状在此单点定义，三端同源。
  */
 export interface SettingsFile {
+  fileEditor?: string
   version: 1
   activeModelId?: string
   /** 选中模型的 provider（同名模型跨 provider 消歧，与 activeModelId 成对；旧文件缺省 = 单键语义） */

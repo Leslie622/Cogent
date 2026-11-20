@@ -26,7 +26,7 @@
  * md-body 作用域隔离主题；Themd 基准和用户最高优先层见 docs/技术笔记/对话内容主题.md。
  */
 import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Block, Streamdown, defaultComponents, defaultRehypePlugins, parseMarkdownIntoBlocks, type BlockProps, type Components } from 'streamdown'
+import { Block, Streamdown, defaultComponents, defaultRehypePlugins, defaultRemarkPlugins, parseMarkdownIntoBlocks, type BlockProps, type Components } from 'streamdown'
 import { code } from '@streamdown/code'
 import { cjk } from '@streamdown/cjk'
 import {
@@ -42,6 +42,9 @@ import {
 } from '@/components/ui/stream-reveal'
 import { useAppearanceStore } from '@/stores/appearance'
 import { callouts } from '@/lib/theme/callouts'
+import { decodeFileEnvelope, decodeFileLink, fileLinksPlugin } from '@/lib/file-links'
+import { FileLink, FileLinkContext, FileLinkNestingContext } from '@/features/home/files/FileLink'
+import { FileImage } from '@/features/home/files/FileImage'
 
 const plugins = { code, cjk }
 /** 原生完整安全管线后追加可信提示块适配；静态路径不经过 BlockComponent。 */
@@ -79,30 +82,47 @@ const StreamingRevealBlock = memo(function StreamingRevealBlock(props: BlockProp
   return <Block {...props} rehypePlugins={rehypePlugins} />
 })
 
-/** 元素级覆盖：铺在包的 defaultComponents 之上，只动链接（理由见文件头 ①）。
+/** 元素级覆盖：保留 defaultComponents，文件/网页/脚注分别委托，本地图片按 ID 读取。
     node 解构丢弃是解污染 —— 不剥掉会把 hast 节点对象 spread 到 DOM 属性上 */
 const components: Components = {
   ...defaultComponents,
-  a: ({ node, children, href, ...props }) => (
-    <a
+  img: function MarkdownImage({ src, alt, node, ...props }) {
+    const scope = useContext(FileLinkContext)
+    const target = decodeFileLink(typeof src === 'string' ? src : undefined)
+    if (target !== undefined) return <FileImage target={target} alt={alt ?? '本地图片'} />
+    if (scope?.preview) return <span>{alt ?? '外部图片'}（外部资源未自动加载）</span>
+    return <defaultComponents.img src={src} alt={alt} {...props} />
+  },
+  a: function MarkdownLink({ node, children, href, title, ...props }) {
+    const file = decodeFileEnvelope(href)
+    if (file?.imageAlt !== undefined) return <FileImage target={file.target} alt={file.imageAlt} />
+    if (file !== undefined) return <FileLink target={file.target} title={title}>{children}</FileLink>
+    if (href?.startsWith('#') && !href.startsWith('#cogent-file:')) return <a href={href} {...props} onClick={(event) => { event.preventDefault(); document.getElementById(href.slice(1))?.scrollIntoView() }}>{children}</a>
+    if (href === undefined || !/^(?:https?:\/\/|\/\/)/i.test(href)) return <span>{children}</span>
+    return (
+    <FileLinkNestingContext.Provider value><a
       href={href}
       target="_blank"
       rel="noreferrer"
       className="wrap-anywhere appearance-none text-left"
       onClick={(event) => {
         event.preventDefault()
-        window.open(href)
+        window.open(href.startsWith('//') ? `https:${href}` : href)
       }}
       {...props}
     >
       {children}
-    </a>
-  ),
+    </a></FileLinkNestingContext.Provider>
+    )
+  },
 }
 
 /** streaming只表示业务仍在输出；终态的既有Block树短暂保留到真实过渡结束，再恢复原生static语义。
  * 字号/行高由主题基础样式消费，收尾设计见docs/技术笔记/流式呈现动效.md。 */
 export function Markdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
+  const fileScope = useContext(FileLinkContext)
+  const fileLinks = useMemo(() => fileLinksPlugin(fileScope?.refs), [fileScope?.refs])
+  const remarkPlugins = useMemo(() => [...Object.values(defaultRemarkPlugins), fileLinks], [fileLinks])
   // 代码行号（外观设置；默认关，见文件头 ②）
   const showLineNumbers = useAppearanceStore((s) => s.showLineNumbers)
   // 30ms 发布由 renderer 事件入口持有；直接传入的内容不再二次延迟。
@@ -184,6 +204,9 @@ export function Markdown({ content, streaming = false }: { content: string; stre
           mode={renderStreaming ? 'streaming' : 'static'}
           plugins={plugins}
           rehypePlugins={themedRehypePlugins}
+          remarkPlugins={remarkPlugins}
+          // Streamdown 的 memo 不比较 remarkPlugins，但会比较 data 属性；用词表身份触发重解析，不换 key 重挂正文。
+          data-file-links-version={fileLinks.name}
           isAnimating={streaming}
           components={components}
           BlockComponent={renderStreaming ? StreamingRevealBlock : undefined}

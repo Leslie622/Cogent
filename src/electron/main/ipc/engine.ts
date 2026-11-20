@@ -11,6 +11,8 @@ import { IPC } from '../../../shared/ipc'
 import type { ProtocolMethods } from '../../../protocol'
 import type { IpcDeps } from './index'
 import { SHELL_ATTACHMENT_METHODS } from '../../../shared/attachments'
+import { SHELL_FILE_METHODS } from '../../../shared/files'
+import { requireFileWindow } from './files'
 
 /**
  * renderer 可触达的引擎方法白名单（approval.respond 等宿主侧裁决不在此列）。
@@ -21,6 +23,7 @@ import { SHELL_ATTACHMENT_METHODS } from '../../../shared/attachments'
  *（引擎独占写者，无壳侧双写），与 providers 的差异恰在持久层归属。
  */
 const ALLOWED_METHODS = new Set<string>([
+  ...SHELL_FILE_METHODS,
   ...SHELL_ATTACHMENT_METHODS,
   'session.list',
   'session.create',
@@ -57,9 +60,11 @@ const ALLOWED_METHODS = new Set<string>([
   'skills.setEnabled'
 ])
 
-export function registerEngineIpc({ host }: IpcDeps): void {
+export function registerEngineIpc(deps: IpcDeps): void {
+  const { host } = deps
   // 信任边界：renderer 不可信 —— method 白名单 + params 形状在此收窄，业务校验在引擎 dispatch
-  ipcMain.handle(IPC.engineRequest, async (_event, raw: unknown) => {
+  ipcMain.handle(IPC.engineRequest, async (event, raw: unknown) => {
+    if (typeof raw !== 'object' || raw === null) throw new Error('engine:request 需要对象参数')
     const payload = raw as { method: unknown; params: unknown }
     if (typeof payload.method !== 'string' || !ALLOWED_METHODS.has(payload.method)) {
       throw new Error(`engine:request 非法调用：method 必须在白名单内`)
@@ -69,6 +74,7 @@ export function registerEngineIpc({ host }: IpcDeps): void {
       throw new Error(`engine:request 非法调用：params 必须是对象`)
     }
     const method = payload.method as keyof ProtocolMethods
+    if (method.startsWith('files.')) requireFileWindow(event, deps)
     return host.request(method, params)
   })
 

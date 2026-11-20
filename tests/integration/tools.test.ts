@@ -28,7 +28,7 @@
 import { createServer, type Server } from 'node:http'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   check,
   chunk,
@@ -258,6 +258,8 @@ describe('工具循环集成（S1–S11 场景流，断言对象 = pi 内置工�
     )
     const completed = await engine.waitEvent('tool.completed', (p) => p.sessionId === s1)
     check('2. tool.completed 非 error', completed.params.isError === false)
+    expect(completed.params.fileRefs?.[0].path).toBe(join(ws, 'hello.txt'))
+    expect(completed.params.fileRefs?.[0].turnId).toBeTypeOf('string')
     // 轮终实报：工具循环每轮 turn_end 发 context.updated ——
     // 指示器 run 内实时跟随的数据源（断言在 run.completed 前已到、载荷有效）
     const ctxLive = await engine.waitEvent('context.updated', (p) => p.sessionId === s1)
@@ -366,6 +368,11 @@ describe('工具循环集成（S1–S11 场景流，断言对象 = pi 内置工�
     const history = await engine.send('session.messages', { sessionId: s1 })
     const toolMsg = (history.result?.messages ?? []).find((m) => (m.toolCalls?.length ?? 0) > 0)
     const tc0 = toolMsg?.toolCalls?.[0]
+    expect(tc0?.fileRefs).toEqual(completed.params.fileRefs)
+    const origin = history.result?.messages?.find((message) => message.role === 'user')
+    expect(origin?.fileContext?.cwd).toBe(ws)
+    const resolved = await engine.send('files.resolve', { sessionId: s1, turnId: origin?.turnId, rawTarget: './hello.txt:2' })
+    expect(resolved.result?.path).toBe(join(ws, 'hello.txt'))
     check(
       '13. 重启后 toolCalls 复原（配对 status ok + resultSummary）',
       tc0 !== undefined && tc0.status === 'ok' && (tc0.resultSummary?.length ?? 0) > 0,

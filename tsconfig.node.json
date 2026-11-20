@@ -17,6 +17,7 @@
     }
   },
   "include": [
+    "scripts/pdf-assets.ts",
     "vitest.config.ts",
     "tests/electron/**/*",
     "tests/host/**/*",

@@ -232,7 +232,11 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   库的 visibility/scrollable 快照不作为索引判断源。
 - 用量行位于正文 footer，`text-[11px] text-muted-foreground tabular-nums`；
   显示输入/输出/缓存/成本/耗时，零值和无数据项省略，格式机制见 [用量与成本](模块/用量与成本.md)。
-- Markdown 使用 Streamdown + Shiki + CJK；链接阻止窗口内导航，再 window.open。
+- Markdown 使用 Streamdown + Shiki + CJK；本地链接显示文件图标与原标签，悬停/聚焦给完整路径；
+  图标与整个标签为两个布局项，文字渐显片段在标签内自然排版，不逐片添加间距；文本预览顶部显示已定位的行列或范围。
+  网页链接阻止窗口内导航，再 window.open，脚注走文内跳转。文件机制见[正文文件链接](模块/正文文件链接.md)。
+  文件预览沿用右侧 HomeTabs 区域，≤1100px 用 Dialog；宽窄切换不保留空白遮罩。
+  操作菜单沿用 shadcn，正文/代码字号使用共享消费点，预览不另外造字号档。
   lineNumbers 由外观设置「显示代码行号」驱动（默认关）、库内 animated、linkSafety
   弹窗关闭，Shiki 传 [github-light, github-dark] 双主题随 html.dark 切换；
   Tailwind 显式 `@source` 扫 Streamdown。深浅色三档（浅/深/跟随系统）切

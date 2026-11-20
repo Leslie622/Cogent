@@ -79,6 +79,8 @@ import { InspectStore, JsonStorageDriver } from './storage'
 import { startHttpRpc } from './http/server'
 import { createCapabilityStore, createRootSecret } from './http/auth'
 import { AttachmentConfig, attachmentHandlers } from './runtime/attachment-config'
+import { FileService } from './runtime/files/reader'
+import { fileHandlers } from './runtime/files/handlers'
 import { prepareDirectoryReferences } from './runtime/directory-references'
 
 /**
@@ -157,6 +159,7 @@ async function main(): Promise<void> {
     modelRuntime,
     STORAGE_ROOT
   )
+  const files = new FileService((sessionId, turnId) => sessions.fileContext(sessionId, turnId))
   startup('装配请求路由')
 
   /**
@@ -337,7 +340,9 @@ async function main(): Promise<void> {
     if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.delete 需要 { sessionId: string }')
     }
-    return { deleted: sessions.delete(p.sessionId) }
+    const deleted = sessions.delete(p.sessionId)
+    files.releaseSession(p.sessionId)
+    return { deleted }
   }
 
   /** project.delete 入口校验：projectId 非空 string */
@@ -767,6 +772,7 @@ async function main(): Promise<void> {
    * 由 dispatch 统一转成错误帧 —— 不要在 handler 里自行 try/catch。
    */
   const handlers = new Map<string, (params: unknown) => unknown>([
+    ...fileHandlers(files),
     ...attachmentHandlers(sessions.attachments, new AttachmentConfig(STORAGE_ROOT)),
     ['initialize', handleInitialize],
     ['session.list', () => sessions.list()],
