@@ -12,6 +12,7 @@ import type { ProtocolMethods } from '../../../protocol'
 import type { IpcDeps } from './index'
 import { SHELL_ATTACHMENT_METHODS } from '../../../shared/attachments'
 import { SHELL_FILE_METHODS } from '../../../shared/files'
+import { SHELL_OUTPUT_METHODS } from '../../../shared/outputs'
 import { requireFileWindow } from './files'
 
 /**
@@ -24,6 +25,7 @@ import { requireFileWindow } from './files'
  */
 const ALLOWED_METHODS = new Set<string>([
   ...SHELL_FILE_METHODS,
+  ...SHELL_OUTPUT_METHODS,
   ...SHELL_ATTACHMENT_METHODS,
   'session.list',
   'session.create',
@@ -74,7 +76,7 @@ export function registerEngineIpc(deps: IpcDeps): void {
       throw new Error(`engine:request 非法调用：params 必须是对象`)
     }
     const method = payload.method as keyof ProtocolMethods
-    if (method.startsWith('files.')) requireFileWindow(event, deps)
+    if (method.startsWith('files.') || method.startsWith('outputs.')) requireFileWindow(event, deps)
     return host.request(method, params)
   })
 

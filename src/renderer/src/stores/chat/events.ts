@@ -24,6 +24,22 @@ export function bindEngineEvents(): () => void {
     if ('sessionId' in event.params) messageDeltas.flush(event.params.sessionId)
     else if (event.method === 'session.summaryChanged') messageDeltas.flush(event.params.summary.id)
     switch (event.method) {
+      case 'outputs.updated': {
+        const doc = event.params
+        useChatStore.setState((state) => {
+          const bucket = state.bySession[doc.sessionId]
+          if (bucket === undefined || (bucket.outputs[doc.turnId]?.revision ?? 0) > doc.revision) return state
+          const outputErrors = { ...bucket.outputErrors }
+          delete outputErrors[doc.turnId]
+          return patchBucket(state, doc.sessionId, (b) => ({ ...b, outputs: { ...b.outputs, [doc.turnId]: doc }, outputErrors }))
+        })
+        return
+      }
+      case 'outputs.error': {
+        const { sessionId, turnId, message } = event.params
+        useChatStore.setState((state) => state.bySession[sessionId] === undefined ? state : patchBucket(state, sessionId, (b) => ({ ...b, outputErrors: { ...b.outputErrors, [turnId]: message } })))
+        return
+      }
       case 'run.started': {
         const { sessionId, turnId } = event.params
         if (turnId === undefined) return

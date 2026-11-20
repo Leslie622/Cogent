@@ -101,6 +101,9 @@ import type { AttachmentMessage } from '../kernel/pi-session-factory'
 import type { FileContext, FileReference } from '../../shared/files'
 import { AttachmentConfig } from './attachment-config'
 import { createReadAttachmentTool } from './read-attachment'
+import { OutputsService } from './outputs/service'
+import { createReportOutputsTool, outputReceipt } from './outputs/tool'
+import type { OutputOutcome } from '../../shared/outputs'
 
 /** 引擎事件出口的类型别名：runtime 通过它上报事件，不关心传输层（形状住在南缝合同） */
 export type Notify = KernelNotifier
@@ -345,6 +348,7 @@ function readGitBranch(cwd: string): string | null {
  * 续写链的全窗口，也是 submit 忙判定的单一账本（见 submit）。
  */
 interface StreamingState {
+  finalization?: Promise<void>
   turnId?: string
   fileContext?: FileContext
   fileReferences: Map<string, FileReference[]>
@@ -517,6 +521,7 @@ const DEFAULT_MODEL = 'claude-sonnet-4-5'
 const DEFAULT_PROVIDER = 'anthropic'
 
 export class SessionManager implements CogentKernel {
+  readonly outputs: OutputsService
   private sessions = new Map<string, Session>()
   private streaming = new Map<string, StreamingState>()
   /**
@@ -603,6 +608,7 @@ export class SessionManager implements CogentKernel {
     this.modelRuntime = modelRuntime
     this.hostRoot = hostRoot
     this.attachments = new AttachmentService(hostRoot)
+    this.outputs = new OutputsService(hostRoot, (doc) => this.notify('outputs.updated', doc))
     // pi 内置全部 provider 的模型目录（UI 下拉 + submit 模型解析仍走它）；
     // pi 内核的请求路由走 modelRuntime —— custom provider 经 registerNativeProvider
     // 双注册（见 custom-providers.ts），内置 provider 的 key 经凭据 sink 进 runtime
@@ -799,6 +805,7 @@ export class SessionManager implements CogentKernel {
   delete(sessionId: string): boolean {
     const session = this.sessions.get(sessionId)
     if (!session) return false
+    this.outputs.releaseSession(sessionId)
     this.streaming.get(sessionId)?.attachmentPreparation?.abort()
     // pi 内核整拆（abort 全部运行中工作 + 拆钩，agent-session dispose 语义）
     session.pi?.dispose()
@@ -1020,19 +1027,19 @@ export class SessionManager implements CogentKernel {
     if (attachments.length > 0 || directories.length > 0) streaming.attachmentInput = { inputId, text, attachments,
       ...(directories.length > 0 && { directories }), bound: false }
     this.streaming.set(sessionId, streaming)
+    this.outputs.begin(sessionId, inputId, streaming)
     this.continuationBudget.set(sessionId, AUTO_CONTINUE_LIMIT)
     // 异步段的三类失败（装配炸 / prompt 前置校验拒 / 续写链异常）都收口到
     // run.failed —— run.started 已发，宿主在等终态事件，不能让拒绝裸奔
-    void this.driveRun(session, text, target, thinkingLevel, streaming).catch((error: unknown) => {
+    void this.driveRun(session, text, target, thinkingLevel, streaming).catch(async (error: unknown) => {
       // 终态已由 pi 事件收口或会话已删时，旧异步链不能再发第二份终态、更不能清新 run。
       if (this.streaming.get(sessionId) !== streaming) return
       if (streaming.attachmentInput !== undefined && session.pi !== undefined) this.saveUnstartedInput(session.pi, streaming)
-      this.streaming.delete(sessionId)
-      this.notify('run.failed', {
+      await this.finishRun(session, streaming, 'error', () => this.notify('run.failed', {
         sessionId,
         reason: 'error',
         message: error instanceof Error ? error.message : String(error)
-      })
+      }))
     })
   }
 
@@ -1138,14 +1145,42 @@ export class SessionManager implements CogentKernel {
     return segments
   }
 
+  /** 产物保存与模型结果分开记错；预约直到文件终态落定才释放。所有收口共用此门。 */
+  private finishRun(session: Session, streaming: StreamingState, outcome: OutputOutcome, complete: () => void): Promise<void> {
+    if (streaming.finalization !== undefined) return streaming.finalization
+    if (!this.ownsRun(session, streaming)) return Promise.resolve()
+    if (streaming.turnId === undefined || this.outputs.finishEmpty(session.summary.id, streaming.turnId, streaming)) {
+      this.streaming.delete(session.summary.id)
+      complete()
+      return Promise.resolve()
+    }
+    streaming.finalization = (async () => {
+      if (streaming.turnId !== undefined) {
+        try { await this.outputs.finalize(session.summary.id, streaming.turnId, streaming, outcome) }
+        catch (error) {
+          if (this.ownsRun(session, streaming)) {
+            try {
+              const saved = await this.outputs.lastConfirmed(session.summary.id, streaming.turnId)
+              if (saved !== undefined && this.ownsRun(session, streaming)) this.notify('outputs.updated', saved)
+            } catch (readError) { process.stderr.write(`[outputs] 结算失败后回读确认版失败: ${readError instanceof Error ? readError.message : String(readError)}\n`) }
+            if (this.ownsRun(session, streaming)) this.notify('outputs.error', { sessionId: session.summary.id, turnId: streaming.turnId, message: error instanceof Error ? error.message : String(error) })
+          }
+        }
+      }
+      if (!this.ownsRun(session, streaming)) return
+      this.streaming.delete(session.summary.id)
+      complete()
+    })()
+    return streaming.finalization
+  }
+
   private finishPreparingRun(session: Session, pi: AgentSession, streaming: StreamingState): boolean {
     if (!this.ownsRun(session, streaming)) return true
     if (!streaming.stopRequested) return false
     this.saveUnstartedInput(pi, streaming)
-    this.streaming.delete(session.summary.id)
     session.inspector?.runFailed('已停止')
-    this.notify('run.failed', { sessionId: session.summary.id, reason: 'aborted', message: '已停止',
-      messages: SessionManager.displaySegments(streaming) })
+    void this.finishRun(session, streaming, 'aborted', () => this.notify('run.failed', { sessionId: session.summary.id, reason: 'aborted', message: '已停止',
+      messages: SessionManager.displaySegments(streaming) }))
     return true
   }
 
@@ -1174,9 +1209,8 @@ export class SessionManager implements CogentKernel {
       // handled没有agent_settled；调用已收敛后才允许补输入/释放本次预约。
       this.saveUnstartedInput(pi, streaming)
       if (this.finishPreparingRun(session, pi, streaming)) return
-      this.streaming.delete(session.summary.id)
       session.inspector?.runCompleted({ text: '', thinking: '' })
-      this.notify('run.completed', { sessionId: session.summary.id, messages: SessionManager.displaySegments(streaming) })
+      await this.finishRun(session, streaming, 'completed', () => this.notify('run.completed', { sessionId: session.summary.id, messages: SessionManager.displaySegments(streaming) }))
     }
   }
 
@@ -1210,6 +1244,7 @@ export class SessionManager implements CogentKernel {
   private async settleRun(session: Session, pi: AgentSession, streaming: StreamingState): Promise<void> {
     const sessionId = session.summary.id
     for (;;) {
+      if (streaming.finalization !== undefined) { await streaming.finalization; return }
       // run 级中止不一定改写末条 length 或 errorMessage；终态释放的是本次账本。
       // 捕获实例而非只查 has，避免旧 prompt 收尾时误认随后开始的新 run。
       if (this.streaming.get(sessionId) !== streaming) return
@@ -1259,6 +1294,7 @@ export class SessionManager implements CogentKernel {
       const userAt = projected.findLastIndex((message) => message.role === 'user')
       streaming.turnId = projected[userAt]?.turnId
       streaming.fileContext = projected[userAt]?.fileContext
+      if (streaming.turnId !== undefined) this.outputs.begin(sessionId, streaming.turnId, streaming, true)
       streaming.baseSegments = projected.slice(userAt + 1).filter((message) => message.role === 'assistant')
       if (this.finishPreparingRun(session, pi, streaming)) return { ok: true }
       const last = pi.agent.state.messages.at(-1)
@@ -1275,13 +1311,12 @@ export class SessionManager implements CogentKernel {
       // 终态 —— 清 streaming 补发 run.failed 后把错误照常交给 dispatch 转错
       // 误响应帧（手动动作要双通道显式反馈）
       if (this.streaming.get(sessionId) === streaming) {
-        this.streaming.delete(sessionId)
-        this.notify('run.failed', {
+        await this.finishRun(session, streaming, 'error', () => this.notify('run.failed', {
           sessionId,
           reason: 'error',
           message: error instanceof Error ? error.message : String(error),
           ...(streaming.baseSegments.length > 0 && { messages: SessionManager.displaySegments(streaming) })
-        })
+        }))
       }
       throw error
     }
@@ -1343,6 +1378,7 @@ export class SessionManager implements CogentKernel {
 
   /** 进程退出前统一收尾（引擎随宿主关闭；pi dispose 内聚 abort 全部运行） */
   disposeAll(): void {
+    this.outputs.dispose()
     for (const run of this.streaming.values()) run.attachmentPreparation?.abort()
     for (const session of this.sessions.values()) session.pi?.dispose()
     for (const sessionId of this.sessions.keys()) {
@@ -1688,6 +1724,7 @@ export class SessionManager implements CogentKernel {
         const todos = todosSectionText(session.todos)
         return {
           cogent_permission: permissionSectionText(session.summary.permissionMode ?? 'ask'),
+          cogent_outputs: '需要单独交给用户的文件，请在终答前调用 report_outputs 申报完整清单；正文提及、read/write/edit 不等于交付。普通参考资料、仅修改源码、纯聊天不必申报。deliverables: [] 表示明确撤回全部交付；Markdown 相对依赖须一起申报。',
           ...(session.summary.planEnabled === true && { cogent_plan_active: planModeSectionText() }),
           skills: formatSkillsSection(this.skillStore.snapshot(boundRoots[0] ?? homedir()).skills),
           ...(todos !== null && { cogent_todos: todos }),
@@ -1698,6 +1735,11 @@ export class SessionManager implements CogentKernel {
       // ask_user 挂起 → question.asked → respond/abort/settle 三路收尾；
       // plan 闭环 → enter_plan 开关 + submit_plan 挂起审批（plan.respond）
       customTools: [
+        createReportOutputsTool((callId, declarations, cwd, signal) => {
+          const run = this.streaming.get(sessionId)!
+          const context = run.fileContext!
+          return this.outputs.stage(sessionId, { ...context, cwd }, run, callId, declarations, signal)
+        }),
         createReadAttachmentTool({ service: this.attachments, sessionId, hostRoot: this.hostRoot,
           bindings: new AttachmentConfig(this.hostRoot).media(), mcp: mcpSnapshot }),
         createTodoTool({
@@ -1755,6 +1797,14 @@ export class SessionManager implements CogentKernel {
           () => session.summary.planEnabled === true
         )
       ],
+      settleOutput: async (callId, successful) => {
+        const doc = await this.outputs.settle(sessionId, callId, successful)
+        return doc === undefined ? undefined : outputReceipt(doc)
+      },
+      outputReminder: () => {
+        const run = this.streaming.get(sessionId)
+        return run?.turnId === undefined ? Promise.resolve(undefined) : this.outputs.reminder(sessionId, run.turnId)
+      },
       approval: {
         decide: (toolName, _toolCallId, args, signal) =>
           this.decideApproval(session, toolName, args, signal)
@@ -2042,6 +2092,7 @@ export class SessionManager implements CogentKernel {
         )
         const streaming = this.streaming.get(sessionId)
         if (!streaming) return
+        if (!event.isError && (event.toolName === 'write' || event.toolName === 'edit') && streaming.turnId !== undefined) this.outputs.wrote(sessionId, streaming.turnId)
         const summary = summarizeToolResult(event.result)
         const diff = extractResultDiff(event.result)
         const record = streaming.tools.find((t) => t.callId === event.toolCallId)
@@ -2125,7 +2176,6 @@ export class SessionManager implements CogentKernel {
         if (event.aborted || errorMessage) {
           const reason = event.aborted ? 'aborted' : 'error'
           const message = errorMessage ?? '已停止'
-          this.streaming.delete(sessionId)
           session.inspector?.runFailed(message)
           // aborted/error 也会经过 turn_end，已封存段包含被打断那轮的正文与 usage。
           // Host 给完整快照，宿主不可再补一份流式占位；相邻纯文本段按完成路径合并。
@@ -2135,7 +2185,7 @@ export class SessionManager implements CogentKernel {
             const lastSegment = streaming.segments.at(-1)
             if (lastSegment?.usage) lastSegment.usage.contextEstimate = { ...estimate }
           }
-          this.notify('run.failed', { sessionId, reason, message, messages: SessionManager.displaySegments(streaming) })
+          void this.finishRun(session, streaming, reason === 'aborted' ? 'aborted' : 'error', () => this.notify('run.failed', { sessionId, reason, message, messages: SessionManager.displaySegments(streaming) }))
           return
         }
         // length 截断可续写：抑制终态、streaming 保活 ——
@@ -2143,7 +2193,6 @@ export class SessionManager implements CogentKernel {
         // agent_settled 正常收尾。抑制意味着本轮转录不重写盘:续写中途崩溃
         // 丢当前段（pi JSONL 已逐条落盘的除外），与"尽力落盘"语义一致可接受
         if (!streaming.stopRequested && session.pi !== undefined && this.lengthContinuable(session.pi.agent, sessionId)) return
-        this.streaming.delete(sessionId)
 
         // 上下文明细估算挂到本回合 usage 上（turn_end 逐轮累加的 usage 已聚合；
         // 明细只描述"此刻转录长什么样"，与轮次无关，算一次即可）。挂 usage 而非
@@ -2183,7 +2232,7 @@ export class SessionManager implements CogentKernel {
         const displayUsage = segments.reduce<MessageUsage | undefined>((usage, segment) =>
           segment.usage !== undefined ? accumulateUsage(usage, segment.usage) : usage, undefined)
         const displayDuration = segments.reduce<number | undefined>((duration, segment) => sumOptional(duration, segment.durationMs), undefined)
-        this.notify('run.completed', {
+        void this.finishRun(session, streaming, 'completed', () => this.notify('run.completed', {
           sessionId,
           // 分段终态（优先消费）：text 段与工具段按发生序 —— 交错保真的代价是
           // 一 run 多条消息，宿主用它整体替换流式占位（含流式期插入的工具卡）
@@ -2210,7 +2259,7 @@ export class SessionManager implements CogentKernel {
                 }
               : undefined,
           stopReason: streaming.stopReason
-        })
+        }))
         return
       }
       // agent_start、message_start/end、agent_end（pi 版带 willRetry，终态已归

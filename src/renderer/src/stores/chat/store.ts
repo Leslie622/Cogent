@@ -57,6 +57,9 @@ export function projectDefaultMode(projectId?: string, cwd?: string): Permission
  */
 export function emptyBucket(): SessionBucket {
   return {
+    owner: {},
+    outputs: {},
+    outputErrors: {},
     messages: [],
     turnOutcomes: {},
     todos: [],
@@ -161,6 +164,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
           [sessionId]: { ...emptyBucket(), messages: flattenSegments(messages), ...(todos !== undefined && { todos }) }
         }
       }))
+      const bucket = get().bySession[sessionId]!
+      // 产物历史独立水合，不能拖住调用方的openChat/草稿身份切换，造成标题先恢复、发送仍走新聊天。
+      void (async () => { try {
+        const outputs = await window.cogent.engineRequest('outputs.get', { sessionId })
+        set((state) => {
+          // 删除/重建会话后，旧历史查询不得复活旧桶；运行时事件比历史快照新时保留事件。
+          const current = state.bySession[sessionId]
+          if (current === undefined || current.owner !== bucket.owner) return state
+          const merged = { ...current.outputs }
+          for (const doc of outputs) if ((merged[doc.turnId]?.revision ?? 0) < doc.revision) merged[doc.turnId] = doc
+          return patchBucket(state, sessionId, (b) => ({ ...b, outputs: merged }))
+        })
+      } catch (error) {
+        set((state) => state.bySession[sessionId]?.owner !== bucket.owner ? state : patchBucket(state, sessionId, (b) => ({ ...b, outputErrors: { ...b.outputErrors, history: error instanceof Error ? error.message : String(error) } })))
+      } })()
     }
   },
 

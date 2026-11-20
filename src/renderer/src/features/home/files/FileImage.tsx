@@ -11,6 +11,7 @@ export function FileImage({ target, alt }: { target: string; alt: string }) {
     const controller = new AbortController()
     const isActive = () => !controller.signal.aborted
     let objectUrl: string | undefined
+    let fileId: string | undefined
     const operationId = crypto.randomUUID()
     void (async () => {
       const file = await window.cogent.engineRequest('files.resolve', {
@@ -19,7 +20,11 @@ export function FileImage({ target, alt }: { target: string; alt: string }) {
         rawTarget: target,
         relativeTo: scope.relativeTo
       })
-      if (!isActive()) return
+      fileId = file.fileId
+      if (!isActive()) {
+        await window.cogent.engineRequest('files.cancel', { sessionId: scope.sessionId, operationId, fileId })
+        return
+      }
       if (file.kind !== 'image' || file.size > FILE_LIMITS.image)
         throw new Error('该图片不能内嵌预览，请点击文件打开')
       const chunks: Uint8Array<ArrayBuffer>[] = []
@@ -49,7 +54,7 @@ export function FileImage({ target, alt }: { target: string; alt: string }) {
       setUrl(null)
       if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl)
       void window.cogent
-        .engineRequest('files.cancel', { sessionId: scope.sessionId, operationId })
+        .engineRequest('files.cancel', { sessionId: scope.sessionId, operationId, fileId })
         .catch(() => {
           /* 取消阶段 Host 可能已退出。 */
         })

@@ -1,7 +1,7 @@
 # HTTP 通道
 
-`attachments.*` 和 `files.*` 为桌面专用入口，HTTP/WS 不论 token 档位一律拒绝，防止远程消费者
-用本机路径导入、读取当前文件或改桌面草稿；方法与边界见[附件模块](图片与文件附件.md)和[正文文件链接](正文文件链接.md)。
+`attachments.*`、`files.*`、`outputs.*`为桌面专用入口，HTTP/WS不论token档位一律拒绝，防止远程消费者
+按本机路径访问文件。WS不广播outputs事件，session.messages不夹带产物表；详见[附件](图片与文件附件.md)、[文件链接](正文文件链接.md)、[产物卡片](产物文件卡片.md)。
 
 > HostApi 的 HTTP/WS 传输：与 stdio 共用方法注册表，供脚本、内嵌页面、
 > 浏览器和对外 MCP 驱动运行中的 Host。

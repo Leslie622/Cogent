@@ -44,7 +44,7 @@ afterEach(async () => {
 describe('鉴权（2b：开门即要 token）', () => {
   it('admin 也不能经 HTTP 导入或读取桌面附件', async () => {
     const { base, token } = await start()
-    for (const method of ['attachments.importPath', 'attachments.begin', 'attachments.resolve', 'attachments.saveDraft', 'files.resolve', 'files.readText', 'files.readChunk', 'files.parseDocument', 'files.actionTarget', 'files.cancel']) {
+    for (const method of ['attachments.importPath', 'attachments.begin', 'attachments.resolve', 'attachments.saveDraft', 'files.resolve', 'files.readText', 'files.readChunk', 'files.parseDocument', 'files.actionTarget', 'files.cancel', 'outputs.get', 'outputs.resolve', 'outputs.future']) {
       const response = await fetch(base + '/rpc', { method: 'POST', headers: { authorization: `Bearer ${token('admin')}` },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { path: 'C:/secret.txt' } }) })
       expect(response.status).toBe(403)
@@ -279,6 +279,22 @@ describe('WS 门（2c）', () => {
     ws.send(JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'attachments.resolve', params: { id: 'local-id' } }))
     const frame = JSON.parse(await reply) as RpcResponse
     expect(frame.error?.code).toBe(-32_003)
+  })
+  it('outputs整域在WS拒绝，且不广播私有产物事件', async () => {
+    const { base, server, token } = await start()
+    const ws = await wsOpen(`${base}/ws?token=${token('admin')}`)
+    for (const method of ['outputs.get', 'outputs.resolve', 'outputs.future']) {
+      const reply = wsNextMessage(ws)
+      ws.send(JSON.stringify({ jsonrpc: '2.0', id: 10, method, params: {} }))
+      expect((JSON.parse(await reply) as RpcResponse).error?.code).toBe(-32_003)
+    }
+    const received: string[] = []
+    ws.on('message', (data) => received.push((data as Buffer).toString()))
+    server.broadcastEvent({ jsonrpc: '2.0', method: 'outputs.error', params: { sessionId: 's1', turnId: 't1', message: 'secret path' } })
+    const reply = wsNextMessage(ws)
+    server.broadcastEvent({ jsonrpc: '2.0', method: 'run.started', params: { sessionId: 's1' } })
+    await reply
+    expect(received).toHaveLength(1); expect(received[0]).not.toContain('secret path')
   })
   it('握手鉴权：无 token / 伪造 token 的 upgrade 被拒（HTTP 401）', async () => {
     const { base } = await start()

@@ -25,6 +25,7 @@ import {
 import { interactToolDeclarations, summarizeAskUserArgs, summarizeTodoWriteArgs } from './interact-tools'
 import type { ToolKind } from '../../protocol'
 import { attachmentToolDeclaration } from './read-attachment'
+import { outputToolDeclaration } from './outputs/tool'
 
 /** 当前平台的 shell 工具名（allowlist 与元数据表共用） */
 export const SHELL_TOOL_NAME = platform() === 'win32' ? 'powershell' : 'bash'
@@ -73,6 +74,7 @@ export function summarizeArgs(name: string, args: unknown): string {
  * 历史条目（glob）只为旧转录投影服务，不在 COGENT_TOOL_NAMES 里。
  */
 const TOOL_METAS: Record<string, { kind: ToolKind; summarize: (args: unknown) => string }> = {
+  report_outputs: { kind: 'read', summarize: () => 'report_outputs(交付清单)' },
   read_attachment: { kind: 'read', summarize: (a) => summarizeArgs('read_attachment', a) },
   read: { kind: 'read', summarize: (a) => summarizeArgs('read', a) },
   grep: { kind: 'read', summarize: (a) => summarizeArgs('grep', a) },
@@ -127,6 +129,6 @@ export function toolDeclarations(): Array<{ name: string; description: string; p
   return [
     ...tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
     ...interactToolDeclarations(),
-    attachmentToolDeclaration()
+    attachmentToolDeclaration(), outputToolDeclaration()
   ]
 }

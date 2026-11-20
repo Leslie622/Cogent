@@ -19,6 +19,7 @@
     "test:theme-browser": "node scripts/check-theme-browser.mjs",
     "test:chat-layout-browser": "node scripts/check-chat-layout-browser.mjs",
     "test:file-links-electron": "node scripts/check-file-links-electron.mjs",
+    "test:outputs-electron": "node scripts/check-outputs-electron.mjs",
     "fetch:runtime": "node scripts/fetch-runtime.mjs"
   },
   "dependencies": {

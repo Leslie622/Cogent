@@ -25,6 +25,8 @@ import type { MessageItem } from '@/stores/chat'
 import { MessageRow, UsageLine } from './MessageRow'
 import { ApprovalCard } from './ApprovalCard'
 import { CompactionBar, PrunedBar } from './CompactionBar'
+import { OutputCards } from './files/OutputCards'
+import { useChatStore } from '@/stores/chat'
 
 /** 回合（一问一答 + 其间全部过程项）；user 缺省 = 无提问头组（历史投影尾部
  *  前导的兜底组）。startedAt = 无 user 头组的墙钟起点（继承最近 user 的
@@ -306,9 +308,9 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
   // 是有效信息，保留
   if (turn.items.length === 0 && phase === 'done') {
     return turn.user !== undefined ? (
-      <MessageScrollerItem messageId={turn.user.id}>
+      <><MessageScrollerItem messageId={turn.user.id}>
         <MessageRow message={turn.user} />
-      </MessageScrollerItem>
+      </MessageScrollerItem><OutputCards /></>
     ) : null
   }
   // 段身份（渲染 key）：assistant 正文段用回合内段序数 —— live 占位的 id 是
@@ -353,6 +355,7 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
             </MessageScrollerItem>
           ))}
         </div>
+        <OutputCards />
         <div data-slot="live-working-line-source">
           <WorkingLine startTs={turn.user?.timestamp ?? turn.startedAt ?? Date.now()} stopping={stopping} />
         </div>
@@ -380,10 +383,12 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
           <RunTrace key="trace" phase="done" durationMs={turnDurationMs(turn)} />
           {answerOriginal !== undefined && (
             <MessageScrollerItem key={tailKey} messageId={answerOriginal.id}>
-              <MessageRow message={answerOriginal} />
+              <MessageRow message={{ ...answerOriginal, usage: undefined, durationMs: undefined }} />
             </MessageScrollerItem>
           )}
         </div>
+        <OutputCards />
+        <UsageLine usage={answerOriginal?.usage} durationMs={answerOriginal?.durationMs} />
       </>
     )
   }
@@ -415,6 +420,7 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
           </MessageScrollerItem>
         )}
       </div>
+      <OutputCards />
       <UsageLine
         usage={sumUsage(turn.items)}
         durationMs={sumDurationMs(turn.items)}
@@ -427,10 +433,11 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
 /** 比较按项引用：groupTurns 每次渲染重建数组/回合对象，但历史回合的项引用
  *  稳定 —— 流式 delta 只让活动回合比较失败重渲染，历史回合全部短路 */
 function TurnGroupImpl(props: { turn: ChatTurn; phase: TurnPhase; stopping?: boolean; sessionId?: string }) {
-  const serialized = JSON.stringify(props.turn.items.flatMap((item) => item.type === 'tool' ? item.fileRefs ?? [] : []))
-  const refs = useMemo(() => JSON.parse(serialized) as FileReference[], [serialized])
   const source = props.turn.items.find((item): item is ChatMessage => item.type === undefined && item.turnId !== undefined)
   const turnId = props.turn.user?.turnId ?? source?.turnId
+  const outputs = useChatStore((state) => props.sessionId === undefined || turnId === undefined ? undefined : state.bySession[props.sessionId]?.outputs[turnId])
+  const serialized = JSON.stringify([...props.turn.items.flatMap((item) => item.type === 'tool' ? item.fileRefs ?? [] : []), ...(outputs?.active ?? []).map((item) => ({ path: item.sourcePath, turnId }))])
+  const refs = useMemo(() => JSON.parse(serialized) as FileReference[], [serialized])
   const scope = useMemo(() => props.sessionId === undefined ? null : { sessionId: props.sessionId, turnId, refs }, [props.sessionId, turnId, refs])
   return <FileLinkContext.Provider value={scope}><TurnGroupBody {...props} /></FileLinkContext.Provider>
 }

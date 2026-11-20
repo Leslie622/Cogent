@@ -2,9 +2,11 @@
 import { create } from 'zustand'
 import type { FileDescriptor, FileMethods, ParsedFile } from '@shared/files'
 import { FILE_LIMITS } from '@shared/files'
+import type { OutputTarget } from '@shared/outputs'
 import type { FileLinkScope } from '@/features/home/files/FileLink'
 
 export interface Preview {
+  outputTarget?: OutputTarget
   scope: FileLinkScope
   rawTarget: string
   operationId: string
@@ -19,18 +21,19 @@ export interface Preview {
 }
 interface PreviewState {
   current: Preview | null
-  open: (scope: FileLinkScope, rawTarget: string) => Promise<void>
+  open: (scope: FileLinkScope, rawTarget: string, outputTarget?: OutputTarget) => Promise<void>
   close: () => void
   documentPage: (cursor: number, sheet?: string, range?: string) => Promise<void>
 }
 let generation = 0
-function release(preview: Preview | null): void {
+function release(preview: Preview | null, releaseHandle = true): void {
   if (preview === null) return
   if (preview.url !== null) URL.revokeObjectURL(preview.url)
   void window.cogent
     .engineRequest('files.cancel', {
       sessionId: preview.scope.sessionId,
-      operationId: preview.operationId
+      operationId: preview.operationId,
+      ...(releaseHandle && preview.descriptor !== null && { fileId: preview.descriptor.fileId })
     })
     .catch(() => {
       /* Host 重启后没有旧操作可取消。 */
@@ -45,10 +48,11 @@ export const useFilePreviewStore = create<PreviewState>((set, get) => ({
     set({ current: null })
     release(current)
   },
-  open: async (scope, rawTarget) => {
+  open: async (scope, rawTarget, outputTarget) => {
     const previous = get().current
     const current: Preview = {
       scope,
+      ...(outputTarget !== undefined && { outputTarget }),
       rawTarget,
       operationId: crypto.randomUUID(),
       generation: ++generation,
@@ -61,20 +65,28 @@ export const useFilePreviewStore = create<PreviewState>((set, get) => ({
       document: null
     }
     set({ current })
-    release(previous)
+    // 交付Markdown的相对内链需先借父登记解析；提前释放父句柄会把合法依赖误报为失效ID。
+    const retainedParent = scope.relativeTo !== undefined && scope.relativeTo === previous?.descriptor?.fileId
+    if (!retainedParent) release(previous)
     const owns = () => get().current?.generation === current.generation
     const update = (patch: Partial<Preview>) => {
       if (owns()) set((state) => ({ current: { ...state.current!, ...patch } }))
     }
     try {
-      const descriptor = await window.cogent.engineRequest('files.resolve', {
-        sessionId: scope.sessionId,
-        turnId: scope.turnId,
-        rawTarget,
-        relativeTo: scope.relativeTo
-      })
-      if (!owns()) return
-      update({ descriptor })
+      let descriptor: FileDescriptor
+      try {
+        descriptor = outputTarget !== undefined ? await window.cogent.engineRequest('outputs.resolve', outputTarget) : await window.cogent.engineRequest('files.resolve', {
+          sessionId: scope.sessionId,
+          turnId: scope.turnId,
+          rawTarget,
+          relativeTo: scope.relativeTo
+        })
+      } finally { if (retainedParent) release(previous) }
+      if (!owns()) {
+        await window.cogent.engineRequest('files.cancel', { sessionId: scope.sessionId, operationId: current.operationId, fileId: descriptor.fileId })
+        return
+      }
+      update({ descriptor, ...(descriptor.delivery !== undefined && { outputTarget: descriptor.delivery.target }) })
       const read = {
         sessionId: scope.sessionId,
         fileId: descriptor.fileId,
@@ -130,7 +142,7 @@ export const useFilePreviewStore = create<PreviewState>((set, get) => ({
     const current = get().current!
     const descriptor = current.descriptor!
     const ownGeneration = ++generation
-    release(current)
+    release(current, false)
     const operationId = crypto.randomUUID()
     set({
       current: { ...current, generation: ownGeneration, operationId, loading: true, error: null }

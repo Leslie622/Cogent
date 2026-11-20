@@ -225,6 +225,7 @@ function ChatMessages() {
   // 压缩进行中（完备化 D8）：started→completed 窗口，消息流内状态条
   const compacting = useChatStore(selectCompacting)
   const lastError = useChatStore(selectLastError)
+  const outputHistoryError = useChatStore((state) => activeSessionId === null ? undefined : state.bySession[activeSessionId]?.outputErrors.history)
 
   // 结果属于用户回合；新提问只改变当前live，不能把旧中止/失败改成done。
   // 仅末尾无user兜底组沿用会话最近结果，其他未知结果默认done。
@@ -311,6 +312,7 @@ function ChatMessages() {
             </div>
           )}
           {lastError && <div className="text-center text-xs text-destructive">{lastError}</div>}
+          {outputHistoryError !== undefined && <p role="alert" className="text-sm">产物记录读取失败：{outputHistoryError}</p>}
         </MessageScrollerContent>
       </MessageScrollerViewport>
       {/* 索引轨道只标注内容消息（工具卡不是刻度目标，过滤掉） */}
@@ -617,7 +619,7 @@ export function HomeChat({
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
   return (
-    <div className="home-chat relative flex h-full min-w-0 flex-col"
+    <div className="home-chat relative flex h-full min-w-0 flex-col" data-chat-session={session.kind === 'chat' ? session.chatId : undefined}
       onDragEnter={(event) => {
         if (!draft.loaded || !event.dataTransfer.types.includes('Files')) return
         event.preventDefault(); dragDepth.current++; setDragging(true)

@@ -88,7 +88,7 @@ export function fileHandlers(service: FileService): Array<[string, (raw: unknown
       'files.cancel',
       (raw) => {
         const p = object(raw)
-        return service.cancel(string(p, 'sessionId'), string(p, 'operationId'))
+        return service.cancel(string(p, 'sessionId'), string(p, 'operationId'), optional(p, 'fileId'))
       }
     ]
   ]

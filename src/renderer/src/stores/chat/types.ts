@@ -158,6 +158,10 @@ export interface SessionRuntime {
  * 生命周期 = 会话生命周期（selectSession/createSession 建，deleteSession 删）。
  */
 export interface SessionBucket {
+  /** 桶在增量更新期间身份不变；迟到历史查询不能借用删除后重建的同名桶。 */
+  owner: object
+  outputs: Partial<Record<string, import('@shared/outputs').TurnOutputs>>
+  outputErrors: Partial<Record<string, string>>
   /** 消息流（含流式中的 assistant 占位与工具卡行） */
   messages: MessageItem[]
   /** 已加载消息的user.id -> 已知终态；后续提交不能把旧回合重标为完成。 */

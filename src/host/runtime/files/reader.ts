@@ -22,6 +22,15 @@ type Entry = {
   real: string
   descriptor: FileDescriptor
   turnId?: string
+  delivery?: DeliveryRegistration
+}
+export interface DeliveryRegistration {
+  sourcePath: string
+  confirmedAt: number
+  target: import('../../../shared/outputs').OutputTarget
+  release: () => void
+  actionTarget: () => Promise<string>
+  relative: (raw: string) => Promise<FileDescriptor>
 }
 type Operation = { controller: AbortController; users: number }
 const TYPES: Record<string, [FileKind, string]> = {
@@ -71,6 +80,10 @@ export class FileService {
     relativeTo?: string
   ): Promise<FileDescriptor> {
     const origin = this.source(sessionId, turnId)
+    if (relativeTo !== undefined) {
+      const entry = await this.checked({ sessionId, fileId: relativeTo })
+      if (entry.delivery !== undefined) return entry.delivery.relative(rawTarget)
+    }
     const base =
       relativeTo === undefined
         ? origin.context
@@ -78,7 +91,15 @@ export class FileService {
     // relativeTo 指的是预览来源文件，其目录是 Markdown 本地依赖的基准。
     if (relativeTo !== undefined) base.cwd = dirname(base.cwd)
     const target = resolveFileTarget(rawTarget, base, homedir())
-    const real = await realpath(target.path)
+    return this.registerPath(sessionId, target.path, turnId, undefined, target, origin.saved)
+  }
+
+  /** Host 内部字面路径登记口；产物路径不经过 Markdown URI/行列解析。 */
+  async registerPath(sessionId: string, path: string, turnId?: string, delivery?: DeliveryRegistration,
+    target: { location?: FileDescriptor['location']; locationWarning?: string } = {}, saved = true): Promise<FileDescriptor> {
+    this.source(sessionId, turnId)
+    const alias = path
+    const real = await realpath(alias)
     const info = await stat(real)
     if (!info.isFile() && !info.isDirectory()) throw new Error('仅支持普通文件和目录')
     const extension = extname(real).toLowerCase()
@@ -92,24 +113,25 @@ export class FileService {
       (entry) =>
         entry.sessionId === sessionId &&
         entry.turnId === turnId &&
-        entry.alias === target.path &&
+        entry.alias === alias &&
         entry.real === real
     )
-    const fileId = existing?.descriptor.fileId ?? randomUUID()
+    const fileId = delivery === undefined ? existing?.descriptor.fileId ?? randomUUID() : randomUUID()
     const descriptor: FileDescriptor = {
       fileId,
       serviceId: this.serviceId,
-      path: target.path,
-      name: basename(target.path),
+      path: delivery?.sourcePath ?? alias,
+      name: basename(alias),
       kind,
       mime,
       size: info.size,
       version: version(info),
-      source: origin.saved ? 'saved' : 'current-workspace',
+      source: saved ? 'saved' : 'current-workspace',
+      ...(delivery !== undefined && { delivery: { sourcePath: delivery.sourcePath, confirmedAt: delivery.confirmedAt, target: delivery.target } }),
       ...(target.location !== undefined && { location: target.location }),
       ...(target.locationWarning !== undefined && { locationWarning: target.locationWarning })
     }
-    this.entries.set(fileId, { sessionId, alias: target.path, real, descriptor, turnId })
+    this.entries.set(fileId, { sessionId, alias, real, descriptor, turnId, delivery })
     return descriptor
   }
 
@@ -127,7 +149,7 @@ export class FileService {
     const info = await stat(entry.real)
     if (!info.isFile() && !info.isDirectory()) throw new Error('目标已经不是普通文件或目录')
     return {
-      path: entry.real,
+      path: entry.delivery === undefined ? entry.real : await entry.delivery.actionTarget(),
       name: entry.descriptor.name,
       kind: info.isDirectory() ? ('directory' as const) : entry.descriptor.kind
     }
@@ -167,10 +189,12 @@ export class FileService {
       else next()
     }
   }
-  cancel(sessionId: string, operationId: string): { ok: true } {
+  cancel(sessionId: string, operationId: string, fileId?: string): { ok: true } {
     const key = `${sessionId}/${operationId}`
     this.operations.get(key)?.controller.abort()
     this.canceled.add(key)
+    const entry = fileId === undefined ? undefined : this.entries.get(fileId)
+    if (entry?.sessionId === sessionId && entry.delivery !== undefined) { entry.delivery.release(); this.entries.delete(fileId!) }
     // 只为最近迟到分片保留轻量墓碑，不长期保存已经结束的 AbortController。
     if (this.canceled.size > 256) this.canceled.delete(this.canceled.values().next().value!)
     return { ok: true }
@@ -178,7 +202,7 @@ export class FileService {
   releaseSession(sessionId: string): void {
     for (const key of this.canceled) if (key.startsWith(sessionId + '/')) this.canceled.delete(key)
     for (const [id, entry] of this.entries)
-      if (entry.sessionId === sessionId) this.entries.delete(id)
+      if (entry.sessionId === sessionId) { entry.delivery?.release(); this.entries.delete(id) }
     for (const [key, operation] of this.operations)
       if (key.startsWith(sessionId + '/')) {
         operation.controller.abort()

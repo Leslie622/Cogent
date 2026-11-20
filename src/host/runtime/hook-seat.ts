@@ -17,10 +17,8 @@
  * - **请求取消**：链式包裹公开 agent.prepareRequest，原钩子前后检查signal，
  *   接住Host保存并在pi启动时重放的停止意图；不覆盖原钩子或宣称强制打断任意await。
  *
- * 上下文注入（`context` 事件，每次 LLM 调用前可改 messages）：**预留缝未接线**
- * —— pi 自动注入 <cwd> 环境段 + Cogent 工作区注入走系统提示段，无未满足
- * 消费者（实现文档 §3.4 的墙）；出现「需按调用注入动态事实且系统提示段
- * 不适合」的真实场景时经 options.context 接线。
+ * 上下文注入（context）：每次已有 LLM 请求前检查一次条件产物提醒；不另起模型请求，
+ * 不把提醒永久追加到用户转录。工具/工作区长期规则仍走系统提示段。
  */
 import type { Agent, AgentMessage, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import type { InlineExtension } from '@earendil-works/pi-coding-agent'
@@ -38,8 +36,8 @@ export interface CogentHooksOptions {
    * diff = 回合边界热刷新（权限通告 / 技能清单 / 任务清单 / 已批准计划 共用）。
    */
   sections?: () => Record<string, string | null> | undefined
-  /** 上下文注入预留缝（未接线，见文件头）；返回数组 = 整体替换 messages */
-  context?: (messages: AgentMessage[]) => AgentMessage[] | void
+  /** 每次请求的上下文注入；支持异步读取交付状态，返回数组整体替换 messages。 */
+  context?: (messages: AgentMessage[]) => AgentMessage[] | void | Promise<AgentMessage[] | void>
 }
 
 /**
@@ -68,8 +66,8 @@ export function createCogentHooks(opts: CogentHooksOptions): InlineExtension {
         event.systemPromptOptions.sections = sections
       })
       if (opts.context !== undefined) {
-        pi.on('context', (event) => {
-          const replaced = opts.context?.(event.messages)
+        pi.on('context', async (event) => {
+          const replaced = await opts.context?.(event.messages)
           if (replaced !== undefined) return { messages: replaced }
         })
       }

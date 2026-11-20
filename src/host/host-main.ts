@@ -80,6 +80,7 @@ import { startHttpRpc } from './http/server'
 import { createCapabilityStore, createRootSecret } from './http/auth'
 import { AttachmentConfig, attachmentHandlers } from './runtime/attachment-config'
 import { FileService } from './runtime/files/reader'
+import { outputHandlers } from './runtime/outputs/handlers'
 import { fileHandlers } from './runtime/files/handlers'
 import { prepareDirectoryReferences } from './runtime/directory-references'
 
@@ -773,6 +774,7 @@ async function main(): Promise<void> {
    */
   const handlers = new Map<string, (params: unknown) => unknown>([
     ...fileHandlers(files),
+    ...outputHandlers(sessions.outputs, files, (sessionId) => { sessions.fileContext(sessionId) }),
     ...attachmentHandlers(sessions.attachments, new AttachmentConfig(STORAGE_ROOT)),
     ['initialize', handleInitialize],
     ['session.list', () => sessions.list()],

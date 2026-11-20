@@ -84,8 +84,8 @@ void (async()=>{try {
  await wait(()=>evaluate('typeof window.cogent === "object"'),'产品 preload 就绪');
  const sessionId=await evaluate(${JSON.stringify(bootstrap)});
  let loaded = new Promise(done=>win.webContents.once('did-finish-load',done));win.reload();await loaded;
- await wait(()=>evaluate('document.body.innerText.includes("文件链接验收")'),'空会话历史水合');
- await wait(()=>evaluate('document.querySelector("textarea")?.disabled===false'),'聊天输入就绪');
+ await wait(()=>evaluate('Array.from(document.querySelectorAll("header")).some(el=>el.innerText.includes("文件链接验收"))'),'目标聊天主体与历史水合');
+ await wait(()=>evaluate('document.querySelector("[data-chat-session] textarea")?.disabled===false'),'目标聊天输入与草稿就绪');
  await wait(()=>evaluate('document.body.innerText.includes("file-test")'),'测试模型偏好水合');
  await evaluate('document.querySelector("textarea").focus()');await win.webContents.insertText('生成文件链接');
  await wait(()=>evaluate('document.querySelector("[aria-label=发送]")?.disabled===false'),'实际发送按钮就绪');
@@ -141,7 +141,7 @@ void (async()=>{try {
 `)
 let child
 try {
-  const env = { ...process.env, COGENT_HOME: home }
+  const env = { ...process.env, COGENT_HOME: home, USERPROFILE: home, HOME: home }
   delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_RENDERER_URL
   child = spawn(electron, [driver], { cwd: process.cwd(), stdio: 'inherit', windowsHide: true, env })
   await new Promise((done, fail) => { child.once('error', fail); child.once('exit', done) })

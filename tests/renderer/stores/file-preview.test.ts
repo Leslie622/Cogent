@@ -43,4 +43,22 @@ describe('文件预览所有权', () => {
     expect(revoke).toHaveBeenCalledWith('blob:test')
     expect(request).toHaveBeenCalledWith('files.cancel', expect.objectContaining({ sessionId: 'a' }))
   })
+  it('交付Markdown内链解析前保留父句柄；子预览记住持久目标供重新加载', async () => {
+    const target = { sessionId: 'a', turnId: 'turn', revision: 3, outputId: 'child', version: 'delivery' as const }
+    let parentReleased = false
+    request.mockImplementation((method, params) => {
+      if (method === 'files.cancel' && params.fileId === 'parent') parentReleased = true
+      if (method === 'files.resolve') {
+        if (params.rawTarget === 'parent') return Promise.resolve({ ...descriptor('parent', 'markdown'), delivery: { sourcePath: '/work/parent.md', confirmedAt: 1, target: { ...target, outputId: 'parent' } } })
+        expect(parentReleased).toBe(false)
+        return Promise.resolve({ ...descriptor('child'), delivery: { sourcePath: '/work/child.txt', confirmedAt: 1, target } })
+      }
+      if (method === 'files.readText') return Promise.resolve({ text: '内容', encoding: 'utf-8' })
+      return Promise.resolve({ ok: true })
+    })
+    await useFilePreviewStore.getState().open(scope, 'parent')
+    await useFilePreviewStore.getState().open({ ...scope, relativeTo: 'parent' }, './child.txt')
+    expect(parentReleased).toBe(true)
+    expect(useFilePreviewStore.getState().current?.outputTarget).toEqual(target)
+  })
 })

@@ -238,9 +238,11 @@ export function FilePanel() {
     setActionError(null)
     setStatus(null)
     try {
+      const target = file!.delivery !== undefined && (action === 'reveal' || action === 'editor')
+        ? await window.cogent.engineRequest('outputs.resolve', { ...file!.delivery.target, version: 'current' }) : file!
       await window.cogent.fileAction({
         sessionId: preview.scope.sessionId,
-        fileId: file!.fileId,
+        fileId: target.fileId,
         action,
         location: file!.location
       })
@@ -266,7 +268,7 @@ export function FilePanel() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => void useFilePreviewStore.getState().open(preview.scope, preview.rawTarget)}
+          onClick={() => void useFilePreviewStore.getState().open(preview.scope, preview.rawTarget, preview.outputTarget)}
         >
           重新加载
         </Button>
@@ -284,9 +286,10 @@ export function FilePanel() {
             <MoreHorizontal />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => void copy()}>复制路径</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void copy()}>复制原文件路径</DropdownMenuItem>
+            {file?.delivery !== undefined && <DropdownMenuItem onClick={() => void useFilePreviewStore.getState().open(preview.scope, preview.rawTarget, { ...file.delivery!.target, version: 'current' })}>预览当前原文件</DropdownMenuItem>}
             <DropdownMenuItem onClick={() => void action('reveal')}>
-              在文件管理器中定位
+              {file?.delivery !== undefined ? '在原目录定位' : '在文件管理器中定位'}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => void action('open')}>系统打开</DropdownMenuItem>
             <DropdownMenuItem
@@ -295,7 +298,7 @@ export function FilePanel() {
             >
               另存为
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => void action('editor')}>编辑器打开</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void action('editor')}>{file?.delivery !== undefined ? '编辑当前原文件' : '编辑器打开'}</DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
                 void window.cogent
@@ -322,9 +325,10 @@ export function FilePanel() {
         <div className="shrink-0 px-3 pb-2 text-xs text-muted-foreground">
           <p className="break-all">{file.path}</p>
           <p>
-            {file.kind} · {file.size.toLocaleString()} 字节 · 当前文件
+            {file.kind} · {file.size.toLocaleString()} 字节 · {file.delivery === undefined ? '当前文件' : '交付副本'}
             {preview.encoding === null ? '' : ' · ' + preview.encoding}
           </p>
+          {file.delivery !== undefined && <p>确认时间：{new Date(file.delivery.confirmedAt).toLocaleString()}；预览与另存使用已保存字节。</p>}
           {file.source === 'current-workspace' && <p>使用当前工作区（此消息未保存历史来源）</p>}
           {file.locationWarning !== undefined && <p>{file.locationWarning}</p>}
         </div>

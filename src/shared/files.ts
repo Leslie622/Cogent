@@ -30,6 +30,7 @@ export interface FileDescriptor {
   location?: FileLocation
   locationWarning?: string
   source: 'saved' | 'current-workspace'
+  delivery?: { sourcePath: string; confirmedAt: number; target: import('./outputs').OutputTarget }
 }
 export interface FileHandle {
   sessionId: string
@@ -64,7 +65,7 @@ export interface FileMethods {
     params: FileRead & { cursor: number; sheet?: string; range?: string }
     result: ParsedFile
   }
-  'files.cancel': { params: { sessionId: string; operationId: string }; result: { ok: true } }
+  'files.cancel': { params: { sessionId: string; operationId: string; fileId?: string }; result: { ok: true } }
 }
 /** main 专用能力不在 renderer 白名单；实际系统动作前再次复核目标。 */
 export interface FileInternalMethods {

@@ -182,6 +182,8 @@ export interface PiSessionOptions {
    * 注册不激活）。缺省 = 无自定义工具。
    */
   customTools?: ToolDefinition[]
+  settleOutput?: (callId: string, successful: boolean) => Promise<import('@earendil-works/pi-agent-core').AfterToolCallResult | undefined>
+  outputReminder?: () => Promise<string | undefined>
   approval: ApprovalBridge
   /** AgentSessionEvent 出口（session.ts 的转译入口；不关心的会话层事件自然落 default） */
   onEvent: (event: AgentSessionEvent) => void
@@ -289,7 +291,11 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
         : []),
       // 钩子座（4d）：段注入（before_agent_start）等 Host 干预的具名注册地
       // （装配形状与「审批为何不走扩展」的墙见 runtime/hook-seat.ts 头注）
-      createCogentHooks({ sections: opts.sections, nestedApproval: opts.approval }), fileHooks
+      createCogentHooks({ sections: opts.sections, nestedApproval: opts.approval,
+        ...(opts.outputReminder !== undefined && { context: async (messages) => {
+          const reminder = await opts.outputReminder!()
+          return reminder === undefined ? undefined : [...messages, { role: 'custom', customType: 'cogent-output-reminder', content: reminder, display: false, timestamp: Date.now() }]
+        } }) }), fileHooks
     ]
   })
   await resourceLoader.reload()
@@ -327,6 +333,17 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
 
   // 直接调用保留 core signal，嵌套调用另走上面的官方事件；共用审批桥且不重复询问。
   session.agent.beforeToolCall = wrapApprovalChain(session.agent.beforeToolCall, opts.approval)
+  const afterToolCall = session.agent.afterToolCall
+  session.agent.afterToolCall = async (context, signal) => {
+    let result: import('@earendil-works/pi-agent-core').AfterToolCallResult | undefined
+    try { result = await afterToolCall?.(context, signal) }
+    catch (error) { if (context.toolCall.name === 'report_outputs') await opts.settleOutput?.(context.toolCall.id, false); throw error }
+    if (context.toolCall.name !== 'report_outputs') return result
+    const successful = !(result?.isError ?? context.isError) && !signal?.aborted
+    const receipt = await opts.settleOutput?.(context.toolCall.id, successful)
+    if (!successful) return { ...result, isError: true }
+    return receipt === undefined ? result : { ...result, ...receipt }
+  }
 
   // 保留pi的请求准备钩子；已在启动交接时收到的取消，不再进入provider。
   session.agent.prepareRequest = wrapRequestCancellation(session.agent.prepareRequest)
