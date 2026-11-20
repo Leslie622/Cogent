@@ -3,7 +3,8 @@
  * AppView，content（content-sidebar + content-main 整体）随之换内容 —— 路由语义。
  * 上区：首页/定时任务/插件；active = 圆角块底 + Tabler 实心变体（Filled 后缀；
  * 选图标时须成对存在——smart-home 无 Filled 已被否）。下区：设置钮，点击出
- * shadcn DropdownMenu（向右弹出），菜单项「设置」也走路由，「关于」行为空位；
+ * shadcn DropdownMenu（向右弹出），「设置」走路由，「运行时控制台」与「内嵌页面」
+ * 打开各自独立窗口，「关于」行为空位；
  * 处在设置视图时设置钮同样亮 active（齿轮实心）。
  */
 import type { ComponentType } from 'react'
@@ -17,6 +18,8 @@ import {
   IconPuzzleFilled,
   IconSettings,
   IconSettingsFilled,
+  IconTerminal2,
+  IconWorld,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
 import { Hint } from '@/components/Hint'
@@ -25,6 +28,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useUiStore, type AppView } from '@/stores/ui'
@@ -110,6 +114,16 @@ export function AppSidebar() {
               <IconSettings className="size-[17px]" />
               设置
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => void window.cogent.openConsole()}>
+              <IconTerminal2 className="size-[17px]" />
+              运行时控制台
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void window.cogent.openEmbedded()}>
+              <IconWorld className="size-[17px]" />
+              内嵌页面
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem>
               <IconInfoCircle className="size-[17px]" />
               关于

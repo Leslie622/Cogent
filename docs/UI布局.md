@@ -18,9 +18,10 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
                 └─ settings  SettingsMain，按分区挂内容
 ```
 
-- header 的“运行时控制台”和“内嵌页面”入口位于“帮助”右侧，使用中文文字按钮
-  （Button ghost / header，正文阶默认14px），不配图标；与前四个菜单按钮同处一个 `gap-1` 容器，
-  按钮本体统一最小 `h-7` 与 `px-2`，不额外加左间距；窗口 ≤760px 时文字菜单收进“应用菜单”，保留窗口控制三钮。
+- header 的“文件”“编辑”“视图”“帮助”使用文字按钮（Button ghost / header），
+  同处一个 `gap-1` 容器；窗口 ≤760px 时文字菜单收进“应用菜单”，保留窗口控制三钮。
+- 左下角设置菜单依次为“设置”、分隔线、“运行时控制台”“内嵌页面”、分隔线、“关于”；
+  使用带左侧图标的 DropdownMenuItem，菜单沿用 lg 档，向右弹出并底端对齐。
 - `app-sidebar` 上区路由钮与底部设置钮统一使用 `Button ghost / icon-lg`（36×36px），
   图标为 20px（`size-5`），普通态与激活态尺寸一致。
 - `content-sidebar` 是普通 flex 像素宽块，不进 react-resizable-panels（RRP）；
