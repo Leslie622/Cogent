@@ -1,10 +1,10 @@
 /**
- * notify 纯函数单元测试 —— 提醒判定与合成音型的行为契约（钉行为不是追数字）：
+ * 提醒判定与播放器行为契约：
  * - shouldNotify：三行触发条件 × 焦点；呈现开关（toast/声音）不在此层（正交）
- * - synthNotes：三类音型是基频的相对模式（音调滑杆一处调全变）
+ * - 三类内置音、自定义覆盖、冷启动预热、输出恢复、加载并发与失败可重试。
  */
-import { describe, expect, it } from 'vitest'
-import { shouldNotify, synthNotes } from '@/lib/notify'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { shouldNotify } from '@/lib/notify'
 import type { NotifySettings } from '@/stores/engine'
 
 const settings = (patch: Partial<NotifySettings> = {}): NotifySettings => ({
@@ -45,30 +45,149 @@ describe('shouldNotify · 权限/问答开关（与焦点无关）', () => {
   })
 })
 
-describe('synthNotes · 三类音型是基频的相对模式', () => {
-  it('turn-done 双音上行（第二音 = 基频 × 1.25，晚于第一音）', () => {
-    const notes = synthNotes('turn-done', 660)
-    expect(notes).toHaveLength(2)
-    expect(notes[0].freq).toBe(660)
-    expect(notes[1].freq).toBeCloseTo(660 * 1.25)
-    expect(notes[1].at).toBeGreaterThan(notes[0].at)
+class SourceFake {
+  buffer: AudioBuffer | null = null
+  playbackRate = { value: 1 }
+  connect = vi.fn()
+  disconnect = vi.fn()
+  start = vi.fn()
+  stop = vi.fn()
+  onended: (() => void) | null = null
+}
+
+class ContextFake {
+  static instances: ContextFake[] = []
+  state: AudioContextState = 'running'
+  currentTime = 0
+  destination = {}
+  sources: SourceFake[] = []
+  gains: Array<{ gain: { value: number }; connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }> = []
+  resume = vi.fn(() => { this.state = 'running'; return Promise.resolve() })
+  decodeAudioData = vi.fn(() => Promise.resolve({ duration: 0.29 } as AudioBuffer))
+  createBufferSource() {
+    const source = new SourceFake()
+    this.sources.push(source)
+    return source
+  }
+  createGain() {
+    const gain = { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() }
+    this.gains.push(gain)
+    return gain
+  }
+  constructor() { ContextFake.instances.push(this) }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
+}
+
+describe('playNotifySound · 输出预热与音源缓存', () => {
+  let playNotifySound: typeof import('@/lib/notify')['playNotifySound']
+  const fetchSound = vi.fn()
+  beforeEach(async () => {
+    vi.resetModules()
+    ContextFake.instances.length = 0
+    fetchSound.mockReset().mockImplementation(() => Promise.resolve(new Response(new ArrayBuffer(4))))
+    vi.stubGlobal('AudioContext', ContextFake)
+    vi.stubGlobal('fetch', fetchSound)
+    ;({ playNotifySound } = await import('@/lib/notify'))
   })
-  it('approval 同音两响（频率相同、时间分离）', () => {
-    const notes = synthNotes('approval', 660)
-    expect(notes).toHaveLength(2)
-    expect(notes[0].freq).toBe(notes[1].freq)
-    expect(notes[1].at).toBeGreaterThan(notes[0].at)
+  afterEach(() => vi.unstubAllGlobals())
+
+  it.each(['turn-done', 'approval', 'question'] as const)('%s 第一次点击即加载并安排完整原音，预留600ms输出唤醒', async (kind) => {
+    await playNotifySound(settings(), kind)
+    const context = ContextFake.instances[0]
+    expect(fetchSound).toHaveBeenCalledWith(expect.stringContaining(`/sounds/${kind}.wav`))
+    expect(context.sources[0].playbackRate.value).toBe(1)
+    expect(context.gains[0].gain.value).toBe(0.5)
+    expect(context.sources[0].start).toHaveBeenCalledExactlyOnceWith(0.6)
   })
-  it('question 双音（首音 = 基频 × 0.8，回到基频）', () => {
-    const notes = synthNotes('question', 660)
-    expect(notes).toHaveLength(2)
-    expect(notes[0].freq).toBeCloseTo(660 * 0.8)
-    expect(notes[1].freq).toBe(660)
+
+  it('已就绪的输出直接重播，复用已解码数据并读取当前音量和音调', async () => {
+    await playNotifySound(settings(), 'turn-done')
+    const context = ContextFake.instances[0]
+    context.currentTime = 2
+    await playNotifySound(settings({ soundVolume: 0.2, soundPitch: 990 }), 'turn-done')
+    expect(fetchSound).toHaveBeenCalledTimes(1)
+    expect(context.decodeAudioData).toHaveBeenCalledTimes(1)
+    expect(context.sources[0].stop).toHaveBeenCalledTimes(1)
+    expect(context.sources[1].buffer).toBe(context.sources[0].buffer)
+    expect(context.sources[1].start).toHaveBeenCalledExactlyOnceWith(2)
+    expect(context.sources[1].playbackRate.value).toBe(1.5)
+    expect(context.gains[1].gain.value).toBe(0.2)
   })
-  it('音调调整全音型随动（相对模式，不是固定频率表）', () => {
-    const low = synthNotes('turn-done', 440)
-    const high = synthNotes('turn-done', 880)
-    expect(high[0].freq / low[0].freq).toBeCloseTo(2)
-    expect(high[1].freq / low[1].freq).toBeCloseTo(2)
+
+  it('自定义文件优先且保持原音高，清除字段后回到对应内置音', async () => {
+    const file = 'approval-自选 提示音.wav'
+    await playNotifySound(settings({ approvalSoundFile: file, soundPitch: 990 }), 'approval')
+    const context = ContextFake.instances[0]
+    expect(fetchSound).toHaveBeenLastCalledWith(`cogent-sound://local/${encodeURIComponent(file)}`)
+    expect(context.sources[0].playbackRate.value).toBe(1)
+    await playNotifySound(settings(), 'approval')
+    expect(fetchSound).toHaveBeenLastCalledWith(expect.stringContaining('/sounds/approval.wav'))
+  })
+
+  it('首次加载期间连续点击合并最新请求，不提前播空或重新计算预热时刻', async () => {
+    const loaded = deferred<Response>()
+    fetchSound.mockReturnValueOnce(loaded.promise)
+    const first = playNotifySound(settings(), 'question')
+    const context = ContextFake.instances[0]
+    context.currentTime = 0.1
+    const second = playNotifySound(settings({ soundVolume: 0.25 }), 'question')
+    expect(context.sources).toHaveLength(0)
+    loaded.resolve(new Response(new ArrayBuffer(4)))
+    await Promise.all([first, second])
+    expect(context.sources).toHaveLength(1)
+    expect(context.sources[0].start).toHaveBeenCalledExactlyOnceWith(0.6)
+    expect(context.gains[0].gain.value).toBe(0.25)
+  })
+
+  it('输出挂起后同步发起resume，恢复完成前不播放，恢复后重新预热', async () => {
+    await playNotifySound(settings(), 'turn-done')
+    const context = ContextFake.instances[0]
+    context.currentTime = 10
+    context.state = 'suspended'
+    const resumed = deferred<void>()
+    context.resume.mockImplementationOnce(() => resumed.promise.then(() => { context.state = 'running' }))
+    const playback = playNotifySound(settings(), 'turn-done')
+    expect(context.resume).toHaveBeenCalledTimes(1)
+    expect(context.sources).toHaveLength(1)
+    resumed.resolve()
+    await playback
+    expect(context.sources[1].start).toHaveBeenCalledExactlyOnceWith(10.6)
+  })
+
+  it('加载失败向调用方报告，下一次用户点击重新加载', async () => {
+    fetchSound.mockRejectedValueOnce(new Error('offline'))
+    await expect(playNotifySound(settings(), 'question')).rejects.toThrow('offline')
+    await playNotifySound(settings(), 'question')
+    expect(fetchSound).toHaveBeenCalledTimes(2)
+    expect(ContextFake.instances[0].sources).toHaveLength(1)
+  })
+
+  it('解码失败不缓存假成功，重试能重新解码', async () => {
+    const first = playNotifySound(settings(), 'question')
+    const context = ContextFake.instances[0]
+    context.decodeAudioData.mockRejectedValueOnce(new Error('坏音频'))
+    await expect(first).rejects.toThrow('坏音频')
+    expect(context.sources).toHaveLength(0)
+    await playNotifySound(settings(), 'question')
+    expect(context.decodeAudioData).toHaveBeenCalledTimes(2)
+    expect(context.sources).toHaveLength(1)
+  })
+
+  it('旧音源加载晚到时不会覆盖已经播放的新音源', async () => {
+    const old = deferred<Response>()
+    fetchSound.mockReturnValueOnce(old.promise)
+    const first = playNotifySound(settings({ approvalSoundFile: 'old.wav' }), 'approval')
+    await playNotifySound(settings({ approvalSoundFile: 'new.wav' }), 'approval')
+    old.resolve(new Response(new ArrayBuffer(4)))
+    await first
+    const context = ContextFake.instances[0]
+    expect(context.sources).toHaveLength(1)
+    expect(context.sources[0].stop).not.toHaveBeenCalled()
   })
 })

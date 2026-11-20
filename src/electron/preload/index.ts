@@ -142,7 +142,7 @@ const api = {
   /** 选自定义声音文件（拷进 sounds/ 落字段，返回文件名；取消返回 null） */
   pickSoundFile: (kind: NotifyKind): Promise<string | null> =>
     ipcRenderer.invoke(IPC.soundPickFile, kind),
-  /** 清除自定义声音文件（恢复默认合成音） */
+  /** 清除自定义声音文件（恢复内置提示音） */
   clearSoundFile: (kind: NotifyKind): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.soundClearFile, kind),
   /** 打开系统通知设置页（Linux 未注册本通道，renderer 按 platform 隐藏入口） */

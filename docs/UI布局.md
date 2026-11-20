@@ -158,7 +158,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   `SettingsGroup` 为带组标题的 rounded-lg 描边卡 + divide-y（2026-11-20 用户定调：
   设置页容器与搜索框统一 lg 档、与原生表单控件同阶，弃 xl 大容器档与胶囊搜索底；
   各分区空态/加载卡、模型页整高卡与凭据横幅、归档列表卡、模型页刷新钮同批改齐）；
-  `SettingsRow` 左说明、右原生控件。设置页及其弹窗的 Button、SelectTrigger、Toggle
+  `SettingsRow` 左说明、右原生控件。设置页及其弹窗的文字 Button、SelectTrigger、Toggle
   和模型能力徽标统一使用 default；包括 MCP 服务器弹窗的保存／取消与列表行操作。
   调用处不再用高度／边长覆写尺寸档；模型行编辑／删除动作簇 sm 档、绝对定位悬浮
   于开关左侧（零布局占位 —— 行中不留死区，悬停不推挤开关）。
@@ -185,7 +185,11 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   CloseAskDialog（shell 级，勾「不再询问」固化所选动作）。
 - 通知页三组：通知（三行触发条件，Select/Switch）+ 提醒方式（toast/提示音
   两个正交 Switch + 系统设置跳转按钮，Linux 隐藏）+ 提示音（音量/音调滑杆
-  w-40 + 三类声音源行：文件名截断显示 + 选择/试听/恢复默认）。
+  w-40 + 三类声音源行：缺省显示「内置提示音」，自定义文件名截断显示 +
+  选择文件/试听/恢复默认）；两条滑杆右侧各配 `Button ghost / icon` 回退图标，
+  Hint 与 aria-label 分别为「恢复默认音量」「恢复默认音调」，已为默认值时禁用；
+  说明标出默认50%与默认原音。音调只调整内置音频。试听使用带声波的喇叭图标
+  `Button ghost / icon`，配「试听」Hint 与同名 aria-label。
 - 存储页两组：空间占用 = 总量行（正文阶 + semibold tabular-nums 数值，行尾
   outline icon-sm 刷新钮）+ 分类分段条（h-4 rounded-sm，2026-11-20 用户定调弃胶囊；
   条高仅 16px，CSS 把 ≥8px 圆角钳成半圆，sm 6px 才收得出方角端头；段宽按字节

@@ -4,18 +4,26 @@
  * 分层：chat 事件流到达 → notifyEvent(kind)：
  *   ① 触发条件判定（shouldNotify 纯函数：三行设置 × 焦点）—— 不过即什么都不做
  *   ② 呈现方式正交分发：toastEnabled → notify:toast IPC（main 弹，点击聚焦）；
- *      soundEnabled → playNotifySound（自定义文件 or 合成音）
+ *      soundEnabled → playNotifySound（自定义文件或内置提示音）
  * 焦点判定单一源 = document.hasFocus()（事件消费在 renderer；toast 的
  * 「仅未聚焦」同源，避免 main/renderer 两处判焦不一致）。
  *
- * 合成音：AudioContext + oscillator（零资源、无加载延迟、三平台一致）；
- * 三类音型是基频的相对模式（调 soundPitch 一处全变）。自定义文件：
- * HTMLAudioElement 走 cogent-sound:// 协议（main 代理读 ~/.cogent/sounds/，
- * dev 的 http://localhost 不能直读 file://），复用实例播前 currentTime=0
- * 重置（zcode taskNotificationSound.ts:33-38：停在结束态的实例再播是静默）。
+ * 内置音通过 Vite 资源导入随应用分发，不依赖用户数据目录；素材与授权见
+ * docs/技术笔记/通知与提醒.md。自定义文件走 cogent-sound:// 协议，由 main
+ * 代理读 ~/.cogent/sounds/（开发页面不能直读 file://）。两类音源共用
+ * AudioContext 与已解码缓冲，首次输出预留唤醒时间，避免短音先于蓝牙输出播完。
  */
-import type { NotifyKind, NotifySettings } from '@/stores/engine'
+import turnDoneSoundUrl from '@/assets/sounds/turn-done.wav?url'
+import approvalSoundUrl from '@/assets/sounds/approval.wav?url'
+import questionSoundUrl from '@/assets/sounds/question.wav?url'
+import { NOTIFY_SOUND_DEFAULTS, type NotifyKind, type NotifySettings } from '@/stores/engine'
 import type { NotifyToastPayload } from '@/env.d'
+
+const DEFAULT_SOUND_URLS: Record<NotifyKind, string> = {
+  'turn-done': turnDoneSoundUrl,
+  approval: approvalSoundUrl,
+  question: questionSoundUrl
+}
 
 /** 三类事件的 toast 文案（应用无 i18n，全中文 UI） */
 const TOAST_TEXT: Record<NotifyKind, NotifyToastPayload> = {
@@ -39,77 +47,87 @@ export function shouldNotify(kind: NotifyKind, n: NotifySettings, focused: boole
   return n.questionNotify
 }
 
-/** 合成音音符表（纯函数，单测钉音型）：freq 相对基频取值，at/duration 毫秒 */
-export function synthNotes(kind: NotifyKind, pitch: number): Array<{ freq: number; at: number; duration: number }> {
-  if (kind === 'turn-done') {
-    // 双音上行（叮-咚）：完成的"收尾感"
-    return [
-      { freq: pitch, at: 0, duration: 90 },
-      { freq: pitch * 1.25, at: 110, duration: 140 }
-    ]
-  }
-  if (kind === 'approval') {
-    // 同音两响（急促）：阻塞态，催一下
-    return [
-      { freq: pitch, at: 0, duration: 120 },
-      { freq: pitch, at: 160, duration: 120 }
-    ]
-  }
-  // 双音平行回落（问-等）：等待回答的"疑问感"
-  return [
-    { freq: pitch * 0.8, at: 0, duration: 90 },
-    { freq: pitch, at: 110, duration: 140 }
-  ]
-}
-
+// 短音只有约0.3秒；新建或恢复输出后先渲染600ms静音，再提交实际声音。
+// 同一输出的后续播放不重复等待；设备最终可听状态仍以真实耳机验证为准。
+const OUTPUT_WARMUP_SECONDS = 0.6
 let audioContext: AudioContext | null = null
+let outputReadyAt = 0
+let resumePromise: Promise<void> | null = null
+const bufferCache = new Map<string, Promise<AudioBuffer>>()
+const activeSources = new Map<NotifyKind, AudioBufferSourceNode>()
+const requests = new Map<NotifyKind, object>()
 
-/** 自定义文件的 Audio 实例缓存（src → element；同 src 复用避免重建解码） */
-const fileAudioCache = new Map<string, HTMLAudioElement>()
-
-function playSynth(n: NotifySettings, kind: NotifyKind): void {
-  audioContext ??= new AudioContext()
-  // resume：suspended 态（浏览器策略/系统节能）下 scheduled 的音不响
-  if (audioContext.state === 'suspended') void audioContext.resume()
-  const gain = audioContext.createGain()
-  gain.gain.value = n.soundVolume
-  gain.connect(audioContext.destination)
-  const now = audioContext.currentTime
-  for (const note of synthNotes(kind, n.soundPitch)) {
-    const osc = audioContext.createOscillator()
-    osc.frequency.value = note.freq
-    osc.connect(gain)
-    osc.start(now + note.at / 1000)
-    osc.stop(now + (note.at + note.duration) / 1000)
+function getAudioContext(): AudioContext {
+  if (audioContext === null) {
+    audioContext = new AudioContext({ latencyHint: 'interactive' })
+    outputReadyAt = audioContext.currentTime + OUTPUT_WARMUP_SECONDS
   }
+  return audioContext
 }
 
-function playFile(n: NotifySettings, file: string): void {
-  // 文件名走 pathname 段并显式编码（中文等非 ASCII 过 URL 会被百分号编码，
-  // main 侧对称解码；hostname 段固定占位 —— hostname 会被强制小写）
-  const src = `cogent-sound://local/${encodeURIComponent(file)}`
-  let audio = fileAudioCache.get(src)
-  if (audio === undefined) {
-    audio = new Audio(src)
-    audio.preload = 'auto'
-    fileAudioCache.set(src, audio)
+function resumeOutput(context: AudioContext): Promise<void> {
+  if (context.state === 'running') return Promise.resolve()
+  // resume 必须在点击的同步调用栈发起；加载音源放在它之后，保留用户激活。
+  if (resumePromise === null) {
+    resumePromise = context.resume().then(() => {
+      outputReadyAt = context.currentTime + OUTPUT_WARMUP_SECONDS
+    }).finally(() => {
+      resumePromise = null
+    })
   }
-  audio.volume = n.soundVolume
-  // 停在上次结束态的实例再 play 是静默，重置到头部
-  audio.currentTime = 0
-  void audio.play()
+  return resumePromise
+}
+
+function loadBuffer(context: AudioContext, src: string): Promise<AudioBuffer> {
+  let pending = bufferCache.get(src)
+  if (pending === undefined) {
+    pending = fetch(src).then(async (response) => {
+      if (!response.ok) throw new Error(`提示音加载失败（HTTP ${response.status}）`)
+      return context.decodeAudioData(await response.arrayBuffer())
+    }).catch((error: unknown) => {
+      // 网络、文件与解码是外部边界；失败不永久污染缓存，下一次用户操作可重新加载。
+      bufferCache.delete(src)
+      throw error
+    })
+    bufferCache.set(src, pending)
+  }
+  return pending
 }
 
 /**
- * 播放提示音（导出供设置页「试听」复用）：自定义文件优先，缺省走合成。
- * 播放失败（文件损坏/解码失败）静默 —— 提醒是增强体验，不炸主链路
- * （外部边界；zcode 同款口径）
+ * 播放提示音（导出供设置页「试听」复用）：自定义文件优先，缺省播放内置音。
+ * 加载、解码或输出恢复失败交给调用边界：试听显示原因，事件提醒只记诊断。
  */
-export function playNotifySound(n: NotifySettings, kind: NotifyKind): void {
+export async function playNotifySound(n: NotifySettings, kind: NotifyKind): Promise<void> {
   const file =
     kind === 'turn-done' ? n.turnDoneSoundFile : kind === 'approval' ? n.approvalSoundFile : n.questionSoundFile
-  if (file !== null) playFile(n, file)
-  else playSynth(n, kind)
+  // 自定义文件名显式编码；内置资源由 Vite 生成开发与构建环境各自可用的 URL。
+  const src = file === null ? DEFAULT_SOUND_URLS[kind] : `cogent-sound://local/${encodeURIComponent(file)}`
+  const request = {}
+  requests.set(kind, request)
+  const context = getAudioContext()
+  const ready = resumeOutput(context)
+  const [buffer] = await Promise.all([loadBuffer(context, src), ready])
+  // 同一类连续点击只兑现最新请求；旧加载晚到时不能打断新试听。
+  if (requests.get(kind) !== request) return
+
+  const previous = activeSources.get(kind)
+  if (previous !== undefined) previous.stop()
+  const source = context.createBufferSource()
+  const gain = context.createGain()
+  source.buffer = buffer
+  source.playbackRate.value = file === null ? n.soundPitch / NOTIFY_SOUND_DEFAULTS.soundPitch : 1
+  gain.gain.value = n.soundVolume
+  source.connect(gain)
+  gain.connect(context.destination)
+  source.onended = () => {
+    source.disconnect()
+    gain.disconnect()
+    if (activeSources.get(kind) === source) activeSources.delete(kind)
+  }
+  // 共享就绪时刻：预热期间反复点击不会不断后移声音，也不会绕过预热。
+  source.start(Math.max(context.currentTime, outputReadyAt))
+  activeSources.set(kind, source)
 }
 
 /**
@@ -125,5 +143,9 @@ export function notifyEvent(kind: NotifyKind, n: NotifySettings, failed = false)
       kind === 'turn-done' && failed ? { title: '轮次失败', body: 'Agent 本轮运行失败，回来看看' } : TOAST_TEXT[kind]
     void window.cogent.notifyToast(text)
   }
-  if (n.soundEnabled) playNotifySound(n, kind)
+  if (n.soundEnabled) {
+    void playNotifySound(n, kind).catch((error: unknown) => {
+      console.warn('[notify] 提示音播放失败', error)
+    })
+  }
 }

@@ -175,7 +175,7 @@ export interface SettingsFile {
       disableHardwareAcceleration（规避部分显卡/驱动导致的白屏、闪退、渲染
       异常）；缺省 = true（Electron 默认开）。只在启动期消费，改后重启生效 */
   hardwareAcceleration?: boolean
-  /** —— 通知与提示音（触发条件 × 呈现方式正交，见 docs/计划/通知与提示音.md）—— */
+  /** —— 通知与提示音（触发条件 × 呈现方式正交，见 docs/模块/通知与提醒.md）—— */
   /** 轮次完成的提醒条件：always / never / unfocused（缺省，聚焦时不打扰） */
   turnDoneNotify?: 'always' | 'never' | 'unfocused'
   /** 权限请求时提醒（approval.request）；缺省开 */
@@ -185,14 +185,14 @@ export interface SettingsFile {
   /** 呈现方式 · 系统 toast（main 侧 Electron Notification，点击聚焦窗口）；
       缺省关（用户定调声音为主） */
   toastEnabled?: boolean
-  /** 呈现方式 · 提示音（renderer 合成/自定义文件）；缺省开 */
+  /** 呈现方式 · 提示音（renderer 内置音频/自定义文件）；缺省开 */
   soundEnabled?: boolean
-  /** 提示音音量 0–1（合成 GainNode 与文件 Audio.volume 共用）；缺省 0.5 */
+  /** 提示音音量 0–1（内置音频与自定义文件共用 GainNode）；缺省 0.5 */
   soundVolume?: number
-  /** 合成音基频 Hz（400–1200，三类音型按相对模式取值）；缺省 660。
-      只影响合成音 —— 自定义文件不做变调（playbackRate 破坏音质） */
+  /** 内置提示音的音调参数（400–1200，保留既有存储值域）；缺省 660 对应原音。
+      通过 AudioBufferSourceNode.playbackRate = soundPitch / 660 调整；自定义文件不变调 */
   soundPitch?: number
-  /** 自定义声音文件（~/.cogent/sounds/ 下纯文件名，三类独立；缺省 = 合成音） */
+  /** 自定义声音文件（~/.cogent/sounds/ 下纯文件名，三类独立；缺省 = 内置提示音） */
   turnDoneSoundFile?: string
   approvalSoundFile?: string
   questionSoundFile?: string

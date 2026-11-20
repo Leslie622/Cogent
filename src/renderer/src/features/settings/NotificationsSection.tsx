@@ -1,12 +1,15 @@
 /**
  * 设置 · 通知分区：触发条件（何时提醒）× 呈现方式（toast/提示音）正交 ——
- * 见 docs/计划/通知与提示音.md。三组：
+ * 见 docs/模块/通知与提醒.md。三组：
  *   通知（三行触发条件） / 提醒方式（两个呈现开关 + 系统设置跳转） /
- *   提示音（音量/音调 + 三类声音源：默认合成或自定义文件）。
+ *   提示音（音量/音调 + 三类声音源：内置提示音或自定义文件）。
  * 全部真接线（engine store notify 域，落 settings.json）；试听复用
  * lib/notify 的播放器（同一代码路径，试听即真实效果）。
  */
 import { useEffect, useState } from 'react'
+import { IconArrowBackUp, IconVolume } from '@tabler/icons-react'
+import { toast } from 'sonner'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -19,7 +22,7 @@ import {
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { playNotifySound } from '@/lib/notify'
-import { useEngineStore, type NotifyKind, type NotifyPatch } from '@/stores/engine'
+import { NOTIFY_SOUND_DEFAULTS, useEngineStore, type NotifyKind, type NotifyPatch } from '@/stores/engine'
 import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
 
 const TURN_DONE_MODES: Array<{ value: 'always' | 'never' | 'unfocused'; label: string }> = [
@@ -53,20 +56,24 @@ function SoundFileRow({ kind, title, desc }: { kind: NotifyKind; title: string; 
     setNotifySetting({ [KIND_FILE_KEY[kind]]: null })
   }
   const preview = (): void => {
-    playNotifySound(useEngineStore.getState().notify, kind)
+    void playNotifySound(useEngineStore.getState().notify, kind).catch((error: unknown) => {
+      toast.error('无法播放提示音', { description: error instanceof Error ? error.message : String(error) })
+    })
   }
 
   return (
     <SettingsRow title={title} desc={desc}>
       <div className="flex items-center gap-2">
-        {/* 当前声音源：自定义文件名截断显示，缺省即默认合成 */}
-        <span className="max-w-40 truncate text-xs text-muted-foreground">{file ?? '默认合成音'}</span>
+        {/* 当前声音源：自定义文件名截断显示，缺省使用随应用分发的音频。 */}
+        <span className="max-w-40 truncate text-xs text-muted-foreground">{file ?? '内置提示音'}</span>
         <Button variant="outline" size="default" onClick={() => void pick()}>
           选择文件
         </Button>
-        <Button variant="ghost" size="default" onClick={preview}>
-          试听
-        </Button>
+        <Hint tip="试听">
+          <Button variant="ghost" size="icon" onClick={preview} aria-label="试听">
+            <IconVolume />
+          </Button>
+        </Hint>
         {file !== null && (
           <Button variant="ghost" size="default" onClick={reset}>
             恢复默认
@@ -182,29 +189,58 @@ export function NotificationsSection() {
       </SettingsGroup>
 
       <SettingsGroup label="提示音">
-        <SettingsRow title="音量" desc="提示音的播放音量（合成音与自定义文件共用）">
-          <Slider
-            value={[Math.round(notify.soundVolume * 100)]}
-            min={0}
-            max={100}
-            step={1}
-            onValueChange={(v) => patch({ soundVolume: v[0] / 100 })}
-            className="w-40"
-            aria-label="提示音音量"
-            thumbAriaLabel="提示音音量"
-          />
+        <SettingsRow
+          title="音量"
+          desc={`默认 ${Math.round(NOTIFY_SOUND_DEFAULTS.soundVolume * 100)}%，内置提示音与自定义文件共用`}
+        >
+          <div className="flex items-center gap-2">
+            <Slider
+              value={[Math.round(notify.soundVolume * 100)]}
+              min={0}
+              max={100}
+              step={1}
+              onValueChange={(v) => patch({ soundVolume: v[0] / 100 })}
+              className="w-40"
+              aria-label="提示音音量"
+              thumbAriaLabel="提示音音量"
+            />
+            <Hint tip="恢复默认音量">
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={notify.soundVolume === NOTIFY_SOUND_DEFAULTS.soundVolume}
+                onClick={() => patch({ soundVolume: NOTIFY_SOUND_DEFAULTS.soundVolume })}
+                aria-label="恢复默认音量"
+              >
+                <IconArrowBackUp />
+              </Button>
+            </Hint>
+          </div>
         </SettingsRow>
-        <SettingsRow title="音调" desc="默认合成音的基频（仅对合成音生效，自定义文件不受影响）">
-          <Slider
-            value={[notify.soundPitch]}
-            min={400}
-            max={1200}
-            step={10}
-            onValueChange={(v) => patch({ soundPitch: v[0] })}
-            className="w-40"
-            aria-label="合成音基频"
-            thumbAriaLabel="合成音基频"
-          />
+        <SettingsRow title="音调" desc="默认原音，调节内置提示音的高低（自定义文件不受影响）">
+          <div className="flex items-center gap-2">
+            <Slider
+              value={[notify.soundPitch]}
+              min={400}
+              max={1200}
+              step={10}
+              onValueChange={(v) => patch({ soundPitch: v[0] })}
+              className="w-40"
+              aria-label="内置提示音音调"
+              thumbAriaLabel="内置提示音音调"
+            />
+            <Hint tip="恢复默认音调">
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={notify.soundPitch === NOTIFY_SOUND_DEFAULTS.soundPitch}
+                onClick={() => patch({ soundPitch: NOTIFY_SOUND_DEFAULTS.soundPitch })}
+                aria-label="恢复默认音调"
+              >
+                <IconArrowBackUp />
+              </Button>
+            </Hint>
+          </div>
         </SettingsRow>
         <SoundFileRow kind="turn-done" title="轮次完成声音" desc="轮次完成/失败时的提示音" />
         <SoundFileRow kind="approval" title="权限请求声音" desc="等待授权时的提示音" />

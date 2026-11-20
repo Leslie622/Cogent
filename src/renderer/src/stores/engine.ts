@@ -19,8 +19,8 @@ export type CloseBehavior = 'minimize' | 'quit' | 'ask'
 export type NotifyKind = 'turn-done' | 'approval' | 'question'
 
 /**
- * 通知与提示音设置的内存形状（触发条件 × 呈现方式正交，见 docs/计划/通知与
- * 提示音.md）。声音文件 null = 用默认合成音（settings.json 的删键语义在
+ * 通知与提示音设置的内存形状（触发条件 × 呈现方式正交，见 docs/模块/通知与提醒.md）。
+ * 声音文件 null = 用内置提示音（settings.json 的删键语义在
  * setter 里转换，UI 层只说 null）
  */
 export interface NotifySettings {
@@ -39,8 +39,11 @@ export interface NotifySettings {
   questionSoundFile: string | null
 }
 
-/** setNotifySetting 的 patch：只带要改的键；声音文件 null = 恢复默认合成音 */
+/** setNotifySetting 的 patch：只带要改的键；声音文件 null = 恢复内置提示音 */
 export type NotifyPatch = Partial<NotifySettings>
+
+/** 初始化、滑杆重置与播放器的原音基准共用，避免默认值各自漂移。 */
+export const NOTIFY_SOUND_DEFAULTS = { soundVolume: 0.5, soundPitch: 660 } as const
 
 /**
  * 常用内置 provider 的显示名册（模型下拉分组/设置页卡片共用）。
@@ -184,7 +187,7 @@ async function loadSettings(): Promise<AppSettings> {
   }
 }
 
-/** 通知域缺省（盘上无值时的回填；与 docs/计划/通知与提示音.md 的拍板一致） */
+/** 通知域缺省（盘上无值时的回填；见 docs/模块/通知与提醒.md） */
 function defaultNotify(): NotifySettings {
   return {
     turnDoneNotify: 'unfocused',
@@ -192,8 +195,7 @@ function defaultNotify(): NotifySettings {
     questionNotify: true,
     toastEnabled: false,
     soundEnabled: true,
-    soundVolume: 0.5,
-    soundPitch: 660,
+    ...NOTIFY_SOUND_DEFAULTS,
     turnDoneSoundFile: null,
     approvalSoundFile: null,
     questionSoundFile: null

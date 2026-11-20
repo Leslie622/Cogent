@@ -96,7 +96,7 @@ declare global {
       notifyToast: (payload: NotifyToastPayload) => Promise<{ ok: true } | { ok: false; reason: 'unsupported' }>
       /** 选自定义声音文件（拷进 sounds/ 落字段；取消返回 null） */
       pickSoundFile: (kind: 'turn-done' | 'approval' | 'question') => Promise<string | null>
-      /** 清除自定义声音文件（恢复默认合成音） */
+      /** 清除自定义声音文件（恢复内置提示音） */
       clearSoundFile: (kind: 'turn-done' | 'approval' | 'question') => Promise<{ ok: true }>
       /** 打开系统通知设置页（Linux 未注册，按 platform 隐藏入口） */
       openNotificationSettings: () => Promise<void>
