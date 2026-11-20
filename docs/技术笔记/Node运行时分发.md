@@ -69,7 +69,7 @@ npm/corepack（引擎是打包产物，依赖在应用 node_modules，用不到�
 
 ## 6. 握手超时如何定位
 
-15 秒覆盖整个启动链，不能凭超时就认定 Node 版本、杀毒扫描或最近改动是原因。
+握手预算为 60 秒，覆盖整个启动链，不能凭超时就认定 Node 版本、杀毒扫描或最近改动是原因。
 wrapper 在动态 import 前输出阶段日志，能区分“还没进入 Host 模块”和模块内的
 运行时初始化；main 同时输出实际二进制路径，避免只在成功后才能确认运行时来源。
 各阶段使用 `process.uptime()` 的累计时间，输出走 stderr，保留 stdout 的协议边界。
@@ -85,3 +85,24 @@ wrapper 在动态 import 前输出阶段日志，能区分“还没进入 Host �
 
 收尾由 HostManager 拥有：握手失败 → 终止子进程 → 拒绝并发请求 → failed。
 拒绝信息携带原始原因，避免一串无上下文的 `host closed` 掩盖首个错误。
+
+## 7. 首次安装的依赖加载
+
+未合并的 ESM 入口会实际加载再导出的模块图；pi 根入口包含 CLI 与交互模式
+（`reference/pi/packages/coding-agent/src/index.ts:421`、`:439`），不能拿 Host
+业务 chunk 的大小代表完整启动成本。新文件路径探针曾复现约 42 秒握手，
+其中约 35.7 秒停在静态依赖阶段；另一次文件 trace 中同步 open 累计约 10 秒，
+紧接着重启相同操作约 75ms。这确认了冷文件打开负担，不足以证明底层等待者就是 Defender。
+
+Cogent 在既有 main 构建中合并 coding-agent 与 TypeBox，pi-ai/厂商 SDK 和需独立
+定位资源的包保留 external。源码中的 `import.meta.url` 在合并前改为通过公开
+SDK 入口定位的原文件 URL；`__filename/__dirname` 局部变量另名，避免与构建器
+的 CJS shim 重名。对照 `reference/pi/packages/coding-agent/src/config.ts:418`
+的包根定位、`core/extensions/loader.ts:72` 的扩展别名，以及
+`utils/image-resize.ts:92` 的 worker URL，合并代码不能顺带把这些资源锚点搬到 out/。
+原 SDK 包与资源仍须随应用分发，并非生成完全独立的单文件引擎。
+
+可选厂商预热使用 setImmediate 排在握手响应的 Promise 续段之后；不提前宣布就绪，
+也不把所有首消息优化删除。60 秒是外部冷文件等待的有限预算，进程 error/exit
+仍立即失败，不等预算耗尽。测试分别验证超出旧窗口仍成功、真实错误立即失败、
+新目录复制的真实依赖首次启动，以及图片实际经过原包 worker，不能只测热缓存。

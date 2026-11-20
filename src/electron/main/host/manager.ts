@@ -34,7 +34,9 @@ const MIN_NODE: readonly [number, number, number] = [22, 19, 0]
  * 握手覆盖进程启动、模块加载、运行时恢复与凭据同步；超时本身不能证明卡点。
  * 保留阶段日志定位慢在哪一步，不把偶发超时直接归因于杀毒扫描或自动重试掩盖。
  */
-const HANDSHAKE_TIMEOUT_MS = 15_000
+// 首次安装的冷文件访问已实测超过 40 秒；预算覆盖完整启动，成功后立即清除，
+// 真正的进程错误仍由 error/exit 立即结束，不靠耗尽预算才报告。
+const HANDSHAKE_TIMEOUT_MS = 60_000
 
 interface Pending {
   resolve: (value: unknown) => void

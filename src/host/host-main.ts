@@ -98,18 +98,19 @@ const STORAGE_ROOT = process.env.COGENT_HOME || join(homedir(), '.cogent')
 const AGENTS_ROOT = join(homedir(), '.agents')
 
 // 方言模块预热：pi-ai 的 API 方言是**首次请求时**才动态 import（lazyApi），
-// 冷启动一次要拉起整个厂商 SDK（openai-completions 连带 26MB 的 openai 包，
-// Windows Defender 扫描把首请求拖慢到秒级 —— 实测首句「你好」墙钟 5s 里 3.8s
-// 是它）。这笔钱付在首条消息上是错误的位置：用户正盯着「工作中」计时器。
-// 进程启动即后台预加载 Cogent 支持的全部三个方言，把成本挪进启动期 ——
+// 冷启动会拉起整个厂商 SDK，首次文件访问可占数秒；文件打开慢已由探针确认，
+// 但不能仅凭等待就断言是 Defender 扫描。预热复用同一模块缓存，降低首句延迟。
+// 首次握手响应后后台预加载 Cogent 支持的全部三个方言 ——
 // 与懒加载命中同一模块缓存（exports 子路径与 lazy 相对 import 解析到同一
 // 文件 URL），首请求直接热。预热失败不炸启动（allSettled + 不 await）：
 // 退回懒加载语义，不比没预热差。
-void Promise.allSettled([
-  import('@earendil-works/pi-ai/api/anthropic-messages'),
-  import('@earendil-works/pi-ai/api/openai-completions'),
-  import('@earendil-works/pi-ai/api/openai-responses')
-])
+function prewarmProviderApis(): void {
+  void Promise.allSettled([
+    import('@earendil-works/pi-ai/api/anthropic-messages'),
+    import('@earendil-works/pi-ai/api/openai-completions'),
+    import('@earendil-works/pi-ai/api/openai-responses')
+  ])
+}
 
 async function main(): Promise<void> {
   // 只记录阶段与进程启动后的累计耗时，凭据、请求参数和会话内容不进启动日志。
@@ -216,6 +217,9 @@ async function main(): Promise<void> {
       )
     }
     startup('initialize 完成')
+    // 先让当前响应的 Promise 续段写出握手帧，再启动预热；否则同步模块加载
+    // 会占住同一事件循环，把可选厂商 SDK 的冷加载算进必要的启动等待。
+    setImmediate(prewarmProviderApis)
     return {
       service: 'cogent-agent',
       protocolVersion: PROTOCOL_VERSION,
