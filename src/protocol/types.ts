@@ -115,7 +115,7 @@ export interface SessionSummary {
   pinnedAt?: number
   /**
    * 归档时间（毫秒）；缺省 = 未归档。归档 = 回收站语义（软删）：session.list
-   * 默认滤掉已归档会话，设置页「已归档的聊天」可查看/恢复/彻底删除。
+   * 默认滤掉已归档会话，设置页「归档」可查看/恢复/彻底删除。
    */
   archivedAt?: number
   /**

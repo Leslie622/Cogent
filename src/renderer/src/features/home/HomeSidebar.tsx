@@ -144,7 +144,7 @@ const ChatRow = memo(function ChatRow({
   onSelect: (chatId: string) => void
   /** 置顶二值切换；目标态由行内计算（chat.pinnedAt 在场 = 当前已置顶） */
   onTogglePin: (chatId: string, pinned: boolean) => void
-  /** 归档（回收站语义）：会话从主列表消失，设置页「已归档的聊天」可恢复/删除 */
+  /** 归档（回收站语义）：会话从主列表消失，设置页「归档」可恢复/删除 */
   onArchive: (chatId: string) => void
   onRename: (chatId: string) => void
   actions?: ReactNode

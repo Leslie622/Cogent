@@ -38,10 +38,10 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       { id: 'appearance', label: '外观', icon: IconSun },
       { id: 'notifications', label: '通知', icon: IconBell },
       { id: 'models', label: '模型设置', icon: IconRobot },
+      { id: 'archived-chats', label: '归档', icon: IconArchive },
       { id: 'browser', label: '浏览器', icon: IconBrowser },
       { id: 'computer-control', label: '电脑操控', icon: IconPointer },
       { id: 'shortcuts', label: '键盘快捷键', icon: IconCommand },
-      { id: 'archived-chats', label: '已归档的聊天', icon: IconArchive },
     ],
   },
   {

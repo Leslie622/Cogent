@@ -749,7 +749,7 @@ export class SessionManager implements CogentKernel {
     return Array.from(this.sessions.values(), (s) => s.summary).filter((s) => s.archivedAt === undefined)
   }
 
-  /** 已归档会话（设置页「已归档的聊天」数据源），按归档时间倒序（新归档在上） */
+  /** 已归档会话（设置页「归档」数据源），按归档时间倒序（新归档在上） */
   listArchived(): SessionSummary[] {
     return Array.from(this.sessions.values(), (s) => s.summary)
       .filter((s) => s.archivedAt !== undefined)
