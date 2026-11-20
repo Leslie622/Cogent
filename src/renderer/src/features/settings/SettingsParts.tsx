@@ -7,7 +7,7 @@
  * 控件本体（Switch / 下拉 / 按钮）由各分区自行组合，通用件不锁死 ——
  * 后续分区（外观/浏览器/技能…）照此拼装即可保持同一风格，不各自手写页头
  * （2026-11-15 用户指令：详情页布局模块化；模型设置是唯一例外——master-detail
- * 自撑布局，仅主体卡全宽特殊，页头同样走 SettingsHeader）。
+ * 自撑布局，主体卡与页头同列宽，页头同样走 SettingsHeader）。
  */
 import type { ReactNode } from 'react'
 

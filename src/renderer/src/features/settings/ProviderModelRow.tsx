@@ -26,8 +26,9 @@ function ModelBadges({ def }: { def: ModelDef }) {
   )
 }
 
-/** 模型行的通用动作簇：hover 显形（占位防跳动）。onDelete 缺省 = 无删除语义
-    （未改过的目录模型不能删，只能禁用） */
+/** 模型行的通用动作簇：绝对定位悬浮于开关左侧（2026-11-20 改 —— 原流内
+    w-20 占位在徽标与开关间留 80px 死区；悬浮零占位、悬停不推挤开关）。
+    onDelete 缺省 = 无删除语义（未改过的目录模型不能删，只能禁用） */
 function ModelRowActions({
   modelId,
   onEdit,
@@ -38,11 +39,12 @@ function ModelRowActions({
   onDelete?: () => void
 }) {
   return (
-    <div className="ml-auto flex w-20 shrink-0 items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100">
+    // right-13 = 行右内距 16 + 开关 32 + 缝 4：簇右缘贴开关左侧；
+    // 不加分组胶囊底（2026-11-20 用户定调）—— 两颗钮裸浮于行上
+    <div className="absolute right-13 flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
       <Button
         variant="ghost"
-        size="default"
-        className="text-muted-foreground hover:bg-accent-foreground/15 hover:text-foreground"
+        size="sm"
         aria-label={`编辑模型 ${modelId}`}
         onClick={onEdit}
       >
@@ -51,8 +53,7 @@ function ModelRowActions({
       {onDelete && (
         <Button
           variant="ghost"
-          size="default"
-          className="text-muted-foreground hover:bg-accent-foreground/15 hover:text-foreground"
+          size="sm"
           aria-label={`删除模型 ${modelId}`}
           onClick={onDelete}
         >
@@ -84,24 +85,26 @@ export function ProviderModelRow({
 }) {
   const input = useEngineStore((s) => s.models.find((m) => m.provider === providerId && m.id === def.id)?.input)
   return (
-    <div className="group flex h-12 min-w-0 items-center gap-2 px-4">
+    /* relative 供动作簇绝对定位锚定 */
+    <div className="group relative flex h-12 min-w-0 items-center gap-2 px-4">
       {/* 显示一律 id（2026-11-10 定调，同聊天页模型菜单口径）：目录营销名与
           API id 不对应，所见即所传；自定义条目更是 id 输什么是什么 —— name 不参与呈现 */}
       <span className="min-w-0 shrink truncate text-sm">{def.id}</span>
       <ModelVisionBadge input={input} size="default" />
       <ModelBadges def={def} />
       <ModelRowActions modelId={def.id} onEdit={onEdit} onDelete={onDelete} />
-      <Switch checked={enabled} onCheckedChange={onToggle} aria-label={`${def.id} 启用`} />
+      <Switch checked={enabled} onCheckedChange={onToggle} aria-label={`${def.id} 启用`} className="ml-auto" />
     </div>
   )
 }
 
-/** 「添加模型」按钮在两种供应商详情中共用，尺寸遵循设置页默认档。 */
+/** 「添加模型」按钮在两种供应商详情中共用（2026-11-20 用户定调降 sm 档，
+    与字段标签行的小号视觉量级协调）。 */
 export function AddModelButton({ onClick }: { onClick: () => void }) {
   return (
     <Button
       variant="secondary"
-      size="default"
+      size="sm"
       onClick={onClick}
     >
       <IconPlus className="size-3.5" />

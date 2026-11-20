@@ -5,7 +5,8 @@
  * 记忆 —— use-provider-rail-split），右栏所选供应商详情 ——
  * - 自定义：名称（头部行内编辑）/ Base URL / API 格式 / API Key / 模型列表
  *   （ModelDef 行：对话框增改、启用开关、删除）
- * - 内置：API Key + Base URL 覆盖 + 模型列表 = pi 目录 ∪ 用户新增。目录行也
+ * - 内置：API Key + Base URL（留空走官方端点，填值即覆盖）+ 模型列表 =
+ *   pi 目录 ∪ 用户新增。目录行也
  *   可编辑（改值/改 id = 覆盖目录同名项，走 override.models 通道；删除覆盖 =
  *   还原目录值），目录快照滞后 / 缺模型由用户补齐
  * 模型增改统一走 ModelDialog（扁平字段：ID / 上下文滑杆 / 最大输出 / 输入类型 /
@@ -40,15 +41,16 @@ import {
 } from './use-provider-rail-split'
 
 /** 内置 provider 精选清单：模型目录 40+ 家全列太长，只放常用 7 家（含 Z.AI）。
-    完整目录经 models.list 可见；key 状态与覆盖走同一套存储 */
+    完整目录经 models.list 可见；key 状态与覆盖走同一套存储。
+    DeepSeek / Z.AI 置顶（2026-11-20 用户指令）：主力在用，其余保持原相对序 */
 const BUILTIN_PROVIDERS: ReadonlyArray<{ id: string; name: string }> = [
+  { id: 'deepseek', name: 'DeepSeek' },
+  { id: 'zai', name: 'Z.AI' },
   { id: 'anthropic', name: 'Anthropic' },
   { id: 'openai', name: 'OpenAI' },
   { id: 'google', name: 'Google' },
-  { id: 'deepseek', name: 'DeepSeek' },
   { id: 'openrouter', name: 'OpenRouter' },
   { id: 'xai', name: 'xAI' },
-  { id: 'zai', name: 'Z.AI' },
 ]
 
 /** 左栏清单行：品牌标 + 名称 + 状态点（hover 黑 5% 软叠，active = 常驻 hover 色） */
@@ -132,7 +134,7 @@ function ProviderIconButton({
     重存任意 key 即以全新文件恢复 */
 function CredentialsBanner({ error }: { error: string }) {
   return (
-    <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-2.5">
+    <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2.5">
       <p className="text-sm font-medium text-destructive">
         凭据文件不可读（如跨机器拷贝 ~/.cogent 后的加密不匹配），重新保存任意 API key 即会以全新文件恢复
       </p>
@@ -183,6 +185,24 @@ export function ModelsSection() {
   }
 
   const addProvider = (): void => {
+    // 已有未动过的空壳时不再叠新条目：连点「添加」只会跳到那条空壳上（空壳 =
+    // 与新建初始态逐字段相等；zcode 官方是模板弹窗选完才建，本页是行内编辑流，
+    // 取最小修 —— 复用空壳，避免左栏堆一排「新 Provider」）
+    const untouched = providers.find(
+      (p) =>
+        p.name === '新 Provider' &&
+        p.baseUrl === '' &&
+        p.models.length === 0 &&
+        (p.modelDefs ?? []).length === 0 &&
+        (p.apiFormat ?? 'openai-completions') === 'openai-completions' &&
+        (p.disabledModels ?? []).length === 0 &&
+        p.disabled !== true &&
+        p.compat === undefined
+    )
+    if (untouched) {
+      setSelectedId(untouched.id)
+      return
+    }
     // id 即刻生成后不再随改名变化（key/覆盖绑定在 id 上，漂移等于换 provider）
     const id = `custom/p-${crypto.randomUUID().slice(0, 8)}`
     void saveProviders(
@@ -206,7 +226,7 @@ export function ModelsSection() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* 页头走 SettingsHeader 共用模板（同列位同边距，切页标题不跳位）；
-          仅主体卡保持全宽自撑的 master-detail 例外 */}
+          主体卡与页头同列（max-w-3xl px-10 同容器量，卡片边 = 列边） */}
       <div className="mx-auto w-full shrink-0 max-w-3xl px-10 pt-8">
         <SettingsHeader
           title="模型设置"
@@ -214,10 +234,10 @@ export function ModelsSection() {
           toolbar={
             <div className="ml-auto flex items-center gap-2">
               <Hint tip="刷新模型目录" side="bottom">
+                {/* 圆角随 Button 默认 lg 档（2026-11-20 用户定调），与旁边「添加供应商」同排一致 */}
                 <Button
                   variant="outline"
                   size="default"
-                  className="rounded-full"
                   aria-label="刷新"
                   onClick={() => {
                     void refreshKeys()
@@ -237,49 +257,87 @@ export function ModelsSection() {
         {credentialsError !== null && <CredentialsBanner error={credentialsError} />}
       </div>
 
-      {/* 主体卡：左清单（可拖宽 / 折成图标栏）+ 右详情（各自滚动，卡身撑满
-          剩余高度）。拖拽杀过渡（同 AppShell 手法）：把手 active 期间栏宽过渡
-          失效 —— 拖拽直写要跟手；唯一例外是换挡瞬间（rail 打 data-snap），
-          折叠/展开的 200ms 收拢动画在拖拽中也要放行 */}
-      <div className="mx-10 mb-8 mt-8 flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-background [&:has([data-separator=active])>[data-provider-rail]:not([data-snap])]:transition-none">
-        {/* 左栏 = 裁剪窗（宽度承载收拢动画）+ 双层内容：清单层保宽被裁（拖拽中
-            行不逐帧回流）、图标层淡入接管 —— 两层随折叠态交叉淡出 + inert 断交互 */}
-        <aside
-          ref={rail.railRef}
-          data-provider-rail
-          /* 分隔线由拖拽条独占（1px + 悬停光带），aside 不再叠 border-r 双线 */
-          className="relative shrink-0 overflow-hidden transition-[width] duration-200 ease-out"
-          style={{ width: rail.collapsed ? RAIL_COLLAPSED : rail.widthPx }}
-        >
-          <div
-            ref={rail.listRef}
-            inert={rail.collapsed ? true : undefined}
-            className={cn(
-              'absolute inset-y-0 left-0 min-w-44 overflow-y-auto p-3 transition-opacity duration-200',
-              rail.collapsed && 'opacity-0'
-            )}
-            style={{ width: rail.widthPx }}
+      {/* 主体卡收进页头同列（mx-auto max-w-3xl px-10，卡片边 = 列边）：与其余
+          分区组卡同对齐语言；zcode 官方 master-detail 亦与页头同容器无限宽例外
+          （2026-11-20 撤「全宽自撑」旧例外）。卡内：左清单（可拖宽 / 折成
+          图标栏）+ 右详情（各自滚动，卡身撑满剩余高度）。拖拽杀过渡（同
+          AppShell 手法）：把手 active 期间栏宽过渡失效 —— 拖拽直写要跟手；
+          唯一例外是换挡瞬间（rail 打 data-snap），折叠/展开的 200ms 收拢动画
+          在拖拽中也要放行 */}
+      <div className="mx-auto flex w-full min-h-0 max-w-3xl flex-1 flex-col px-10">
+        {/* mt-4（16px）≠ 全分区「页头→组卡」的 mt-8 模板量：本页唯一一张整高卡，
+            32px 空当显虚；取 zcode SectionLayout space-y-4 同量 */}
+        <div className="mb-8 mt-4 flex min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-background [&:has([data-separator=active])>[data-provider-rail]:not([data-snap])]:transition-none">
+          {/* 左栏 = 裁剪窗（宽度承载收拢动画）+ 双层内容：清单层保宽被裁（拖拽中
+              行不逐帧回流）、图标层淡入接管 —— 两层随折叠态交叉淡出 + inert 断交互 */}
+          <aside
+            ref={rail.railRef}
+            data-provider-rail
+            /* 分隔线由拖拽条独占（1px + 悬停光带），aside 不再叠 border-r 双线 */
+            className="relative shrink-0 overflow-hidden transition-[width] duration-200 ease-out"
+            style={{ width: rail.collapsed ? RAIL_COLLAPSED : rail.widthPx }}
           >
-            <section className="flex flex-col gap-0.5">
-              <div className="flex h-7 items-center px-2 text-xs text-muted-foreground">内置供应商</div>
-              {BUILTIN_PROVIDERS.map((provider) => (
-                <ProviderNavRow
-                  key={provider.id}
-                  active={selectedDef === undefined && activeBuiltin.id === provider.id}
-                  providerId={provider.id}
-                  name={provider.name}
-                  ok={keyConfigured[provider.id] === true}
-                  onClick={() => setSelectedId(provider.id)}
-                />
-              ))}
-            </section>
-            <section className="mt-4 flex flex-col gap-0.5">
-              <div className="flex h-7 items-center px-2 text-xs text-muted-foreground">自定义供应商</div>
-              {providers.length === 0 ? (
-                <p className="px-2 py-1 text-xs text-muted-foreground">尚无自定义供应商</p>
-              ) : (
-                providers.map((def) => (
+            <div
+              ref={rail.listRef}
+              inert={rail.collapsed ? true : undefined}
+              className={cn(
+                'absolute inset-y-0 left-0 min-w-44 overflow-y-auto p-3 transition-opacity duration-200',
+                rail.collapsed && 'opacity-0'
+              )}
+              style={{ width: rail.widthPx }}
+            >
+              <section className="flex flex-col gap-0.5">
+                <div className="flex h-7 items-center px-2 text-xs text-muted-foreground">内置供应商</div>
+                {BUILTIN_PROVIDERS.map((provider) => (
                   <ProviderNavRow
+                    key={provider.id}
+                    active={selectedDef === undefined && activeBuiltin.id === provider.id}
+                    providerId={provider.id}
+                    name={provider.name}
+                    ok={keyConfigured[provider.id] === true}
+                    onClick={() => setSelectedId(provider.id)}
+                  />
+                ))}
+              </section>
+              <section className="mt-4 flex flex-col gap-0.5">
+                <div className="flex h-7 items-center px-2 text-xs text-muted-foreground">自定义供应商</div>
+                {providers.length === 0 ? (
+                  <p className="px-2 py-1 text-xs text-muted-foreground">尚无自定义供应商</p>
+                ) : (
+                  providers.map((def) => (
+                    <ProviderNavRow
+                      key={def.id}
+                      active={selectedDef?.id === def.id}
+                      providerId={def.id}
+                      name={def.name}
+                      ok={def.disabled !== true && keyConfigured[def.id] === true}
+                      onClick={() => setSelectedId(def.id)}
+                    />
+                  ))
+                )}
+              </section>
+            </div>
+            <div
+              inert={!rail.collapsed ? true : undefined}
+              className={cn(
+                'absolute inset-y-0 left-0 w-12 overflow-y-auto transition-opacity duration-200',
+                !rail.collapsed && 'opacity-0'
+              )}
+            >
+              <div className="flex flex-col items-center gap-1 p-1.5">
+                {BUILTIN_PROVIDERS.map((provider) => (
+                  <ProviderIconButton
+                    key={provider.id}
+                    active={selectedDef === undefined && activeBuiltin.id === provider.id}
+                    providerId={provider.id}
+                    name={provider.name}
+                    ok={keyConfigured[provider.id] === true}
+                    onClick={() => setSelectedId(provider.id)}
+                  />
+                ))}
+                <div aria-hidden className="my-1.5 h-px w-6 bg-border" />
+                {providers.map((def) => (
+                  <ProviderIconButton
                     key={def.id}
                     active={selectedDef?.id === def.id}
                     providerId={def.id}
@@ -287,75 +345,44 @@ export function ModelsSection() {
                     ok={def.disabled !== true && keyConfigured[def.id] === true}
                     onClick={() => setSelectedId(def.id)}
                   />
-                ))
-              )}
-            </section>
-          </div>
-          <div
-            inert={!rail.collapsed ? true : undefined}
-            className={cn(
-              'absolute inset-y-0 left-0 w-12 overflow-y-auto transition-opacity duration-200',
-              !rail.collapsed && 'opacity-0'
-            )}
-          >
-            <div className="flex flex-col items-center gap-1 p-1.5">
-              {BUILTIN_PROVIDERS.map((provider) => (
-                <ProviderIconButton
-                  key={provider.id}
-                  active={selectedDef === undefined && activeBuiltin.id === provider.id}
-                  providerId={provider.id}
-                  name={provider.name}
-                  ok={keyConfigured[provider.id] === true}
-                  onClick={() => setSelectedId(provider.id)}
-                />
-              ))}
-              <div aria-hidden className="my-1.5 h-px w-6 bg-border" />
-              {providers.map((def) => (
-                <ProviderIconButton
-                  key={def.id}
-                  active={selectedDef?.id === def.id}
-                  providerId={def.id}
-                  name={def.name}
-                  ok={def.disabled !== true && keyConfigured[def.id] === true}
-                  onClick={() => setSelectedId(def.id)}
-                />
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        </aside>
+          </aside>
 
-        {/* 自绘拖拽条（1px 线 + 把手胶囊 + 悬停光带，同 content-sidebar 形态）：
-            向左拖过下限阻力区折成图标栏、向右拖出恢复；键盘 ←/→ 微调、双击回默认宽 */}
-        <SidebarResizeHandle
-          min={RAIL_WIDTH_MIN}
-          max={RAIL_WIDTH_MAX}
-          collapsedWidth={RAIL_COLLAPSED}
-          readWidth={rail.readWidth}
-          writeWidth={rail.writeWidth}
-          onCommit={rail.commit}
-          onReset={rail.reset}
-        />
+          {/* 自绘拖拽条（1px 线 + 把手胶囊 + 悬停光带，同 content-sidebar 形态）：
+              向左拖过下限阻力区折成图标栏、向右拖出恢复；键盘 ←/→ 微调、双击回默认宽 */}
+          <SidebarResizeHandle
+            min={RAIL_WIDTH_MIN}
+            max={RAIL_WIDTH_MAX}
+            collapsedWidth={RAIL_COLLAPSED}
+            readWidth={rail.readWidth}
+            writeWidth={rail.writeWidth}
+            onCommit={rail.commit}
+            onReset={rail.reset}
+          />
 
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          {/* key 挂详情：切换供应商时重置本地草稿态；上边距 24px 比下边距
-              收小一档（详情头自带视觉重量，等距显得头重脚空） */}
-          <div className="mx-auto max-w-2xl px-8 pt-6 pb-8">
-            {selectedDef ? (
-              <CustomProviderDetail
-                key={selectedDef.id}
-                def={selectedDef}
-                onChange={updateProvider}
-                onDelete={deleteProvider}
-              />
-            ) : (
-              <BuiltinProviderDetail
-                key={activeBuiltin.id}
-                providerId={activeBuiltin.id}
-                name={activeBuiltin.name}
-                override={overrides[activeBuiltin.id] ?? null}
-                onPatchOverride={patchOverride}
-              />
-            )}
+          <div className="min-w-0 flex-1 overflow-y-auto">
+            {/* key 挂详情：切换供应商时重置本地草稿态；上边距 24px 比下边距
+                收小一档（详情头自带视觉重量，等距显得头重脚空） */}
+            <div className="mx-auto max-w-2xl px-8 pt-6 pb-8">
+              {selectedDef ? (
+                <CustomProviderDetail
+                  key={selectedDef.id}
+                  def={selectedDef}
+                  onChange={updateProvider}
+                  onDelete={deleteProvider}
+                />
+              ) : (
+                <BuiltinProviderDetail
+                  key={activeBuiltin.id}
+                  providerId={activeBuiltin.id}
+                  name={activeBuiltin.name}
+                  override={overrides[activeBuiltin.id] ?? null}
+                  onPatchOverride={patchOverride}
+                />
+              )}
+            </div>
           </div>
         </div>
       </div>
