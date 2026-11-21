@@ -1,4 +1,4 @@
-/** 隐藏 Electron31 窗口验收实际 CSS；独立 Vite 与临时 profile 在结束时一并收口。 */
+/** 隐藏项目当前 Electron 窗口验收实际 CSS；独立 Vite 与临时 profile 在结束时一并收口。 */
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,7 +18,7 @@ app.setPath('userData', ${JSON.stringify(join(directory, 'profile'))});
 app.commandLine.appendSwitch('disable-gpu');
 app.whenReady().then(async()=>{
  const win=new BrowserWindow({show:false,webPreferences:{backgroundThrottling:false}});
- win.webContents.on('console-message',(_,level,message)=>{if(level>=3)console.error(message)});
+ win.webContents.on('console-message',details=>{if(details.level==='error')console.error(details.message)});
  await win.loadURL('http://127.0.0.1:5191/tests/renderer/lib/theme/theme.browser.html');
  const result=await win.webContents.executeJavaScript('new Promise((resolve)=>{const timer=setInterval(()=>{if(window.themeResult){clearInterval(timer);resolve(window.themeResult)}},50);setTimeout(()=>{clearInterval(timer);resolve({passed:false,error:"浏览器验收超时"})},60000)})');
  console.log(JSON.stringify({electron:process.versions.electron,chromium:process.versions.chrome,...result},null,2));

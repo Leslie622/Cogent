@@ -22,7 +22,7 @@ setTimeout(()=>{console.error('界面皮肤验收超时');app.exit(1)},120000);
 app.whenReady().then(async()=>{
  const win=new BrowserWindow({show:false,width:1120,height:850,useContentSize:true,webPreferences:{offscreen:true,backgroundThrottling:false}});
  win.webContents.setFrameRate(60);
- win.webContents.on('console-message',(_,level,message)=>{if(level>=3)console.error(message)});
+ win.webContents.on('console-message',details=>{if(details.level==='error')console.error(details.message)});
  console.log('正在加载界面皮肤验收页');
  await win.loadURL('http://127.0.0.1:5196/tests/renderer/features/settings/interface-skins.browser.html');
  console.log('验收页已加载，开始明暗与宽度矩阵');

@@ -3,8 +3,8 @@
  * 构建期自带 Node 运行时下载（全局架构 D11）—— 官方 Node 22 放进
  * resources/runtime/<平台>/，运行时由 main 侧 runtime.ts 三级链消费。
  *
- * 为什么必须自带：Electron 31 内置 Node 20.15 < pi 的 engines >= 22.19，
- * 自带官方 node 22 是引擎进程的唯一通路；git/python 不随包（系统提供）。
+ * 自带官方 Node 22 让引擎版本独立于 Electron，并满足 pi 的 engines >= 22.19；
+ * Electron 自带 Node 仅作兜底，git/python 不随包（系统提供）。
  *
  * 纪律照 Pi-meme scripts/node-runtime.mts：官方 SHASUMS256.txt 抽期望值 →
  * 本地 sha256 比对 → 系统 tar 解压（win10+ 自带 bsdtar 可解 zip）→ 只拷

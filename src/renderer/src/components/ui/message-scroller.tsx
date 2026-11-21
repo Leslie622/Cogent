@@ -295,7 +295,7 @@ function MessageScrollerPinnedRow({ children }: { children: React.ReactNode }) {
         release()
         return
       }
-      // Electron 31 的 inline-size 查询容器会成为 fixed 包含块；rect 是窗口坐标，
+      // inline-size 查询容器会成为 fixed 包含块；rect 是窗口坐标，
       // top/left 却相对此包含块。用同级零尺寸锚点测原点，避免聊天面板偏移被重复加算。
       const origin = originRef.current!.getBoundingClientRect()
       const fixedTop = top - origin.top

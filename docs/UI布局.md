@@ -54,7 +54,8 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 | 字号 | 默认小字/说明 12、正文/列表 14、分组/侧栏/弹窗标题 16、页面标题 24；分别用 text-xs / text-sm / text-base / text-2xl，界面基准 11–16px 统一派生，小字最低 10px |
 | 字体 | Inter + HarmonyOS Sans SC；代码 JetBrains Mono，中文注释回落鸿蒙；常规中文用 400 |
 
-Electron 通过 `disable-lcd-text` 启动参数关闭 LCD 文字抗锯齿。
+应用文字使用 Electron 40.9.3 的原生字体渲染，常规字重保持 400，不施加全局文字描边。
+字体选择与绘制边界见[对话内容主题](技术笔记/对话内容主题.md)。
 启动参数的对照验证需完整重启应用；字体清晰度与 DPI 的最终结论在实际 Electron 验证。
 
 UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时间等行头收回
@@ -257,7 +258,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   keepMounted，折叠体内部不套 content-visibility 包装。
 - 消息流保留库布局/回底钮，关闭库 autoScroll，跟随由本地 controller 独占。
   工作行只渲染一份；跟随溢出时同节点定位，阅读时归流；不加残差 translate/viewport containment。
-  `home-chat` 查询容器在 Electron 31 中会改变 fixed 定位原点，工作行按实际包含块换算坐标，
+  `home-chat` 查询容器会改变 fixed 定位原点，工作行按实际包含块换算坐标，
   保证带顶部/侧栏偏移的长对话中仍在视口内；机制见[消息呈现](模块/消息呈现.md)。
 - 正文与输入卡共用 `.chat-column` 的水平基准：正文最大 48rem，双侧留白按
   `clamp(28px,8cqw,64px)` 连续变化；输入卡每侧外扩按

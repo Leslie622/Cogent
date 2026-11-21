@@ -2,8 +2,8 @@
  * Host —— 独立 Node 进程入口，Cogent 的"引擎"。
  *
  * 为什么是独立进程（全局架构 D1，决策见 docs/架构.md）：
- * - pi 要求 Node >= 22.19，Electron 31 内置 Node 20.15 不满足 —— 进程内集成
- *   物理不可行，Host 跑在自带官方 node22 上（resources/runtime）；
+ * - pi 要求 Node >= 22.19，Host 优先使用自带官方 Node 22（resources/runtime），
+ *   引擎运行时与 Electron 发版周期分离；
  * - 工具执行（shell / 文件写入）需要崩溃隔离：Host 挂了不拖垮壳；
  * - abort 可以硬杀到进程级；Electron 不在也能跑（headless，远程模式的地基）。
  *

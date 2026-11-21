@@ -238,7 +238,7 @@
 
   <div class="cards">
     <div class="card"><b>为什么引擎是独立进程</b>
-      <p>pi 要求 Node ≥22.19，Electron 31 内置 Node 20.15 不满足 —— 进程内集成物理不可行。独立进程另白送崩溃隔离与 headless 模式；Host 跑在自带 node22 上（<code>resources/runtime</code>，spawn 前版本守卫）。</p></div>
+      <p>Host 优先使用自带 Node 22（<code>resources/runtime</code>），独立管理满足 pi ≥22.19 要求的运行时；启动握手检查实际版本。独立进程提供崩溃隔离、进程级取消与 headless 模式，使引擎不依赖 Electron 的发版周期。</p></div>
     <div class="card"><b>main 是壳不是业务</b>
       <p>main负责窗口、IPC白名单、事件转发、凭据存储与webview接线；会话和能力策略在Host。</p></div>
     <div class="card"><b>key 的安全边界</b>

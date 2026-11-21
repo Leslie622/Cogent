@@ -9,12 +9,12 @@
 
 - **pi 硬性要求**：三包（agent-core / ai / coding-agent）engines 全是
   `node >= 22.19.0`（`reference/pi/packages/coding-agent/package.json:95`）；
-- **Electron 内置 Node 不受控**：版本绑死发版周期 —— 45 内置 24.x（恰好达标），
-  目标版 31 内置 20.15（不达标）。"升不升 Electron"不能变成"引擎能不能跑"的开关；
+- **Electron 内置 Node 跟随桌面壳发版**：40.9.3 内置 24.14.1，满足 pi 要求；
+  引擎仍独立固定官方 Node 22，避免把桌面壳升级与引擎运行时升级绑在一起；
 - **用户机器不可指望**：node 可能没装、装了版本也不受控（PATH 里那个 node
   是给用户的，不是给应用的）。
 
-结论：应用自带一份官方 Node（版本项目 pin），spawn 引擎永远用它；
+结论：应用自带一份官方 Node（版本项目 pin），spawn 引擎优先用它；
 git / python 不随包（系统提供）—— zcode 与 Pi-meme 同口径。
 
 ## 2. pi 的做法：不分发，把义务丢给宿主
@@ -46,12 +46,20 @@ npm/corepack（引擎是打包产物，依赖在应用 node_modules，用不到�
   `NODE_DIST_MIRROR`（国内 npmmirror）。镜像靠 302 跳 CDN 工作，redirect
   只能 follow —— 完整性不靠重定向策略把关，靠 SHA256 对官方清单，安全性不降。
 - **改② 兜底链**：Pi-meme 没有兜底（缺运行时 = 分发 bug，打包期断言）；
-  Cogent 加第三级 `process.execPath`（Electron 自带 Node）。已降 Electron 31
-  （内置 Node 20.15 < 22.19）：兜底级不再达标，缺自带 runtime 时由 manager
-  握手后的版本守卫明确报错，链路不静默降级。
+  Cogent 加第三级 `process.execPath`（Electron 自带 Node）。40.9.3 内置 Node 24.14.1
+  满足 pi 要求；兜底仍由 manager 握手后的版本守卫检查实际进程，
+  不因壳的声明版本而省略检查。
 - **改③ tar 选择**：Git Bash 的 MSYS GNU tar 把 `C:\...` 当 `host:path`
   远程语法（"Cannot connect to C:"，本批实测踩坑）；win 上显式用
   `System32\tar.exe`（win10 1809+ 标配 bsdtar，能解 zip，项目基线就是 win10+）。
+
+桌面壳固定 Electron 40.9.3，其[官方支持说明](https://github.com/electron/electron/blob/v40.9.3/README.md#L43-L46)
+列出 Ubuntu 18.04 与 Debian 10；构建于 Ubuntu 22.04 不代表发行包要求相同 glibc。
+对官方 x64 / arm64 Linux ZIP 按 SHASUMS256.txt 校验后，读取主程序、沙箱、崩溃处理程序
+和全部随包共享库的 ELF 版本需求：两架构各 8 个 ELF，最高引用均为 `GLIBC_2.25`，
+未出现额外的非数值 GLIBC ABI 版本需求，低于项目 glibc 2.28 目标。
+这属于静态二进制证据，不能代替麒麟目标机的系统库、CPU、图形栈与完整应用验收。
+Windows 字体渲染边界见[对话内容主题](对话内容主题.md)。
 
 ## 5. 在 Cogent 的落点
 
