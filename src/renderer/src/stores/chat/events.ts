@@ -40,6 +40,17 @@ export function bindEngineEvents(): () => void {
         useChatStore.setState((state) => state.bySession[sessionId] === undefined ? state : patchBucket(state, sessionId, (b) => ({ ...b, outputErrors: { ...b.outputErrors, [turnId]: message } })))
         return
       }
+      case 'message.source': {
+        const { sessionId, turnId, role, sourceId } = event.params
+        useChatStore.setState((state) => {
+          const bucket = state.bySession[sessionId]
+          if (bucket === undefined) return state
+          const target = bucket.messages.findLast((item) => item.type === undefined && item.role === role && (role === 'assistant' ? item.placeholder === true : item.turnId === turnId))
+          return patchBucket(state, sessionId, (current) => ({ ...current, messages: current.messages.map((item) =>
+            item === target && item.type === undefined ? { ...item, sources: [{ id: sourceId, start: 0, end: item.content.length }] } : item) }))
+        })
+        return
+      }
       case 'run.started': {
         const { sessionId, turnId } = event.params
         if (turnId === undefined) return

@@ -27,6 +27,7 @@ import { AttachmentCards } from './AttachmentCards'
     MessageRow 是其类型流的终点，跟上才有完备分支（常态由 TurnGroup 的
     独立行快路接管，进不到这里） */
 export type MessageLike = {
+  sources?: import('@shared/session-search').MessageSource[]
   attachments?: AttachmentRef[]
   directories?: DirectoryRef[]
   id: string
@@ -117,14 +118,14 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
   }
   if (message.role === 'user') {
     return (
-      <Message align="end">
+      <Message align="end" data-search-message={message.id}>
         <MessageContent>
           {(message.attachments !== undefined || message.directories !== undefined) && <AttachmentCards history items={[
             ...(message.attachments ?? []).map((ref) => ({ key: ref.id, name: ref.name, size: ref.size, ref, status: 'ready' as const })),
             ...(message.directories ?? []).map((directory) => ({ key: `directory:${directory.path}`, name: directory.name, size: 0, directory, status: 'ready' as const }))
           ]} />}
           {message.content !== '' && <Bubble variant="muted" align="end">
-            <BubbleContent className="content-typography">{message.content}</BubbleContent>
+            <BubbleContent data-search-body className="content-typography">{message.content}</BubbleContent>
           </Bubble>}
           <MessageFooter className="gap-1 px-0">
             {/* 时间戳是 chrome：select-none（气泡正文保持可选，zcode 时间戳同款） */}
@@ -153,7 +154,7 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
     )
   }
   return (
-    <Message align="start">
+    <Message align="start" data-search-message={message.id}>
       {/* 行距/左缘对齐 live 容器（gap-3、零缩进，2026-11-18 用户验收）：段内
           思考行/正文/统计行与平级工具行同一节奏 —— 此前 gap-1 px-0.5 让段内
           行距 4px（思考→正文视觉 13px vs 思考→工具行 22px）且整体右移 2px

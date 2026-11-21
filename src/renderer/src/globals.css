@@ -828,3 +828,8 @@ input[data-slot='input']:not([data-variant='embedded']):focus-visible,
 }
 .content-typography { font-size: 0.875rem; }
 .code-typography { font-size: var(--app-code-size); line-height: 1.6; }
+
+/* 搜索高亮由 CSS 范围绘制，不插入会破坏 Markdown/复制/选区的节点。 */
+::highlight(cogent-search), .search-mark { background-color: transparent; }
+::highlight(cogent-search) { color: var(--foreground); text-decoration: underline; }
+.search-mark { color: inherit; font-weight: 600; }

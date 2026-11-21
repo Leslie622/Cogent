@@ -23,6 +23,7 @@
  * app-sidebar 内容（件 3，AppSidebar）是路由钮：切 AppView，content 两个面板
  * 的占位随路由换 —— 真实内容属各视图后续件。
  */
+import { SessionSearch } from '@/features/home/search/SessionSearch'
 import { AppHeader } from '@/features/shell/AppHeader'
 import { AppSidebar } from '@/features/shell/AppSidebar'
 import { HomeSidebar } from '@/features/home/HomeSidebar'
@@ -49,6 +50,7 @@ export function AppShell() {
 
   return (
     <div className="chrome-surface flex h-dvh flex-col text-sidebar-foreground">
+      <SessionSearch />
       <AppHeader sidebarCollapsed={sidebarCollapsed} sidebarToggleDisabled={sidebarAutoCollapsed} onToggleSidebar={sidebar.toggle} />
       <div className="flex min-h-0 flex-1">
         {/* 应用侧栏：上/下两组路由钮（chrome 底色与 header 融合） */}

@@ -15,6 +15,8 @@
  * 布局手法：行 = 相对定位容器（hover 底色 + group），主点击区是占满的 button，
  * 动作钮 absolute 贴其右 —— 避免 button 嵌 button（非法结构）。
  */
+import { useSearchStore } from '@/stores/search'
+
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -608,6 +610,7 @@ export function HomeSidebar() {
             size="icon-xs"
             className="size-7"
             aria-label="搜索"
+            onClick={() => useSearchStore.getState().setOpen(true)}
           >
             <IconSearch className="size-4" />
           </Button>

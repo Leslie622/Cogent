@@ -50,6 +50,7 @@ export default defineConfig({
           index: resolve('src/electron/main/index.ts'),
           host: resolve('src/host/index.ts'),
           mcp: resolve('src/host/mcp-server/main.ts'),
+          'search-worker': resolve('src/host/runtime/search/worker.ts'),
           'attachment-worker': resolve('src/host/runtime/attachment-worker.ts')
         }
       }

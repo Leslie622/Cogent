@@ -12,6 +12,8 @@
  * 切分/聚合全是纯函数；TurnGroup memo 按项引用比较 —— 流式 delta 只重渲染
  * 活动回合，历史回合零重渲染。
  */
+import { useSearchStore } from '@/stores/search'
+
 import { memo, useMemo } from 'react'
 import type { FileReference } from '@shared/files'
 import { FileLinkContext } from './files/FileLink'
@@ -278,6 +280,8 @@ const ProcessItem = memo(function ProcessItem({ item, approval }: { item: Messag
 })
 
 function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phase: TurnPhase; stopping?: boolean }) {
+  const revealKey = useSearchStore((state) => state.target !== null && turn.items.some((item) =>
+    item.type === undefined && item.sources?.some((source) => source.id === state.target!.hit.anchor.sourceId)) ? state.target.serial : undefined)
   // 原始裁决继续留在会话桶；只合并有调用 ID 且工具仍在本回合的痕迹，
   // 相同命令并行也不猜归属，旧事件或缺卡仍可独立查阅。
   const toolIds = new Set(turn.items.filter((item) => item.type === 'tool').map((item) => item.id))
@@ -425,7 +429,7 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
             被中途改动，收起动画肉眼卡顿（2026-11-16 用户实测，决定 17；
             zcode 折叠体同为纯 div）。定位/刻度无消费方：scrollToMessage
             只有索引刻度在调、目标恒为 user 消息（顶层另有包装） */}
-        <RunTrace key="trace" phase={phase} durationMs={turnDurationMs(turn)}>
+        <RunTrace key="trace" phase={phase} durationMs={turnDurationMs(turn)} revealKey={revealKey}>
           {process.map((item) => (
             <ProcessItem key={item.id} item={item} approval={approvals.get(item.id)?.status} />
           ))}

@@ -66,13 +66,17 @@ export function RunTrace({
   phase,
   durationMs,
   children,
+  revealKey,
 }: {
+  revealKey?: number
   phase: RunPhase
   durationMs?: number
   children?: React.ReactNode
 }) {
   // undefined = 未被用户动过，交出控制权跟随默认（D4）
   const [open, setOpen] = useState<boolean | undefined>(undefined)
+  // 一次搜索意图只展开一次；随后仍尊重用户手动收起。
+  useEffect(() => { if (revealKey !== undefined) setOpen(true) }, [revealKey])
   const precision = useAppearanceStore((state) => state.durationPrecision)
   const header = (
     <TraceLine status={phase === 'failed' ? 'error' : undefined}>

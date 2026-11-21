@@ -59,6 +59,8 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   // 读类
   initialize: 'readonly',
   'session.list': 'readonly',
+  'session.search': 'readonly',
+  'session.search.rebuild': 'admin',
   'session.titleSettings.get': 'readonly',
   'session.titleSettings.set': 'admin',
   'session.messages': 'readonly',

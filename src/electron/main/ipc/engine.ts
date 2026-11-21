@@ -28,6 +28,8 @@ const ALLOWED_METHODS = new Set<string>([
   ...SHELL_OUTPUT_METHODS,
   ...SHELL_ATTACHMENT_METHODS,
   'session.list',
+  'session.search',
+  'session.search.rebuild',
   'session.create',
   'session.delete',
   'session.messages',

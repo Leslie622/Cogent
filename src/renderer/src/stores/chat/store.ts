@@ -120,6 +120,9 @@ export const messageDeltas = createDeltaBatcher((sessionId, deltas) => {
   }))
 })
 
+// 历史读取有独立身份；删除/同会话重读后，迟到快照不能重建旧桶。
+const historyLoads = new Map<string, symbol>()
+
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
@@ -156,7 +159,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 展平：段化消息里的 toolCalls → 独立工具卡行（与流式期事件路径同一形状）；
     // todos 字段 = TodoStrip 种子（运行中增量走 todos.updated 事件）
     if (get().bySession[sessionId] === undefined) {
-      const { messages, todos } = await window.cogent.engineRequest('session.messages', { sessionId })
+      const owner = Symbol(sessionId)
+      historyLoads.set(sessionId, owner)
+      const { messages, todos } = await window.cogent.engineRequest('session.messages', { sessionId }).catch((error: unknown) => {
+        if (historyLoads.get(sessionId) === owner) historyLoads.delete(sessionId)
+        throw error
+      })
+      if (historyLoads.get(sessionId) !== owner) return
+      historyLoads.delete(sessionId)
       messageDeltas.discard(sessionId)
       set((state) => ({
         bySession: {
@@ -262,6 +272,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   deleteSession: async (sessionId) => {
     await window.cogent.engineRequest('session.delete', { sessionId })
+    historyLoads.delete(sessionId)
     messageDeltas.discard(sessionId)
     const wasActive = get().activeSessionId === sessionId
     set((state) => {

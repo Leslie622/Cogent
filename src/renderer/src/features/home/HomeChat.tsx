@@ -75,6 +75,7 @@ import { TodoStrip } from './TodoStrip'
 import { QuestionPanel } from './QuestionPanel'
 import { PlanPanel } from './PlanPanel'
 import { findActiveModel, useEngineStore, type SendShortcut } from '@/stores/engine'
+import { SearchNavigator } from './search/SearchNavigator'
 import { ConversationIndex } from './ConversationIndex'
 import { ModelMenu } from './ModelMenu'
 import { ContextIndicator } from './ContextIndicator'
@@ -640,6 +641,7 @@ export function HomeChat({
           滚走释放/滚回恢复同样在彼处。defaultScrollPosition（初始定位）、
           发送时 scrollToEnd（显式 API）不受影响；悬浮钮显隐由库按位置自判 */}
       <MessageScrollerProvider defaultScrollPosition="end">
+        <SearchNavigator />
         {/* 内容区主体（relative 供 TodoStrip absolute 挂靠）：清单浮在消息流
             右上角（2026-11-16 用户定调），不再占输入区上方布局位 —— 跨回合的
             "进行中"状态与"当下"输入（下方的面板/输入框）彻底分离 */}

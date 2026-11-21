@@ -33,7 +33,7 @@ HTTP:  消费者 ──POST /auth/exchange {ticket}──▶ 长期 token（v1.<
 
 - rootSecret 不出 Host 进程；重启 = 全部 token 失效；
 - scope 三档 `readonly ⊂ write ⊂ admin`；自动标题配置读取为 readonly、修改为 admin，
-  防止普通会话写票据改变全局辅助模型策略；`capability.issue` 归 admin
+  防止普通会话写票据改变全局辅助模型策略；会话搜索为 readonly，重建派生索引为 admin；`capability.issue` 归 admin
   （防任意传输门低档 token 自签提权）。
 
 **三个门，一套帧**（消息格式与传输正交）：

@@ -15,6 +15,7 @@
 /** 协议版本：语义承诺 = 帧格式与既有 method 语义不变，新增能力走可选字段/新 method */
 export const PROTOCOL_VERSION = 3
 
+import type { SessionSearchMethods } from '../shared/session-search'
 import type { AttachmentMethods } from '../shared/attachments'
 import type { FileMethods, FileInternalMethods, FileContext, FileReference } from '../shared/files'
 import type { OutputMethods, TurnOutputs } from '../shared/outputs'
@@ -218,6 +219,8 @@ export interface ToolCallRecord {
  * 完整块结构化（phase/签名透传等）仍是路线第 1 项，届时继续以 optional 字段扩展。
  */
 export interface ChatMessage {
+  /** 来源与 UI key 分离；续写合并时区间一同平移。 */
+  sources?: import('../shared/session-search').MessageSource[]
   turnId?: string
   fileContext?: FileContext
   attachments?: import('../shared/attachments').AttachmentRef[]
@@ -1035,7 +1038,7 @@ export interface CapabilityIssueResult {
 /**
  * method 注册表：键名即线上协议。新增 method = 在此加一行 + 服务端加 handler。
  */
-export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, SessionTitleMethods {
+export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, SessionTitleMethods, SessionSearchMethods {
   initialize: { params: InitializeParams; result: InitializeResult }
   'session.list': { params: Record<string, never>; result: SessionSummary[] }
   'session.create': { params: { title?: string; permissionMode?: PermissionMode; planEnabled?: boolean; cwd?: string; projectId?: string }; result: SessionSummary }
@@ -1096,6 +1099,7 @@ export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInt
 // ———— 事件映射（host → 宿主；骨架期先定形状，随实现细化） ————
 
 export interface ProtocolEvents {
+  'message.source': { sessionId: string; turnId: string; role: 'user' | 'assistant'; sourceId: string }
   'outputs.updated': TurnOutputs
   'outputs.error': { sessionId: string; turnId: string; message: string }
   'files.invalidated': Record<string, never>

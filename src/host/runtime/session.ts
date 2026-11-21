@@ -28,10 +28,16 @@
  * - 只依赖 pi-* 与 protocol 与 ../storage，零 Electron import（目录即边界）；
  * - handler 内信任协议类型，不做二次防御（约定.md §1.3，边界校验在 dispatch 入口）。
  */
+import { SessionSearchService } from './search/service'
+import type { SearchQuery, SearchPage } from '../../shared/session-search'
+import { legacyMessages } from '../kernel/transcript'
+import { toChatMessages, summarizeToolResult, extractResultDiff, projectUsage, sumOptional, accumulateUsage } from './message-projection'
+export { toChatMessages } from './message-projection'
+
 import type { Agent, AgentMessage, ThinkingLevel } from '@earendil-works/pi-agent-core'
 import { builtinModels } from '@earendil-works/pi-ai/providers/all'
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
-import type { Api, AssistantMessage, Model, MutableModels, Usage } from '@earendil-works/pi-ai'
+import type { Api, AssistantMessage, Model, MutableModels } from '@earendil-works/pi-ai'
 // 上下文粗估（2026-11-11 明细区）：与 pi clampMaxTokensToContext 同一实现 ——
 // 引擎每轮算 max_tokens 预算用的就是 estimateContextTokens，明细口径与之同源
 import { estimateContextTokens, estimateMessageTokens, estimateTextTokens } from '@earendil-works/pi-ai/utils/estimate'
@@ -87,7 +93,6 @@ import type { ProjectRegistry } from './project'
 import type { ApprovalRegistry } from './approvals'
 import type { CogentKernel, KernelNotifier } from '../kernel/contract'
 import {
-  type CompactionBarSource,
   createPiSession,
   PI_AGENT_DIR_NAME,
   readPiTranscript
@@ -101,7 +106,6 @@ import { SHELL_TOOL_NAME, toolDeclarations, toolMeta } from './tool-meta'
 import { resolveWithinRoots } from './write-boundary'
 import { AttachmentService } from './attachments'
 import type { AttachmentRef, DirectoryRef } from '../../shared/attachments'
-import type { AttachmentMessage } from '../kernel/pi-session-factory'
 import type { FileContext, FileReference } from '../../shared/files'
 import { AttachmentConfig } from './attachment-config'
 import { createReadAttachmentTool } from './read-attachment'
@@ -120,7 +124,8 @@ export type Notify = KernelNotifier
 interface StoredSession {
   autoTitle?: 'ready' | 'attempted'
   piCwd?: string
-  version: 2
+  version: 1 | 2
+  transcript?: AgentMessage[]
   summary: SessionSummary
   /** 任务清单（交互座 4c）：todo_write 的活清单快照；缺省 = 无清单。模型侧另有转录回放兜底 */
   todos?: TodoItem[]
@@ -394,78 +399,6 @@ interface StreamingState {
 }
 
 /**
- * 工具结果 → 一行摘要（tool.completed 事件与 ToolCallRecord.resultSummary 共用）。
- * 取 result.content 的文本块拼接（模型 facing 的结果即用户可读的结果），截 200
- * 字符 —— 摘要服务"一眼看懂发生了什么"，全文模型已在循环里消费过。
- */
-function summarizeToolResult(result: unknown): string {
-  if (typeof result !== 'object' || result === null) return ''
-  const content = (result as { content?: Array<{ type: string; text?: string }> }).content
-  if (!Array.isArray(content)) return ''
-  const text = content
-    .map((block) => (block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return text.length > 200 ? `${text.slice(0, 200)}…` : text
-}
-
-/**
- * 工具结果 details → 展示 diff（edit 工具专用，D4 定稿进协议）。流式路径从
- * tool_execution_end 的 result 取，历史回查从 toolResult 消息的 details 取
- * （pi 转录持久化 details）—— 两条路径同源同形。非 edit / 无 diff 自然
- * 返回 undefined（协议 optional，UI 不渲染）。
- */
-function extractResultDiff(result: unknown): string | undefined {
-  if (typeof result !== 'object' || result === null) return undefined
-  const details = (result as { details?: unknown }).details
-  if (typeof details !== 'object' || details === null) return undefined
-  const diff = (details as { diff?: unknown }).diff
-  return typeof diff === 'string' ? diff : undefined
-}
-
-/** pi Usage → 协议 MessageUsage：只投影 UI 所需（cost 明细不带，total 一项即总账） */
-function projectUsage(usage: Usage): MessageUsage {
-  return {
-    input: usage.input,
-    output: usage.output,
-    cacheRead: usage.cacheRead,
-    cacheWrite: usage.cacheWrite,
-    reasoning: usage.reasoning,
-    totalTokens: usage.totalTokens,
-    totalCost: usage.cost.total,
-    // 显式存布尔而非透传 optional：pi 里缺省与 false 同为"估价"，归一后落盘形状稳定
-    totalCostFromProvider: usage.cost.totalFromProvider ?? false
-  }
-}
-
-/** optional 数值相加：双侧缺省保持缺省（"没报告" ≠ "报告了 0"） */
-function sumOptional(a: number | undefined, b: number | undefined): number | undefined {
-  return a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0)
-}
-
-/**
- * 用量累加（工具循环多轮时 turn_end 逐轮到达，当前无工具 = 恒单轮直通）。
- * 口径 = 各轮之和：每轮请求都携带全量上下文重发，端点账单就是逐轮相加，
- * 这也是"本次回答共消耗多少"的计费真相，而非只看末轮。
- */
-function accumulateUsage(current: MessageUsage | undefined, add: MessageUsage): MessageUsage {
-  if (!current) return add
-  return {
-    input: current.input + add.input,
-    output: current.output + add.output,
-    cacheRead: current.cacheRead + add.cacheRead,
-    cacheWrite: current.cacheWrite + add.cacheWrite,
-    reasoning: sumOptional(current.reasoning, add.reasoning),
-    totalTokens: current.totalTokens + add.totalTokens,
-    totalCost: sumOptional(current.totalCost, add.totalCost),
-    // 成本口径跟随求和：任何一轮是估价，总和就只能是估价（缺省按估价参与 AND）
-    totalCostFromProvider:
-      (current.totalCostFromProvider ?? false) && (add.totalCostFromProvider ?? false)
-  }
-}
-
-/**
  * 上下文明细三段估算（悬浮卡分类区数据源）。
  *
  * 为什么用 pi 的 estimate 而不是自己数：clampMaxTokensToContext（simple-options.js）
@@ -532,6 +465,8 @@ const DEFAULT_MODEL = 'claude-sonnet-4-5'
 const DEFAULT_PROVIDER = 'anthropic'
 
 export class SessionManager implements CogentKernel {
+  readonly searchService: SessionSearchService
+  private messageSources = new WeakMap<AgentMessage, string>()
   readonly titleSettings: SessionTitleConfig
   private titleTasks = new Map<string, {
     controller: AbortController; trace: TitleTrace; inspector: SessionInspector; owner: StreamingState; response?: AssistantMessage
@@ -622,6 +557,7 @@ export class SessionManager implements CogentKernel {
     this.mcpConfig = mcpConfig
     this.modelRuntime = modelRuntime
     this.hostRoot = hostRoot
+    this.searchService = new SessionSearchService(hostRoot)
     this.titleSettings = new SessionTitleConfig(hostRoot)
     this.attachments = new AttachmentService(hostRoot)
     this.outputs = new OutputsService(hostRoot, (doc) => this.notify('outputs.updated', doc))
@@ -863,12 +799,26 @@ export class SessionManager implements CogentKernel {
  * v1 旧转录（未导入的历史会话）。运行中的半截流式消息不在 JSONL
  * （message_end 才落盘）—— 流式期宿主以事件流增量呈现为主，不受影响。
    */
+  async search(query: SearchQuery): Promise<SearchPage> {
+    const descriptors = Array.from(this.sessions.values(), (session) => ({
+      summary: { ...session.summary }, cwd: session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir()
+    }))
+    const result = await this.searchService.search(query, descriptors)
+    // 读取期间的删除与归档不可由迟到 worker 响应复活。
+    result.items = result.items.filter((item) => {
+      const current = this.sessions.get(item.session.id)
+      if (current === undefined || (!query.includeArchived && current.summary.archivedAt !== undefined)) return false
+      item.session = { ...current.summary }
+      return true
+    })
+    return result
+  }
+
   messages(sessionId: string): ChatMessage[] {
     const session = this.requireSession(sessionId)
     const source: AgentMessage[] =
       readPiTranscript(session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir(), this.hostRoot, sessionId) ??
-      session.legacyTranscript ??
-      []
+      (session.legacyTranscript === undefined ? [] : legacyMessages(session.legacyTranscript))
     const projected = toChatMessages(source)
     // 上下文明细按需现算挂"末条带 usage 的消息"（历史回查路径，重启/切换会话
     // 走这）：agent_settled 只把估算挂到事件侧 streaming 对象随 run.completed
@@ -1425,6 +1375,7 @@ export class SessionManager implements CogentKernel {
 
   /** 进程退出前统一收尾（引擎随宿主关闭；pi dispose 内聚 abort 全部运行） */
   disposeAll(): void {
+    this.searchService.dispose()
     for (const sessionId of this.titleTasks.keys()) this.cancelTitle(sessionId, '引擎退出')
     this.outputs.dispose()
     for (const run of this.streaming.values()) run.attachmentPreparation?.abort()
@@ -1904,6 +1855,16 @@ export class SessionManager implements CogentKernel {
         decide: (toolName, toolCallId, args, signal) =>
           this.decideApproval(session, toolName, toolCallId, args, signal)
       },
+      onMessageCommitted: (message, sourceId) => {
+        this.messageSources.set(message, sourceId)
+        // 续写指令和纯工具/思考消息没有正文节点，不能覆盖上一条可见消息的来源。
+        if (message.role === 'user' && typeof message.content === 'string' && message.content.startsWith(AUTO_CONTINUE_PREFIX)) return
+        if (message.role === 'assistant' && !message.content.some((block) => block.type === 'text' && block.text !== '')) return
+        const run = this.streaming.get(sessionId)
+        if (run?.turnId !== undefined && (message.role === 'user' || message.role === 'assistant')) {
+          this.notify('message.source', { sessionId, turnId: run.turnId, role: message.role, sourceId })
+        }
+      },
       onEvent: (event) => this.translateEvent(session, event),
       observe: (agent) => this.attachInspector(agent, session),
       // MCP 座（4a）：server 日志落 pi 域（与 fd/rg 同目录族），写回通道见 store
@@ -1998,7 +1959,9 @@ export class SessionManager implements CogentKernel {
   /** 共用文档形状；显式保存操作直接调用，回合内的尽力落盘由 persist 翻译失败。 */
   private writeSession(session: Session): void {
     const doc: StoredSession = {
-      version: SESSION_FILE_VERSION,
+      // 惰性导入前元数据操作不能擦掉 v1 唯一转录；真正导入 pi 后才写 v2。
+      version: session.legacyTranscript === undefined ? SESSION_FILE_VERSION : 1,
+      ...(session.legacyTranscript !== undefined && { transcript: session.legacyTranscript }),
       summary: session.summary,
       ...(session.autoTitle !== undefined && { autoTitle: session.autoTitle }),
       ...(session.piCwd !== undefined && { piCwd: session.piCwd }),
@@ -2033,6 +1996,8 @@ export class SessionManager implements CogentKernel {
         continue
       }
       if (merged === undefined) merged = segments.slice(0, i)
+      const offset = prev.content.length
+      if (cur.sources !== undefined) prev.sources = [...(prev.sources ?? []), ...cur.sources.map((source) => ({ ...source, start: source.start + offset, end: source.end + offset }))]
       prev.content += cur.content
       if (cur.thinking) prev.thinking = (prev.thinking ?? '') + cur.thinking
       // 相邻门保证双方都无工具卡,这里只并正文/思考/账目
@@ -2109,6 +2074,7 @@ export class SessionManager implements CogentKernel {
                 turnId: streaming.turnId,
                 fileContext: streaming.fileContext,
                 content: streaming.text,
+                sources: this.messageSources.has(event.message) ? [{ id: this.messageSources.get(event.message)!, start: 0, end: streaming.text.length }] : undefined,
                 thinking: streaming.thinking || undefined,
                 toolCalls: streaming.tools.length > 0 ? streaming.tools.map((t) => ({ ...t })) : undefined,
                 usage: projectUsage(event.message.usage),
@@ -2366,165 +2332,4 @@ export class SessionManager implements CogentKernel {
     }
   }
 
-}
-
-/**
- * pi Message[] → ChatMessage[]：取 user/assistant 的纯文本内容 + assistant
- * 用量三件套 + 工具调用投影。system 消息（prompt 载体）与 toolResult 消息
- * （配对进 toolCalls）不单独产出 —— 工具结果对 UI 是工具卡的尾部信息，
- * 不是独立消息（对模型才回灌成消息）。
- *
- * 输入源：pi 会话树投影（pi.agent.state.messages，压缩条以
- * compactionSummary 角色存活，session-manager 投影实证）或 v1 旧转录 ——
- * 两源同为 AgentMessage[]，投影规则不变。
- *
- * 2026-11-12 提为模块级导出函数（原 session 类私有方法，无实例状态）：
- * 单测直测（tests：D9 时间序落点/延迟 flush 的引擎侧回归钉），session
- * 内调用点不变。
- */
-export function toChatMessages(messages: Array<AttachmentMessage | CompactionBarSource>): ChatMessage[] {
-  // toolCallId → 执行结果（状态 + 摘要 + 起止）：转录里 toolResult 消息跟在
-  // 发起它的 assistant 消息之后；先扫一遍建索引，投影时 O(1) 配对。
-  // 起止重建自 pi 转录原生字段（timestamp = 结果创建时刻 ≈ 执行终点，
-  // durationMs 反推起点）—— 历史回查与流式打点两条来源同一形状，重启不漂移
-  const results = new Map<
-    string,
-    { isError: boolean; text: string; diff?: string; startedAt?: number; endedAt?: number }
-  >()
-  for (const message of messages) {
-    if (message.role === 'toolResult') {
-      results.set(message.toolCallId, {
-        isError: message.isError,
-        text: summarizeToolResult({ content: message.content }),
-        diff: extractResultDiff({ details: message.details }),
-        endedAt: message.timestamp,
-        startedAt: message.durationMs !== undefined ? message.timestamp - message.durationMs : undefined
-      })
-    }
-  }
-
-  const result: ChatMessage[] = []
-  // D9 保留式呈现位 = 时间序（压缩时刻），非转录切点：压缩条在转录里插在
-  // 切点（影子区/活区的语义边界，保留区 20K 之前），但 UI 上应落在压缩
-  // **发生**的地方（Codex 标记行形态，与渲染层 completed 手术同规则）——
-  // 先暂存，遇到 timestamp 晚于它的首条消息前再落；转录其余部分本就
-  // 时间序追加，此规则恰为"按时间序归位"。末尾 flush 兜底（压缩后无新
-  // 回合的会话）。防御：两条 bar 间无消息时先落旧的保序（正常流不发生
-  // —— 刚压完时间戳守卫拒绝无新内容的再压缩）
-  let pendingBar: Omit<ChatMessage, 'id'> | undefined
-  const flushBar = (): void => {
-    if (pendingBar !== undefined) {
-      result.push({ ...pendingBar, id: `c-${result.length}` })
-      pendingBar = undefined
-    }
-  }
-  for (const message of messages) {
-    // pi Message 联合类型按 role 收窄
-    if (message.role === 'compactionSummary') {
-      flushBar()
-      // 投影源的压缩条可能带 usage（readPiTranscript 自 CompactionEntry 补挂，
-      // 见 CompactionBarSource）—— 历史折叠条的小字账由此与事件侧同源；
-      // tokensAfter 树里无存（pi 只在 compaction_end 事件携带），保持缺省
-      const bar = message as CompactionBarSource
-      pendingBar = {
-        role: 'compaction',
-        content: message.summary,
-        compaction: {
-          tokensBefore: message.tokensBefore,
-          ...(bar.usage !== undefined && { summaryUsage: projectUsage(bar.usage) })
-        },
-        timestamp: message.timestamp
-      }
-      continue
-    }
-    if (pendingBar !== undefined && message.timestamp > pendingBar.timestamp) flushBar()
-    if (message.role === 'user') {
-      const text =
-        typeof message.content === 'string'
-          ? message.content
-          : message.content.map((block) => (block.type === 'text' ? block.text : '')).join('')
-      // 续写注入的指令消息（R6③）：不单独成泡 —— 跳过它让截断段与续写段
-      // 在投影里相邻，由下方 assistant 分支合并（保真在转录，聚合在投影）
-      if (text.startsWith(AUTO_CONTINUE_PREFIX)) continue
-      result.push({
-        // 位置式 id（同 assistant 的 a-N 手法）：timestamp 在同一毫秒内可撞
-        // （React key 重复），投影位置在单写者下稳定且跨加载不变
-        id: `u-${result.length}`,
-        role: 'user',
-        turnId: message.fileContext?.turnId,
-        fileContext: message.fileContext,
-        content: (message as AttachmentMessage).attachmentInput?.text ?? text,
-        ...((message as AttachmentMessage).attachmentInput !== undefined && { attachments: (message as AttachmentMessage).attachmentInput!.attachments }),
-        ...((message as AttachmentMessage).attachmentInput?.directories !== undefined && { directories: (message as AttachmentMessage).attachmentInput!.directories }),
-        timestamp: message.timestamp
-      })
-    } else if (message.role === 'assistant') {
-      // 思考块拼整段挂 thinking（历史回查与流式结束态共用此映射）；正文仍取 text 块
-      const thinking = message.content
-        .map((block) => (block.type === 'thinking' ? block.thinking : ''))
-        .join('')
-      // 工具调用块 → ToolCallRecord（kind/摘要取静态元数据表；状态/结果摘要
-      // 由 toolResult 配对 —— 历史工具卡与流式期事件路径同一形状）
-      const toolCalls: ToolCallRecord[] = []
-      for (const block of message.content) {
-        if (block.type !== 'toolCall') continue
-        const meta = toolMeta(block.name)
-        const paired = results.get(block.id)
-        toolCalls.push({
-          callId: block.id,
-          fileRefs: Object.entries(message.toolFileRefs ?? {}).filter(([id]) => id === block.id || id.startsWith(block.id + '/')).flatMap(([, refs]) => refs),
-          name: block.name,
-          kind: meta?.kind ?? 'read',
-          summary: meta !== undefined ? meta.summarize(block.arguments) : `${block.name}(?)`,
-          status: paired?.isError ? 'error' : 'ok',
-          resultSummary: paired?.text,
-          diff: paired?.diff,
-          startedAt: paired?.startedAt,
-          endedAt: paired?.endedAt
-        })
-      }
-      const content = message.content
-        .map((block) => (block.type === 'text' ? block.text : ''))
-        .join('')
-      // 相邻 assistant 合并（R6③ 续写的历史投影形态）：跳过 [cogent:continue]
-      // 指令泡后，截断段与续写段在 result 里直接相邻 → 并回前一条（正文无缝
-      // 拼接、用量/耗时相加），与事件路径的段合并同形态，重启前后不漂移。
-      // 门 = 双方都无工具卡：工具轮后的文本轮（转录里有 toolResult 隔开、
-      // 投影里天然相邻）是正常交错形态，不许并
-      const prev = result.at(-1)
-      if (
-        prev !== undefined &&
-        prev.role === 'assistant' &&
-        (prev.toolCalls ?? []).length === 0 &&
-        toolCalls.length === 0
-      ) {
-        prev.content += content
-        if (thinking !== '') prev.thinking = (prev.thinking ?? '') + thinking
-        // 相邻门保证双方都无工具卡,这里只并正文/思考/账目
-        prev.usage = accumulateUsage(prev.usage, projectUsage(message.usage))
-        prev.durationMs = sumOptional(prev.durationMs, message.durationMs)
-        prev.model = message.model
-        continue
-      }
-      result.push({
-        id: `a-${result.length}`,
-        role: 'assistant',
-        turnId: message.fileContext?.turnId,
-        fileContext: message.fileContext,
-        content,
-        thinking: thinking || undefined,
-        // 用量三件套同投影：pi 转录的 assistant 消息 usage 必有，历史会话与
-        // 流式结束态同一套数据源，老会话 UI 上也可见统计
-        usage: projectUsage(message.usage),
-        durationMs: message.durationMs,
-        model: message.model,
-        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-        // 真实请求时间戳（pi AssistantMessage.timestamp = 请求开始时刻）；
-        // 此前取 Date.now() 在恢复历史时会漂移成回查时刻
-        timestamp: message.timestamp
-      })
-    }
-  }
-  flushBar()
-  return result
 }
