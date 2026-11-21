@@ -49,7 +49,7 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 | 行内小钮 | 一律原生 ghost（hover `bg-muted`）；软叠配方只属于自绘行，不落在 Button 调用点 |
 | 文字 | 实色 token；次级 `muted-foreground`，placeholder `--placeholder`；层级靠实色深浅 |
 | 语义色 | destructive 错误红；warning 琥珀 `oklch(0.666 0.155 70)`；chrome-accent 品牌蓝 `#0231fa` |
-| 聚焦 | 组件共用 `--focus-width: 1px` 与 `--focus-color` 内贴实线，浅色 `oklch(0.556 0 0)`、深色 `oklch(0.708 0 0)`，默认 150ms 淡入淡出；已有动效的控件沿用其时长，reduced-motion 直接切换。原生 input 保留调用处样式；对话输入卡 composer 不显示聚焦描边，普通 Input、Textarea、InputGroup 保留统一效果 |
+| 聚焦 | 组件共用 `--focus-width: 1px` 与 `--focus-color` 内贴实线，浅色 `oklch(0.556 0 0)`、深色 `oklch(0.708 0 0)`，默认 150ms 淡入淡出；已有动效的控件沿用其时长，reduced-motion 直接切换。自定义输入不显示聚焦描边，包括原生 input、自定义外壳内的 `Input variant="embedded"` 与对话输入卡 composer；普通 Input、Textarea、InputGroup 保留统一效果 |
 | 圆角 | 内容主体左上角 `--radius-xl`；输入卡 `InputGroup` composer 档 `rounded-2xl`（原生表单仍 `rounded-lg`）；发送/停止钮 `Button icon-sm` 原生圆角；其余按组件变体，信息区条只圆上两角 |
 | 字号 | 默认小字/说明 12、正文/列表 14、分组/侧栏/弹窗标题 16、页面标题 24；分别用 text-xs / text-sm / text-base / text-2xl，界面基准 11–16px 统一派生，小字最低 10px |
 | 字体 | Inter + HarmonyOS Sans SC；代码 JetBrains Mono，中文注释回落鸿蒙；常规中文用 400 |
@@ -74,7 +74,8 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   Nova 默认基础 radius 与本项目均为 0.625rem；不要顺带更换大卡的圆角阶算法。
 - 聚焦视觉由 `globals.css` 的 `:focus-visible` 统一维护，原语和自写组件不另写
   focus ring。附件主触发器、代码块和滑杆拇指只在外层画线；
-  原生 input 不参与，即使带 tabindex 或 contenteditable 也不加入统一轮廓。
+  自定义输入不参与：原生 input 即使带 tabindex 或 contenteditable 也不加入统一轮廓；
+  自定义外壳内复用 Input 时使用 embedded 档，如项目弹窗的名称行，内部和外壳都不画聚焦线。
   InputGroup 普通档在外层画线，composer 档不画聚焦线；内部按钮仍有各自的焦点提示。错误态保留
   红色边框，菜单保留导航高亮。原理见
   [界面聚焦样式](技术笔记/界面聚焦样式.md)。

@@ -761,9 +761,9 @@
   outline: none;
 }
 
-/* :where 不抬高特异性，组合件内部的轮廓抑制规则才能继续生效。 */
+/* 自定义输入无焦点框；:where 不抬高特异性，组合件内部的轮廓抑制规则才能继续生效。 */
 :focus-visible:not(:where(input, [data-slot='input-group'][data-variant='composer'])),
-input[data-slot='input']:focus-visible,
+input[data-slot='input']:not([data-variant='embedded']):focus-visible,
 [data-slot='input-group']:not([data-variant='composer']):has([data-slot='input-group-control']:focus-visible),
 [data-slot='attachment']:has([data-slot='attachment-trigger']:focus-visible),
 [data-slot='code-block']:has(> [data-slot='code-block-content']:focus-visible),
