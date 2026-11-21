@@ -18,7 +18,7 @@ app.setPath('userData', ${JSON.stringify(join(directory, 'profile'))});
 setTimeout(()=>{console.error('聊天布局驱动超时');app.exit(1)},150000);
 app.whenReady().then(async()=>{
  const win=new BrowserWindow({show:false,width:1400,height:1100,webPreferences:{backgroundThrottling:false}});
- win.webContents.on('console-message',(_,level,message)=>{if(level>=3)console.error(message)});
+ win.webContents.on('console-message',details=>{if(details.level==='error')console.error(details.message)});
  await win.loadURL('http://127.0.0.1:5195/tests/renderer/features/home/chat-layout.browser.html');
  const result=await win.webContents.executeJavaScript('new Promise((resolve)=>{const timer=setInterval(()=>{if(window.chatLayoutResult){clearInterval(timer);resolve(window.chatLayoutResult)}},50);setTimeout(()=>{clearInterval(timer);resolve({passed:false,error:"聊天布局验收超时："+document.documentElement.dataset.chatLayoutStage})},120000)})');
  console.log(JSON.stringify({electron:process.versions.electron,chromium:process.versions.chrome,...result},null,2));

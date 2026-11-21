@@ -7,15 +7,15 @@
  * 控件本体（Switch / 下拉 / 按钮）由各分区自行组合，通用件不锁死 ——
  * 后续分区（外观/浏览器/技能…）照此拼装即可保持同一风格，不各自手写页头
  * （2026-11-15 用户指令：详情页布局模块化；模型设置是唯一例外——master-detail
- * 自撑布局，仅主体卡全宽特殊，页头同样走 SettingsHeader）。
+ * 自撑布局，主体卡与页头同列宽，页头同样走 SettingsHeader）。
  */
 import type { ReactNode } from 'react'
 
 /**
  * 设置详情页骨架：所有分区共用（不各自拼头部）。单列限宽容器 + 大标题
- * （居左主标题阶）+ 可选描述行（小字阶）+ 可选工具行（计数/动作钮，
- * zcode MCP 页同位）。zcode 各设置页同款骨架：标题必在、描述按需、
- * 内容 = 若干 SettingsGroup 卡片垂直排。
+ * （居左主标题阶）+ 可选描述行（正文阶，2026-11-20 用户指令从小字阶上调）+
+ * 可选工具行（计数/动作钮，zcode MCP 页同位）。zcode 各设置页同款骨架：
+ * 标题必在、描述按需、内容 = 若干 SettingsGroup 卡片垂直排。
  */
 export function SettingsPage({
   title,
@@ -52,7 +52,7 @@ export function SettingsHeader({
     <>
       <h2 className="text-2xl font-semibold">{title}</h2>
       {desc !== undefined && (
-        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{desc}</p>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{desc}</p>
       )}
       {toolbar !== undefined && <div className="mt-6 flex items-center gap-2">{toolbar}</div>}
     </>
@@ -81,7 +81,10 @@ export function SettingsGroup({
           {actions !== undefined && <div className="flex items-center gap-1">{actions}</div>}
         </div>
       )}
-      <div className="mt-3 flex flex-col divide-y divide-border rounded-xl border border-border">
+      {/* 圆角 lg 档（2026-11-20 用户定调）：与原生 Input/Button 同阶，不再用 xl 大容器档。
+          overflow-hidden：全宽行（存储页明细触发器等）hover 铺底时按卡圆角裁齐，
+          否则直角底色顶出圆角；焦点轮廓是内贴实线不受裁剪，浮层走 portal 不在裁剪面 */}
+      <div className="mt-3 flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border">
         {children}
       </div>
     </section>

@@ -110,7 +110,7 @@ describe('尾回答终态保留与即时业务交接', () => {
     expect(screen.getByText('已工作 0.30s')).toBeInTheDocument()
     expect(screen.queryByText('工作中')).not.toBeInTheDocument()
     expect(view.container.querySelector('[data-slot="live-working-line-source"]')).toBeNull()
-    expect(view.container.querySelector('[data-slot="run-trace-divider"]')).not.toBeNull()
+    expect(view.container.querySelector('[data-slot="run-trace-divider"]')).toBeNull()
     expect(view.container.querySelector('.md-body')).toBe(before.markdown)
     const currentSpans = Array.from(before.markdown.querySelectorAll('[data-reveal]'))
     expect(currentSpans).toHaveLength(before.spans.length)

@@ -20,7 +20,7 @@ export function ApiKeyField({ providerId }: { providerId: string }) {
   const [value, setValue] = useState('')
   const [committed, setCommitted] = useState('')
   const [show, setShow] = useState(false)
-  const refreshKeys = useEngineStore((s) => s.refreshKeys)
+  const saveApiKey = useEngineStore((s) => s.saveApiKey)
 
   useEffect(() => {
     void window.cogent.getApiKey(providerId).then((apiKey) => {
@@ -32,9 +32,8 @@ export function ApiKeyField({ providerId }: { providerId: string }) {
   const commit = async () => {
     const key = value.trim()
     if (key === committed) return
-    await window.cogent.setApiKey(providerId, key)
+    await saveApiKey(providerId, key)
     setCommitted(key)
-    await refreshKeys()
   }
 
   /** 清除（仅已配置 key 时出现）：清空显示与提交基线 → removeApiKey 删记录 →
@@ -42,8 +41,7 @@ export function ApiKeyField({ providerId }: { providerId: string }) {
   const clear = async () => {
     setValue('')
     setCommitted('')
-    await window.cogent.removeApiKey(providerId)
-    await refreshKeys()
+    await saveApiKey(providerId, null)
   }
 
   return (

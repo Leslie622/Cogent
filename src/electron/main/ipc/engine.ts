@@ -49,6 +49,7 @@ const ALLOWED_METHODS = new Set<string>([
   'agent.abort',
   'credentials.list',
   'models.list',
+  'models.test',
   'inspect.entries',
   'inspect.entry',
   'mcp.list',

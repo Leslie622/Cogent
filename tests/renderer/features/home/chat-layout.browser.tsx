@@ -9,11 +9,13 @@ import '@/globals.css'
 
 declare global { interface Window { chatLayoutResult?: { passed: boolean; results?: unknown[]; error?: string } } }
 
+// 走时检查需要秒级回合；纪元起点会落入省略秒的小时档，短等待不能观察到文本变化。
+const fixtureTime = Date.now()
 const messages = [
-  { id: 'u1', role: 'user' as const, timestamp: 1, content: '先写一首关于秋天的短诗，写完后读一下 package.json，告诉我版本号。'.repeat(3) },
-  { id: 'a1', role: 'assistant' as const, timestamp: 2, content: '## 窄面板换行\n\n' + '这是一段较长的正文，检查缩窄后末字是否完整可见。'.repeat(40) },
-  { id: 'u2', role: 'user' as const, timestamp: 3, content: '你好' },
-  { id: 'a2', role: 'assistant' as const, timestamp: 4, content: '你好！继续之前的节奏（写诗 + 读取 package.json）也行，或者聊点正事——比如 Cogent / Themd 项目里的活儿，随时说。' },
+  { id: 'u1', role: 'user' as const, timestamp: fixtureTime - 4000, content: '先写一首关于秋天的短诗，写完后读一下 package.json，告诉我版本号。'.repeat(3) },
+  { id: 'a1', role: 'assistant' as const, timestamp: fixtureTime - 3000, content: '## 窄面板换行\n\n' + '这是一段较长的正文，检查缩窄后末字是否完整可见。'.repeat(40) },
+  { id: 'u2', role: 'user' as const, timestamp: fixtureTime - 2000, content: '你好' },
+  { id: 'a2', role: 'assistant' as const, timestamp: fixtureTime - 1000, content: '你好！继续之前的节奏（写诗 + 读取 package.json）也行，或者聊点正事——比如 Cogent / Themd 项目里的活儿，随时说。' },
 ]
 
 // 全部数据只驻留此页面内存；不挂 App 的桥接加载，不读写真实会话或密钥。

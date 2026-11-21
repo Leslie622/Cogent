@@ -4,9 +4,9 @@
  * 三级链（优先级从高到低，全局架构 D1/D11）：
  * 1. COGENT_NODE_BIN：显式覆盖口（开发调试 / 旧宿主复用引擎时指向任意 Node ≥ 22.19）；
  * 2. resources/runtime/<平台>/bin/node(.exe)：构建期 scripts/fetch-runtime.mjs 放入的
- *    官方 Node 22 —— Electron 31 内置 Node 20.15 < pi 要求 22.19，自带是唯一通路；
+ *    官方 Node 22，让引擎运行时独立于 Electron 的版本周期；
  * 3. process.execPath：Electron 自带 Node 兜底（manager 判定补设 ELECTRON_RUN_AS_NODE）。
- *    降 31 后此级不再满足版本守卫 —— 由 manager 握手后的守卫明确报错，绝不静默降级。
+ *    Electron 40.9.3 内置 Node 24.14.1；实际启动版本仍由 manager 握手后的守卫校验。
  *
  * 解析逻辑全部拆为纯函数（env / 存在性结果注入），electron 依赖只出现在
  * resolveEngineNode 薄壳里 —— co-located 测试无需 mock electron。

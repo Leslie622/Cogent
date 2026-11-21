@@ -8,6 +8,7 @@ import {
   type NotifyKind,
   type NotifyToastPayload,
   type SettingsFile,
+  type StorageUsageResult,
   type WindowCloseAnswer
 } from '../../shared/ipc'
 import type {
@@ -112,6 +113,8 @@ const api = {
   /** 写会话级偏好（字段合并） */
   saveSettings: (partial: Partial<Omit<SettingsFile, 'version'>>): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.settingsSave, partial),
+  /** 扫描存储根统计占用（设置页·存储分区）；根路径 + 顶层条目字节数 */
+  getStorageUsage: (): Promise<StorageUsageResult> => ipcRenderer.invoke(IPC.storageUsage),
   /** 打开（或聚焦已开的）运行时控制台窗口 */
   openConsole: (): Promise<void> => ipcRenderer.invoke(IPC.consoleOpen),
   /** 打开（或聚焦已开的）内嵌页面 demo 窗口（webview 容器，阶段 3a） */
@@ -142,7 +145,7 @@ const api = {
   /** 选自定义声音文件（拷进 sounds/ 落字段，返回文件名；取消返回 null） */
   pickSoundFile: (kind: NotifyKind): Promise<string | null> =>
     ipcRenderer.invoke(IPC.soundPickFile, kind),
-  /** 清除自定义声音文件（恢复默认合成音） */
+  /** 清除自定义声音文件（恢复内置提示音） */
   clearSoundFile: (kind: NotifyKind): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.soundClearFile, kind),
   /** 打开系统通知设置页（Linux 未注册本通道，renderer 按 platform 隐藏入口） */

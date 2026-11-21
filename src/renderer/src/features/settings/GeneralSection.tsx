@@ -1,7 +1,6 @@
 /**
- * 设置 · 常规分区：真接线功能逐件补入（占位行已清空）—— 现有「默认权限」
- * 开关、「发送快捷键」「关闭窗口时」「Chrome 硬件加速」，均落
- * ~/.cogent/settings.json。
+ * 设置 · 常规分区：权限与窗口行为落 ~/.cogent/settings.json；
+ * 对话显示偏好复用 appearance store，仅由 renderer 消费。
  * 页头/卡片/行全部来自 SettingsParts 通用件（SettingsPage 骨架）。
  */
 import { Fragment } from 'react'
@@ -16,6 +15,8 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { useEngineStore, type CloseBehavior, type SendShortcut } from '@/stores/engine'
+import { useAppearanceStore, type OutputVerbosity } from '@/stores/appearance'
+import type { DurationPrecision } from '@/lib/format-duration'
 import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
 
 /** 发送组合键三档（keys 供 kbd 键帽渲染；label 是兜底文案） */
@@ -30,6 +31,17 @@ const CLOSE_BEHAVIORS: Array<{ value: CloseBehavior; label: string }> = [
   { value: 'minimize', label: '最小化' },
   { value: 'quit', label: '退出' },
   { value: 'ask', label: '每次询问' }
+]
+
+const OUTPUT_VERBOSITIES: Array<{ value: OutputVerbosity; label: string }> = [
+  { value: 'low', label: '简洁' },
+  { value: 'high', label: '详细' },
+]
+
+const DURATION_PRECISIONS: Array<{ value: DurationPrecision; label: string }> = [
+  { value: 0, label: '整数' },
+  { value: 1, label: '1 位小数' },
+  { value: 2, label: '2 位小数' },
 ]
 
 /** 组合键键帽（触发器与菜单项共用）：键帽间以弱色 + 相连，组合读法一目了然 */
@@ -47,6 +59,10 @@ function ShortcutKbd({ keys }: { keys: string[] }) {
 }
 
 export function GeneralSection() {
+  const outputVerbosity = useAppearanceStore((s) => s.outputVerbosity)
+  const setOutputVerbosity = useAppearanceStore((s) => s.setOutputVerbosity)
+  const durationPrecision = useAppearanceStore((s) => s.durationPrecision)
+  const setDurationPrecision = useAppearanceStore((s) => s.setDurationPrecision)
   // 「默认权限」：开关两态 = 新会话默认 ask ↔ auto（plan 不进默认 ——
   // 临时切入的工作方式而非开局常态，2026-11-11 拍板）；
   // 落 ~/.cogent/settings.json，chat store createSession 在显式选择缺席时消费
@@ -78,6 +94,59 @@ export function GeneralSection() {
             onCheckedChange={(checked) => setDefaultPermissionMode(checked ? 'auto' : 'ask')}
             aria-label="默认权限"
           />
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup label="对话">
+        <SettingsRow
+          title="输出详细程度"
+          desc="简洁模式隐藏工具和思考详情，以及 token、成本等底部统计信息"
+        >
+          <Select
+            value={outputVerbosity}
+            items={OUTPUT_VERBOSITIES}
+            onValueChange={(next) => {
+              if (next !== null) setOutputVerbosity(next)
+            }}
+          >
+            <SelectTrigger aria-label="输出详细程度" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectGroup>
+                {OUTPUT_VERBOSITIES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+        <SettingsRow
+          title="耗时显示格式"
+          desc="耗时自动显示为秒、分秒或小时分；此设置仅控制秒位的小数精度。"
+        >
+          <Select
+            value={durationPrecision}
+            items={DURATION_PRECISIONS}
+            onValueChange={(next) => {
+              if (next !== null) setDurationPrecision(next)
+            }}
+          >
+            <SelectTrigger aria-label="耗时显示格式" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectGroup>
+                {DURATION_PRECISIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </SettingsRow>
       </SettingsGroup>
 

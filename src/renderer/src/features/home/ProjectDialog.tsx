@@ -258,10 +258,10 @@ export function ProjectDialog({
             <div className="flex items-center gap-2 rounded-xl bg-muted/60 px-3">
               <IconFolder className="size-4 text-muted-foreground" />
               <Input
+                variant="embedded"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="项目名称"
-                className="border-0 bg-transparent px-0 shadow-none"
                 autoFocus
               />
             </div>

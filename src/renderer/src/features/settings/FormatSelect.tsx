@@ -50,7 +50,10 @@ export function FormatSelect({
       <SelectTrigger aria-label="API 格式" className="mt-1.5 w-full">
         <SelectValue />
       </SelectTrigger>
-      <SelectContent align="start" className="min-w-72">
+      {/* w-auto 覆盖弹层的锚宽钉死（select.tsx 默认 w=锚宽且不增宽）—— 长标签
+          （/v1/chat/completions）在窄右栏下会被裁字；放开后弹层取 max(锚宽,
+          内容宽)，与 zcode 官方 ProviderApiFormatSelect 的可增宽弹层同行为 */}
+      <SelectContent align="start" className="w-auto min-w-[var(--anchor-width,9rem)]">
         {/* SelectGroup 的 p-1 内衬是官方形态的一部分（同 McpSection 注释） */}
         <SelectGroup>
           {API_FORMATS.map((format) => (

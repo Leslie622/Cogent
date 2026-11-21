@@ -267,7 +267,8 @@ function DropdownMenuSeparator({
   return (
     <MenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
-      className={cn("-mx-1 my-1 h-px bg-border", size === "lg" && "my-1.5", className)}
+      // 背景色细条的上下边缘会分别取整；原生边框统一计算线宽，避免 125% 下忽粗忽细。
+      className={cn("-mx-1 my-1 h-px border-t border-border", size === "lg" && "my-1.5", className)}
       {...props}
     />
   )

@@ -63,11 +63,11 @@ describe('resolveEngineNodeBin 三级链', () => {
     )
   })
 
-  it('无覆盖时有自带用自带（Electron 31 时代的唯一通路）', () => {
+  it('无覆盖时优先自带运行时，独立于 Electron 内置 Node 版本', () => {
     expect(resolveEngineNodeBin({}, '/bundled/node.exe', '/electron.exe')).toBe('/bundled/node.exe')
   })
 
-  it('无自带退 execPath —— 降 31 后此级由 manager 版本守卫明确拒绝，链路不静默降级', () => {
+  it('无自带退 execPath，实际 Node 版本由 manager 握手守卫校验', () => {
     expect(resolveEngineNodeBin({}, null, '/electron.exe')).toBe('/electron.exe')
   })
 })

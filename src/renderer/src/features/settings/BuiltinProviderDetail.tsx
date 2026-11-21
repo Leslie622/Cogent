@@ -39,8 +39,6 @@ export function BuiltinProviderDetail({
     () => models.filter((m) => m.provider === providerId),
     [models, providerId]
   )
-  // 目录只展示前 8 个 + 尾行计数（部分厂商上百个模型全渲染没有意义）
-  const shown = catalog.slice(0, 8)
   const catalogMap = useMemo(() => new Map(catalog.map((m) => [m.id, m])), [catalog])
   const customModels = override?.models ?? []
   const disabledIds = override?.disabledModels ?? []
@@ -56,7 +54,7 @@ export function BuiltinProviderDetail({
   // 显示一律用 id（2026-11-10 定调）：目录营销名（DeepSeek V4 Pro 之类）与
   // API id 不对应，所见即所传；name 不参与呈现（2026-11-09 的目录名统一已废弃）
   const merged = useMemo(() => {
-    const rows: Array<{ def: ModelDef; shadowed: boolean }> = shown.map((m) => {
+    const rows: Array<{ def: ModelDef; shadowed: boolean }> = catalog.map((m) => {
       const shadow = customModels.find((x) => x.id === m.id)
       return {
         def: shadow ?? { id: m.id, contextWindow: m.contextWindow, reasoning: m.reasoning },
@@ -76,7 +74,7 @@ export function BuiltinProviderDetail({
         .map((id) => ({ def: { id }, shadowed: false }))
     )
     return rows.sort((a, b) => a.def.id.localeCompare(b.def.id))
-  }, [shown, customModels, catalog, catalogMap, disabledIds])
+  }, [catalog, customModels, catalogMap, disabledIds])
 
   // 空调整（无 baseUrl / 无自定义模型 / 无禁用）= 撤掉整条 override 通道
   const commitOverride = (next: ProviderOverrideDef): void => {
@@ -126,7 +124,7 @@ export function BuiltinProviderDetail({
       <ApiKeyField providerId={providerId} />
 
       <div className={FIELD_GAP}>
-        <label className={FIELD_LABEL}>Base URL 覆盖</label>
+        <label className={FIELD_LABEL}>Base URL</label>
         <Input
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -151,7 +149,10 @@ export function BuiltinProviderDetail({
           <label className={FIELD_LABEL}>模型列表</label>
           <AddModelButton onClick={() => setDialog({ initial: null })} />
         </div>
-        <div className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border">
+        {/* 目录全量展示（2026-11-20 撤前 8 截断 + 尾行计数）：列表限高
+            max-h-96（= 8 行 × 48px，保留旧截断的视觉高度），滚动发生在
+            列表内部不推长右栏页面 */}
+        <div className="mt-2 max-h-96 divide-y divide-border overflow-y-auto rounded-lg border border-border">
           {merged.map(({ def: row, shadowed }) => (
             <ProviderModelRow
               key={row.id}
@@ -163,11 +164,6 @@ export function BuiltinProviderDetail({
               onDelete={shadowed ? () => deleteModel(row.id) : undefined}
             />
           ))}
-          {catalog.length > shown.length && (
-            <div className="flex h-10 items-center justify-center text-xs text-muted-foreground">
-              还有 {catalog.length - shown.length} 个目录模型
-            </div>
-          )}
           {catalog.length === 0 && (
             <div className="flex h-10 items-center justify-center text-xs text-muted-foreground">
               目录中暂无该供应商的模型，可手动添加

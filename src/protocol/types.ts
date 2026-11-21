@@ -117,7 +117,7 @@ export interface SessionSummary {
   pinnedAt?: number
   /**
    * 归档时间（毫秒）；缺省 = 未归档。归档 = 回收站语义（软删）：session.list
-   * 默认滤掉已归档会话，设置页「已归档的聊天」可查看/恢复/彻底删除。
+   * 默认滤掉已归档会话，设置页「归档」可查看/恢复/彻底删除。
    */
   archivedAt?: number
   /**
@@ -1063,6 +1063,8 @@ export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInt
   'credentials.remove': { params: CredentialsRemoveParams; result: CredentialsRemoveResult }
   'credentials.list': { params: Record<string, never>; result: CredentialsListResult }
   'models.list': { params: Record<string, never>; result: ModelsListResult }
+  /** 独立连通性探测：使用已保存配置，不创建会话；网络失败由统一错误帧返回。 */
+  'models.test': { params: { providerId: string; modelId: string }; result: { elapsedMs: number } }
   'providers.custom.sync': { params: ProvidersCustomSyncParams; result: ProvidersCustomSyncResult }
   /** MCP 座：server 摘要 + 配置诊断（缺省 user 级视图；带 cwd = 项目合并视图） */
   'mcp.list': { params: { cwd?: string }; result: McpListResult }

@@ -98,7 +98,7 @@ describe('鉴权（2b：开门即要 token）', () => {
     expect(res.headers.get('access-control-allow-origin')).toBeTruthy()
   })
 
-  it('档位强制：readonly token 调写方法 403、读方法 200', async () => {
+  it.each(['session.create', 'models.test'])('档位强制：readonly token 调 %s 返回 403、读方法 200', async (method) => {
     const { base, token } = await start()
     const readonly = { authorization: `Bearer ${token('readonly')}` }
     expect(
@@ -106,7 +106,7 @@ describe('鉴权（2b：开门即要 token）', () => {
         await fetch(base + '/rpc', {
           method: 'POST',
           headers: readonly,
-          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.create', params: {} })
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: {} })
         })
       ).status
     ).toBe(403)
@@ -327,11 +327,11 @@ describe('WS 门（2c）', () => {
     expect(JSON.parse(await reply)).toEqual({ jsonrpc: '2.0', id: 5, result: { echo: 'session.list' } })
   })
 
-  it('档位强制与 /rpc 同口径：readonly 经 WS 调写方法回 -32003 帧（防换门绕过）', async () => {
+  it.each(['session.create', 'models.test'])('档位强制与 /rpc 同口径：readonly 经 WS 调 %s 回 -32003 帧（防换门绕过）', async (method) => {
     const { base, token } = await start()
     const ws = await wsOpen(`${base}/ws?token=${token('readonly')}`)
     const reply = wsNextMessage(ws)
-    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'session.create', params: {} }))
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 6, method, params: {} }))
     const frame = JSON.parse(await reply) as RpcResponse
     expect(frame.id).toBe(6)
     expect(frame.error?.code).toBe(-32_003)

@@ -122,14 +122,15 @@ export function CustomProviderDetail({
               <Button
                 variant="ghost"
                 size="default"
-                className="text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
                 aria-label="更多操作"
               />
             }
           >
             <IconDots className="size-4" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          {/* w-auto 覆盖面板默认的锚宽跟随（w-(--anchor-width)）—— 触发钮是
+              「⋯」小钮，锚宽面板会把「删除 Provider」压折行 */}
+          <DropdownMenuContent align="end" className="w-auto min-w-36">
             <DropdownMenuItem onClick={() => onDelete(def.id)} className="text-destructive">
               <IconTrash className="size-4" />
               删除 Provider
@@ -218,7 +219,8 @@ export function CustomProviderDetail({
             添加端点上可用的模型，配置后才会出现在聊天的模型菜单里。
           </p>
         ) : (
-          <div className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border">
+          // 限高 + 内部滚动同内置详情（max-h-96 = 8 行），多模型不推长右栏页面
+          <div className="mt-2 max-h-96 divide-y divide-border overflow-y-auto rounded-lg border border-border">
             {modelRows.map((row) => (
               <ProviderModelRow
                 key={row.id}

@@ -85,6 +85,8 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   'project.delete': 'write',
   'project.setPinned': 'write',
   'agent.submit': 'write',
+  // 探测会发起付费模型请求，与提交同档，readonly 票据不能消耗用户凭据。
+  'models.test': 'write',
   'agent.abort': 'write',
   'approval.respond': 'write',
   // 交互座 4c-2：回答挂起中的 ask_user —— 同 approval.respond 的"宿主侧

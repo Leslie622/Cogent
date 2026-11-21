@@ -3,7 +3,7 @@
  * 左：content-sidebar 折叠开关，系列图标两态：展开时 Collapse（点击收起）、折叠时
  *     Expand（点击展开）；状态由 AppShell 从面板 onResize 同步，拖拽折叠、点钮
  *     折叠都会翻转图标；
- * 左二：四个菜单与两个功能入口共用文字按钮间距（shadcn ghost）；
+ * 左二：文件、编辑、视图、帮助四个文字菜单（shadcn ghost）；
  * 右：窗口控制三钮（IPC 直达 main；maximize 两态系列图标 Square↔Copy，状态经
  *     window:state-changed 推送；关闭 hover 保留 Windows 红色惯例）。
  * hover 底色压成 sidebar-accent：chrome 面上的按钮，ghost 默认的 bg-accent(0.97)
@@ -24,7 +24,7 @@ import {
 } from '@tabler/icons-react'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties
 /** chrome 面上的 ghost hover 覆盖（见文件头注释）：黑低透明度软叠（同 ChatGPT
@@ -83,24 +83,6 @@ export function AppHeader({
               {label}
             </Button>
           ))}
-          {/* 运行时控制台开独立单例窗口，已开则聚焦 */}
-          <Button
-            variant="ghost"
-            size="header"
-            className={CHROME_HOVER}
-            onClick={() => void window.cogent.openConsole()}
-          >
-            运行时控制台
-          </Button>
-          {/* 内嵌页面使用独立窗口承载 webview 沙箱 */}
-          <Button
-            variant="ghost"
-            size="header"
-            className={CHROME_HOVER}
-            onClick={() => void window.cogent.openEmbedded()}
-          >
-            内嵌页面
-          </Button>
         </nav>
         <div className="app-header-compact">
           <DropdownMenu>
@@ -109,9 +91,6 @@ export function AppHeader({
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-auto min-w-40" align="start">
               {MENUS.map((label) => <DropdownMenuItem key={label}>{label}</DropdownMenuItem>)}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => void window.cogent.openConsole()}>运行时控制台</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void window.cogent.openEmbedded()}>内嵌页面</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

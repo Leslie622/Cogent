@@ -30,7 +30,6 @@ import {
   IconSquare,
   IconStack2Filled,
 } from '@tabler/icons-react'
-import { cn } from 'cn'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
@@ -58,7 +57,6 @@ import { AttachmentCards, isReferenceOnlyAttachment } from './AttachmentCards'
 import { unwrapIpcError } from '@/lib/ipc'
 import {
   EMPTY_MESSAGES,
-  selectLastError,
   selectRunning,
   selectStopping,
   selectLastRunOutcome,
@@ -87,8 +85,6 @@ import { groupTurns, TurnGroup, type TurnPhase } from './TurnGroup'
 // ConversationIndex/ModelMenu 经本文件取消息渲染形状 —— 再导出保持既有导入路径
 export type { MessageLike } from './MessageRow'
 
-/** 白底行/钮 hover：黑 5% 软叠（全局配方，同 content-sidebar 行） */
-const HOVER = 'hover:bg-accent-foreground/5 hover:text-foreground'
 const EMPTY_TURN_OUTCOMES: SessionBucket['turnOutcomes'] = {}
 
 /** 相对时间文案（信息卡「最近活动」行用）：刚刚 / N 分钟前 / N 小时前 /
@@ -143,7 +139,7 @@ function ChatHeader({
           >
             {/* 图标是按钮（同「更多」钮 ghost 同款，hover 出底）；点击行为空位
                 —— 同头部「更多」钮先占位后接线的惯例 */}
-            <Button variant="ghost" size="icon-sm" className={cn(HOVER, 'text-muted-foreground')} aria-label={`项目：${project.name}`}>
+            <Button variant="ghost" size="icon-sm" aria-label={`项目：${project.name}`}>
               <IconFolder className="size-4.5" />
             </Button>
             <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
@@ -179,7 +175,7 @@ function ChatHeader({
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
       )}
       <Hint tip="更多" side="bottom">
-        <Button variant="ghost" size="icon-sm" className={cn(HOVER, 'text-muted-foreground')} aria-label="更多">
+        <Button variant="ghost" size="icon-sm" aria-label="更多">
           <IconDots className="size-4" />
         </Button>
       </Hint>
@@ -188,7 +184,6 @@ function ChatHeader({
         <Button
           variant="ghost"
           size="icon-sm"
-          className={cn(HOVER, 'text-muted-foreground')}
           aria-label={tabsCollapsed ? '展开标签页区' : '折叠标签页区'}
           disabled={tabsToggleDisabled}
           onClick={onToggleTabs}
@@ -205,8 +200,9 @@ function ChatHeader({
 }
 
 /** 对话流：消息源 = chat store 活动会话（引擎事件流驱动，含流式占位与工具卡行），
-    渲染期按回合分组（TurnGroup 管两态呈现）。截断/失败提示条挂在消息末尾
-    （stopReason=length 是正常结束的附属信息，不是错误） */
+    渲染期按回合分组（TurnGroup 管两态呈现）。截断动作条挂在消息末尾
+    （stopReason=length 是正常结束的附属信息，不是错误）；运行/操作失败
+    （lastError）不进对话流，App 层 useErrorToast 弹 toast 呈现 */
 function ChatMessages() {
   const activeSessionId = useChatStore((s) => s.activeSessionId)
   const messages = useChatStore(
@@ -224,7 +220,6 @@ function ChatMessages() {
   const truncated = useChatStore(selectTruncated)
   // 压缩进行中（完备化 D8）：started→completed 窗口，消息流内状态条
   const compacting = useChatStore(selectCompacting)
-  const lastError = useChatStore(selectLastError)
   const outputHistoryError = useChatStore((state) => activeSessionId === null ? undefined : state.bySession[activeSessionId]?.outputErrors.history)
 
   // 结果属于用户回合；新提问只改变当前live，不能把旧中止/失败改成done。
@@ -311,7 +306,6 @@ function ChatMessages() {
               </Button>
             </div>
           )}
-          {lastError && <div className="text-center text-xs text-destructive">{lastError}</div>}
           {outputHistoryError !== undefined && <p role="alert" className="text-sm">产物记录读取失败：{outputHistoryError}</p>}
         </MessageScrollerContent>
       </MessageScrollerViewport>
@@ -437,7 +431,7 @@ function ChatComposer({
           scrollToEnd()
         }
       } catch {
-        return // 失败态已由 store 落（错误条 + 运行位复位），原文留在输入框
+        return // 失败态已由 store 落（错误 toast + 运行位复位），原文留在输入框
       }
     })()
   }
@@ -467,7 +461,7 @@ function ChatComposer({
                 <Button
                   variant="ghost"
                   size="xs"
-                  className="gap-1.5 px-1 font-normal text-sm text-foreground hover:bg-accent-foreground/5"
+                  className="gap-1.5 px-1 font-normal text-sm"
                 >
                   <IconDeviceDesktop className="size-4.5 text-muted-foreground" />
                   {cwdBasename}

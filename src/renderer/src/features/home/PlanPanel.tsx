@@ -109,7 +109,7 @@ function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFoc
           }
         }}
         placeholder="拒绝时的修改意见（模型会按此修订）…"
-        className="mt-2.5 h-9 rounded-lg border-0 bg-muted/60 px-3 text-xs placeholder:text-muted-foreground"
+        className="mt-2.5 h-9 rounded-lg border-0 bg-muted/60 px-3 text-xs placeholder:text-placeholder"
       />
       <div className="mt-3 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">

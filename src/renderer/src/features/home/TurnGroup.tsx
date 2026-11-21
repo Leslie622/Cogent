@@ -344,17 +344,23 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
             <MessageRow message={turn.user} />
           </MessageScrollerItem>
         )}
-        <div className="flex min-w-0 flex-col gap-3">
-          {turn.items.map((item, index) => (
-            <MessageScrollerItem key={itemKeys[index]} messageId={item.id}>
-              {item.type === undefined && item.role === 'assistant' ? (
-                <MessageRow message={item} />
-              ) : (
-                <ProcessItem item={item} />
-              )}
-            </MessageScrollerItem>
-          ))}
-        </div>
+        {/* 零工作项不渲染空过程容器：外层 gap-3 会给空盒子两侧各记一个间距，
+            回合底缘比终态「出错了/已停止」头条多占一行 gap —— 立马失败的
+            瞬时翻相让贴底内容跳这 12px。省掉后用户泡→状态行栈高与终态
+            逐像素一致，翻相零位移 */}
+        {turn.items.length > 0 && (
+          <div className="flex min-w-0 flex-col gap-3">
+            {turn.items.map((item, index) => (
+              <MessageScrollerItem key={itemKeys[index]} messageId={item.id}>
+                {item.type === undefined && item.role === 'assistant' ? (
+                  <MessageRow message={item} />
+                ) : (
+                  <ProcessItem item={item} />
+                )}
+              </MessageScrollerItem>
+            ))}
+          </div>
+        )}
         <OutputCards />
         <div data-slot="live-working-line-source">
           <WorkingLine startTs={turn.user?.timestamp ?? turn.startedAt ?? Date.now()} stopping={stopping} />

@@ -10,8 +10,8 @@
  * 新聊天入口始终回到同一未发送草稿；首条消息由 submit 物化。
  * 分区标题带折叠箭头（折叠态常显、展开态 hover 显现）；标题行 hover 浮现
  * [更多 ⋯ + 创建类] 双钮（项目=创建项目弹窗、最近=新建聊天）；项目行 hover
- * 浮现 [更多 + 新建聊天]；聊天行动作 [置顶 + 归档]（置顶真接线 setPinned，
- * 归档仍空位）。
+ * 浮现 [更多 + 新建聊天]；聊天行动作 [置顶 + 归档]（置顶接线 setPinned，
+ * 归档弹带撤销的 sonner toast）。
  * 布局手法：行 = 相对定位容器（hover 底色 + group），主点击区是占满的 button，
  * 动作钮 absolute 贴其右 —— 避免 button 嵌 button（非法结构）。
  */
@@ -34,6 +34,7 @@ import {
   IconTrash,
 } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { toast } from 'sonner'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -50,6 +51,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { ProjectDialog } from './ProjectDialog'
+import { RemoveProjectDialog } from './RemoveProjectDialog'
 import { RenameChatDialog } from './RenameChatDialog'
 import { useChatStore, type SessionSummary } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
@@ -62,9 +64,6 @@ import { useHomeStore } from '@/stores/home'
     弹层，focus-within 不可靠，不能只靠它） */
 const ACTIONS =
   'absolute right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 group-data-popup-open:opacity-100 group-has-[[data-popup-open]]:opacity-100'
-
-/** 行内动作钮：24px 热区（icon-xs），hover 底比行底再深一档（/15）才可辨 */
-const ACTION_BUTTON = 'text-muted-foreground hover:bg-accent-foreground/15 hover:text-foreground'
 
 /** 行 hover / active 底色：黑低透明软叠，active 与 hover 同色（用户定的规则：
     选中态不加深，就是"常驻的 hover 色"，同 ChatGPT）；深度 5% */
@@ -146,7 +145,7 @@ const ChatRow = memo(function ChatRow({
   onSelect: (chatId: string) => void
   /** 置顶二值切换；目标态由行内计算（chat.pinnedAt 在场 = 当前已置顶） */
   onTogglePin: (chatId: string, pinned: boolean) => void
-  /** 归档（回收站语义）：会话从主列表消失，设置页「已归档的聊天」可恢复/删除 */
+  /** 归档（回收站语义）：会话从主列表消失，设置页「归档」可恢复/删除 */
   onArchive: (chatId: string) => void
   onRename: (chatId: string) => void
   actions?: ReactNode
@@ -202,8 +201,7 @@ const ChatRow = memo(function ChatRow({
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    className={ACTION_BUTTON}
-                    aria-label={chat.pinnedAt ? '取消置顶' : '置顶聊天'}
+                                        aria-label={chat.pinnedAt ? '取消置顶' : '置顶聊天'}
                     onClick={() => onTogglePin(chat.id, chat.pinnedAt === undefined)}
                   >
                     {chat.pinnedAt ? <IconPinFilled className="size-4" /> : <IconPin className="size-4" />}
@@ -215,8 +213,7 @@ const ChatRow = memo(function ChatRow({
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    className={ACTION_BUTTON}
-                    aria-label="归档聊天"
+                                        aria-label="归档聊天"
                     onClick={() => onArchive(chat.id)}
                   >
                     <IconArchive className="size-4" />
@@ -361,7 +358,7 @@ const ProjectRow = memo(function ProjectRow({
               {/* Hint 包外层（塞 render 里 children 被吞，ProjectPicker 同教训） */}
               <Hint tip="更多" side="top">
                 <DropdownMenuTrigger
-                  render={<Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多" />}
+                  render={<Button variant="ghost" size="icon-xs" aria-label="更多" />}
                 >
                   <IconDots className="size-4" />
                 </DropdownMenuTrigger>
@@ -383,8 +380,7 @@ const ProjectRow = memo(function ProjectRow({
               <Button
                 variant="ghost"
                 size="icon-xs"
-                className={ACTION_BUTTON}
-                aria-label="新建聊天"
+                                aria-label="新建聊天"
                 onClick={() => onStartChat(projectId)}
               >
                 <IconMessagePlus className="size-4" />
@@ -437,6 +433,7 @@ export function HomeSidebar() {
   // 编辑项目弹窗（入口 = 项目行菜单「编辑」）：持 projectId 而非布尔 —— key
   // 之用，弹窗每次打开都是全新实例（name 初值从 store 取，免手写重置）
   const [editProjectId, setEditProjectId] = useState<string | null>(null)
+  const [removeProjectId, setRemoveProjectId] = useState<string | null>(null)
   const [renameChatId, setRenameChatId] = useState<string | null>(null)
   const renameChat = useCallback((chatId: string) => setRenameChatId(chatId), [])
 
@@ -458,7 +455,6 @@ export function HomeSidebar() {
   const selectSession = useChatStore((s) => s.selectSession)
   const projects = useProjectStore((s) => s.projects)
   const loadProjects = useProjectStore((s) => s.load)
-  const removeProject = useProjectStore((s) => s.remove)
   const setPinnedProject = useProjectStore((s) => s.setPinned)
   // 视图态只管"新聊天进行中"的信息区/无行选中；chat 行高亮直接看 chat store 的
   // activeSessionId（选中后两者同源同变）
@@ -511,6 +507,7 @@ export function HomeSidebar() {
   // 编辑弹窗的目标（菜单打开时行在渲染 = store 必有；编辑中项目被删则 undefined
   // → 弹窗条件渲染自然消失）
   const editingProject = editProjectId !== null ? projects.find((p) => p.id === editProjectId) : undefined
+  const removingProject = projects.find((p) => p.id === removeProjectId)
   const chatsByProject = useMemo(() => {
     const map = new Map<string, SessionSummary[]>()
     for (const project of projects) {
@@ -536,9 +533,35 @@ export function HomeSidebar() {
     [startNewChat]
   )
 
-  /** 归档（回收站语义）：归档的活动会话 → 视图落 kind:'new'（chat store 内已处理） */
+  /** 归档（回收站语义）：归档的活动会话 → 视图落 kind:'new'（chat store 内已处理）。
+   *  成功弹 sonner 带「撤销」action：撤销 = archive(false)（store 恢复时重拉
+   *  session.list 回主栏）；归档时正开着的会话撤销连视图一起还原
+   *  （selectSession + openChat，对齐 load() 的选中/视图配对）。归档失败只进
+   *  控制台 —— 菜单流不打断的既定口径（移动/删除同款） */
   const archiveChat = useCallback((chatId: string) => {
-    void useChatStore.getState().archive(chatId, true)
+    const { sessions, activeSessionId, archive } = useChatStore.getState()
+    const title = sessions.find((s) => s.id === chatId)?.title
+    const wasActive = activeSessionId === chatId
+    void archive(chatId, true).then(
+      () => {
+        toast.success('已归档', {
+          description: title,
+          duration: 5000,
+          action: {
+            label: '撤销',
+            onClick: () => {
+              void (async () => {
+                await useChatStore.getState().archive(chatId, false)
+                if (!wasActive) return
+                await useChatStore.getState().selectSession(chatId)
+                useHomeStore.getState().openChat(chatId)
+              })()
+            }
+          }
+        })
+      },
+      (error: unknown) => console.error('[archive] 归档失败', error)
+    )
   }, [])
 
   /** 会话置顶二值切换（id 签名直传 ChatRow） */
@@ -546,13 +569,8 @@ export function HomeSidebar() {
     void useChatStore.getState().setPinned(chatId, pinned)
   }, [])
 
-  /** 删除项目（不级联删会话，引擎 delete 语义）；id 签名直传 ProjectRow */
-  const deleteProject = useCallback(
-    (projectId: string) => {
-      void removeProject(projectId)
-    },
-    [removeProject]
-  )
+  /** 双菜单入口只打开确认层，移除请求由弹窗在用户确认后发起。 */
+  const deleteProject = useCallback((projectId: string) => setRemoveProjectId(projectId), [])
 
   /** 编辑项目（开改名弹窗）；id 签名 + 稳定引用（ProjectRow memo 前提） */
   const editProject = useCallback((projectId: string) => {
@@ -587,7 +605,7 @@ export function HomeSidebar() {
           <Button
             variant="ghost"
             size="icon-xs"
-            className="size-7 text-muted-foreground hover:bg-accent-foreground/7 hover:text-foreground"
+            className="size-7"
             aria-label="搜索"
           >
             <IconSearch className="size-4" />
@@ -672,14 +690,13 @@ export function HomeSidebar() {
             open={projectsOpen}
             actions={
               <>
-                <Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多">
+                <Button variant="ghost" size="icon-xs" aria-label="更多">
                   <IconDots className="size-4" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className={ACTION_BUTTON}
-                  aria-label="创建项目"
+                                    aria-label="创建项目"
                   onClick={() => setCreateOpen(true)}
                 >
                   <IconFolderPlus className="size-4" />
@@ -722,15 +739,14 @@ export function HomeSidebar() {
             open={recentOpen}
             actions={
               <>
-                <Button variant="ghost" size="icon-xs" className={ACTION_BUTTON} aria-label="更多">
+                <Button variant="ghost" size="icon-xs" aria-label="更多">
                   <IconDots className="size-4" />
                 </Button>
                 {/* 最近无项目归属：同顶部"新聊天" = 无项目发起 */}
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className={ACTION_BUTTON}
-                  aria-label="新建聊天"
+                                    aria-label="新建聊天"
                   onClick={() => startNew()}
                 >
                   <IconMessagePlus className="size-4" />
@@ -773,6 +789,10 @@ export function HomeSidebar() {
 
       {renamingChat !== undefined && (
         <RenameChatDialog key={renamingChat.id} chat={renamingChat} onClose={() => setRenameChatId(null)} />
+      )}
+
+      {removingProject !== undefined && (
+        <RemoveProjectDialog key={removingProject.id} project={removingProject} onClose={() => setRemoveProjectId(null)} />
       )}
 
       {/* 编辑项目：与创建同一张表单（改名 + 目录增删，新加目录才走信任确认）。

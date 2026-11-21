@@ -4,7 +4,12 @@
  * key/定义保存后经 refresh 同步（模型下拉随之解锁）。
  */
 import { create } from 'zustand'
-import type { CustomProviderDef, CustomProvidersPayload, ModelSummary, ProviderOverrideDef, ThinkingLevelWithOff } from '@/env.d'
+import type { CustomProviderDef, CustomProvidersPayload, EngineMethodResult, ModelSummary, ProviderOverrideDef, ThinkingLevelWithOff } from '@/env.d'
+
+// 失焦保存先于测试点击发生，但 IPC 回包可能更晚。保留最近保存的 Promise，
+// 测试等待定义与本供应商 Key 生效；失败也保留到重存，不能悄悄改测旧配置。
+let providersSaved: Promise<void> = Promise.resolve()
+const keysSaved = new Map<string, Promise<void>>()
 
 /** 思考档位全序（off + 六档）：偏好回填的值域校验与"就近取整"共用 */
 const THINKING_ORDER: readonly ThinkingLevelWithOff[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
@@ -19,8 +24,8 @@ export type CloseBehavior = 'minimize' | 'quit' | 'ask'
 export type NotifyKind = 'turn-done' | 'approval' | 'question'
 
 /**
- * 通知与提示音设置的内存形状（触发条件 × 呈现方式正交，见 docs/计划/通知与
- * 提示音.md）。声音文件 null = 用默认合成音（settings.json 的删键语义在
+ * 通知与提示音设置的内存形状（触发条件 × 呈现方式正交，见 docs/模块/通知与提醒.md）。
+ * 声音文件 null = 用内置提示音（settings.json 的删键语义在
  * setter 里转换，UI 层只说 null）
  */
 export interface NotifySettings {
@@ -39,8 +44,11 @@ export interface NotifySettings {
   questionSoundFile: string | null
 }
 
-/** setNotifySetting 的 patch：只带要改的键；声音文件 null = 恢复默认合成音 */
+/** setNotifySetting 的 patch：只带要改的键；声音文件 null = 恢复内置提示音 */
 export type NotifyPatch = Partial<NotifySettings>
+
+/** 初始化、滑杆重置与播放器的原音基准共用，避免默认值各自漂移。 */
+export const NOTIFY_SOUND_DEFAULTS = { soundVolume: 0.5, soundPitch: 660 } as const
 
 /**
  * 常用内置 provider 的显示名册（模型下拉分组/设置页卡片共用）。
@@ -103,6 +111,8 @@ interface EngineState {
   refreshModels: () => Promise<void>
   /** 全量保存自定义 provider 定义：落盘 → 引擎 sync → 重拉目录 */
   saveProviders: (providers: CustomProviderDef[], overrides: ProviderOverrideDef[]) => Promise<void>
+  saveApiKey: (providerId: string, apiKey: string | null) => Promise<void>
+  testModel: (providerId: string, modelId: string) => Promise<EngineMethodResult['models.test']>
   setActiveModel: (modelId: string, providerId?: string | null) => void
   setThinkingLevel: (level: EngineState['thinkingLevel']) => void
   /** 设置页「默认权限」开关：落盘 + 内存态（新会话物化缺省随动） */
@@ -184,7 +194,7 @@ async function loadSettings(): Promise<AppSettings> {
   }
 }
 
-/** 通知域缺省（盘上无值时的回填；与 docs/计划/通知与提示音.md 的拍板一致） */
+/** 通知域缺省（盘上无值时的回填；见 docs/模块/通知与提醒.md） */
 function defaultNotify(): NotifySettings {
   return {
     turnDoneNotify: 'unfocused',
@@ -192,8 +202,7 @@ function defaultNotify(): NotifySettings {
     questionNotify: true,
     toastEnabled: false,
     soundEnabled: true,
-    soundVolume: 0.5,
-    soundPitch: 660,
+    ...NOTIFY_SOUND_DEFAULTS,
     turnDoneSoundFile: null,
     approvalSoundFile: null,
     questionSoundFile: null
@@ -296,10 +305,24 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     set({ models })
   },
 
-  saveProviders: async (providers, overrides) => {
-    await window.cogent.setCustomProviders(providers, overrides)
-    set({ customProviders: providers, overrides: toOverrideMap({ providers, overrides }) })
-    await get().refreshModels()
+  saveProviders: (providers, overrides) => {
+    providersSaved = (async () => {
+      await window.cogent.setCustomProviders(providers, overrides)
+      set({ customProviders: providers, overrides: toOverrideMap({ providers, overrides }) })
+      await get().refreshModels()
+    })()
+    return providersSaved
+  },
+  saveApiKey: (providerId, apiKey) => {
+    const saved = (apiKey === null
+      ? window.cogent.removeApiKey(providerId)
+      : window.cogent.setApiKey(providerId, apiKey)).then(() => get().refreshKeys())
+    keysSaved.set(providerId, saved)
+    return saved
+  },
+  testModel: async (providerId, modelId) => {
+    await Promise.all([providersSaved, keysSaved.get(providerId)])
+    return window.cogent.engineRequest('models.test', { providerId, modelId })
   },
 
   // 选中模型/思考力度的 setter 都同步落盘（fire-and-forget：写失败不回滚内存态，

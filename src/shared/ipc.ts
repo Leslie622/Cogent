@@ -47,6 +47,8 @@ export const IPC = {
   settingsGet: 'settings:get',
   /** renderer → main：写会话级偏好（字段合并语义，落 ~/.cogent/settings.json） */
   settingsSave: 'settings:save',
+  /** renderer → main：扫描存储根统计磁盘占用（设置页·存储分区；只读，无载荷） */
+  storageUsage: 'storage:usage',
   /** renderer → main：弹系统目录选择框（创建项目/工作区绑定用）；返回所选绝对路径或 null */
   workspacePickDirectory: 'workspace:pick-directory',
   /** renderer → main：系统默认程序打开路径/目录（项目「在资源管理器中打开」等）；
@@ -85,6 +87,22 @@ export const IPC = {
   /** main → renderer：最大化状态变化（payload: boolean isMaximized） */
   windowState: 'window:state-changed'
 } as const
+
+/** 存储根顶层条目（storage:usage 响荷）：目录条目的 bytes = 递归累计 */
+export interface StorageUsageEntry {
+  /** 顶层文件名 / 目录名（如 sessions、settings.json） */
+  name: string
+  dir: boolean
+  bytes: number
+}
+
+/** storage:usage 响荷：存储根绝对路径 + 顶层条目占用（totalBytes = 条目之和）。
+ * 归类成展示分类是渲染层的纯函数（features/settings/storage-view.ts），壳契约只报事实 */
+export interface StorageUsageResult {
+  root: string
+  totalBytes: number
+  entries: StorageUsageEntry[]
+}
 
 /** toast 载荷：文案由 renderer 生成（main 无语言上下文，学 zcode 拒绝兜底文案） */
 export interface NotifyToastPayload {
@@ -160,7 +178,7 @@ export interface SettingsFile {
       disableHardwareAcceleration（规避部分显卡/驱动导致的白屏、闪退、渲染
       异常）；缺省 = true（Electron 默认开）。只在启动期消费，改后重启生效 */
   hardwareAcceleration?: boolean
-  /** —— 通知与提示音（触发条件 × 呈现方式正交，见 docs/计划/通知与提示音.md）—— */
+  /** —— 通知与提示音（触发条件 × 呈现方式正交，见 docs/模块/通知与提醒.md）—— */
   /** 轮次完成的提醒条件：always / never / unfocused（缺省，聚焦时不打扰） */
   turnDoneNotify?: 'always' | 'never' | 'unfocused'
   /** 权限请求时提醒（approval.request）；缺省开 */
@@ -170,14 +188,14 @@ export interface SettingsFile {
   /** 呈现方式 · 系统 toast（main 侧 Electron Notification，点击聚焦窗口）；
       缺省关（用户定调声音为主） */
   toastEnabled?: boolean
-  /** 呈现方式 · 提示音（renderer 合成/自定义文件）；缺省开 */
+  /** 呈现方式 · 提示音（renderer 内置音频/自定义文件）；缺省开 */
   soundEnabled?: boolean
-  /** 提示音音量 0–1（合成 GainNode 与文件 Audio.volume 共用）；缺省 0.5 */
+  /** 提示音音量 0–1（内置音频与自定义文件共用 GainNode）；缺省 0.5 */
   soundVolume?: number
-  /** 合成音基频 Hz（400–1200，三类音型按相对模式取值）；缺省 660。
-      只影响合成音 —— 自定义文件不做变调（playbackRate 破坏音质） */
+  /** 内置提示音的音调参数（400–1200，保留既有存储值域）；缺省 660 对应原音。
+      通过 AudioBufferSourceNode.playbackRate = soundPitch / 660 调整；自定义文件不变调 */
   soundPitch?: number
-  /** 自定义声音文件（~/.cogent/sounds/ 下纯文件名，三类独立；缺省 = 合成音） */
+  /** 自定义声音文件（~/.cogent/sounds/ 下纯文件名，三类独立；缺省 = 内置提示音） */
   turnDoneSoundFile?: string
   approvalSoundFile?: string
   questionSoundFile?: string

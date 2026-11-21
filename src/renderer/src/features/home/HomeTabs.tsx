@@ -38,7 +38,6 @@ export function HomeTabs() {
         <Button
           variant="ghost"
           size="icon-xs"
-          className="text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground"
           aria-label="新建标签页"
         >
           <IconPlus className="size-4" />

@@ -75,6 +75,7 @@ import {
 } from './interact-tools'
 import type { CredentialRegistry } from './credentials'
 import { CustomProviderRegistry } from './custom-providers'
+import { testModelConnectivity } from './model-connectivity'
 import { SessionInspector } from './inspector'
 import { McpConfigStore } from './mcp-config'
 import { formatSkillsSection } from './skill-prompt'
@@ -766,7 +767,7 @@ export class SessionManager implements CogentKernel {
     return Array.from(this.sessions.values(), (s) => s.summary).filter((s) => s.archivedAt === undefined)
   }
 
-  /** 已归档会话（设置页「已归档的聊天」数据源），按归档时间倒序（新归档在上） */
+  /** 已归档会话（设置页「归档」数据源），按归档时间倒序（新归档在上） */
   listArchived(): SessionSummary[] {
     return Array.from(this.sessions.values(), (s) => s.summary)
       .filter((s) => s.archivedAt !== undefined)
@@ -906,6 +907,15 @@ export class SessionManager implements CogentKernel {
   }
 
   // ———— 模型目录 ————
+
+  /** 探测按双键取当前有效模型；被禁用的定义不旁路注册表，避免测到聊天用不到的配置。 */
+  testModel(providerId: string, modelId: string): Promise<{ elapsedMs: number }> {
+    const model = this.models.getModel(providerId, modelId)
+    if (model === undefined) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, `模型不存在或已禁用: ${providerId}/${modelId}`)
+    }
+    return testModelConnectivity(this.modelRuntime, model)
+  }
 
   /** pi catalog → 协议模型摘要（UI 下拉数据源；key 配置状态在 credentials.list 单独查） */
   listModels(): { models: ModelSummary[]; defaultModel: { provider: string; id: string } } {

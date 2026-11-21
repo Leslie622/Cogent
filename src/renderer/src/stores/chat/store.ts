@@ -236,20 +236,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }))
   },
 
-  /** 归档/恢复（回收站语义）：引擎 session.list 已滤掉归档会话，本地把摘要移出
-      列表（恢复动作在设置页归档视图，archive(chatId,false) 后经 load 语义回到
-      主列表——这里恢复时不强拉列表，由调用方刷新）。归档**活动**会话时视图才落
-      kind:'new'（须比对 chatId：侧栏可归档任意后台会话，无条件踢视图会把
+  /** 归档/恢复（回收站语义）：引擎 session.list 已滤掉归档会话，归档把摘要
+      移出本地列表；恢复重拉 session.list 让会话回主栏（2026-11-20 归档撤销
+      toast 落地时收进来 —— 此前"由调用方刷新"，撤销处没有自然的刷新时机；
+      不走 load()：它会自动选中首个会话，恢复不该带导航副作用，选中/视图
+      还原由撤销发起方决定）。归档**活动**会话时视图才落 kind:'new'
+      （须比对 chatId：侧栏可归档任意后台会话，无条件踢视图会把
       正打开的对话误拉到新聊天着陆页） */
   archive: async (sessionId, archived) => {
     await window.cogent.engineRequest('session.archive', { sessionId, archived })
+    if (!archived) {
+      const sessions = await window.cogent.engineRequest('session.list', {})
+      set({ sessions })
+      return
+    }
     set((state) => ({
-      sessions: archived ? state.sessions.filter((s) => s.id !== sessionId) : state.sessions,
-      activeSessionId:
-        archived && state.activeSessionId === sessionId ? null : state.activeSessionId
+      sessions: state.sessions.filter((s) => s.id !== sessionId),
+      activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId
     }))
     const home = useHomeStore.getState().session
-    if (archived && home.kind === 'chat' && home.chatId === sessionId) {
+    if (home.kind === 'chat' && home.chatId === sessionId) {
       useHomeStore.getState().startNewChat()
     }
   },

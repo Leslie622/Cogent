@@ -5,13 +5,20 @@
  * - 失败：行尾「执行失败」+ 整行不变红（TraceLine 无 data-status=error），
  *   hover 出 Tooltip 看原因（zcode 图 2 形态）；
  * - bash 运行中进度尾行定高两行槽（流稳定化 §3.4）。
- * 折叠体 keepMounted 收起常驻（trace.render.test.tsx 钉），CodeBlock/展开
- * 路径不在本钉范围。
+ * 折叠体 keepMounted 收起常驻（trace.render.test.tsx 钉）；简洁模式移除详情，
+ * 切回详细可继续查看原来的展开内容。
  */
-import { render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { ToolCard } from '@/components/ui/tool'
+import { useAppearanceStore } from '@/stores/appearance'
+
+afterEach(() => {
+  cleanup()
+  useAppearanceStore.getState().setOutputVerbosity('high')
+  localStorage.removeItem('cogent-appearance')
+})
 
 describe('ToolCard 头行结构（类别词 + 主文案 + 尾标）', () => {
   it('运行中：类别词进行形 + data-status=running，无「执行中」尾词（扫光即信号）', () => {
@@ -104,5 +111,55 @@ describe('ToolCard bash 进度尾行（§3.4 定高两行槽）', () => {
     rerender(<ToolCard name="powershell" summary="powershell(npm test)" status="running" progress={'旧行\n倒数第二行\n最后一行'} />)
     expect(screen.queryByText('旧行')).not.toBeInTheDocument()
     expect(screen.getByText('最后一行').parentElement?.children).toHaveLength(2)
+  })
+})
+
+describe('ToolCard 输出详细程度', () => {
+  it('简洁档移除已展开详情、参数和 diff 计数；切回详细仍可查看原内容', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<ToolCard
+      name="edit" summary="edit(src/private.ts)" status="ok"
+      result="详细输出" diff={'+新增内容\n-旧内容'}
+    />)
+    await user.click(screen.getByRole('button', { name: /已编辑/ }))
+    expect(screen.getByText('详细输出')).toBeVisible()
+    act(() => useAppearanceStore.getState().setOutputVerbosity('low'))
+    expect(screen.getByText('已编辑')).toBeVisible()
+    expect(screen.getByText('edit')).toBeVisible()
+    expect(screen.queryByText('src/private.ts')).not.toBeInTheDocument()
+    expect(screen.queryByText('详细输出')).not.toBeInTheDocument()
+    expect(screen.queryByText('+新增内容')).not.toBeInTheDocument()
+    expect(screen.queryByText('+1')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-slot="trace-collapsible-content"]')).toBeNull()
+    act(() => useAppearanceStore.getState().setOutputVerbosity('high'))
+    expect(screen.getByText('src/private.ts')).toBeVisible()
+    expect(screen.getByText('详细输出')).toBeVisible()
+  })
+
+  it('简洁档运行中保留状态扫光和工具名，隐藏命令 / 输出尾行', () => {
+    useAppearanceStore.getState().setOutputVerbosity('low')
+    const { container } = render(<ToolCard
+      name="powershell" summary="powershell(secret-command)" status="running" progress="具体输出"
+    />)
+    expect(screen.getByText('正在执行')).toBeVisible()
+    expect(screen.getByText('powershell')).toBeVisible()
+    expect(container.querySelector('[data-status="running"]')).not.toBeNull()
+    expect(screen.queryByText('secret-command')).not.toBeInTheDocument()
+    expect(screen.queryByText('具体输出')).not.toBeInTheDocument()
+  })
+
+  it('简洁档保留失败 / 拒绝状态和 MCP 身份，不提供具体错误的悬停入口', () => {
+    useAppearanceStore.getState().setOutputVerbosity('low')
+    const { container } = render(<>
+      <ToolCard name="write" summary="write(private.ts)" status="error" result="具体失败原因" />
+      <ToolCard name="mcp__search__query" summary="mcp__search__query(secret)" status="blocked" />
+    </>)
+    expect(screen.getByText('执行失败')).toBeVisible()
+    expect(screen.getByText('已拒绝')).toBeVisible()
+    expect(screen.getByText('search.query')).toBeVisible()
+    expect(container.querySelector('.cursor-help')).toBeNull()
+    expect(screen.queryByText('具体失败原因')).not.toBeInTheDocument()
+    expect(screen.queryByText('private.ts')).not.toBeInTheDocument()
   })
 })

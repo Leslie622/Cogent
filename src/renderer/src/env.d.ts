@@ -90,6 +90,8 @@ declare global {
       getSettings: () => Promise<AppSettingsFile>
       /** 写会话级偏好（字段合并） */
       saveSettings: (partial: Partial<Omit<AppSettingsFile, 'version'>>) => Promise<{ ok: true }>
+      /** 扫描存储根统计占用（设置页·存储分区）；形状与 shared/ipc.ts 镜像 */
+      getStorageUsage: () => Promise<StorageUsageResult>
       /** 窗口控制（自绘 header 专用） */
       minimizeWindow: () => Promise<void>
       toggleMaximizeWindow: () => Promise<void>
@@ -102,7 +104,7 @@ declare global {
       notifyToast: (payload: NotifyToastPayload) => Promise<{ ok: true } | { ok: false; reason: 'unsupported' }>
       /** 选自定义声音文件（拷进 sounds/ 落字段；取消返回 null） */
       pickSoundFile: (kind: 'turn-done' | 'approval' | 'question') => Promise<string | null>
-      /** 清除自定义声音文件（恢复默认合成音） */
+      /** 清除自定义声音文件（恢复内置提示音） */
       clearSoundFile: (kind: 'turn-done' | 'approval' | 'question') => Promise<{ ok: true }>
       /** 打开系统通知设置页（Linux 未注册，按 platform 隐藏入口） */
       openNotificationSettings: () => Promise<void>
@@ -144,6 +146,7 @@ export type EngineMethod =
   | 'agent.abort'
   | 'credentials.list'
   | 'models.list'
+  | 'models.test'
   | 'inspect.entries'
   | 'inspect.entry'
   | 'mcp.list'
@@ -190,6 +193,20 @@ export interface AppSettingsFile {
 export interface NotifyToastPayload {
   title: string
   body: string
+}
+
+/** 存储占用快照（与 shared/ipc.ts 的 StorageUsageResult/Entry 镜像）：
+ *  顶层条目字节数事实，归类/排序/格式化在 features/settings/storage-view.ts */
+export interface StorageUsageEntry {
+  name: string
+  dir: boolean
+  bytes: number
+}
+
+export interface StorageUsageResult {
+  root: string
+  totalBytes: number
+  entries: StorageUsageEntry[]
 }
 
 /** 会话摘要（与 protocol SessionSummary 镜像；optional 字段=未设置） */
@@ -251,6 +268,7 @@ export interface EngineMethodParams extends AttachmentParams, FileParams, Output
   'agent.abort': { sessionId: string }
   'credentials.list': Record<string, never>
   'models.list': Record<string, never>
+  'models.test': { providerId: string; modelId: string }
   'inspect.entries': { sessionId: string }
   'inspect.entry': { sessionId: string; seq: number }
   'mcp.list': { cwd?: string }
@@ -293,6 +311,7 @@ export interface EngineMethodResult extends AttachmentResults, FileResults, Outp
   'agent.abort': { aborted: boolean }
   'credentials.list': { providers: ProviderSummary[] }
   'models.list': { models: ModelSummary[]; defaultModel?: { provider: string; id: string } }
+  'models.test': { elapsedMs: number }
   'inspect.entries': { entries: InspectEntrySummary[] }
   'inspect.entry': InspectEntryDetail
   'mcp.list': { servers: McpServerSummary[]; errors: string[] }

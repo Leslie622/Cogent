@@ -18,9 +18,10 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
                 └─ settings  SettingsMain，按分区挂内容
 ```
 
-- header 的“运行时控制台”和“内嵌页面”入口位于“帮助”右侧，使用中文文字按钮
-  （Button ghost / header，正文阶默认14px），不配图标；与前四个菜单按钮同处一个 `gap-1` 容器，
-  按钮本体统一最小 `h-7` 与 `px-2`，不额外加左间距；窗口 ≤760px 时文字菜单收进“应用菜单”，保留窗口控制三钮。
+- header 的“文件”“编辑”“视图”“帮助”使用文字按钮（Button ghost / header），
+  同处一个 `gap-1` 容器；窗口 ≤760px 时文字菜单收进“应用菜单”，保留窗口控制三钮。
+- 左下角设置菜单依次为“设置”、分隔线、“运行时控制台”“内嵌页面”、分隔线、“关于”；
+  使用带左侧图标的 DropdownMenuItem，菜单沿用 lg 档，向右弹出并底端对齐。
 - `app-sidebar` 上区路由钮与底部设置钮统一使用 `Button ghost / icon-lg`（36×36px），
   图标为 20px（`size-5`），普通态与激活态尺寸一致。
 - `content-sidebar` 是普通 flex 像素宽块，不进 react-resizable-panels（RRP）；
@@ -42,18 +43,19 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 
 | 对象 | 配方 |
 | --- | --- |
-| header + app-sidebar | `.chrome-surface`，135° 薄荷渐变 `#e0f3e9 → #eef7f2 → #fbfdfb` |
-| content-sidebar / main | `--content-sidebar`（`#f2f8f4`）/ 纯白，形成层级 |
+| header + app-sidebar | `.chrome-surface` 消费主题色的 135° 三段渐变；森林 / 薄荷 / 蜜蜂 / 羊皮纸 / 海盐 / 暮紫各有浅深两套，默认薄荷；共享色板在 `lib/interface-skins.ts` |
+| content-sidebar / main | `--content-sidebar` 随主题色与明暗换套；main 沿用 `--background`，浅色纯白、深色中性暗底，形成层级 |
 | hover / active | 黑低透明软叠 `bg-foreground/5` 或 `bg-accent-foreground/5`；active 保持同一深度 |
-| 行内小钮 | 白卡上 hover `/5`，已有行底上 `/15` |
+| 行内小钮 | 一律原生 ghost（hover `bg-muted`）；软叠配方只属于自绘行，不落在 Button 调用点 |
 | 文字 | 实色 token；次级 `muted-foreground`，placeholder `--placeholder`；层级靠实色深浅 |
 | 语义色 | destructive 错误红；warning 琥珀 `oklch(0.666 0.155 70)`；chrome-accent 品牌蓝 `#0231fa` |
-| 聚焦 | 组件共用 `--focus-width: 1px` 与 `--focus-color` 内贴实线，浅色 `oklch(0.556 0 0)`、深色 `oklch(0.708 0 0)`，默认 150ms 淡入淡出；已有动效的控件沿用其时长，reduced-motion 直接切换。原生 input 保留调用处样式；对话输入卡 composer 不显示聚焦描边，普通 Input、Textarea、InputGroup 保留统一效果 |
+| 聚焦 | 组件共用 `--focus-width: 1px` 与 `--focus-color` 内贴实线，浅色 `oklch(0.556 0 0)`、深色 `oklch(0.708 0 0)`，默认 150ms 淡入淡出；已有动效的控件沿用其时长，reduced-motion 直接切换。自定义输入不显示聚焦描边，包括原生 input、自定义外壳内的 `Input variant="embedded"` 与对话输入卡 composer；普通 Input、Textarea、InputGroup 保留统一效果 |
 | 圆角 | 内容主体左上角 `--radius-xl`；输入卡 `InputGroup` composer 档 `rounded-2xl`（原生表单仍 `rounded-lg`）；发送/停止钮 `Button icon-sm` 原生圆角；其余按组件变体，信息区条只圆上两角 |
 | 字号 | 默认小字/说明 12、正文/列表 14、分组/侧栏/弹窗标题 16、页面标题 24；分别用 text-xs / text-sm / text-base / text-2xl，界面基准 11–16px 统一派生，小字最低 10px |
 | 字体 | Inter + HarmonyOS Sans SC；代码 JetBrains Mono，中文注释回落鸿蒙；常规中文用 400 |
 
-Electron 通过 `disable-lcd-text` 启动参数关闭 LCD 文字抗锯齿。
+应用文字使用 Electron 40.9.3 的原生字体渲染，常规字重保持 400，不施加全局文字描边。
+字体选择与绘制边界见[对话内容主题](技术笔记/对话内容主题.md)。
 启动参数的对照验证需完整重启应用；字体清晰度与 DPI 的最终结论在实际 Electron 验证。
 
 UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时间等行头收回
@@ -72,13 +74,21 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   Nova 默认基础 radius 与本项目均为 0.625rem；不要顺带更换大卡的圆角阶算法。
 - 聚焦视觉由 `globals.css` 的 `:focus-visible` 统一维护，原语和自写组件不另写
   focus ring。附件主触发器、代码块和滑杆拇指只在外层画线；
-  原生 input 不参与，即使带 tabindex 或 contenteditable 也不加入统一轮廓。
+  自定义输入不参与：原生 input 即使带 tabindex 或 contenteditable 也不加入统一轮廓；
+  自定义外壳内复用 Input 时使用 embedded 档，如项目弹窗的名称行，内部和外壳都不画聚焦线。
   InputGroup 普通档在外层画线，composer 档不画聚焦线；内部按钮仍有各自的焦点提示。错误态保留
   红色边框，菜单保留导航高亮。原理见
   [界面聚焦样式](技术笔记/界面聚焦样式.md)。
 - 必须核对的定制：slider 的 `thumbAlignment` / `thumbOnKeyDown` / marks 几何；
   dropdown 的 warning 变体和 lg 尺寸；dialog 限高与中段滚动；code-block 的图标修正；
-  trace/collapsible 的挂载与轨道；tabs/separator 的 orientation 属性。
+  trace/collapsible 的挂载与轨道；tabs/separator 的 orientation 属性；
+  sonner 的主题源改 appearance store（剥 next-themes）、宽度按条定（错误
+  toast 按条覆盖 `--width` 560px，其余缺省 356px）、字体对齐应用
+  （fontFamily inherit + text-sm!/text-xs! 挂统一字号档）、
+  richColors 按类型着色
+  （sonner 内置调色板）、action 槽同色淡底（静息 `bg-current/10`、hover
+  加深，图标 text-inherit —— 随 toast 类型着色不串灰；`!` 后缀工具类压
+  sonner 样式表）。位置由调用处定（App 挂 `top-center`）。
 - registry 源的 `IconPlaceholder` 改为实际图标；`cn-menu-target`、
   `cn-menu-translucent`、`cn-font-heading` 是 CLI style marker，不是待补的 CSS 类。
   安装后清理未用 import、文档站私有引用，并验证构建产物。
@@ -90,9 +100,10 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 | 列表行 | h-8、relative/group；会话主按钮撑满行高与宽度，内边距及项目缩进放在按钮内；常态 pr-4，动作显现时 pr-14；右侧绝对钮簇独立操作，等待确认 tag 放在主按钮内 |
 | 列表菜单 | ContextMenuTrigger 的 `render` 承载整行；动作数据同时供右键和“更多”菜单消费 |
 | 聊天重命名 | 聊天右键菜单“重命名”打开 Dialog + Input；预填并聚焦全选；原生取消/保存按钮，Enter 保存、Esc 关闭；错误留在弹窗 |
+| 项目移除 | “更多”与右键菜单共用 AlertDialog；描述含项目名与保留范围，原生取消钮和 destructive 确认钮；在途显示“移除中…”并禁用按钮，错误留在弹窗；成功反馈用 sonner 短语通知 |
 | 侧栏折叠 | `CollapsibleContent variant="navigation"`，200ms ease-out；keepMounted，收起 inert，结束后 hidden |
 | 等待确认 tag | 占行尾动作簇的位置，常显；emerald `/15` 背景 + 实色深绿文字 + 小呼吸点 |
-| 输入区 | `InputGroup variant="composer"`：`rounded-2xl` 大圆角、薄边、1px 黑色环形阴影 `0 0 0 1px rgba(0,0,0,0.05)`（浅深色同值）；浅色白卡，深色用抬亮的 card 底色。发送钮禁用不降低整卡透明度；聚焦不改变描边、底色与阴影。新聊天的灰色信息条两侧内收 16px、下沿被输入卡覆盖 12px，形成前后叠层；外观原理见[输入区外观](技术笔记/输入区外观.md) |
+| 输入区 | `InputGroup variant="composer"`：`rounded-2xl` 大圆角、薄边、浮层投影 `shadow-composer` token（浅 `0 4px 12px rgb(0 0 0/0.05)`，深同几何提黑 alpha 0.4；shadcn 无官方阴影 token，自建于 globals.css）；浅色白卡，深色用抬亮的 card 底色。发送钮禁用不降低整卡透明度；聚焦不改变描边、底色与阴影。新聊天的灰色信息条两侧内收 16px、下沿被输入卡覆盖 12px，形成前后叠层；外观原理见[输入区外观](技术笔记/输入区外观.md) |
 | 附件区 | 同一 InputGroup 内、正文上方的 block-start addon；空时不占位。输入区 AttachmentGroup 自动换行，最高 160px，超过后纵向滚动；不加边缘渐隐 mask，单卡也完整显示；图片和文件卡外层统一 rounded-lg（10px）；图片用 Attachment image 变体的 45px 正方形缩略图，不显示文件名/大小/读取说明，简短导入/错误状态放底部，重试放左上；文件/视频用 sm、file 变体，最小高 45px、按内容收缩且最大宽度 180px，文件名单行省略，悬停显示全名；关闭统一用 AttachmentRemove 放右上角，悬停卡片或按钮获键盘焦点时显示，图片/文件同位置同尺寸，文件预留按钮位置避免遮挡或跳动；输入与历史沿用同一尺寸规则 |
 | 附件反馈 | 排队项显示“等待导入”/图片“等待中”，复制项显示进度；部分接收后的未添加数量位于输入卡底部，ghost/xs按钮打开Popover查看全部文件名与原因，明细最高160px纵向滚动，icon-xs按钮清除提示；不在正常就绪卡添加内部机制说明 |
 | 目录引用 | 加号触发DropdownMenu，含“添加图片或文件”“引用文件夹”；目录沿用最小45px高、最大180px、10px圆角文件卡，文件夹图标、名称、路径副标题，整卡可打开目录；无大小/另存，移除仍右上hover显示；历史与普通文件同行靠右 |
@@ -148,26 +159,56 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   列位与上、左右边距是模板量，所有分区一致；页头 → 第一个内容（组卡或
   加载/空态卡）统一 mt-8，不逐页手写。内容区滚动容器挂
   `scrollbar-gutter-stable` 且切分区回顶（防抖机制见 [模块/设置页](模块/设置页.md)）。
-  `SettingsGroup` 为带组标题的 rounded-xl 描边卡 + divide-y；
-  `SettingsRow` 左说明、右原生控件。设置页及其弹窗的 Button、SelectTrigger、Toggle
+  `SettingsGroup` 为带组标题的 rounded-lg 描边卡 + divide-y（2026-11-20 用户定调：
+  设置页容器与搜索框统一 lg 档、与原生表单控件同阶，弃 xl 大容器档与胶囊搜索底；
+  各分区空态/加载卡、模型页整高卡与凭据横幅、归档列表卡、模型页刷新钮同批改齐）；
+  `SettingsRow` 左说明、右原生控件。设置页及其弹窗的文字 Button、SelectTrigger、Toggle
   和模型能力徽标统一使用 default；包括 MCP 服务器弹窗的保存／取消与列表行操作。
-  调用处不再用高度／边长覆写尺寸档；模型行编辑／删除动作簇保留 w-20 占位以避免悬停跳动。
+  调用处不再用高度／边长覆写尺寸档；模型行测试／编辑／删除动作簇 sm 档、绝对定位悬浮
+  于开关左侧（零布局占位 —— 行中不留死区，悬停不推挤开关）。
   路径行等宽截断并提供更改钮。
+- 界面主题色紧随深色浅色行，标题和说明下铺紧凑缩略卡；内容列≥36rem 时六列一行，否则三列。
+  `InterfaceSkinPicker` 复用 `RadioGroupCard`，预览按头部/图标栏/内容侧栏/正文区分层，
+  圆角 lg；选中描边与圆点使用各套主题色的点缀色，名称加粗。预览随当前明暗换套，
+  单选组支持方向键；聚焦仍走公共内贴轮廓。
 - 外观的两行字体按钮显示中英文字体名，分别打开 Dialog。弹窗依次为语言 Tabs、
   两槽当前字体、填满内容区的紧凑搜索框、可滚动列表、中英文预览和保存／取消区。
   当前字体与搜索框以留白衔接；默认档显示具体字体名，「默认」标签使用 Badge sm；打开时聚焦英文页签，不聚焦搜索框。
 - 强调色入口显示圆角长方形色块（棋盘底衬透明度）、等宽 HEX 色值和下拉箭头；默认档色值按明暗回落
   （亮 #0231fa／暗 #5f9cff）；旁边保留恢复默认图标钮（IconArrowBackUp，无文字）；取色浮层不显示标题，
-  依次为饱和度／明度、色相、透明度、HEX、RGBA 四格（A 用百分比）和 Themd 的 16 色色板。
-- 常规页现有「默认权限」开关、「发送快捷键」「关闭窗口时」两个 Select（行
-  控件统一 w-40）；快捷键选项用 kbd 键帽组合（`KbdGroup` + 弱色 `+` 相连），
+  依次为饱和度／明度、色相、透明度、HEX、RGBA 四格（A 用百分比）和 Themd 的 16 色色板；
+  底部以细线分出「主题色」，六个小色块带名称，三列两行；预设色、分隔线、标题和
+  主题色块共用浮层内容区的左右边距，各组不另加居中缩进。首行两端贴齐内容边界，
+  内部色块与名称靠左，各行沿同一列起点排列；16个预设色的第二行也沿首行左端对齐。
+  颜色复用界面主题色的当前明暗套点缀色。浮层使用 `PopoverContent color-picker` 档，
+  沿窗口边界平移，避免窄窗上下两侧空间不足时翻到窗口外。
+- 常规页依次为「权限」「对话」「常规」三组；「对话」用两个 Select 呈现输出
+  详细程度与耗时显示格式。发送快捷键、关闭窗口时也使用 Select，行控件统一 w-40；
+  快捷键选项用 kbd 键帽组合（`KbdGroup` + 弱色 `+` 相连），
   键帽带细描边以在菜单 hover 灰底上保持轮廓。「关闭窗口时」的 ask 档弹
   CloseAskDialog（shell 级，勾「不再询问」固化所选动作）。
 - 通知页三组：通知（三行触发条件，Select/Switch）+ 提醒方式（toast/提示音
   两个正交 Switch + 系统设置跳转按钮，Linux 隐藏）+ 提示音（音量/音调滑杆
-  w-40 + 三类声音源行：文件名截断显示 + 选择/试听/恢复默认）。
+  w-40 + 三类声音源行：缺省显示「内置提示音」，自定义文件名截断显示 +
+  选择文件/试听/恢复默认）；两条滑杆右侧各配 `Button ghost / icon` 回退图标，
+  Hint 与 aria-label 分别为「恢复默认音量」「恢复默认音调」，已为默认值时禁用；
+  说明标出默认50%与默认原音。音调只调整内置音频。试听使用带声波的喇叭图标
+  `Button ghost / icon`，配「试听」Hint 与同名 aria-label。
+- 存储页两组：空间占用 = 总量行（正文阶 + semibold tabular-nums 数值，行尾
+  outline icon-sm 刷新钮）+ 分类分段条（h-4 rounded-sm，2026-11-20 用户定调弃胶囊；
+  条高仅 16px，CSS 把 ≥8px 圆角钳成半圆，sm 6px 才收得出方角端头；段宽按字节
+  flexGrow 分配，免百分比取整误差；空根不画）+ 图例（size-2 色点 + 标签 + 小字阶
+  数值）+ 「占用明细」折叠（裸 button 组头、箭头 -90° 旋转语言，开合走
+  Collapsible 导航变体 200ms 过渡，归档组同款；行只有两档 —— 会话转录单列 +
+  「其他」聚合，不铺内部条目清单）；数据文件夹 =
+  SettingsRow + 等宽路径（select-text、break-all）+ 浏览钮（default 档）。
+  分类色板真源在 storage-view.ts（amber/emerald/blue/violet + 主题灰做
+  「配置与其他」，深色档提亮一档）。
 - 模型设置单独用 master-detail：页头同走 `SettingsHeader`（与其余分区同列位，
-  切页标题不跳位），仅主体卡 `mx-10 mb-8 mt-8 flex-1 min-h-0` 保持全宽例外。
+  切页标题不跳位），主体卡与页头同列（外层 `mx-auto max-w-3xl px-10`，卡片边 =
+  列边，同其余分区组卡的对齐语言；zcode 官方 master-detail 亦同容器无限宽例外）。
+  页头→卡间距 `mt-4`（非全分区 mt-8 模板量：本页唯一整高卡，取 zcode
+  SectionLayout `space-y-4` 同量）。
   左栏像素宽 176–320 可拖（默认 208），拖过下限折成 48px 图标栏（品牌标钮 +
   角标状态点，title 提示名，组间细分隔线），宽与折叠态 localStorage 记忆。
   换挡（折叠↔展开）是 200ms 收拢动画：栏 = 裁剪窗 + 清单层/图标层交叉淡出
@@ -176,7 +217,8 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   1px 线 + 把手胶囊 + 悬停光带（同 content-sidebar 形态，栏本体不叠 border
   避免双线加粗）。
   各栏独立滚动；右栏 max-w-2xl 居中、上边距 24px。详情按 provider id 挂 key，
-  模型行动作区固定宽并 hover 显示，避免布局跳动。
+  模型行动作区零占位悬浮，hover 或键盘聚焦时显示；测试中保持可见，测试钮转圈并禁用。
+  测试入口用连接图标与「测试模型」Hint，反馈使用统一 Toast，带供应商、模型和耗时或错误原因。
 - MCP/技能页共用 ScopeMenu 与两行工具栏：作用域、计数、右侧搜索；
   已安装组右侧刷新/导入/新建。条目有图标、名称、徽标、说明、开关和动作钮。
   项目级和用户级的操作差异见 [MCP座](模块/MCP座.md)、[技能座](模块/技能座.md)。
@@ -199,23 +241,27 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 [流式呈现动效](技术笔记/流式呈现动效.md)，真机矩阵见 [消息验收](测试用例/消息呈现.md)。
 
 - 用户消息灰气泡，助手平铺；消息段和过程行统一 `gap-3`、回合容器左右零内边距。
-  空正文不挂容器，避免纯思考段多吃间距。
+  空正文不挂容器，避免纯思考段多吃间距；零工作项的 live 也不渲染空过程容器
+  （空盒多吃一个 gap，与终态头条栈高不齐，瞬时失败翻相会跳）。
 - 运行态过程单行化，工作行位于流底，图标是 `WorkingSpinner` 三叶动效，
   配标题扫光和 tabular-nums 码表；停止在途文字为“正在停止”。
 - WorkingSpinner 保留 css-loaders l5 的整盒三角、伪元素继承、4s/2s 和质心转轴
   `50% 66%`；叠加 3s 呼吸，三层延迟为 0/-1/-2s。本体透明度与伪元素相乘，
-  形成整体明暗及层间错相。前景色跟主题，1em 派生尺寸，光学上提 0.075em。
+  形成整体明暗及层间错相。前景色跟主题，1em 派生尺寸（text-xs 档，比行内
+  正文小一号），光学上提 0.075em。
   替换动效只动本组件与 `.working-spinner` CSS，保持 WorkingLine 接线。
   三角绕质心转 120° 会映射回自身，分相方案不能制造不同叶片位置。
 - 工具图标保持静态，类别词运行态扫光；失败仅“执行失败”点状下划线为红，
   Tooltip 提供原因/复制，整行不染红。bash 进度为定高两行尾部 + 扫光细条。
-- 思考默认单行收起，摘要横向滚动并渐隐；展开限高内部滚动。
-- 终态“已工作 / 已停止 / 出错了”头条下分割线常驻；折叠内容与头条同级无导线。
+- 详细模式的思考默认单行收起，摘要横向滚动并渐隐；展开限高内部滚动。
+  简洁模式仅保留思考状态行与耗时，工具与思考均无详情入口，底部统计行不显示。
+- 终态“已工作 / 已停止 / 出错了”头条，下无分割线（2026-11-20 取消常驻线）；
+  折叠内容与头条同级无导线。
   轨道必须 `minmax(0,0fr) ↔ minmax(0,1fr)`，内层纵向 padding 同曲线收拢；
   keepMounted，折叠体内部不套 content-visibility 包装。
 - 消息流保留库布局/回底钮，关闭库 autoScroll，跟随由本地 controller 独占。
   工作行只渲染一份；跟随溢出时同节点定位，阅读时归流；不加残差 translate/viewport containment。
-  `home-chat` 查询容器在 Electron 31 中会改变 fixed 定位原点，工作行按实际包含块换算坐标，
+  `home-chat` 查询容器会改变 fixed 定位原点，工作行按实际包含块换算坐标，
   保证带顶部/侧栏偏移的长对话中仍在视口内；机制见[消息呈现](模块/消息呈现.md)。
 - 正文与输入卡共用 `.chat-column` 的水平基准：正文最大 48rem，双侧留白按
   `clamp(28px,8cqw,64px)` 连续变化；输入卡每侧外扩按
@@ -276,6 +322,7 @@ scroll，给容器挂 `data-scrolling`，静默 600ms 后摘除；悬停 13px �
 | Select 窄触发器 | `w-[var(--anchor-width,fit-content)] min-w-0`；不写代际相关的固定宽度补偿 |
 | 菜单强调色 | warning 在 item 本体设 variant，并从 focus 通配染色排除；不能靠后代类对抗 |
 | 菜单 lg 尺寸 | Context 传尺寸，原语条件拼字面类；`[[data-size=lg]_&]` 经构建提取曾无产物 |
+| 菜单分隔线 | DropdownMenuSeparator 保留 h-px 占位，用 border-t border-border 画线；由浏览器统一取整边框宽度，避免 125% 缩放下背景色细条随纵向位置变成 1 / 2 行物理像素。原理见[菜单分隔线](技术笔记/菜单分隔线.md) |
 | 弹窗关闭 | Base UI AlertDialogAction 是裸 Button；确认回调显式 `onOpenChange(false)` |
 | 菜单开着保行高亮 | 自身 `data-popup-open:` + 后代 `has-[[data-popup-open]]:`；portal 外焦点不可靠 |
 | InputGroup 全宽 | 纵向 items-center 布局里全宽子元素显式 w-full |
