@@ -31,7 +31,7 @@
 import type { Agent, AgentMessage, ThinkingLevel } from '@earendil-works/pi-agent-core'
 import { builtinModels } from '@earendil-works/pi-ai/providers/all'
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
-import type { Api, Model, MutableModels, Usage } from '@earendil-works/pi-ai'
+import type { Api, AssistantMessage, Model, MutableModels, Usage } from '@earendil-works/pi-ai'
 // 上下文粗估（2026-11-11 明细区）：与 pi clampMaxTokensToContext 同一实现 ——
 // 引擎每轮算 max_tokens 预算用的就是 estimateContextTokens，明细口径与之同源
 import { estimateContextTokens, estimateMessageTokens, estimateTextTokens } from '@earendil-works/pi-ai/utils/estimate'
@@ -76,7 +76,10 @@ import {
 import type { CredentialRegistry } from './credentials'
 import { CustomProviderRegistry } from './custom-providers'
 import { testModelConnectivity } from './model-connectivity'
-import { SessionInspector } from './inspector'
+import { SessionInspector, type TitleTrace } from './inspector'
+import { SessionTitleConfig } from './session-title-config'
+import { generateSessionTitle } from '../kernel/session-title'
+import type { SessionTitleSettings } from '../../shared/session-title'
 import { McpConfigStore } from './mcp-config'
 import { formatSkillsSection } from './skill-prompt'
 import { SkillStore } from './skill-store'
@@ -115,6 +118,7 @@ export type Notify = KernelNotifier
  * Cogent 的私域，pi 不知情，落在本文件。
  */
 interface StoredSession {
+  autoTitle?: 'ready' | 'attempted'
   piCwd?: string
   version: 2
   summary: SessionSummary
@@ -133,10 +137,11 @@ interface StoredSession {
 function asStoredSession(
   doc: unknown,
   id: string
-): { summary: SessionSummary; piCwd?: string; todos?: TodoItem[]; plan?: PlanRecord; legacyTranscript?: AgentMessage[] } {
+): { summary: SessionSummary; autoTitle?: 'ready' | 'attempted'; piCwd?: string; todos?: TodoItem[]; plan?: PlanRecord; legacyTranscript?: AgentMessage[] } {
   if (typeof doc !== 'object' || doc === null) throw new Error(`会话文档形状不合法（sessions/${id}.json）`)
   const d = doc as {
     version?: unknown
+    autoTitle?: unknown
     piCwd?: unknown
     summary?: SessionSummary
     todos?: unknown
@@ -147,6 +152,7 @@ function asStoredSession(
     throw new Error(`会话文档版本不合法（sessions/${id}.json），请手工处理后重启`)
   }
   if (d.piCwd !== undefined && typeof d.piCwd !== 'string') throw new Error(`会话内核 cwd 损坏（sessions/${id}.json）`)
+  if (d.autoTitle !== undefined && d.autoTitle !== 'ready' && d.autoTitle !== 'attempted') throw new Error(`会话标题资格损坏（sessions/${id}.json）`)
   if (typeof d.summary?.id !== 'string') {
     throw new Error(`会话文档形状不合法（sessions/${id}.json），请手工处理后重启`)
   }
@@ -169,6 +175,7 @@ function asStoredSession(
   }
   return {
     summary,
+    ...(d.autoTitle !== undefined && { autoTitle: d.autoTitle }),
     ...(d.piCwd !== undefined && { piCwd: d.piCwd }),
     ...(d.todos !== undefined && { todos: d.todos as TodoItem[] }),
     ...(d.plan !== undefined && { plan: d.plan as PlanRecord }),
@@ -178,6 +185,8 @@ function asStoredSession(
 
 /** 内存态会话：pi 内核惰性 —— 恢复的会话在首次 submit/compact 时才装配 */
 interface Session {
+  /** 缺省为历史会话，不补发；消费标记在辅助 API 前落盘，崩溃恢复也不重复计费。 */
+  autoTitle?: 'ready' | 'attempted'
   /** pi 转录目录锚点独立于可变项目根；不把新项目配置当旧工具 cwd。 */
   piCwd?: string
   summary: SessionSummary
@@ -349,6 +358,7 @@ function readGitBranch(cwd: string): string | null {
  * 续写链的全窗口，也是 submit 忙判定的单一账本（见 submit）。
  */
 interface StreamingState {
+  titleInput?: { text: string; settings: SessionTitleSettings }
   finalization?: Promise<void>
   turnId?: string
   fileContext?: FileContext
@@ -522,6 +532,10 @@ const DEFAULT_MODEL = 'claude-sonnet-4-5'
 const DEFAULT_PROVIDER = 'anthropic'
 
 export class SessionManager implements CogentKernel {
+  readonly titleSettings: SessionTitleConfig
+  private titleTasks = new Map<string, {
+    controller: AbortController; trace: TitleTrace; inspector: SessionInspector; owner: StreamingState; response?: AssistantMessage
+  }>()
   readonly outputs: OutputsService
   private sessions = new Map<string, Session>()
   private streaming = new Map<string, StreamingState>()
@@ -608,6 +622,7 @@ export class SessionManager implements CogentKernel {
     this.mcpConfig = mcpConfig
     this.modelRuntime = modelRuntime
     this.hostRoot = hostRoot
+    this.titleSettings = new SessionTitleConfig(hostRoot)
     this.attachments = new AttachmentService(hostRoot)
     this.outputs = new OutputsService(hostRoot, (doc) => this.notify('outputs.updated', doc))
     // pi 内置全部 provider 的模型目录（UI 下拉 + submit 模型解析仍走它）；
@@ -626,6 +641,7 @@ export class SessionManager implements CogentKernel {
         const doc = asStoredSession(this.storage.get(SESSION_COLLECTION, id), id)
         this.sessions.set(doc.summary.id, {
           summary: doc.summary,
+          autoTitle: doc.autoTitle,
           piCwd: doc.piCwd,
           todos: doc.todos ?? [],
           ...(doc.plan !== undefined && { plan: doc.plan }),
@@ -747,6 +763,7 @@ export class SessionManager implements CogentKernel {
     const summary: SessionSummary = {
       id: crypto.randomUUID(),
       title: params.title?.trim() || '新会话',
+      ...(params.title?.trim() && { titleManual: true }),
       createdAt: now,
       updatedAt: now,
       ...(params.cwd !== undefined && { cwd: params.cwd }),
@@ -754,7 +771,7 @@ export class SessionManager implements CogentKernel {
       ...(defaultMode !== undefined && { permissionMode: defaultMode }),
       ...(params.planEnabled === true && { planEnabled: true })
     }
-    this.sessions.set(summary.id, { summary, todos: [] })
+    this.sessions.set(summary.id, { summary, todos: [], ...(summary.titleManual !== true && { autoTitle: 'ready' }) })
     this.persist(summary.id)
     return summary
   }
@@ -778,8 +795,10 @@ export class SessionManager implements CogentKernel {
   rename(sessionId: string, title: string): SessionSummary {
     const session = this.requireSession(sessionId)
     const summary = { ...session.summary, title, titleManual: true }
-    this.writeSession({ ...session, summary })
+    this.writeSession({ ...session, summary, autoTitle: 'attempted' })
+    this.cancelTitle(sessionId, '用户手动重命名')
     session.summary = summary
+    session.autoTitle = 'attempted'
     this.notify('session.summaryChanged', { summary: { ...summary } })
     return { ...summary }
   }
@@ -806,6 +825,7 @@ export class SessionManager implements CogentKernel {
   delete(sessionId: string): boolean {
     const session = this.sessions.get(sessionId)
     if (!session) return false
+    this.cancelTitle(sessionId, '会话已删除')
     this.outputs.releaseSession(sessionId)
     this.streaming.get(sessionId)?.attachmentPreparation?.abort()
     // pi 内核整拆（abort 全部运行中工作 + 拆钩，agent-session dispose 语义）
@@ -1011,12 +1031,23 @@ export class SessionManager implements CogentKernel {
     }
 
     const attachments = this.attachments.claim(attachmentIds, sessionId)
-    // 首条消息命名会话（恢复的旧会话标题已命名，不会覆盖）
-    if (session.summary.title === '新会话' && session.summary.titleManual !== true) {
+    const firstInput = session.autoTitle === 'ready'
+    // 恢复的 ready 若已落过真实 user，则只消费资格，不能把下一条错当首条。
+    const previousInput = firstInput && (session.legacyTranscript ?? readPiTranscript(
+      session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir(), this.hostRoot, sessionId
+    ) ?? []).some((message) => message.role === 'user')
+    if (firstInput) session.autoTitle = 'attempted'
+    if (firstInput && !previousInput && session.summary.titleManual !== true) {
       session.summary.title = (text.trim() || [...attachments, ...directories].map((a) => a.name).join('、')).slice(0, TITLE_MAX_CHARS) || session.summary.title
     }
     session.summary.updatedAt = Date.now()
-    this.persist(sessionId)
+    let titleSaved = false
+    // 辅助任务要求消费资格真实落盘；失败只影响标题，不能挡住主对话。
+    if (firstInput) {
+      try { this.writeSession(session); titleSaved = true }
+      catch (error) { process.stderr.write(`[host] 自动标题资格保存失败（${sessionId}）: ${String(error)}\n`) }
+    } else this.persist(sessionId)
+    if (firstInput && !previousInput) this.notify('session.summaryChanged', { summary: { ...session.summary } })
 
     this.notify('run.started', { sessionId, turnId: inputId })
     this.ensureInspector(session).runStarted(text, this.ensureSystemPrompt(session), thinkingLevel ?? 'off')
@@ -1033,6 +1064,10 @@ export class SessionManager implements CogentKernel {
       text: '',
       thinking: '',
       tools: []
+    }
+    const titlePolicy = this.titleSettings.get()
+    if (firstInput && !previousInput && titleSaved && titlePolicy.enabled && session.summary.titleManual !== true) {
+      streaming.titleInput = { text: Array.from([text, ...attachments.map((item) => item.name), ...directories.map((item) => item.name)].join('\n')).slice(0, 4_000).join(''), settings: titlePolicy }
     }
     if (attachments.length > 0 || directories.length > 0) streaming.attachmentInput = { inputId, text, attachments,
       ...(directories.length > 0 && { directories }), bound: false }
@@ -1157,6 +1192,7 @@ export class SessionManager implements CogentKernel {
 
   /** 产物保存与模型结果分开记错；预约直到文件终态落定才释放。所有收口共用此门。 */
   private finishRun(session: Session, streaming: StreamingState, outcome: OutputOutcome, complete: () => void): Promise<void> {
+    if (outcome === 'aborted' && this.titleTasks.get(session.summary.id)?.owner === streaming) this.cancelTitle(session.summary.id, '首轮已停止')
     if (streaming.finalization !== undefined) return streaming.finalization
     if (!this.ownsRun(session, streaming)) return Promise.resolve()
     if (streaming.turnId === undefined || this.outputs.finishEmpty(session.summary.id, streaming.turnId, streaming)) {
@@ -1378,6 +1414,7 @@ export class SessionManager implements CogentKernel {
     const streaming = this.streaming.get(sessionId)
     const compacting = this.compacting.get(sessionId)
     if (session === undefined || (streaming === undefined && compacting === undefined)) return false
+    if (this.titleTasks.get(sessionId)?.owner === streaming) this.cancelTitle(sessionId, '用户停止首轮')
     if (streaming !== undefined) { streaming.stopRequested = true; streaming.attachmentPreparation?.abort() }
     if (compacting !== undefined) compacting.stopRequested = true
     // pi.abort 是 async（等 run 收尾）；受理即返回（同步合同）。挂起审批经
@@ -1388,6 +1425,7 @@ export class SessionManager implements CogentKernel {
 
   /** 进程退出前统一收尾（引擎随宿主关闭；pi dispose 内聚 abort 全部运行） */
   disposeAll(): void {
+    for (const sessionId of this.titleTasks.keys()) this.cancelTitle(sessionId, '引擎退出')
     this.outputs.dispose()
     for (const run of this.streaming.values()) run.attachmentPreparation?.abort()
     for (const session of this.sessions.values()) session.pi?.dispose()
@@ -1510,6 +1548,7 @@ export class SessionManager implements CogentKernel {
   private decideApproval(
     session: Session,
     toolName: string,
+    callId: string,
     args: Record<string, unknown>,
     signal: AbortSignal | undefined
   ): Promise<{ block: boolean; reason?: string }> {
@@ -1565,6 +1604,7 @@ export class SessionManager implements CogentKernel {
       this.notify('approval.request', {
         sessionId,
         requestId,
+        callId,
         toolName,
         kind,
         summary,
@@ -1658,6 +1698,50 @@ export class SessionManager implements CogentKernel {
     return { ok: true, ...(summary !== undefined && { summary }) }
   }
 
+  /** 标题不占 streaming；任务对象独立存活到主回合之后，所有写回都核对同一 owner。 */
+  private startTitle(session: Session, streaming: StreamingState): void {
+    const input = streaming.titleInput
+    streaming.titleInput = undefined
+    if (input === undefined || streaming.stopRequested || session.summary.titleManual === true) return
+    const sessionId = session.summary.id
+    const selected = input.settings.model ?? session.pi!.model
+    if (selected === undefined) {
+      process.stderr.write(`[host] 自动标题未启动（${sessionId}）：首条输入没有有效模型\n`)
+      return
+    }
+    const model = input.settings.model === undefined ? session.pi!.model as Model<Api> | undefined : this.models.getModel(selected.provider, selected.id)
+    const inspector = this.ensureInspector(session)
+    const trace = inspector.titleStarted({ provider: selected.provider, id: selected.id }, input.text,
+      model !== undefined && [model.cost.input, model.cost.output, model.cost.cacheRead, model.cost.cacheWrite].some((price) => price > 0))
+    const task = { controller: new AbortController(), trace, inspector, owner: streaming, response: undefined as AssistantMessage | undefined }
+    this.titleTasks.set(sessionId, task)
+    // 从这里开始是模型 API/磁盘的辅助任务边界，失败只记录诊断，不翻译为主回合失败。
+    void (async () => {
+      if (model === undefined) throw new Error(`标题模型不可用：${selected.provider} / ${selected.id}`)
+      const title = await generateSessionTitle(this.modelRuntime, structuredClone(model), input.text,
+        task.controller.signal, (message) => { task.response = message })
+      if (this.titleTasks.get(sessionId) !== task || this.sessions.get(sessionId) !== session || session.summary.titleManual === true) return
+      const summary = { ...session.summary, title }
+      this.writeSession({ ...session, summary })
+      session.summary = summary
+      this.notify('session.summaryChanged', { summary: { ...summary } })
+      inspector.titleFinished(trace, 'completed', title, task.response)
+    })().catch((error: unknown) => {
+      if (this.titleTasks.get(sessionId) !== task) return
+      const reason = error instanceof Error ? error.message : String(error)
+      inspector.titleFinished(trace, 'failed', reason, task.response)
+      process.stderr.write(`[host] 自动标题失败（${sessionId}）: ${reason}\n`)
+    }).finally(() => { if (this.titleTasks.get(sessionId) === task) this.titleTasks.delete(sessionId) })
+  }
+
+  private cancelTitle(sessionId: string, reason: string): void {
+    const task = this.titleTasks.get(sessionId)
+    if (task === undefined) return
+    this.titleTasks.delete(sessionId)
+    task.controller.abort(new Error(reason))
+    task.inspector.titleFinished(task.trace, 'cancelled', reason, task.response)
+  }
+
   // ———— pi 内核装配（惰性） ————
 
   /**
@@ -1718,6 +1802,7 @@ export class SessionManager implements CogentKernel {
         run.fileContext = fileContext
         session.piCwd = cwd
         this.persist(sessionId)
+        this.startTitle(session, run)
         const input = run.attachmentInput
         if (input === undefined || input.bound) return { fileContext }
         input.bound = true
@@ -1816,8 +1901,8 @@ export class SessionManager implements CogentKernel {
         return run?.turnId === undefined ? Promise.resolve(undefined) : this.outputs.reminder(sessionId, run.turnId)
       },
       approval: {
-        decide: (toolName, _toolCallId, args, signal) =>
-          this.decideApproval(session, toolName, args, signal)
+        decide: (toolName, toolCallId, args, signal) =>
+          this.decideApproval(session, toolName, toolCallId, args, signal)
       },
       onEvent: (event) => this.translateEvent(session, event),
       observe: (agent) => this.attachInspector(agent, session),
@@ -1915,6 +2000,7 @@ export class SessionManager implements CogentKernel {
     const doc: StoredSession = {
       version: SESSION_FILE_VERSION,
       summary: session.summary,
+      ...(session.autoTitle !== undefined && { autoTitle: session.autoTitle }),
       ...(session.piCwd !== undefined && { piCwd: session.piCwd }),
       // 空清单不落字段（旧文档形状不变；清单事件本身就是"清空"的真相源）
       ...(session.todos.length > 0 && { todos: session.todos }),

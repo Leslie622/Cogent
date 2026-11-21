@@ -31,6 +31,16 @@
 import type { InspectEntryDetail, InspectEntryKind, InspectEntrySummary } from '../../protocol'
 import type { InspectRecord } from '../storage'
 import type { ProviderResponse } from '@earendil-works/pi-ai'
+import type { AssistantMessage } from '@earendil-works/pi-ai'
+
+/** 辅助请求独立捕获 run，不能在迟到收尾时读取已经前进的主回合编号。 */
+export interface TitleTrace {
+  run: number
+  requestId: string
+  startedAt: number
+  model: { provider: string; id: string }
+  priced: boolean
+}
 
 /** 摘要环形上限（条）。一 run 约 5~10 条，500 条 ≈ 最近几十次对话 */
 const MAX_ENTRIES = 500
@@ -181,6 +191,31 @@ export class SessionInspector {
   }
 
   // ———— 引擎层 ————
+
+  titleStarted(model: TitleTrace['model'], input: string, priced: boolean): TitleTrace {
+    const trace: TitleTrace = { run: this.run, requestId: crypto.randomUUID(), startedAt: Date.now(), model, priced }
+    this.record('title.started', `生成会话标题 · ${model.id}`, [
+      { label: '请求标识', value: trace.requestId }, { label: 'Provider', value: model.provider }
+    ], [{ name: '标题素材', format: 'text', content: input }], trace.run)
+    return trace
+  }
+
+  titleFinished(trace: TitleTrace, status: 'completed' | 'failed' | 'cancelled', result: string, message?: AssistantMessage): void {
+    const usage = message?.usage
+    this.record('title.finished', `会话标题 · ${{ completed: '完成', failed: '失败', cancelled: '取消' }[status]}`, [
+      { label: '请求标识', value: trace.requestId },
+      { label: '模型', value: `${trace.model.provider} / ${trace.model.id}` },
+      { label: '耗时', value: `${Date.now() - trace.startedAt} ms` },
+      { label: status === 'completed' ? '标题' : '原因', value: result },
+      ...(usage !== undefined ? [
+        { label: '输入 tokens', value: String(usage.input) },
+        { label: '输出 tokens', value: String(usage.output) },
+        { label: '总 tokens', value: String(usage.totalTokens) },
+        { label: '成本', value: usage.cost.totalFromProvider === true ? `$${usage.cost.total.toFixed(6)}`
+          : trace.priced ? `≈ $${usage.cost.total.toFixed(6)}` : '未知（端点未报告价格）' }
+      ] : [])
+    ], [{ name: '辅助请求结果（不计入聊天用量）', format: 'json', content: safeStringify({ status, result, message }) }], trace.run)
+  }
 
   turnStarted(): void {
     this.runTurns += 1
@@ -413,14 +448,15 @@ export class SessionInspector {
     kind: InspectEntryKind,
     title: string,
     overview?: Array<{ label: string; value: string }>,
-    blocks?: DetailBlock[]
+    blocks?: DetailBlock[],
+    run: number = this.run
   ): void {
     this.seq += 1
     const entry: InspectEntrySummary = {
       seq: this.seq,
       ts: Date.now(),
       kind,
-      run: this.run,
+      run,
       title,
       overview,
       hasDetail: blocks !== undefined

@@ -23,6 +23,7 @@
  */
 import { createInterface } from 'node:readline'
 import { homedir } from 'node:os'
+import { validateTitleSettings } from './runtime/session-title-config'
 import { join } from 'node:path'
 import {
   PROTOCOL_VERSION,
@@ -797,6 +798,12 @@ async function main(): Promise<void> {
     ['session.messages', handleSessionMessages],
     ['session.setPinned', handleSessionSetPinned],
     ['session.rename', handleSessionRename],
+    ['session.titleSettings.get', () => sessions.titleSettings.get()],
+    ['session.titleSettings.set', (params) => {
+      try { validateTitleSettings(params) }
+      catch (error) { throw new ProtocolError(RpcErrorCode.InvalidParams, error instanceof Error ? error.message : String(error)) }
+      return sessions.titleSettings.set(params)
+    }],
     ['session.archive', handleSessionArchive],
     ['session.listArchived', () => sessions.listArchived()],
     ['session.setPermission', handleSessionSetPermission],

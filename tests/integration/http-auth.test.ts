@@ -103,6 +103,8 @@ it('票据全链（S1–S9 场景流一条到底）', async () => {
 
   // S4 档位强制：readonly 调写方法 403
   expect((await rpc(readonlyGrant.token, 'session.create', { title: 'x' })).status).toBe(403)
+  expect((await rpc(readonlyGrant.token, 'session.titleSettings.get')).status).toBe(200)
+  expect((await rpc(readonlyGrant.token, 'session.titleSettings.set', { enabled: false })).status).toBe(403)
 
   // S5 无 token 401；?token= query 双轨等价
   expect((await fetch(base + '/rpc', { method: 'POST', body: '{}' })).status).toBe(401)
@@ -122,6 +124,12 @@ it('票据全链（S1–S9 场景流一条到底）', async () => {
 
   // S7 write 档全链：真创建会话（写进临时隔离根，无害）
   const writeGrant = await grant('write')
+  expect((await rpc(writeGrant.token, 'session.titleSettings.set', { enabled: false })).status).toBe(403)
+  const titleAdmin = await grant('admin')
+  expect((await rpc(titleAdmin.token, 'session.titleSettings.set', { enabled: false })).status).toBe(200)
+  const titleSettings = await rpc(readonlyGrant.token, 'session.titleSettings.get')
+  expect(await titleSettings.json()).toMatchObject({ result: { enabled: false } })
+  await rpc(titleAdmin.token, 'session.titleSettings.set', { enabled: true })
   const created = await rpc(writeGrant.token, 'session.create', { title: 'http-auth' })
   expect(created.status).toBe(200)
   const summary = (await created.json()) as { result?: { id?: string } }

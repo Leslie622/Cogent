@@ -238,6 +238,9 @@ export async function initEngine(
 ): Promise<void> {
   const init = await engine.send<{ service: string }>('initialize', { client: opts.client, protocolVersion: 1 })
   if (init.result?.service !== 'cogent-agent') throw new Error('握手失败')
+  // 场景流只编排主 Agent 请求；独立标题另有专册验证默认开启，不能消耗工具脚本的首帧。
+  const titles = await engine.send('session.titleSettings.set', { enabled: false })
+  if (titles.error !== undefined) throw new Error(titles.error.message)
   await engine.send('credentials.set', { providerId: 'custom/mock', apiKey: 'sk-mock' })
   await engine.send('providers.custom.sync', {
     providers: opts.providers,

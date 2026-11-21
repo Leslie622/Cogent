@@ -21,6 +21,22 @@ const asked = (over?: Partial<Parameters<SessionInspector['approvalAsked']>[0]>)
 })
 
 describe('SessionInspector 审批审计对', () => {
+  it('标题记录不冲刷或混入主请求分片，迟到结果保持触发 run', () => {
+    const insp = newInspector()
+    insp.runStarted('首句', '系统', 'off')
+    insp.apiRequest({ messages: ['主请求'] }, { provider: 'main', id: 'chat', api: 'openai-completions' })
+    insp.apiStreamChunk({ text: '主片一' })
+    const trace = insp.titleStarted({ provider: 'title', id: 'small' }, '首句', false)
+    insp.apiStreamChunk({ text: '主片二' })
+    expect(insp.entries().filter((entry) => entry.kind === 'api.stream')).toEqual([])
+    insp.runCompleted({ text: '完成', thinking: '' })
+    insp.runStarted('次句', '系统', 'off')
+    insp.titleFinished(trace, 'completed', '首句标题')
+    const result = insp.entries().at(-1)!
+    expect(result.run).toBe(1)
+    const stream = insp.entries().find((entry) => entry.kind === 'api.stream')!
+    expect(insp.detail(stream.seq)?.blocks[0].content).toBe('{"text":"主片一"}\n{"text":"主片二"}')
+  })
   it('详情环淘汰后明确报缺失，不能伪装成空详情；无详情条目仍可读取', () => {
     const insp = newInspector()
     insp.toolStarted('read', { path: 'first' })

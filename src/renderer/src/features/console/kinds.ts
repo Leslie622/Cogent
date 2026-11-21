@@ -45,6 +45,14 @@ export function layerDot(layer: ConsoleLayer): string {
 }
 
 export const KINDS: Record<InspectEntryKind, KindPresentation> = {
+  'title.started': {
+    icon: IconPrompt, layer: 'api', label: '标题 · 独立请求',
+    explain: '首条真实输入触发的后台标题请求，与聊天上下文隔离；请求标识和所属 Run 在启动时冻结。',
+  },
+  'title.finished': {
+    icon: IconFileText, layer: 'api', label: '标题 · 辅助结果',
+    explain: '标题生成、保存或取消的结果。辅助用量单独记账，不增加聊天消息用量；缺少定价的自定义模型成本显示未知。',
+  },
   'run.started': {
     icon: IconPlayerTrackNext,
     layer: 'session',

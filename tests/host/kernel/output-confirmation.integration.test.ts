@@ -65,6 +65,8 @@ beforeEach(async () => {
     if (method === 'outputs.error') outputErrors.push((params as { message: string }).message)
     if (method === 'outputs.updated') outputStates.push((params as { state: string }).state)
   }, new ProjectRegistry(storage), new ApprovalRegistry(root), new McpConfigStore(root), new SkillStore(root, join(root, 'agents')), new InspectStore(root), runtime, root)
+  // 本册按主请求序号投喂工具响应；辅助标题由独立册验证，不参与这个脚本序列。
+  manager.titleSettings.set({ enabled: false })
   manager.syncCustomProviders([{ id: 'custom/mock', name: 'Mock', models: [], baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`, modelDefs: [{ id: 'mock', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 4096 }] }], [])
   sid = manager.create({ cwd: root }).id
 })

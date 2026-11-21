@@ -12,6 +12,10 @@
 import type { AttachmentMethods, AttachmentRef, DirectoryRef } from '@shared/attachments'
 import type { FileMethods, FileContext, FileReference, FileActionRequest } from '@shared/files'
 import type { OutputMethods, TurnOutputs } from '@shared/outputs'
+import type { SessionTitleMethods } from '@shared/session-title'
+
+type TitleParams = { [K in keyof SessionTitleMethods]: SessionTitleMethods[K]['params'] }
+type TitleResults = { [K in keyof SessionTitleMethods]: SessionTitleMethods[K]['result'] }
 type OutputParams = { [K in keyof OutputMethods]: OutputMethods[K]['params'] }
 type OutputResults = { [K in keyof OutputMethods]: OutputMethods[K]['result'] }
 type FileParams = { [K in keyof FileMethods]: FileMethods[K]['params'] }
@@ -121,6 +125,7 @@ declare global {
 /** 引擎方法名（renderer 可触达的子集；白名单在 main 侧 ipc/engine.ts 收窄 ——
     providers.custom.sync 已退出：自定义 provider 的写路径只有 custom-providers:set） */
 export type EngineMethod =
+  | keyof SessionTitleMethods
   | keyof OutputMethods
   | keyof FileMethods
   | keyof AttachmentMethods
@@ -245,7 +250,7 @@ export interface ProjectSummary {
 }
 
 /** 与 protocol/types.ts 对应 method 的参数形状（renderer 侧镜像声明） */
-export interface EngineMethodParams extends AttachmentParams, FileParams, OutputParams {
+export interface EngineMethodParams extends AttachmentParams, FileParams, OutputParams, TitleParams {
   'session.list': Record<string, never>
   'session.create': { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode; planEnabled?: boolean }
   'session.delete': { sessionId: string }
@@ -288,7 +293,7 @@ export interface TodoItem {
 }
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
-export interface EngineMethodResult extends AttachmentResults, FileResults, OutputResults {
+export interface EngineMethodResult extends AttachmentResults, FileResults, OutputResults, TitleResults {
   'session.list': SessionSummary[]
   'session.create': SessionSummary
   'session.delete': { deleted: boolean }
@@ -425,6 +430,7 @@ export type EngineEvent =
       params: {
         sessionId: string
         requestId: string
+        callId?: string
         toolName: string
         kind: string
         summary: string
@@ -491,6 +497,8 @@ export type InspectEntryKind =
   | 'tool.completed'
   | 'approval.asked'
   | 'approval.decided'
+  | 'title.started'
+  | 'title.finished'
 
 export interface InspectEntrySummary {
   seq: number

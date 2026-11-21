@@ -33,6 +33,8 @@ const ALLOWED_METHODS = new Set<string>([
   'session.messages',
   'session.setPinned',
   'session.rename',
+  'session.titleSettings.get',
+  'session.titleSettings.set',
   'session.archive',
   'session.listArchived',
   'session.setPermission',
