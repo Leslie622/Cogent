@@ -5,12 +5,15 @@
  * AddModelButton 四个展示件 + toggleDisabledModel / disabledAfterRename 两个
  * 纯函数（原 toggleModel 与 saveModel 改名清理的两份重复实现不再各持一份）。
  */
-import { IconPencil, IconPlus, IconTrash } from '@tabler/icons-react'
+import { useState } from 'react'
+import { IconLoader2, IconPencil, IconPlugConnected, IconPlus, IconTrash } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { toast } from 'sonner'
+import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { ModelVisionBadge } from '@/components/ModelVisionBadge'
-import { useEngineStore } from '@/stores/engine'
+import { providerDisplayName, useEngineStore } from '@/stores/engine'
 import type { ModelDef } from '@/env.d'
 import { BADGE, formatContext } from './models-recipes'
 
@@ -30,18 +33,56 @@ function ModelBadges({ def }: { def: ModelDef }) {
     w-20 占位在徽标与开关间留 80px 死区；悬浮零占位、悬停不推挤开关）。
     onDelete 缺省 = 无删除语义（未改过的目录模型不能删，只能禁用） */
 function ModelRowActions({
+  providerId,
   modelId,
+  enabled,
   onEdit,
   onDelete,
 }: {
+  providerId: string
   modelId: string
+  enabled: boolean
   onEdit: () => void
   onDelete?: () => void
 }) {
+  const testModel = useEngineStore((s) => s.testModel)
+  const providers = useEngineStore((s) => s.customProviders)
+  const providerEnabled = providers.find((p) => p.id === providerId)?.disabled !== true
+  const [testing, setTesting] = useState(false)
+  const test = async () => {
+    setTesting(true)
+    const identity = `${providerDisplayName(providerId, providers)} / ${modelId}`
+    const id = toast.loading(`正在测试 ${identity}`, { id: `model-test:${providerId}:${modelId}` })
+    try {
+      const result = await testModel(providerId, modelId)
+      toast.success(`模型连接成功：${identity}`, {
+        id, description: `耗时 ${(result.elapsedMs / 1000).toFixed(2)} 秒`, duration: 5000
+      })
+    } catch (error) {
+      toast.error(`模型测试失败：${identity}`, {
+        id, description: error instanceof Error ? error.message : String(error), duration: 8000
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+  const testTip = !providerEnabled ? '请先启用供应商' : !enabled ? '请先启用模型' : '测试模型'
   return (
     // right-13 = 行右内距 16 + 开关 32 + 缝 4：簇右缘贴开关左侧；
-    // 不加分组胶囊底（2026-11-20 用户定调）—— 两颗钮裸浮于行上
-    <div className="absolute right-13 flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
+    // 动作钮裸浮于行上；键盘聚焦与探测期间保持可见，避免反馈图标突然消失。
+    <div className={cn('absolute right-13 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100', testing && 'opacity-100')}>
+      <Hint tip={testTip}>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`测试模型 ${modelId}`}
+          aria-busy={testing}
+          disabled={testing || !providerEnabled || !enabled}
+          onClick={() => void test()}
+        >
+          {testing ? <IconLoader2 className="size-3.5 animate-spin" /> : <IconPlugConnected className="size-3.5" />}
+        </Button>
+      </Hint>
       <Button
         variant="ghost"
         size="sm"
@@ -92,7 +133,7 @@ export function ProviderModelRow({
       <span className="min-w-0 shrink truncate text-sm">{def.id}</span>
       <ModelVisionBadge input={input} size="default" />
       <ModelBadges def={def} />
-      <ModelRowActions modelId={def.id} onEdit={onEdit} onDelete={onDelete} />
+      <ModelRowActions providerId={providerId} modelId={def.id} enabled={enabled} onEdit={onEdit} onDelete={onDelete} />
       <Switch checked={enabled} onCheckedChange={onToggle} aria-label={`${def.id} 启用`} className="ml-auto" />
     </div>
   )

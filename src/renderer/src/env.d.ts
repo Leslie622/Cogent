@@ -136,6 +136,7 @@ export type EngineMethod =
   | 'agent.abort'
   | 'credentials.list'
   | 'models.list'
+  | 'models.test'
   | 'inspect.entries'
   | 'inspect.entry'
   | 'mcp.list'
@@ -256,6 +257,7 @@ export interface EngineMethodParams extends AttachmentParams {
   'agent.abort': { sessionId: string }
   'credentials.list': Record<string, never>
   'models.list': Record<string, never>
+  'models.test': { providerId: string; modelId: string }
   'inspect.entries': { sessionId: string }
   'inspect.entry': { sessionId: string; seq: number }
   'mcp.list': { cwd?: string }
@@ -298,6 +300,7 @@ export interface EngineMethodResult extends AttachmentResults {
   'agent.abort': { aborted: boolean }
   'credentials.list': { providers: ProviderSummary[] }
   'models.list': { models: ModelSummary[]; defaultModel?: { provider: string; id: string } }
+  'models.test': { elapsedMs: number }
   'inspect.entries': { entries: InspectEntrySummary[] }
   'inspect.entry': InspectEntryDetail
   'mcp.list': { servers: McpServerSummary[]; errors: string[] }

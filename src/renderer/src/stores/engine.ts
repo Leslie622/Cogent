@@ -4,7 +4,12 @@
  * key/定义保存后经 refresh 同步（模型下拉随之解锁）。
  */
 import { create } from 'zustand'
-import type { CustomProviderDef, CustomProvidersPayload, ModelSummary, ProviderOverrideDef, ThinkingLevelWithOff } from '@/env.d'
+import type { CustomProviderDef, CustomProvidersPayload, EngineMethodResult, ModelSummary, ProviderOverrideDef, ThinkingLevelWithOff } from '@/env.d'
+
+// 失焦保存先于测试点击发生，但 IPC 回包可能更晚。保留最近保存的 Promise，
+// 测试等待定义与本供应商 Key 生效；失败也保留到重存，不能悄悄改测旧配置。
+let providersSaved: Promise<void> = Promise.resolve()
+const keysSaved = new Map<string, Promise<void>>()
 
 /** 思考档位全序（off + 六档）：偏好回填的值域校验与"就近取整"共用 */
 const THINKING_ORDER: readonly ThinkingLevelWithOff[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
@@ -106,6 +111,8 @@ interface EngineState {
   refreshModels: () => Promise<void>
   /** 全量保存自定义 provider 定义：落盘 → 引擎 sync → 重拉目录 */
   saveProviders: (providers: CustomProviderDef[], overrides: ProviderOverrideDef[]) => Promise<void>
+  saveApiKey: (providerId: string, apiKey: string | null) => Promise<void>
+  testModel: (providerId: string, modelId: string) => Promise<EngineMethodResult['models.test']>
   setActiveModel: (modelId: string, providerId?: string | null) => void
   setThinkingLevel: (level: EngineState['thinkingLevel']) => void
   /** 设置页「默认权限」开关：落盘 + 内存态（新会话物化缺省随动） */
@@ -298,10 +305,24 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     set({ models })
   },
 
-  saveProviders: async (providers, overrides) => {
-    await window.cogent.setCustomProviders(providers, overrides)
-    set({ customProviders: providers, overrides: toOverrideMap({ providers, overrides }) })
-    await get().refreshModels()
+  saveProviders: (providers, overrides) => {
+    providersSaved = (async () => {
+      await window.cogent.setCustomProviders(providers, overrides)
+      set({ customProviders: providers, overrides: toOverrideMap({ providers, overrides }) })
+      await get().refreshModels()
+    })()
+    return providersSaved
+  },
+  saveApiKey: (providerId, apiKey) => {
+    const saved = (apiKey === null
+      ? window.cogent.removeApiKey(providerId)
+      : window.cogent.setApiKey(providerId, apiKey)).then(() => get().refreshKeys())
+    keysSaved.set(providerId, saved)
+    return saved
+  },
+  testModel: async (providerId, modelId) => {
+    await Promise.all([providersSaved, keysSaved.get(providerId)])
+    return window.cogent.engineRequest('models.test', { providerId, modelId })
   },
 
   // 选中模型/思考力度的 setter 都同步落盘（fire-and-forget：写失败不回滚内存态，

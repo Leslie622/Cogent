@@ -259,6 +259,16 @@ async function main(): Promise<void> {
     return { providers: credentials.summaries() }
   }
 
+  /** 测试入口只接身份；密钥、地址与方言均由 Host 当前配置解析，不接前端请求覆盖。 */
+  function handleModelsTest(params: unknown) {
+    const p = params as Partial<{ providerId: unknown; modelId: unknown }> | null | undefined
+    if (typeof p?.providerId !== 'string' || p.providerId.trim().length === 0 ||
+        typeof p.modelId !== 'string' || p.modelId.trim().length === 0) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'models.test 需要 { providerId: 非空 string, modelId: 非空 string }')
+    }
+    return sessions.testModel(p.providerId, p.modelId)
+  }
+
   /** session.messages 入口校验：sessionId 非空 string */
   function handleSessionMessages(params: unknown) {
     const p = params as Partial<SessionMessagesParams>
@@ -802,6 +812,7 @@ async function main(): Promise<void> {
     ['credentials.remove', handleCredentialsRemove],
     ['credentials.list', handleCredentialsList],
     ['models.list', () => sessions.listModels()],
+    ['models.test', handleModelsTest],
     ['providers.custom.sync', handleProvidersCustomSync],
     // MCP 座（4a + 作用域管理）：摘要/诊断只读（带 cwd = 项目合并视图）；
     // 全量写 user 级定义；项目级 override 全量替换（空 = 清除回落）

@@ -1058,6 +1058,8 @@ export interface ProtocolMethods extends AttachmentMethods {
   'credentials.remove': { params: CredentialsRemoveParams; result: CredentialsRemoveResult }
   'credentials.list': { params: Record<string, never>; result: CredentialsListResult }
   'models.list': { params: Record<string, never>; result: ModelsListResult }
+  /** 独立连通性探测：使用已保存配置，不创建会话；网络失败由统一错误帧返回。 */
+  'models.test': { params: { providerId: string; modelId: string }; result: { elapsedMs: number } }
   'providers.custom.sync': { params: ProvidersCustomSyncParams; result: ProvidersCustomSyncResult }
   /** MCP 座：server 摘要 + 配置诊断（缺省 user 级视图；带 cwd = 项目合并视图） */
   'mcp.list': { params: { cwd?: string }; result: McpListResult }
