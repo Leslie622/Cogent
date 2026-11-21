@@ -55,7 +55,7 @@ export const KINDS: Record<InspectEntryKind, KindPresentation> = {
     icon: IconCircleCheck,
     layer: 'session',
     label: '会话 · run 完成',
-    explain: '引擎循环收尾：最终回复已经过 run.completed 事件送回聊天界面。概览是本轮各轮次的总账（tokens/成本/耗时）。',
+    explain: '引擎循环收尾：最终回复已经过 run.completed 事件送回聊天界面。此处复用同 run 最后一轮的终态消息展示完整回复；记录信息是本次运行各轮次的总账（tokens/成本/耗时）。',
   },
   'run.failed': {
     icon: IconCircleX,

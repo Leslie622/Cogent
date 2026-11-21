@@ -1,8 +1,10 @@
-/** 详情以单一纵向滚动容器承载原文；记录信息集中收纳，避免装饰和嵌套滚动抢正文空间。 */
+/** 详情收纳记录信息与数据块；完整回复复用轮终记录，长数据块各自滚动以保留搜索入口。 */
 import { useConsoleStore } from '@/stores/console'
+import { inspectDetailSource } from '@/lib/inspect-detail'
 import { KINDS } from './kinds'
 import { DetailSection } from './DetailSection'
 import { DetailBlock } from './DetailBlock'
+import { AssistantResult } from './AssistantResult'
 import { Table, TableBody, TableCell, TableHead, TableRow } from '@/components/ui/table'
 
 export function ConsoleDetail() {
@@ -16,13 +18,14 @@ export function ConsoleDetail() {
   if (entry === undefined) return <p className="px-4 py-8 text-sm text-muted-foreground">点击左侧时间线条目，这里展示它的底层详情。</p>
 
   const kind = KINDS[entry.kind]
-  const detail = details[entry.seq]
+  const source = inspectDetailSource(entry, entries)
+  const detail = details[source.seq]
   const overview = entry.overview ?? []
 
-  return <div key={`${sessionId}-${entry.seq}`} data-console-detail-scroll className="h-full min-h-0 space-y-5 overflow-auto overscroll-contain px-5 py-4 text-sm leading-normal">
+  return <div key={`${sessionId}-${entry.seq}`} data-console-detail-scroll className="h-full min-h-0 space-y-5 overflow-auto overscroll-contain px-5 py-4 text-sm leading-normal [container-type:size]">
     <h3 className="break-words font-semibold">{entry.title}</h3>
 
-    <DetailSection title="记录信息" defaultOpen={!entry.hasDetail}>
+    <DetailSection title="记录信息" defaultOpen={!source.hasDetail}>
       <Table aria-label="记录信息" variant="inspect" className="table-fixed">
         <TableBody>
         {[
@@ -42,10 +45,13 @@ export function ConsoleDetail() {
     </DetailSection>
 
     {detailError !== null && <p role="alert" className="py-4 leading-relaxed text-destructive">{detailError}</p>}
-    {!entry.hasDetail && detailError === null && <p className="py-4">该条目没有详情数据（概览即全部）。</p>}
-    {entry.hasDetail && detail === undefined && detailError === null && <p className="py-4">详情拉取中…</p>}
+    {source.seq !== entry.seq && <p className="text-muted-foreground">完整回复来自 {source.title} · 记录 #{source.seq}（pi 归一化终态）。</p>}
+    {!source.hasDetail && detailError === null && <p className="py-4">该条目没有详情数据（概览即全部）。</p>}
+    {source.hasDetail && detail === undefined && detailError === null && <p className="py-4">详情拉取中…</p>}
     {detail !== undefined && <div className="space-y-5 pb-4">
-      {detail.blocks.map((block) => <DetailBlock key={block.name} block={block} />)}
+      {detail.blocks.map((block) => source.kind === 'turn.completed' && block.name.startsWith('assistant 消息')
+        ? <AssistantResult key={block.name} block={block} />
+        : <DetailBlock key={block.name} block={block} />)}
     </div>}
   </div>
 }
