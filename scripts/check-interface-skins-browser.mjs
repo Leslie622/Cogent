@@ -28,9 +28,10 @@ app.whenReady().then(async()=>{
  console.log('验收页已加载，开始明暗与宽度矩阵');
  const rows=[];
  const palettes=[];
- for(const width of [1120,400]) {
+ // 分数 DPR 会把请求的 1120px 舍入成 innerWidth 1121；预期列数属于场景，不能靠视口精确相等推断。
+ for(const [width,columns] of [[1120,6],[400,3]]) {
    win.setContentSize(width,850);
-   rows.push(...await win.webContents.executeJavaScript('window.interfaceSkinHarness.verify()'));
+   rows.push(...await win.webContents.executeJavaScript('window.interfaceSkinHarness.verify('+columns+')'));
    win.setContentSize(width,600);
    palettes.push(...await win.webContents.executeJavaScript('window.interfaceSkinHarness.verifyThemeColors()'));
  }

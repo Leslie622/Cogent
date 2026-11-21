@@ -31,7 +31,7 @@ async function select(id: InterfaceSkinId, dark: boolean) {
   await commit()
 }
 
-async function verify() {
+async function verify(expectedColumns: 3 | 6) {
   await document.fonts.ready
   await commit()
   const surfaces = new Set<string>()
@@ -56,7 +56,8 @@ async function verify() {
       assert(document.querySelectorAll('[role=radio][aria-checked=true]').length === 1, '皮肤不是单选')
       assert(document.documentElement.scrollWidth <= innerWidth, '窗口横向溢出')
       const picker = document.querySelector('[role=radiogroup]')!
-      assert(getComputedStyle(picker).gridTemplateColumns.split(' ').length === (innerWidth === 1120 ? 6 : 3), '皮肤未使用紧凑列数')
+      assert(getComputedStyle(picker).gridTemplateColumns.split(' ').length === expectedColumns,
+        `皮肤未使用紧凑列数：${JSON.stringify({ width: innerWidth, expectedColumns, columns: getComputedStyle(picker).gridTemplateColumns, pickerWidth: picker.getBoundingClientRect().width })}`)
       for (const card of document.querySelectorAll<HTMLElement>('[role=radio]')) {
         const box = card.getBoundingClientRect()
         const panel = document.querySelector('[role=radiogroup]')!.getBoundingClientRect()
