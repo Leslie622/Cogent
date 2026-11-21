@@ -1,0 +1,82 @@
+{
+  "date": "2026-11-21",
+  "kind": "isolated-carrier-probe",
+  "scope": "独立本地页面；不加载Cogent产品、不作为完整功能或性能通过",
+  "environmentNote": "受限执行环境首次ERR_FAILED/GPU启动失败；经授权在默认GPU/沙箱隔离环境重跑成功",
+  "electron": "40.9.3",
+  "chrome": "144.0.7559.236",
+  "argv": [
+    "electron.exe",
+    "tmp/browser-carrier-probe/probe.cjs"
+  ],
+  "screenshotScope": "BrowserWindow.capturePage captures root renderer; it does not prove WCV native composition order",
+  "checks": [
+    "WCV visibility and bounds preserve live page state",
+    "webview stable node visibility and bounds preserve live page state"
+  ],
+  "errors": [],
+  "wcv": {
+    "size": {
+      "width": 1033,
+      "height": 579
+    },
+    "bgraAtOverlap": [
+      0,
+      0,
+      255,
+      255
+    ],
+    "bgraAtBrowser": [
+      0,
+      0,
+      255,
+      255
+    ],
+    "domAtOverlap": "overlay",
+    "visibleAfterHide": false,
+    "visibleAfterReveal": true,
+    "sameId": 2,
+    "stateAfterHide": "kept",
+    "stateAfterExpand": "kept"
+  },
+  "wcvHidden": {
+    "size": {
+      "width": 1033,
+      "height": 579
+    },
+    "bgraAtOverlap": [
+      0,
+      0,
+      255,
+      255
+    ],
+    "bgraAtBrowser": [
+      0,
+      0,
+      255,
+      255
+    ]
+  },
+  "webview": {
+    "size": {
+      "width": 1033,
+      "height": 579
+    },
+    "bgraAtOverlap": [
+      0,
+      0,
+      255,
+      255
+    ],
+    "bgraAtBrowser": [
+      0,
+      0,
+      255,
+      255
+    ],
+    "id": 4,
+    "stateAfterHide": "kept",
+    "stateAfterExpand": "kept",
+    "sameId": true
+  }
+}

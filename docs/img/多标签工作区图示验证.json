@@ -1,0 +1,80 @@
+{
+  "passed": true,
+  "electron": "40.9.3",
+  "chrome": "144.0.7559.236",
+  "checks": [
+    "3张SVG标题/描述、字体、文本边界与无网络资源通过",
+    "390px窄窗仅图示区域横向滚动"
+  ],
+  "figures": [
+    {
+      "id": "workspace-layout",
+      "file": "多标签工作区界面.png",
+      "bounds": {
+        "x": 64,
+        "y": 0,
+        "width": 1280,
+        "height": 720
+      },
+      "pixels": {
+        "width": 1280,
+        "height": 720
+      }
+    },
+    {
+      "id": "workspace-modes",
+      "file": "多标签工作区布局模式.png",
+      "bounds": {
+        "x": 64,
+        "y": 0,
+        "width": 1280,
+        "height": 720
+      },
+      "pixels": {
+        "width": 1280,
+        "height": 720
+      }
+    },
+    {
+      "id": "workspace-architecture",
+      "file": "多标签工作区资源归属.png",
+      "bounds": {
+        "x": 64,
+        "y": 77,
+        "width": 1280,
+        "height": 720
+      },
+      "pixels": {
+        "width": 1280,
+        "height": 720
+      }
+    }
+  ],
+  "errors": [],
+  "figureAudit": {
+    "errors": [],
+    "font": "Inter, \"HarmonyOS Sans SC\", \"Microsoft YaHei\", system-ui, sans-serif",
+    "networkRequests": []
+  },
+  "mobile": {
+    "viewport": 372,
+    "document": 357,
+    "scrollers": [
+      {
+        "width": 309,
+        "scroll": 1280
+      },
+      {
+        "width": 309,
+        "scroll": 1280
+      },
+      {
+        "width": 309,
+        "scroll": 1280
+      }
+    ]
+  },
+  "date": "2026-11-21",
+  "kind": "documentation-render-check",
+  "scope": "图示SVG与PNG，不是产品实现验收"
+}
