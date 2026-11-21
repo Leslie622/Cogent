@@ -4,12 +4,13 @@
  * docs/模块/消息呈现.md）；传入的终态相位立即生效。
  * 此处不模拟 store 的 abort 标签推导，CSS 逐帧透明度另由生产浏览器验证。
  */
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@/env.d'
 import type { MessageItem } from '@/stores/chat'
 import { TurnGroup, type ChatTurn, type TurnPhase } from '@/features/home/TurnGroup'
+import { useAppearanceStore } from '@/stores/appearance'
 
 // 滚动几何归 scroller 的真实集成回归；正文、终态头条与 Markdown 管线均使用真件。
 vi.mock('@/components/ui/message-scroller', async (importOriginal) => ({
@@ -42,6 +43,7 @@ class PendingOpacityTransition {
 let transitions: PendingOpacityTransition[] = []
 
 beforeEach(() => {
+  useAppearanceStore.setState({ outputVerbosity: 'high', showProcessUsage: false })
   transitions = []
   vi.stubGlobal('CSSTransition', PendingOpacityTransition)
   vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
@@ -49,7 +51,11 @@ beforeEach(() => {
     return transitions.filter((animation) => this.contains(animation.effect.target as Element)) as unknown as Animation[]
   })
 })
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => {
+  useAppearanceStore.setState({ outputVerbosity: 'high', showProcessUsage: false })
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 const user: ChatMessage = { id: 'u1', role: 'user', content: '请回答', timestamp: 1_000 }
 const live: ChatMessage = { id: 'streaming', placeholder: true, role: 'assistant', content: '尾部文字', timestamp: 1_100 }
@@ -73,7 +79,7 @@ function captureTail(container: HTMLElement) {
 }
 
 const terminalPhases: Array<[TurnPhase, string]> = [
-  ['done', '已工作 0.20s'], ['stopped', '已停止'], ['failed', '出错了'],
+  ['done', '用时 0.20 秒'], ['stopped', '已停止'], ['failed', '出错了'],
 ]
 
 describe('尾回答终态保留与即时业务交接', () => {
@@ -107,7 +113,7 @@ describe('尾回答终态保留与即时业务交接', () => {
     const before = captureTail(view.container)
     view.rerender(<TurnGroup turn={turn(thinkingFinal, false)} phase="done" />)
 
-    expect(screen.getByText('已工作 0.30s')).toBeInTheDocument()
+    expect(screen.getByText('用时 0.30 秒')).toBeInTheDocument()
     expect(screen.queryByText('工作中')).not.toBeInTheDocument()
     expect(view.container.querySelector('[data-slot="live-working-line-source"]')).toBeNull()
     expect(view.container.querySelector('[data-slot="run-trace-divider"]')).toBeNull()
@@ -120,7 +126,7 @@ describe('尾回答终态保留与即时业务交接', () => {
     expect(view.container.querySelector('.md-body')).toBe(before.markdown)
     expect(before.markdown.querySelector('[data-reveal]')).toBeNull()
     expect(before.markdown.textContent).toBe(thinkingFinal.content)
-    expect(screen.getByText('已工作 0.30s')).toBeInTheDocument()
+    expect(screen.getByText('用时 0.30 秒')).toBeInTheDocument()
   })
 
   it('最终正文非前缀改写时立即采用权威内容，不让旧尾巴挡住替换', () => {
@@ -131,7 +137,7 @@ describe('尾回答终态保留与即时业务交接', () => {
     expect(view.container.querySelector('.md-body')!.textContent).toBe('权威修订正文')
     expect(view.container.querySelector('[data-reveal]')).toBeNull()
     expect(before.spans.every((node) => !node.isConnected)).toBe(true)
-    expect(screen.getByText('已工作 0.20s')).toBeInTheDocument()
+    expect(screen.getByText('用时 0.20 秒')).toBeInTheDocument()
     expect(screen.queryByText('工作中')).not.toBeInTheDocument()
   })
 
@@ -164,5 +170,53 @@ describe('尾回答终态保留与即时业务交接', () => {
     await act(async () => { before.transition.finish(); await before.transition.finished })
     expect(before.markdown.querySelector('[data-reveal]')).toBeNull()
     expect(screen.getByText('下一题')).toBeInTheDocument()
+  })
+})
+
+describe('过程请求详情与最终总体统计', () => {
+  const intermediate: ChatMessage = {
+    id: 'intermediate', role: 'assistant', content: '过程中说明', timestamp: 1_100, durationMs: 1_000,
+    usage: { input: 10, output: 1, cacheRead: 4, cacheWrite: 0, totalTokens: 15, totalCost: 0.001, totalCostFromProvider: false },
+  }
+  const answer: ChatMessage = {
+    ...final, timestamp: 2_300, durationMs: 2_000,
+    usage: { input: 30, output: 3, cacheRead: 6, cacheWrite: 0, totalTokens: 39, totalCost: 0.003, totalCostFromProvider: false },
+  }
+  const processStats = '↑ 10 · ↓ 1 · 缓存读 4 · ≈$0.001 · 1.00s'
+  const totalStats = '↑ 40 · ↓ 4 · 缓存读 10 · ≈$0.004 · 3.00s'
+
+  it.each(['done', 'stopped', 'failed'] as const)('%s 过程明细默认隐藏，切换不改变最终总体统计', (phase) => {
+    render(<TurnGroup turn={{ user, items: [intermediate, answer] }} phase={phase} />)
+    const total = screen.getByText(totalStats)
+    expect(total).toBeVisible()
+    expect(screen.queryByText(processStats)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /用时|已停止|出错了/ }))
+    act(() => useAppearanceStore.getState().setShowProcessUsage(true))
+    expect(screen.getByText(processStats)).toBeVisible()
+    expect(screen.getByText(totalStats)).toBe(total)
+    expect(total.closest('[data-slot="trace-collapsible-content"]')).toBeNull()
+    expect(screen.getByText(answer.content)).toBeVisible()
+    act(() => useAppearanceStore.getState().setShowProcessUsage(false))
+    expect(screen.queryByText(processStats)).not.toBeInTheDocument()
+    expect(total).toBeVisible()
+  })
+
+  it('直播中已完成请求的统计按开关即时显隐', () => {
+    render(<TurnGroup turn={{ user, items: [intermediate, live] }} phase="live" />)
+    expect(screen.queryByText(processStats)).not.toBeInTheDocument()
+    act(() => useAppearanceStore.getState().setShowProcessUsage(true))
+    expect(screen.getByText(processStats)).toBeVisible()
+    act(() => useAppearanceStore.getState().setShowProcessUsage(false))
+    expect(screen.queryByText(processStats)).not.toBeInTheDocument()
+    expect(screen.getByText('工作中')).toBeVisible()
+  })
+
+  it('无过程的单次回答总体统计也不受开关影响', () => {
+    render(<TurnGroup turn={{ user, items: [answer] }} phase="done" />)
+    const stats = screen.getByText('↑ 30 · ↓ 3 · 缓存读 6 · ≈$0.003 · 2.00s')
+    expect(stats).toBeVisible()
+    act(() => useAppearanceStore.getState().setShowProcessUsage(true))
+    expect(screen.getByText(stats.textContent)).toBe(stats)
+    expect(screen.getAllByText(stats.textContent)).toHaveLength(1)
   })
 })

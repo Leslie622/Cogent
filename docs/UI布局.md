@@ -29,6 +29,7 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 - `SidebarResizeHandle` 使用 pointer capture + rAF 直写宽度；拖过下限有阻力，
   越过 min/2 折叠（落点 `collapsedWidth`：侧栏折成 0，模型设置左栏折成 48px
   图标栏），反向对称恢复；键盘 ±16px，双击回默认。
+  首页会话列表右侧只显示分割线与拖拽光带，不显示中央胶囊；整条线仍可拖拽调宽。
 - `use-content-sidebar-split` 记忆宽度/折叠态，首帧直接还原；只在用户手势后落盘。
   模型设置左栏同方案（`use-provider-rail-split`，像素宽可拖可折）。
 - 窗口 ≤1100px 自动折叠右侧标签页区，≤760px 自动折叠会话侧栏；400px 时内容区
@@ -76,7 +77,9 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   focus ring。附件主触发器、代码块和滑杆拇指只在外层画线；
   自定义输入不参与：原生 input 即使带 tabindex 或 contenteditable 也不加入统一轮廓；
   自定义外壳内复用 Input 时使用 embedded 档，如项目弹窗的名称行，内部和外壳都不画聚焦线。
-  InputGroup 普通档在外层画线，composer 档不画聚焦线；内部按钮仍有各自的焦点提示。错误态保留
+  InputGroup 普通档在外层画线，composer 档与交互卡（审批、询问、方案）卡体不画聚焦线；
+  交互卡内的回答/附言输入使用 embedded 档；聊天滚动视口也不画聚焦线，
+  点击对话空白后按 Shift 不改变边缘。卡体和滚动视口仍接收键盘焦点，内部按钮保留焦点提示。错误态保留
   红色边框，菜单保留导航高亮。原理见
   [界面聚焦样式](技术笔记/界面聚焦样式.md)。
 - 必须核对的定制：slider 的 `thumbAlignment` / `thumbOnKeyDown` / marks 几何；
@@ -110,7 +113,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 | 底部工具行 | +、权限、计划 chip、上下文、模型；加号为InputGroupButton icon-sm（28×28px），与发送/停止钮等高；其余文字操作Button xs原生档、h-7；图标沿组件档位 |
 | 项目胶囊 | 触发钮内左图标原位交叉渐变为 X；16px 定宽叠层，不能另起独立关闭钮 |
 | 会话信息卡 | 项目会话标题整体用非交互 span 触发 hover-card，延迟 400ms；标题全文、项目/主根、最近活动 |
-| 审批面板 | 替换输入区；竖排全宽选项、附言条、键盘提示与确认钮；裁决痕迹单行入过程流 |
+| 审批面板 | 替换输入区；竖排全宽选项、附言条、键盘提示与确认钮；裁决结果收进对应工具行图标，悬停显示结果；未配对痕迹保留独立审批行 |
 | TodoStrip | 右上角 w-80 浮卡，独立折叠钮；收起滑入角内成为 outline/pill 计数胶囊 |
 | QuestionPanel | 单题向导卡；header、问题、‹n/m›、编号选项、自由输入、忽略与继续/提交 |
 | PlanPanel | 审批母版；方案 pre 限高 max-h-64；批准/拒绝两选项，无切档下拉 |
@@ -185,8 +188,11 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   内部色块与名称靠左，各行沿同一列起点排列；16个预设色的第二行也沿首行左端对齐。
   颜色复用界面主题色的当前明暗套点缀色。浮层使用 `PopoverContent color-picker` 档，
   沿窗口边界平移，避免窄窗上下两侧空间不足时翻到窗口外。
-- 常规页依次为「权限」「对话」「常规」三组；「对话」用两个 Select 呈现输出
-  详细程度与耗时显示格式。发送快捷键、关闭窗口时也使用 Select，行控件统一 w-40；
+- 常规页依次为「权限」「对话」「常规」三组；「对话」用 Switch 控制自动会话名称，
+  标题模型用 `w-60 max-w-full` 的 Select；输出详细程度与耗时显示格式也使用 Select。
+  「显示过程请求详情」使用 Switch，默认关闭；说明注明只作用于过程中的每次请求，
+  不影响最终总体统计。
+  发送快捷键、关闭窗口时使用 Select，短选项控件统一 w-40；
   快捷键选项用 kbd 键帽组合（`KbdGroup` + 弱色 `+` 相连），
   键帽带细描边以在菜单 hover 灰底上保持轮廓。「关闭窗口时」的 ask 档弹
   CloseAskDialog（shell 级，勾「不再询问」固化所选动作）。
@@ -254,11 +260,15 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   正文小一号），光学上提 0.075em。
   替换动效只动本组件与 `.working-spinner` CSS，保持 WorkingLine 接线。
   三角绕质心转 120° 会映射回自身，分相方案不能制造不同叶片位置。
-- 工具图标保持静态，类别词运行态扫光；失败仅“执行失败”点状下划线为红，
+- 工具图标保持静态，固定类别词运行态扫光，执行前后不换名；人工允许为工具行尾
+  16px 盾牌图标，拒绝/取消为对应图标，Tooltip 显示裁决结果；失败仅“执行失败”点状下划线为红，
   Tooltip 提供原因/复制，整行不染红。bash 进度为定高两行尾部 + 扫光细条。
+- 工具命令摘要、展开的普通输出与直播尾行统一使用 `text-muted-foreground`，
+  展开内容不切成正文黑色；输出颜色由 CodeBlock 默认变体统一提供，明暗主题同口径。
+  工具内容不使用边缘渐隐遮罩，普通输出与 diff 均完整显示；长内容保留原生滚动。
 - 详细模式的思考默认单行收起，摘要横向滚动并渐隐；展开限高内部滚动。
   简洁模式仅保留思考状态行与耗时，工具与思考均无详情入口，底部统计行不显示。
-- 终态“已工作 / 已停止 / 出错了”头条，下无分割线（2026-11-20 取消常驻线）；
+- 终态“用时 / 已停止 / 出错了”头条，下无分割线（2026-11-20 取消常驻线）；
   折叠内容与头条同级无导线。
   轨道必须 `minmax(0,0fr) ↔ minmax(0,1fr)`，内层纵向 padding 同曲线收拢；
   keepMounted，折叠体内部不套 content-visibility 包装。
@@ -281,6 +291,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   库的 visibility/scrollable 快照不作为索引判断源。
 - 用量行位于正文 footer，`text-[11px] text-muted-foreground tabular-nums`；
   显示输入/输出/缓存/成本/耗时，零值和无数据项省略，格式机制见 [用量与成本](模块/用量与成本.md)。
+  过程请求的用量行默认不占位，开启相应开关后在详细模式显示，最终总体统计保持原布局。
 - 产物区位于终答与用量之间，使用shadcn Nova Card的sm档横向文件行：左侧图标、中间名称/类型、右侧ButtonGroup组合“打开＋下拉”；
   文件图标用Material Icon Theme原始彩色SVG，size-6，不加底色或图标框；正文文件链接共用同一组件，size-4。
   不设“交付文件”标题或数量行，另存等动作收进菜单，正常项不常显大小、申报说明或保存状态。首屏3项可展开全部，异常提示与回合Badge保留；
@@ -304,17 +315,22 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   代码/表格按新挂载行淡入，旧行不重播；单元格或未闭合行内部增长直接显示。
   业务终态立即切换，已有正文淡入自然播完。系统 reduced-motion 禁用相应动效。
 - `.shimmer` 必须用 Tailwind `@utility` 注册；前景实色 + 透明淡带，300% 底、扫 2s 停 2s。
-  `.scroll-fade-b/-y/-x` 使用 24px mask；渐隐只作用边缘，不裁掉内容。
+  `.scroll-fade-b/-y/-x` 使用 24px mask，消费区域需留足边距，避免淡化首尾文字。
 
 ## 滚动条
 
-全应用 webkit 定制：轨道 13px，滑块两侧 4px 透明 border + padding-box，
+默认 webkit 定制：轨道 13px，滑块两侧 4px 透明 border + padding-box，
 可见宽 5px；黑 18%，hover 30%。`use-scrollbar-auto-hide` 在 document 捕获
-scroll，给容器挂 `data-scrolling`，静默 600ms 后摘除；悬停 13px 命中区也显示。
-轨道占位不随透明度变化，保持 scrollbar-gutter-stable 的防抖语义。
+scroll，给容器挂 `data-scrolling`，静默 600ms 后摘除；默认滑块随标记隐藏，悬停 13px 命中区也显示。
+会话列表使用 `scrollbar-native`：标准 `scrollbar-width: thin` 与 `scrollbar-color`
+交给 Chromium 原生绘制，保留系统上下箭头；滑块黑 12%、轨道透明，鼠标移开和静默后均不隐藏。
+Windows/Electron 40 的细轨道实测为 10px，尺寸及箭头形态由系统主题决定，不手绘按钮。
+列表使用 `overflow-y-auto`，只在内容溢出时占用轨道宽度；空列表、短列表及
+收起后不再溢出的列表不预留滚动条槽。已有轨道的占位不随滑块透明度变化。
+需要防止居中列横跳的设置页和消息视口仍显式保留稳定槽。
 
-`scrollbar-width/color` 非 auto 会让 Chromium 绕过 webkit 定制；新容器不要随意
-加 scrollbar-thin。message-scroller 视口已按 data-slot 恢复 auto，code-block 同理。
+`scrollbar-width/color` 非 auto 会让 Chromium 绕过 webkit 定制；会话列表有意使用这条原生路径，
+其余沿用定制样式的容器不要随意加 scrollbar-thin。message-scroller 视口已按 data-slot 恢复 auto，code-block 同理。
 
 ## 样式与组件陷阱
 

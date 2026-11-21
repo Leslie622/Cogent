@@ -1,10 +1,10 @@
 /**
  * ToolCard 渲染测试（docs/模块/消息呈现.md 验收钉）：
- * - 头行结构：类别词 + 主文案 + diff 尾标；运行中 data-status=running（扫光
+ * - 头行结构：固定类别词 + 主文案 + diff 尾标；运行中 data-status=running（扫光
  *   由 CSS 带出）且无「执行中」尾词；ok 无状态词；
  * - 失败：行尾「执行失败」+ 整行不变红（TraceLine 无 data-status=error），
  *   hover 出 Tooltip 看原因（zcode 图 2 形态）；
- * - bash 运行中进度尾行定高两行槽（流稳定化 §3.4）。
+ * - bash 运行中进度尾行定高两行槽；审批以图标呈现，授权与执行结果相互独立。
  * 折叠体 keepMounted 收起常驻（trace.render.test.tsx 钉）；简洁模式移除详情，
  * 切回详细可继续查看原来的展开内容。
  */
@@ -21,19 +21,19 @@ afterEach(() => {
 })
 
 describe('ToolCard 头行结构（类别词 + 主文案 + 尾标）', () => {
-  it('运行中：类别词进行形 + data-status=running，无「执行中」尾词（扫光即信号）', () => {
+  it('运行中：固定类别词 + data-status=running，无「执行中」尾词（扫光即信号）', () => {
     const { container } = render(
       <ToolCard name="read" summary="read(src/a.ts)" status="running" />
     )
-    expect(screen.getByText('正在读取')).toBeInTheDocument()
+    expect(screen.getByText('读取')).toBeInTheDocument()
     expect(screen.getByText('src/a.ts')).toBeInTheDocument()
     expect(container.querySelector('[data-status="running"]')).not.toBeNull()
     expect(screen.queryByText('执行中')).not.toBeInTheDocument()
   })
 
-  it('完成：类别词完成形，无任何状态尾词（「已读取」自身即完成语义）', () => {
+  it('完成：类别词保持不变，无运行扫光或状态尾词', () => {
     render(<ToolCard name="read" summary="read(src/a.ts)" status="ok" />)
-    expect(screen.getByText('已读取')).toBeInTheDocument()
+    expect(screen.getByText('读取')).toBeInTheDocument()
     expect(screen.queryByText(/完成|失败|拒绝/)).not.toBeInTheDocument()
   })
 
@@ -58,13 +58,13 @@ describe('ToolCard 头行结构（类别词 + 主文案 + 尾标）', () => {
         status="ok"
       />
     )
-    expect(screen.getByText('已调用')).toBeInTheDocument()
+    expect(screen.getByText('MCP')).toBeInTheDocument()
     expect(screen.getByText('image_search.search_image')).toBeInTheDocument()
   })
 
   it('拒绝：置灰单行 + 「已拒绝」尾词', () => {
     render(<ToolCard name="write" summary="write(a.ts)" status="blocked" />)
-    expect(screen.getByText('已写入')).toBeInTheDocument()
+    expect(screen.getByText('写入')).toBeInTheDocument()
     expect(screen.getByText('已拒绝')).toBeInTheDocument()
   })
 })
@@ -75,7 +75,7 @@ describe('ToolCard 失败态（§3.3：不红整行，行尾状态词 + hover To
       <ToolCard name="write" summary="write(a.ts)" status="error" result="文件已被修改" />
     )
     expect(container.querySelector('[data-status="error"]')).toBeNull()
-    expect(screen.getByText('已写入')).toBeInTheDocument()
+    expect(screen.getByText('写入')).toBeInTheDocument()
     expect(screen.getByText('执行失败')).toBeInTheDocument()
   })
 
@@ -121,10 +121,10 @@ describe('ToolCard 输出详细程度', () => {
       name="edit" summary="edit(src/private.ts)" status="ok"
       result="详细输出" diff={'+新增内容\n-旧内容'}
     />)
-    await user.click(screen.getByRole('button', { name: /已编辑/ }))
+    await user.click(screen.getByRole('button', { name: /编辑/ }))
     expect(screen.getByText('详细输出')).toBeVisible()
     act(() => useAppearanceStore.getState().setOutputVerbosity('low'))
-    expect(screen.getByText('已编辑')).toBeVisible()
+    expect(screen.getByText('编辑')).toBeVisible()
     expect(screen.getByText('edit')).toBeVisible()
     expect(screen.queryByText('src/private.ts')).not.toBeInTheDocument()
     expect(screen.queryByText('详细输出')).not.toBeInTheDocument()
@@ -140,10 +140,11 @@ describe('ToolCard 输出详细程度', () => {
   it('简洁档运行中保留状态扫光和工具名，隐藏命令 / 输出尾行', () => {
     useAppearanceStore.getState().setOutputVerbosity('low')
     const { container } = render(<ToolCard
-      name="powershell" summary="powershell(secret-command)" status="running" progress="具体输出"
+      name="powershell" summary="powershell(secret-command)" status="running" progress="具体输出" approval="approved"
     />)
-    expect(screen.getByText('正在执行')).toBeVisible()
+    expect(screen.getByText('终端')).toBeVisible()
     expect(screen.getByText('powershell')).toBeVisible()
+    expect(screen.getByRole('img', { name: '已允许' })).toBeVisible()
     expect(container.querySelector('[data-status="running"]')).not.toBeNull()
     expect(screen.queryByText('secret-command')).not.toBeInTheDocument()
     expect(screen.queryByText('具体输出')).not.toBeInTheDocument()
@@ -161,5 +162,23 @@ describe('ToolCard 输出详细程度', () => {
     expect(container.querySelector('.cursor-help')).toBeNull()
     expect(screen.queryByText('具体失败原因')).not.toBeInTheDocument()
     expect(screen.queryByText('private.ts')).not.toBeInTheDocument()
+  })
+})
+
+describe('ToolCard 类别与审批结果分离', () => {
+  it.each(['running', 'ok', 'error', 'blocked'] as const)('终端在 %s 态保持固定分类', (status) => {
+    const { container } = render(<ToolCard name="powershell" summary="powershell(Get-ComputerInfo)" status={status} />)
+    expect(screen.getByText('终端')).toBeVisible()
+    expect(container.querySelector('[data-status="running"]') !== null).toBe(status === 'running')
+    expect(screen.queryByText(/正在执行|执行命令/)).not.toBeInTheDocument()
+  })
+
+  it('允许结果只用图标呈现，悬停可读；已允许的命令仍可执行失败', async () => {
+    const user = userEvent.setup()
+    render(<ToolCard name="powershell" summary="powershell(exit 1)" status="error" approval="approved" />)
+    expect(screen.queryByText('已允许')).not.toBeInTheDocument()
+    expect(screen.getByText('执行失败')).toBeVisible()
+    await user.hover(screen.getByRole('img', { name: '已允许' }))
+    expect(await screen.findByText('已允许')).toBeVisible()
   })
 })

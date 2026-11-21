@@ -41,14 +41,16 @@ export function flattenSegments(segments: ChatMessage[]): MessageItem[] {
 /**
  * 终态替换并回：审批痕迹行锚回各自工具卡之前（run.completed 内联逻辑提出，
  * 2026-11-12，行为不变 —— 单测直测）。kept = 替换区里要保留的痕迹行；
- * 配不上（理论上缺卡）退尾部兜底；并行同摘要多卡时按裁决序叠在卡组之前。
+ * 新事件按 callId 精确关联，旧事件沿用名称与摘要锚位；配不上时退尾部保留。
  */
 export function flatWithApprovals(flat: MessageItem[], kept: ApprovalItem[]): MessageItem[] {
   if (kept.length === 0) return flat
   const anchored = [...flat]
   for (const trace of kept) {
     const at = anchored.findIndex(
-      (item) => item.type === 'tool' && item.name === trace.toolName && item.summary === trace.summary
+      (item) => item.type === 'tool' && (trace.callId !== undefined
+        ? item.id === trace.callId
+        : item.name === trace.toolName && item.summary === trace.summary)
     )
     anchored.splice(at >= 0 ? at : anchored.length, 0, trace)
   }

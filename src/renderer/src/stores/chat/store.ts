@@ -497,12 +497,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // spread 字面量不参与上下文类型，直接内联会被展宽成 string
         const status: ApprovalItem['status'] = approved ? 'approved' : 'denied'
         const trace: ApprovalItem = { ...settled, id: requestId, type: 'approval', status }
-        // 挂起中的审批：目标卡必为 running（beforeToolCall 阻塞执行，完成事件
-        // 在 resolve 之后才可能到）；按 名+摘要 配对（与工具卡同源 TOOL_METAS.summarize）
+        // 新事件按调用 ID 精确关联；旧事件只沿用原有的名称与摘要锚位。
         const list = [...target.messages]
         const at = list.findIndex(
           (m) =>
-            m.type === 'tool' && m.status === 'running' && m.name === settled.toolName && m.summary === settled.summary
+            m.type === 'tool' && (settled.callId !== undefined
+              ? m.id === settled.callId
+              : m.status === 'running' && m.name === settled.toolName && m.summary === settled.summary)
         )
         list.splice(at >= 0 ? at : list.length, 0, trace)
         bySession[sessionId] = { ...target, messages: list }

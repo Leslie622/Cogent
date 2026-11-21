@@ -93,6 +93,13 @@ describe('flatWithApprovals（终态替换的审批锚回）', () => {
     const flat: MessageItem[] = [tool('t1')]
     expect(flatWithApprovals(flat, [])).toBe(flat)
   })
+
+  it('相同摘要的卡按 callId 精确锚回；调用缺失时不挪到另一张同名卡', () => {
+    const flat = [tool('t1', 'write'), tool('t2', 'write')]
+    const trace = { ...approval('r2'), callId: 't2' }
+    expect(flatWithApprovals(flat, [trace]).map((item) => item.id)).toEqual(['t1', 'r2', 't2'])
+    expect(flatWithApprovals(flat, [{ ...trace, callId: 'missing' }]).map((item) => item.id)).toEqual(['t1', 't2', 'r2'])
+  })
 })
 
 describe('flatWithCompaction（终态替换的压缩条/副行并回，D9 回归钉）', () => {

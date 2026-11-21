@@ -1,10 +1,10 @@
 /**
  * TurnGroup 组件测试（docs/模块/测试.md，RTL + jsdom）—— 聚焦
  * 「分组 → 渲染」的边界分支，文案即验收口径：
- * - 压缩条独立行（D9：不套「已工作」头条，压缩不是 run）；
- * - 零内容 done 组只渲染用户泡（第七轮验收"双已工作"回归）；
+ * - 压缩条独立行（D9：不套「用时」头条，压缩不是 run）；
+ * - 零内容 done 组只渲染用户泡（第七轮验收"双用时"回归）；
  * - live 零内容组仍含流内 WorkingLine（等待首片时也保留活动信号）；
- * - 「已工作 X.XXs」带秒数（第八轮验收 startedAt 继承回归）。
+ * - 「用时 X.XX 秒」带秒数（第八轮验收 startedAt 继承回归）。
  * MessageRow / MessageScrollerItem mock 掉（几何归 scroller 集成回归），
  * RunTrace / CompactionBar / PrunedBar 用真件 —— 它们的文案正是被验收的呈现。
  */
@@ -53,7 +53,7 @@ describe('TurnGroup 压缩条两形（D9 保留式 + D1 两轮修订）', () => 
     }
     render(<TurnGroup turn={turn} phase="stopped" />)
     // 一条 user 恒一个工作头（旧形态 bar 截断回合 → 一条消息 2N+1 个头）
-    expect(screen.getAllByText(/已工作|已停止/)).toHaveLength(1)
+    expect(screen.getAllByText(/用时|已停止/)).toHaveLength(1)
     const trigger = screen.getByRole('button', { name: '已停止' })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByText('上下文已压缩')).not.toBeVisible()
@@ -63,11 +63,11 @@ describe('TurnGroup 压缩条两形（D9 保留式 + D1 两轮修订）', () => 
     expect(screen.getByText('上下文已压缩')).toBeVisible()
   })
 
-  it('回合外压缩（手动「立即压缩」）：bar 独立成行直接可见，不套「已工作」头条（手动压缩独立成行）', () => {
+  it('回合外压缩（手动「立即压缩」）：bar 独立成行直接可见，不套「用时」头条（手动压缩独立成行）', () => {
     const turn: ChatTurn = { items: [compactionBar('bar1')] }
     render(<TurnGroup turn={turn} phase="done" />)
     expect(screen.getByText('上下文已压缩')).toBeInTheDocument()
-    expect(screen.queryByText(/已工作/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/用时/)).not.toBeInTheDocument()
   })
 
   it('pruned 副行经 ProcessItem 渲染「已裁剪 N 处工具输出」（live 相位过程摊开可见；终态收进折叠体）', () => {
@@ -101,11 +101,11 @@ describe('TurnGroup 零内容组', () => {
     expect(screen.getByTestId('msg-final')).toBe(answer)
   })
 
-  it('done 相位：只渲染用户泡，不挂「已工作」空壳（第七轮验收"双已工作"回归）', () => {
+  it('done 相位：只渲染用户泡，不挂「用时」空壳（第七轮验收"双用时"回归）', () => {
     const turn: ChatTurn = { user: userMsg('u1'), items: [] }
     render(<TurnGroup turn={turn} phase="done" />)
     expect(screen.getByTestId('msg-u1')).toBeInTheDocument()
-    expect(screen.queryByText(/已工作/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/用时/)).not.toBeInTheDocument()
   })
 
   it('live 相位：乐观消息刚上屏就有唯一流内工作行与码表', () => {
@@ -115,7 +115,7 @@ describe('TurnGroup 零内容组', () => {
     expect(screen.getAllByText('工作中')).toHaveLength(1)
     expect(source).not.toBeNull()
     expect(source).toContainElement(screen.getByText('工作中'))
-    expect(source).toContainElement(screen.getByText(/\d+\.\d\ds/))
+    expect(source).toContainElement(screen.getByText(/\d+\.\d\d 秒/))
     expect(source.closest('[aria-hidden="true"]')).toBeNull()
   })
 
@@ -131,7 +131,7 @@ describe('TurnGroup 零内容组', () => {
   })
 
   it.each([
-    ['done', '已工作'],
+    ['done', '用时'],
     ['stopped', '已停止'],
     ['failed', '出错了'],
   ] as const)('live → %s 时工作行交接给唯一终态头条', (phase, label) => {
@@ -144,14 +144,14 @@ describe('TurnGroup 零内容组', () => {
   })
 })
 
-describe('TurnGroup 终态头条（已工作时长口径）', () => {
+describe('TurnGroup 终态头条（用时时长口径）', () => {
   it('墙钟 = user.timestamp → 末条内容消息 timestamp，带秒数（第八轮验收回归）', () => {
     const turn: ChatTurn = {
       user: userMsg('u1', 1_000),
       items: [assistantMsg('a1', 5_100)] // 4100ms → 4.10s
     }
     render(<TurnGroup turn={turn} phase="done" />)
-    expect(screen.getByText('已工作 4.10s')).toBeInTheDocument()
+    expect(screen.getByText('用时 4.10 秒')).toBeInTheDocument()
     expect(screen.getByTestId('msg-a1')).toBeInTheDocument()
   })
 
@@ -163,8 +163,8 @@ describe('TurnGroup 终态头条（已工作时长口径）', () => {
       items: [{ ...assistantMsg('a1', 8_850), durationMs: 2_520 }]
     }
     render(<TurnGroup turn={turn} phase="done" />)
-    expect(screen.getByText('已工作 10.37s')).toBeInTheDocument()
-    expect(screen.queryByText('已工作 7.85s')).not.toBeInTheDocument()
+    expect(screen.getByText('用时 10.37 秒')).toBeInTheDocument()
+    expect(screen.queryByText('用时 7.85 秒')).not.toBeInTheDocument()
   })
 
   it('末条是纯工具段：收尾取工具卡 endedAt（执行收尾打点）', () => {
@@ -180,17 +180,17 @@ describe('TurnGroup 终态头条（已工作时长口径）', () => {
     }
     const turn: ChatTurn = { user: userMsg('u1', 1_000), items: [assistantMsg('a1', 4_800), tool] }
     render(<TurnGroup turn={turn} phase="done" />)
-    expect(screen.getByText('已工作 8.20s')).toBeInTheDocument()
+    expect(screen.getByText('用时 8.20 秒')).toBeInTheDocument()
   })
 
   it('无 user 头组（压缩条截断出的续组）用继承的 startedAt 起算 —— 有秒数不裸奔', () => {
     const turn: ChatTurn = { items: [assistantMsg('a1', 5_100)], startedAt: 1_000 }
     render(<TurnGroup turn={turn} phase="done" />)
-    expect(screen.getByText('已工作 4.10s')).toBeInTheDocument()
+    expect(screen.getByText('用时 4.10 秒')).toBeInTheDocument()
   })
 })
 
-describe('TurnGroup 已工作头条下分割线已取消（2026-11-20 定调，推翻决定 18 的常驻线）', () => {
+describe('TurnGroup 用时头条下分割线已取消（2026-11-20 定调，推翻决定 18 的常驻线）', () => {
   it('头条后直接进折叠面板，不存在 run-trace-divider', () => {
     // 两条 assistant：末条为终答，前条进过程体 —— 有过程才有折叠机构
     const turn: ChatTurn = { user: userMsg('u1'), items: [assistantMsg('a1', 3_000), assistantMsg('a2', 5_100)] }
@@ -213,9 +213,74 @@ describe('TurnGroup 终态折叠体条目摘除 scroller item（收起动画卡�
     const { container } = render(<TurnGroup turn={turn} phase="done" />)
     const wrapped = Array.from(container.querySelectorAll('[data-slot=message-scroller-item]'))
     // 收起态折叠体（keepMounted 常驻）里的工具卡不在任何 scroller item 内
-    expect(wrapped.some((el) => el.textContent.includes('已读取'))).toBe(false)
+    expect(wrapped.some((el) => el.textContent.includes('读取'))).toBe(false)
     // 顶层定位包装不受影响：刻度/scrollToMessage 的目标（user 与终答）
     expect(wrapped.map((el) => el.getAttribute('data-message-id'))).toEqual(['u1', 'a1'])
+  })
+})
+
+describe('TurnGroup 工具读取记录', () => {
+  it.each(['live', 'done'] as const)('%s：成功读取只展示一份路径，不额外挂文件快捷入口', (phase) => {
+    const path = 'C:/Users/41631/Desktop/版本.txt'
+    const tool: MessageItem = {
+      id: 'read-version', type: 'tool', name: 'read', toolKind: 'read',
+      summary: `read(${path})`, status: 'ok', resultSummary: '版本B', fileRefs: [{ path }]
+    }
+    const turn: ChatTurn = { user: userMsg('u1'), items: [tool] }
+    render(<TurnGroup turn={turn} phase={phase} sessionId="read-session" />)
+    if (phase === 'done') fireEvent.click(screen.getByRole('button', { name: /用时/ }))
+    expect(screen.getAllByText(path)).toHaveLength(1)
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /读取/ }))
+    expect(screen.getByText('版本B')).toBeVisible()
+    expect(tool.fileRefs).toEqual([{ path }])
+  })
+})
+
+describe('TurnGroup 审批痕迹收进工具行', () => {
+  it.each(['live', 'done'] as const)('%s：相同命令按 callId 归属，不重复占行', (phase) => {
+    const turn: ChatTurn = {
+      user: userMsg('u1'),
+      items: [
+        { id: 't1', type: 'tool', name: 'powershell', toolKind: 'exec', summary: 'powershell(Get-ComputerInfo)', status: 'ok' },
+        { id: 'r2', callId: 't2', type: 'approval', toolName: 'powershell', toolKind: 'exec', summary: 'powershell(Get-ComputerInfo)', status: 'approved' },
+        { id: 't2', type: 'tool', name: 'powershell', toolKind: 'exec', summary: 'powershell(Get-ComputerInfo)', status: 'ok' }
+      ]
+    }
+    const { container } = render(<TurnGroup turn={turn} phase={phase} />)
+    if (phase === 'done') fireEvent.click(screen.getByRole('button', { name: /用时/ }))
+    const lines = Array.from(container.querySelectorAll('[data-slot="trace-line"]')).filter((line) => line.textContent.includes('Get-ComputerInfo'))
+    expect(lines).toHaveLength(2)
+    expect(lines[0].querySelector('[aria-label="已允许"]')).toBeNull()
+    expect(lines[1].querySelector('[aria-label="已允许"]')).not.toBeNull()
+    expect(screen.getAllByText('Get-ComputerInfo')).toHaveLength(2)
+    expect(screen.queryByText('已允许')).not.toBeInTheDocument()
+    expect(turn.items).toHaveLength(3)
+  })
+
+  it.each(['denied', 'cancelled'] as const)('%s 的裁决保留在对应工具行，不伪装成允许', (status) => {
+    const turn: ChatTurn = { items: [
+      { id: 'r1', callId: 't1', type: 'approval', toolName: 'write', toolKind: 'write', summary: 'write(a.ts)', status },
+      { id: 't1', type: 'tool', name: 'write', toolKind: 'write', summary: 'write(a.ts)', status: 'error' }
+    ] }
+    render(<TurnGroup turn={turn} phase="live" />)
+    expect(screen.getByRole('img', { name: status === 'denied' ? '已拒绝' : '已取消' })).toBeVisible()
+    expect(screen.queryByRole('img', { name: '已允许' })).not.toBeInTheDocument()
+    expect(screen.getByText('执行失败')).toBeVisible()
+    expect(screen.queryByText('已写入')).not.toBeInTheDocument()
+  })
+
+  it('旧事件或缺卡保留独立审批行，不按相同摘要猜归属', () => {
+    const turn: ChatTurn = { items: [
+      { id: 'r1', type: 'approval', toolName: 'write', toolKind: 'write', summary: 'write(a.ts)', status: 'approved' },
+      { id: 'r2', callId: 'missing', type: 'approval', toolName: 'write', toolKind: 'write', summary: 'write(a.ts)', status: 'cancelled' },
+      { id: 't1', type: 'tool', name: 'write', toolKind: 'write', summary: 'write(a.ts)', status: 'ok' }
+    ] }
+    const { container } = render(<TurnGroup turn={turn} phase="live" />)
+    expect(Array.from(container.querySelectorAll('[data-slot="trace-line"]')).filter((line) => line.textContent.includes('a.ts'))).toHaveLength(3)
+    expect(screen.getAllByText('审批')).toHaveLength(2)
+    expect(screen.getByText('已允许')).toBeVisible()
+    expect(screen.getByText('已取消')).toBeVisible()
   })
 })
 

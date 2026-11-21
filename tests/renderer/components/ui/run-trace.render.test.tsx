@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { RunTrace, type RunPhase } from '@/components/ui/run-trace'
 
 const phases: Array<[RunPhase, string]> = [
-  ['done', '已工作 1.00s'],
+  ['done', '用时 1.00 秒'],
   ['stopped', '已停止'],
   ['failed', '出错了'],
 ]
@@ -32,7 +32,7 @@ describe('RunTrace 终态详情开合', () => {
 
   it('手动选择在父层重渲染与终态词变化后保留', () => {
     const view = render(<RunTrace phase="done"><div>过程详情</div></RunTrace>)
-    fireEvent.click(screen.getByRole('button', { name: '已工作' }))
+    fireEvent.click(screen.getByRole('button', { name: '用时' }))
     view.rerender(<RunTrace phase="stopped"><div>过程详情更新</div></RunTrace>)
     expect(screen.getByRole('button', { name: '已停止' })).toHaveAttribute('aria-expanded', 'true')
     fireEvent.click(screen.getByRole('button', { name: '已停止' }))

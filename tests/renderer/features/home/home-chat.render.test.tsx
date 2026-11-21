@@ -147,7 +147,7 @@ describe('HomeChat 流内 live 工作状态', () => {
   })
 
   it.each([
-    ['done', { running: false, lastRunOutcome: 'completed' }, 'completed', '已工作 0.10s'],
+    ['done', { running: false, lastRunOutcome: 'completed' }, 'completed', '用时 0.10 秒'],
     ['stopped', { running: false, stopping: false, lastRunOutcome: 'stopped' }, 'stopped', '已停止'],
     ['failed', { running: false, lastRunOutcome: 'failed', lastError: '请求失败' }, 'failed', '出错了'],
   ] as const)('live → %s 同批终态只由流内 RunTrace 接棒', (_phase, runtime, outcome, terminalText) => {
@@ -274,7 +274,7 @@ describe('HomeChat 的真实停止终态接线', () => {
     await act(async () => { emit({ method: 'run.completed', params: { sessionId: SID, messages: [completed] } }); await Promise.resolve() })
     engineRequest.mockRejectedValueOnce(new Error('手动压缩失败'))
     await act(async () => { await useChatStore.getState().compactNow() })
-    expect(screen.getByText('已工作 0.10s')).toBeInTheDocument()
+    expect(screen.getByText('用时 0.10 秒')).toBeInTheDocument()
     expect(screen.queryByText('手动压缩失败')).not.toBeInTheDocument()
     expect(screen.queryByText('出错了')).not.toBeInTheDocument()
   })
@@ -322,10 +322,10 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
     } }) })
     expect(screen.getAllByText('已停止')).toHaveLength(1)
     expect(screen.getByText('你好，继续聊')).toBeInTheDocument()
-    expect(screen.getAllByText(/^已工作/)).toHaveLength(1)
+    expect(screen.getAllByText(/^用时/)).toHaveLength(1)
   })
 
-  it('半截文章停止后发送稍等一下，旧头不变已工作且正文不重复', async () => {
+  it('半截文章停止后发送稍等一下，旧头不变用时且正文不重复', async () => {
     render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止' })); await Promise.resolve() })
     act(() => { emit({ method: 'run.failed', params: {
@@ -334,14 +334,14 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
     expect(screen.getByText('已停止')).toBeInTheDocument()
     await act(async () => { await useChatStore.getState().submit('稍等一下') })
     expect(screen.getByText('已停止')).toBeInTheDocument()
-    expect(screen.queryByText(/^已工作/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^用时/)).not.toBeInTheDocument()
     expect(screen.getAllByText('半截文章，这不是')).toHaveLength(1)
     act(() => { emit({ method: 'run.completed', params: {
       sessionId: SID, messages: [{ ...completed, id: 'waiting-answer', content: '好，我等你', timestamp: Date.now() }]
     } }) })
     expect(screen.getAllByText('已停止')).toHaveLength(1)
     expect(screen.getAllByText('半截文章，这不是')).toHaveLength(1)
-    expect(screen.getAllByText(/^已工作/)).toHaveLength(1)
+    expect(screen.getAllByText(/^用时/)).toHaveLength(1)
   })
 
   it('失败回合在下一条消息正常完成后仍保留出错了', async () => {
@@ -357,7 +357,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
     } }) })
     expect(screen.getByText('出错了')).toBeInTheDocument()
     expect(screen.getByText('新回答')).toBeInTheDocument()
-    expect(screen.getAllByText(/^已工作/)).toHaveLength(1)
+    expect(screen.getAllByText(/^用时/)).toHaveLength(1)
   })
 
   it('continue沿用同一user回合，live优先并由新终态更新结果', async () => {
@@ -374,13 +374,13 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
     } }) })
     expect(screen.queryByText('已停止')).not.toBeInTheDocument()
     expect(screen.getByText('旧前缀与新尾部')).toBeInTheDocument()
-    expect(screen.getAllByText(/^已工作/)).toHaveLength(1)
+    expect(screen.getAllByText(/^用时/)).toHaveLength(1)
     await act(async () => { await useChatStore.getState().submit('下一问') })
     act(() => { emit({ method: 'run.failed', params: {
       sessionId: SID, reason: 'aborted', message: '已停止', messages: []
     } }) })
     expect(screen.getAllByText('已停止')).toHaveLength(1)
-    expect(screen.getAllByText(/^已工作/)).toHaveLength(1)
+    expect(screen.getAllByText(/^用时/)).toHaveLength(1)
     expect(screen.getByText('旧前缀与新尾部')).toBeInTheDocument()
   })
 
@@ -391,12 +391,12 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
       } }
     }))
     render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
-    expect(screen.getByText('已工作 0.10s')).toBeInTheDocument()
+    expect(screen.getByText('用时 0.10 秒')).toBeInTheDocument()
     engineRequest.mockRejectedValueOnce(new Error('本次提交被拒绝'))
     await act(async () => {
       await expect(useChatStore.getState().submit('没有受理的新问题')).rejects.toThrow('本次提交被拒绝')
     })
-    expect(screen.getByText('已工作 0.10s')).toBeInTheDocument()
+    expect(screen.getByText('用时 0.10 秒')).toBeInTheDocument()
     expect(screen.queryByText('出错了')).not.toBeInTheDocument()
     expect(screen.queryByText('没有受理的新问题')).not.toBeInTheDocument()
     expect(screen.queryByText('本次提交被拒绝')).not.toBeInTheDocument()
@@ -413,7 +413,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
     } }) })
     expect(screen.getAllByText(user.content)).toHaveLength(2)
     expect(screen.getAllByText('已停止')).toHaveLength(1)
-    expect(screen.getAllByText(/^已工作/)).toHaveLength(1)
+    expect(screen.getAllByText(/^用时/)).toHaveLength(1)
     expect(screen.getByText('第二次回答')).toBeInTheDocument()
   })
 
@@ -443,7 +443,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
       sessionId: SID, reason: 'aborted', message: '已停止', messages: [completed]
     } }) })
     expect(screen.getAllByText('已停止')).toHaveLength(1)
-    expect(screen.getByText('已工作')).toBeInTheDocument()
+    expect(screen.getByText('用时')).toBeInTheDocument()
     expect(screen.getByText('前导历史回答')).toBeInTheDocument()
   })
 })

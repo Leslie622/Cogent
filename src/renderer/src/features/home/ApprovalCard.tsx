@@ -1,36 +1,21 @@
 /**
  * 审批痕迹行（审批交互升级 D1 后收窄）—— 原 pending 卡形态随「pending 不进
  * 消息流」删除，裁决的进行时呈现迁至对话底部确认面板（ApprovalPanel）；本件
- * 只渲染终态痕迹（裁决/中止完成时 chat store 落进消息流），TraceLine 置灰
- * 单行 —— 与工具卡 blocked 同款安静形态，模型转录里无对应物（引擎侧只是
- * 工具结果），run 终态替换时保留。
+ * 仅渲染缺少对应工具的终态痕迹；有 callId 配对的裁决由 TurnGroup 收进工具行。
+ * 原始裁决仍由会话桶持有，run 终态替换时保留，不改模型转录。
  */
-import { IconBan, IconPlayerStopFilled, IconShieldCheckFilled } from '@tabler/icons-react'
-import { TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace'
+import { TraceLine, TraceTitle } from '@/components/ui/trace'
+import { APPROVAL_LABEL, ApprovalMark } from '@/components/ui/approval-mark'
+import { parseToolSummary } from '@/components/ui/tool-display'
 import type { ApprovalItem } from '@/stores/chat'
-
-/** 终态 → 尾标文案（头行右侧小字，口径与工具卡 STATUS_LABEL 对齐） */
-const SETTLED_LABEL: Record<ApprovalItem['status'], string> = {
-  approved: '已允许',
-  denied: '已拒绝',
-  cancelled: '已取消'
-}
 
 export function ApprovalCard({ item }: { item: ApprovalItem }) {
   return (
     <TraceLine status="pending">
-      <TraceIcon>
-        {item.status === 'approved' ? (
-          <IconShieldCheckFilled />
-        ) : item.status === 'denied' ? (
-          <IconBan />
-        ) : (
-          <IconPlayerStopFilled />
-        )}
-      </TraceIcon>
-      {/* 摘要含路径（等宽对齐，同工具卡）；run 终态替换后它就是这段裁决的全部痕迹 */}
-      <TraceTitle className="font-mono text-xs">{item.summary}</TraceTitle>
-      <span className="text-xs">{SETTLED_LABEL[item.status]}</span>
+      <ApprovalMark status={item.status} />
+      <TraceTitle className="shrink-0">审批</TraceTitle>
+      <span className="min-w-0 truncate font-mono text-xs">{parseToolSummary(item.toolName, item.summary)}</span>
+      <span className="text-xs">{APPROVAL_LABEL[item.status]}</span>
     </TraceLine>
   )
 }

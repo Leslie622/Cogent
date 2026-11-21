@@ -144,7 +144,7 @@ function PendingQuestionCard({ pending, autoFocus }: { pending: PendingQuestion;
   }
 
   return (
-    <div ref={cardRef} tabIndex={-1} onKeyDown={onKeyDown} className="rounded-2xl border border-border bg-background p-4 outline-none">
+    <div ref={cardRef} data-slot="interaction-panel" tabIndex={-1} onKeyDown={onKeyDown} className="rounded-2xl border border-border bg-background p-4">
       {/* 头部：header 胶囊 + 问题正文；右侧问题切换器（单问题不渲染） */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-baseline gap-2 text-sm font-medium text-foreground">
@@ -223,6 +223,7 @@ function PendingQuestionCard({ pending, autoFocus }: { pending: PendingQuestion;
         >
           <IndexMark index={rowCount} active={otherText.trim() !== ''} />
           <Input
+            variant="embedded"
             ref={otherInputRef}
             value={otherText}
             onChange={(event) => setOthers((prev) => prev.map((o, i) => (i === current ? event.target.value : o)))}

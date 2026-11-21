@@ -61,6 +61,7 @@ export function formatCost(usd: number, estimated?: boolean): string {
  * assistant 消息元信息行（shadcn message 的 footer 位）：输入/输出 token +
  * 缓存读/写 + 成本 + 模型耗时（+ 工具耗时，回合聚合行）。数据无则整行不渲染 ——
  * 流式占位没有 usage，统计行随 run.completed 在回答完成时出现；简洁模式整行隐藏。
+ * 过程中的单次请求另受 showProcessUsage 控制，默认隐藏；回合汇总不消费此开关。
  * 零值省略：
  * 无缓存命中的回答不显示缓存项、无定价模型不显示成本（"没发生"与"值为 0"
  * 在此同义，常显一排 0 是噪音）。时长呈现：单条消息/纯工具回合只有模型时长，
@@ -70,16 +71,20 @@ export function formatCost(usd: number, estimated?: boolean): string {
 export function UsageLine({
   usage,
   durationMs,
-  toolMs
+  toolMs,
+  scope = 'turn'
 }: {
   usage?: MessageUsage
   durationMs?: number
   /** 工具执行墙钟（区间并集，TurnGroup sumToolMs）；仅回合聚合行传入 */
   toolMs?: number
+  /** 由调用位置区分过程明细与最终汇总，不能靠是否有工具耗时推断。 */
+  scope?: 'process' | 'turn'
 }) {
   const precision = useAppearanceStore((state) => state.durationPrecision)
   const showDetails = useAppearanceStore((state) => state.outputVerbosity === 'high')
-  if (!showDetails) return null
+  const showProcessUsage = useAppearanceStore((state) => state.showProcessUsage)
+  if (!showDetails || (scope === 'process' && !showProcessUsage)) return null
   const parts: string[] = []
   if (usage) {
     parts.push(`↑ ${formatTokens(usage.input)}`, `↓ ${formatTokens(usage.output)}`)
@@ -171,7 +176,7 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
         {message.content !== '' && (
           <Markdown content={message.content} streaming={message.placeholder === true} />
         )}
-        <UsageLine usage={message.usage} durationMs={message.durationMs} />
+        <UsageLine usage={message.usage} durationMs={message.durationMs} scope="process" />
       </MessageContent>
     </Message>
   )

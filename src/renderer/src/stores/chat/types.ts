@@ -50,6 +50,8 @@ export interface ToolItem {
 export interface ApprovalItem {
   /** = 引擎 requestId（approval.respond 的配对键） */
   id: string
+  /** 对应工具的 callId；旧事件无此字段时保留独立痕迹，不猜归属。 */
+  callId?: string
   /** 判别字段：消息列表元素联合 */
   type: 'approval'
   toolName: string
@@ -67,6 +69,7 @@ export interface ApprovalItem {
  */
 export interface PendingApproval {
   requestId: string
+  callId?: string
   toolName: string
   /** ToolKind（呈现用） */
   toolKind: string

@@ -22,7 +22,7 @@ function Trace({ className, ...props }: React.ComponentProps<"div">) {
 }
 
 /* select-none：消息流容器为正文放开了 select-text（UI 方针 5），轨迹行
-   （已工作/工作中/思考/工具行头）是 chrome —— 行上收回选中，拖划正文
+   （用时/工作中/思考/工具行头）是 chrome —— 行上收回选中，拖划正文
    不把这些行蓝选成片（zcode 同向：时间戳等 chrome select-none，正文用
    data-conversation-selectable 圈选区 ConversationRowView.tsx:1508/1613）。
    折叠体内容不在本行，保持可选 */

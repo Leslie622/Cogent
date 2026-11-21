@@ -58,9 +58,10 @@ function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFoc
   return (
     <div
       ref={cardRef}
+      data-slot="interaction-panel"
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="rounded-2xl border border-border bg-background p-4 outline-none"
+      className="rounded-2xl border border-border bg-background p-4"
     >
       <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
         <IconMap className="size-4 text-muted-foreground" />
@@ -91,6 +92,7 @@ function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFoc
       </div>
       {/* 附言 = 拒绝的修改意见（回灌模型修订重提） */}
       <Input
+        variant="embedded"
         value={note}
         onChange={(event) => setNote(event.target.value)}
         onFocus={() => setSelected(-1)}

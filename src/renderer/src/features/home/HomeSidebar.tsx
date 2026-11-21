@@ -613,11 +613,8 @@ export function HomeSidebar() {
         </Hint>
       </div>
 
-      {/* scrollbar-gutter-stable：内容超/不超一屏时滚动条空间常驻预留 —— 项目
-          展开/收起会跨越"是否出滚动条"的临界点，无预留时 13px 滚动条突然出现
-          会把整列内容向左挤一下（用户实测点击项目的"抖动"）。工具类是 message
-          -scroller 同款（globals.css .scrollbar-gutter-stable） */}
-      <div className="scrollbar-gutter-stable min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      {/* 原生细滚动条保留系统箭头并持续可见，未溢出时不预留轨道。 */}
+      <div className="scrollbar-native min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {/* 新聊天：整行动作项 → 无项目发起，主体信息区出"选择项目" */}
         <button
           type="button"

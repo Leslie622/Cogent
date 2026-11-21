@@ -27,7 +27,38 @@ app.whenReady().then(async()=>{
  await win.webContents.executeJavaScript('new Promise(resolve=>{const timer=setInterval(()=>{if(window.verifyInputGroup){clearInterval(timer);window.verifyInputGroup().then(resolve)}},50)})');
  const report=await win.webContents.executeJavaScript('new Promise(resolve=>{const timer=setInterval(()=>{const report=document.querySelector("#report")?.textContent;if(report&&report!=="运行中"){clearInterval(timer);resolve(report)}},50)})');
  const passed=report.startsWith('通过');
- console.log(JSON.stringify({electron:process.versions.electron,chromium:process.versions.chrome,passed,report},null,2));
+ const shiftResults=[];
+ if(passed){
+  const frame=()=>win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+  const press=async keyCode=>{
+   win.webContents.sendInputEvent({type:'keyDown',keyCode});
+   win.webContents.sendInputEvent({type:'keyUp',keyCode});
+   await frame();
+  };
+  const snapshot=()=>win.webContents.executeJavaScript('(()=>{const el=document.activeElement;const style=getComputedStyle(el);return {slot:el.dataset.slot,focusVisible:el.matches(":focus-visible"),outlined:style.outlineStyle!=="none"&&parseFloat(style.outlineWidth)>0&&style.outlineColor!=="rgba(0, 0, 0, 0)",scrollTop:el.scrollTop}})()');
+  await press('Escape');
+  // 原生输入才能触发 Chromium 从鼠标焦点切换到键盘焦点，合成 keydown 不会改变 :focus-visible。
+  for(const dark of [false,true]){
+   const bounds=await win.webContents.executeJavaScript('(()=>{document.documentElement.classList.toggle("dark",'+dark+');const el=document.querySelector("[data-slot=message-scroller-viewport]");el.scrollTop=el.scrollHeight;el.scrollIntoView({block:"center"});return el.getBoundingClientRect().toJSON()})()');
+   for(const type of ['mouseDown','mouseUp'])win.webContents.sendInputEvent({type,x:Math.round(bounds.x+bounds.width/2),y:Math.round(bounds.y+bounds.height/2),button:'left',clickCount:1});
+   await frame();
+   const clicked=await snapshot();
+   if(clicked.slot!=='message-scroller-viewport'||clicked.focusVisible||clicked.outlined)throw new Error('点击聊天空白后的焦点状态异常：'+JSON.stringify(clicked));
+   await press('Shift');
+   const shifted=await snapshot();
+   if(shifted.slot!=='message-scroller-viewport'||!shifted.focusVisible||shifted.outlined)throw new Error('Shift 后聊天滚动区出现焦点描边：'+JSON.stringify(shifted));
+   await win.webContents.executeJavaScript('void(window.focusScrollEnd=new Promise((resolve,reject)=>{const el=document.querySelector("[data-slot=message-scroller-viewport]");const timer=setTimeout(()=>reject(new Error("聊天区 PageUp 未完成滚动")),2000);el.addEventListener("scrollend",()=>{clearTimeout(timer);resolve(el.scrollTop)},{once:true})}))');
+   await press('PageUp');
+   const scrolled=await win.webContents.executeJavaScript('window.focusScrollEnd');
+   if(scrolled>=shifted.scrollTop)throw new Error('聊天区 PageUp 未向上滚动');
+   await win.webContents.executeJavaScript('document.querySelector("button[aria-label=消息操作]").focus()');
+   await frame();
+   const button=await snapshot();
+   if(!button.focusVisible||!button.outlined)throw new Error('聊天区内按钮丢失焦点提示');
+   shiftResults.push({dark,clicked,shifted,pageUp:true,buttonFocus:true});
+  }
+ }
+ console.log(JSON.stringify({electron:process.versions.electron,chromium:process.versions.chrome,passed,report,shiftResults},null,2));
  clearTimeout(timeout);
  app.exit(passed?0:1);
 }).catch(error=>{console.error(error);app.exit(1)});

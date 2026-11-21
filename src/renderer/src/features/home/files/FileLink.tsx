@@ -1,4 +1,4 @@
-/** 正文和工具共用文件入口；图标只看名称，预览、hover 和右键动作才按需解析。 */
+/** 正文文件入口；图标只看名称，预览、hover 和右键动作才按需解析。 */
 import { createContext, useContext, type ReactNode } from 'react'
 import type { FileReference } from '@shared/files'
 import { parseFileTarget } from '@shared/file-target'

@@ -87,6 +87,7 @@ export function AppShell() {
             {/* 自绘拖拽条：样式/光带/状态机与 GlowResizeHandle 同构；拖过下限
                 折叠成 0、再向外拖恢复、键盘 ±16、双击回默认 */}
             {!sidebarAutoCollapsed && <SidebarResizeHandle
+              withHandle={view !== 'home'}
               min={SIDEBAR_WIDTH_MIN}
               max={SIDEBAR_WIDTH_MAX}
               readWidth={sidebar.readWidth}
