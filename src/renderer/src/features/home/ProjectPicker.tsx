@@ -120,12 +120,10 @@ export function ProjectPicker({
           <PopoverTrigger
             render={
               <Button
-                variant="ghost"
+                variant="project"
+                data-empty={projectId === undefined}
                 size="xs"
-                className={cn(
-                  'group gap-1.5 px-1.5 font-normal text-sm text-foreground',
-                  ROW_HOVER
-                )}
+                className="group gap-1.5 px-1.5 font-normal text-sm"
               />
             }
           >
