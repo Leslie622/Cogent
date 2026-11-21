@@ -1,8 +1,10 @@
-/** 正文和工具共用文件入口；只在点击后 resolve，不让 token 更新触发磁盘探测。 */
-import { createContext, useContext, useRef, useState, type ReactNode } from 'react'
-import { File } from 'lucide-react'
+/** 正文和工具共用文件入口；图标只看名称，预览、hover 和右键动作才按需解析。 */
+import { createContext, useContext, type ReactNode } from 'react'
 import type { FileReference } from '@shared/files'
+import { parseFileTarget } from '@shared/file-target'
+import { FileIcon } from '@/components/FileIcon'
 import { useFilePreviewStore } from '@/stores/file-preview'
+import { FileLinkActions } from './FileLinkActions'
 
 export interface FileLinkScope {
   sessionId: string
@@ -24,49 +26,26 @@ export function FileLink({
 }) {
   const scope = useContext(FileLinkContext)
   const nested = useContext(FileLinkNestingContext)
-  const [resolved, setResolved] = useState<string | null>(null)
-  const requested = useRef<string | null>(null)
   if (scope === null || nested) return <span title={target}>{children}</span>
-  const resolveHint = () => {
-    const identity = `${scope.sessionId}/${scope.turnId}/${target}`
-    if (requested.current === identity) return
-    requested.current = identity
-    void window.cogent
-      .engineRequest('files.resolve', {
-        sessionId: scope.sessionId,
-        turnId: scope.turnId,
-        rawTarget: target,
-        relativeTo: scope.relativeTo
-      })
-      .then(
-        (file) => {
-          if (requested.current === identity) setResolved(file.path)
-        },
-        (error: unknown) => {
-          if (requested.current === identity)
-            setResolved(`${target}\n${error instanceof Error ? error.message : String(error)}`)
-        }
-      )
-  }
+  const preview = () => void useFilePreviewStore.getState().open(scope, target)
   return (
     <FileLinkNestingContext.Provider value>
-      <a
-        href="#"
-        data-file-link={target}
-        className="inline-flex max-w-full items-baseline gap-1 wrap-anywhere"
-        title={title === undefined ? (resolved ?? target) : `${title}\n${resolved ?? target}`}
-        onMouseEnter={resolveHint}
-        onFocus={resolveHint}
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          void useFilePreviewStore.getState().open(scope, target)
-        }}
-      >
-        <File className="size-3 shrink-0 self-center" aria-hidden="true" />
-        {/* 渐显会把文字拆成多个 span，间距只属于图标和整段标签，不能落到每个文字片段上。 */}
-        <span className="min-w-0" data-file-link-label>{children}</span>
-      </a>
+      <FileLinkActions key={JSON.stringify([scope.sessionId, scope.turnId, scope.relativeTo, target])} scope={scope} target={target} title={title} onPreview={preview}>
+        <a
+          href="#"
+          data-file-link={target}
+          className="inline-flex max-w-full items-baseline gap-1 wrap-anywhere"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            preview()
+          }}
+        >
+          <FileIcon path={parseFileTarget(target)!.path} className="size-4 self-center" />
+          {/* 渐显会把文字拆成多个 span，间距只属于图标和整段标签，不能落到每个文字片段上。 */}
+          <span className="min-w-0" data-file-link-label>{children}</span>
+        </a>
+      </FileLinkActions>
     </FileLinkNestingContext.Provider>
   )
 }

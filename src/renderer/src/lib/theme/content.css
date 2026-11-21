@@ -12,6 +12,14 @@
   --md-default-task-border: var(--muted-foreground);
 }
 
+/* 反引号文件已经是链接，不再叠行内代码底色与衬垫；普通代码继续消费主题令牌。 */
+.md-body [data-file-link] code {
+  background: transparent;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+}
+
 /* 代码板底色在滚动容器上，包含 gutter；pre 透明避免 Shiki 内联底色形成两截。 */
 .md-body [data-streamdown='code-block'] {
   background: transparent;

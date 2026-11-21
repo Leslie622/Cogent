@@ -9,6 +9,17 @@ const scope: FileLinkScope = { sessionId: 'session', turnId: 'turn', refs: [{ pa
 function markdown(content: string, streaming = false) { return render(<FileLinkContext.Provider value={scope}><Markdown content={content} streaming={streaming} /></FileLinkContext.Provider>) }
 describe('正文文件链接真实渲染', () => {
   it.each([
+    ['../说明%20A%23%25.md#L2-L3', 'markdown'],
+    [String.raw`C:\项目\数据.csv:12:3`, 'table'],
+    ['file:///C:/work/README.md#L2', 'readme'],
+    ['./报告%2520.txt:2', 'document']
+  ])('正文图标从 %s 的文件目标匹配，不把 URI 编码和行列当扩展名', (target, icon) => {
+    render(<FileLinkContext.Provider value={scope}><FileLink target={target}>查看文件</FileLink></FileLinkContext.Provider>)
+    const link = screen.getByRole('link', { name: '查看文件' })
+    expect(link.querySelector('[data-file-icon]')).toHaveAttribute('data-file-icon', icon)
+    expect(link).toHaveAttribute('data-file-link', target)
+  })
+  it.each([
     ['[相对](../shared/app.ts:12:2)', '../shared/app.ts:12:2'],
     ['[相对](./src/app.ts)', './src/app.ts'],
     ['[无扩展](README)', 'README'],
@@ -42,6 +53,8 @@ describe('正文文件链接真实渲染', () => {
     markdown('`app.ts` `npm test` [已有 `app.ts`](https://example.com)\n\n```ts\napp.ts\n```')
     expect(screen.getAllByRole('link')).toHaveLength(2)
     expect(screen.getByRole('link', { name: 'app.ts' })).toHaveAttribute('data-file-link', 'C:/work/src/app.ts')
+    expect(screen.getByRole('link', { name: 'app.ts' }).querySelector('code')).toBeNull()
+    expect(screen.getByText('npm test').tagName).toBe('CODE')
     expect(knownFileLink('app.ts', [{ path: '/a/app.ts' }, { path: '/b/app.ts' }])).toBeUndefined()
     expect(knownFileLink('missing.ts', scope.refs)).toBeUndefined()
   })

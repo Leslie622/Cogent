@@ -81,6 +81,8 @@ void (async()=>{try {
  win = await created;
  win.webContents.on('console-message', (_event,level,message) => {if(level>=3) errors.push(message)});
  await new Promise(done=>win.webContents.once('did-finish-load',done));
+ win.webContents.debugger.attach('1.3');
+ await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
  await wait(()=>evaluate('typeof window.cogent === "object"'),'产品 preload 就绪');
  const sessionId=await evaluate(${JSON.stringify(bootstrap)});
  let loaded = new Promise(done=>win.webContents.once('did-finish-load',done));win.reload();await loaded;
@@ -92,6 +94,10 @@ void (async()=>{try {
  await evaluate((${submit.toString()})(sessionId));
  await evaluate('document.querySelector("[aria-label=发送]").click()');
  await wait(()=>evaluate('Array.from(document.querySelectorAll("[data-file-link]")).some(el=>el.textContent==="sample.ts:2:3")'),'成功 read 后反引号在流式中可点击');
+ if(await evaluate('Array.from(document.querySelectorAll("[data-file-link]")).find(el=>el.textContent==="sample.ts:2:3").querySelector("[data-file-icon]")?.dataset.fileIcon')!=='typescript')throw new Error('正文反引号文件没有使用Material图标');
+ checks.push('正文反引号文件使用Material图标');
+ if(!await evaluate('(()=>{const link=Array.from(document.querySelectorAll("[data-file-link]")).find(el=>el.textContent==="sample.ts:2:3");const label=link.querySelector("[data-file-link-label]");return !link.querySelector("code")&&getComputedStyle(label).backgroundColor==="rgba(0, 0, 0, 0)"})()'))throw new Error('正文文件链接仍带代码标签或底色');
+ checks.push('正文反引号文件链接没有背景');
  await wait(()=>evaluate('document.querySelector(".md-body [data-file-link-label]")?.querySelectorAll("[data-reveal]").length>1'),'真实流式标签包含渐显片段');
  const labelGaps=await evaluate('(()=>{const label=document.querySelector(".md-body [data-file-link-label]");const rects=Array.from(label.querySelectorAll("[data-reveal]")).map(el=>el.getBoundingClientRect());return rects.slice(1).map((r,i)=>r.left-rects[i].right)})()');
  if(labelGaps.some(gap=>Math.abs(gap)>0.75))throw new Error('流式文件名出现额外片段间距：'+JSON.stringify(labelGaps));
@@ -104,6 +110,26 @@ void (async()=>{try {
  await wait(()=>evaluate('document.querySelectorAll("[data-file-link]").length>=9'),'重载后正文文件链接水合');
  await wait(()=>evaluate('Array.from(document.querySelectorAll("[data-file-link]")).some(el=>el.textContent==="sample.ts:2:3")'),'重载后真实工具词表仍生效');
  win.setSize(1500,900);
+ await evaluate('Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async value=>{window.fileTestCopiedPath=value}}});undefined');
+ await evaluate('window.filePointerEvents=[];for(const type of ["mousedown","mouseup","contextmenu"]){document.addEventListener(type,event=>window.filePointerEvents.push({type,target:event.target.outerHTML?.slice(0,250),x:event.clientX,y:event.clientY}),true)};undefined');
+ const linkPoint=await evaluate('(()=>{const link=Array.from(document.querySelectorAll("[data-file-link]")).find(el=>el.textContent==="sample.ts:2:3");link.scrollIntoView({block:"center"});const r=link.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()');
+ const move=point=>win.webContents.sendInputEvent({type:'mouseMove',...point});
+ // 隐藏窗口显式推进浮层布局与有限入场动画，避免在旧浮层坐标上派发下一次点击。
+ const settleTooltip=()=>evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>{for(const tooltip of document.querySelectorAll("[role=tooltip]"))for(const animation of tooltip.getAnimations({subtree:true}))if(animation.effect.getTiming().iterations!==Infinity)animation.finish();resolve()})))');
+ const press=async(point,button='left')=>{move(point);await settleTooltip();win.webContents.sendInputEvent({type:'mouseDown',...point,button,clickCount:1});win.webContents.sendInputEvent({type:'mouseUp',...point,button,clickCount:1})};
+ move(linkPoint);
+ await wait(()=>evaluate('document.querySelector("[role=tooltip]")?.textContent.includes('+${JSON.stringify(JSON.stringify(join(workspace, 'sample.ts')))}+')'),'真实hover的Tooltip显示完整绝对路径');
+ await settleTooltip();
+ if(!await evaluate('(()=>{const tooltip=document.querySelector("[role=tooltip]");const button=tooltip.querySelector("button").getBoundingClientRect();const text=tooltip.querySelector("p").getBoundingClientRect();const icon=tooltip.querySelector("button svg").getBoundingClientRect();return Math.abs(button.top+button.height/2-text.top-text.height/2)<1&&icon.width>=parseFloat(getComputedStyle(document.documentElement).fontSize)-0.1})()'))throw new Error('Tooltip复制图标未放大或未垂直居中');
+ checks.push('Tooltip复制图标放大并垂直居中');
+ const copyPoint=await evaluate('(()=>{const r=document.querySelector("[role=tooltip] [aria-label=复制完整路径]").getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()');
+ await press(copyPoint);
+ await wait(()=>evaluate('window.fileTestCopiedPath==='+${JSON.stringify(JSON.stringify(join(workspace, 'sample.ts')))}),'实际指针可点击Tooltip复制路径');
+ if(await evaluate('document.querySelector("[data-file-preview]")!==null'))throw new Error('复制Tooltip误打开文件预览');
+ await press(await evaluate('(()=>{const r=Array.from(document.querySelectorAll("[data-file-link]")).find(el=>el.textContent==="sample.ts:2:3").getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()'),'right');
+ await wait(()=>evaluate('document.querySelector("[role=menu]")?.innerText.includes("复制完整路径")'),'正文链接支持真实右键菜单');
+ await evaluate('window.fileTestCopiedPath="";Array.from(document.querySelectorAll("[role=menuitem]")).find(el=>el.textContent==="复制完整路径").click()');
+ await wait(()=>evaluate('window.fileTestCopiedPath==='+${JSON.stringify(JSON.stringify(join(workspace, 'sample.ts')))}),'右键菜单复制实际绝对路径');
  const click = async label => { await evaluate('Array.from(document.querySelectorAll("[data-file-link]")).find(el=>el.textContent==='+JSON.stringify(label)+').click()'); };
  const body = () => evaluate('document.querySelector("[data-file-preview]")?.innerText??""');
  await click('源码样本'); await wait(async()=> (await body()).includes('const second = 2'),'源码按真实文件读取');
@@ -135,7 +161,7 @@ void (async()=>{try {
  writeFileSync(${JSON.stringify(join(evidence, 'result.json'))},JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));
 } catch(error) {
  if(win&&!win.isDestroyed()){await win.webContents.capturePage().then(image=>writeFileSync(${JSON.stringify(join(evidence, 'failure.png'))},image.toPNG()));errors.push(await evaluate('document.querySelector("[data-file-preview]")?.innerText??""').catch(()=>''));errors.push(await evaluate('document.querySelector("[data-file-preview]")?.innerHTML??""').catch(()=>''));}
- if(win&&!win.isDestroyed())errors.push(await evaluate('JSON.stringify(Array.from(document.querySelectorAll("[data-slot=markdown-root]")).map(root=>({streaming:root.dataset.mdStreaming,text:root.textContent.slice(0,200),animations:root.getAnimations({subtree:true}).map(a=>({type:a.constructor.name,property:a.transitionProperty,state:a.playState}))})))').catch(()=>''));
+ if(win&&!win.isDestroyed())errors.push(await evaluate('JSON.stringify({pointer:window.filePointerEvents,roots:Array.from(document.querySelectorAll("[data-slot=markdown-root]")).map(root=>({streaming:root.dataset.mdStreaming,text:root.textContent.slice(0,200),animations:root.getAnimations({subtree:true}).map(a=>({type:a.constructor.name,property:a.transitionProperty,state:a.playState}))}))})').catch(()=>''));
  const result={passed:false,checks,errors,error:String(error),stack:error.stack};writeFileSync(${JSON.stringify(join(evidence, 'result.json'))},JSON.stringify(result,null,2));console.error(result);
 } finally {app.quit();}})();
 `)

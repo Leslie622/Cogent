@@ -61,6 +61,7 @@
     "ignore": "^7.0.14",
     "image-size": "2.1.0",
     "lucide-react": "^1.69.0",
+    "material-icon-theme": "5.40.0",
     "pdfjs-dist": "6.5.438",
     "radix-ui": "^1.8.1",
     "react": "^19.3.1",

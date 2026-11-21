@@ -157,7 +157,7 @@ export function fileLinksPlugin(refs: readonly FileReference[] = []) {
       if (node.type === 'inlineCode' && node.value !== undefined && !insideLink) {
         const target = knownFileLink(node.value, refs)
         if (target !== undefined) {
-          node.children = [{ type: 'inlineCode', value: node.value }]
+          node.children = [{ type: 'text', value: node.value }]
           node.type = 'link'
           node.url = encodeFileLink(target)
           delete node.value

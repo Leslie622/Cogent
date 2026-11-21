@@ -47,12 +47,13 @@ const phase=process.env.OUTPUT_PHASE, checks=[],errors=[],opened=[];
 const saved=join(spec.root,'另存结果.txt');
 shell.openPath=async path=>{opened.push(path);return ''};
 dialog.showSaveDialog=async()=>({canceled:false,filePath:saved});
-const created=new Promise(done=>app.once('browser-window-created',(_event,win)=>{win.webContents.once('did-finish-load',()=>done(win));win.webContents.on('did-fail-load',(_event,code,text)=>console.error('[load]',code,text))}));
+const created=new Promise(done=>app.once('browser-window-created',(_event,win)=>{win.webContents.once('did-finish-load',()=>done(win));win.webContents.on('did-fail-load',(_event,code,text)=>console.error('[load]',code,text));win.webContents.on('render-process-gone',(_event,details)=>console.error('[driver] renderer gone',details))}));
 let win;
 const evaluate=source=>win.webContents.executeJavaScript(source,true);
 const wait=async(condition,label)=>{const end=Date.now()+30000;while(Date.now()<end){if(await condition()){checks.push(label);console.log('[验收] '+label);return}await new Promise(done=>setTimeout(done,50))}throw new Error('超时：'+label)};
 const content=()=>evaluate('document.querySelector("[data-file-preview]")?.innerText??""');
 const clickPreview=async name=>evaluate('Array.from(document.querySelectorAll("[data-output-card]")).find(card=>card.innerText.includes('+JSON.stringify(name)+')).querySelector("button").click()');
+const clickOutputMenu=async name=>evaluate('Array.from(document.querySelectorAll("[data-output-card]")).find(card=>card.innerText.includes('+JSON.stringify(name)+')).querySelector("[aria-haspopup=menu]").click()');
 const reload=async()=>{const loaded=new Promise(done=>win.webContents.once('did-finish-load',done));win.reload();await loaded};
 const send=async text=>{
  await wait(()=>evaluate('document.querySelector("[data-chat-session] textarea")?.disabled===false'),'目标聊天实际输入框就绪');
@@ -79,6 +80,19 @@ void(async()=>{try{
  await wait(()=>evaluate('document.querySelectorAll("[data-output-card]").length===3'),'正式卡首屏显示三项');
  await evaluate('Array.from(document.querySelectorAll("button")).find(el=>el.innerText.includes("展开其余")).click()');
  await wait(()=>evaluate('document.querySelectorAll("[data-output-card]").length===4'),'展开后四项完整可见');
+ if(await evaluate('Array.from(document.querySelectorAll("[data-output-card] [data-file-icon]")).map(icon=>icon.dataset.fileIcon).join(",")')!=='document,markdown,image,zip')throw new Error('产物文件图标未按类型匹配');
+ checks.push('产物使用Material文件类型图标');
+ if(!await evaluate('Array.from(document.querySelectorAll("[data-output-card] [data-file-icon]")).every(icon=>getComputedStyle(icon.parentElement).backgroundColor==="rgba(0, 0, 0, 0)")'))throw new Error('产物图标仍有背景');
+ checks.push('产物图标不加背景');
+ await evaluate('Promise.all(Array.from(document.querySelectorAll("[data-file-icon]")).map(icon=>new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>image.naturalWidth>0?resolve():reject(new Error("图标无尺寸"));image.onerror=()=>reject(new Error("图标资源加载失败："+icon.dataset.fileIcon));image.src=getComputedStyle(icon).backgroundImage.slice(5,-2)})))');
+ checks.push('打包后本地图标资源可实际解码');
+ if(!await evaluate('Array.from(document.querySelectorAll("[data-output-card]")).every(card=>card.querySelectorAll("button").length===2&&!/字节|用户交付文件|已保存交付副本|另存为/.test(card.innerText))'))throw new Error('正常文件行仍有冗余信息或独立动作');
+ checks.push('文件行只常显名称、类型与打开组合钮');
+ if(phase==='first'){
+  await clickOutputMenu('报告 #%.txt');await wait(()=>evaluate('document.querySelector("[role=menu]")?.innerText.includes("另存为")'),'另存与原件动作收进下拉菜单');
+  await win.webContents.capturePage(undefined,{stayHidden:true,stayAwake:true}).then(image=>writeFileSync(join(spec.evidence,'file-menu.png'),image.toPNG()));
+  await clickOutputMenu('报告 #%.txt');await wait(()=>evaluate('document.querySelector("[role=menu]")===null'),'下拉菜单可以关闭');
+ }
  await clickPreview('报告 #%.txt');await wait(async()=>(await content()).includes('最终交付B'),'默认预览交付最终字节B');
  await wait(async()=>(await content()).includes('交付副本'),'预览明确标交付版本');
  if(phase==='first'){
@@ -99,6 +113,15 @@ void(async()=>{try{
   await evaluate('window.cogent.fileAction('+JSON.stringify({...handle,action:'open'})+')');writeFileSync(opened.at(-1),'外部编辑');
   await clickPreview('报告 #%.txt');await wait(async()=>(await content()).includes('最终交付B'),'外部打开导出副本，改写不会损坏交付版本');
   rmSync(join(spec.workspace,'报告 #%.txt'));
+  await clickOutputMenu('报告 #%.txt');await wait(()=>evaluate('document.querySelector("[role=menu]")!==null'),'原件删除后仍能打开文件菜单');
+  await evaluate('Array.from(document.querySelectorAll("[role=menuitem]")).find(el=>el.textContent==="编辑当前原文件").click()');
+  await wait(()=>evaluate('document.querySelector("[role=alertdialog]")?.innerText.includes("ENOENT")'),'编辑已删除原件使用错误弹窗');
+  if(await evaluate('Array.from(document.querySelectorAll("[data-output-card]")).some(card=>card.innerText.includes("ENOENT"))'))throw new Error('操作错误仍插进文件行');
+  checks.push('操作错误不插进文件行');
+  await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))');
+  await evaluate('Array.from(document.querySelectorAll("[role=alertdialog] button")).find(el=>el.textContent==="知道了").click()');
+  await wait(()=>evaluate('document.querySelector("[role=alertdialog]")===null'),'错误弹窗可以关闭');
+  await clickPreview('报告 #%.txt');await wait(async()=>(await content()).includes('最终交付B'),'关闭原件错误弹窗后交付副本仍可预览');
  }else{
   checks.push('产品进程重启后交付副本恢复，原件已删除');
   await evaluate('document.querySelector("[aria-label=关闭文件预览]").click()');

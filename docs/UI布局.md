@@ -232,7 +232,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   填充与拇指 280ms ease-out 同步。ContextWindowSlider 是它的上下文域适配。
 - 图标以 `@tabler/icons-react` 为主，使用前验证导出存在；active 用成对 Filled 变体。
   shadcn 原语内部 lucide 图标保持原样。
-- 图标提示统一 `Hint`；可交互富内容直接用 tooltip 原语。对话索引细刻度和
+- 图标提示统一 `Hint`；可交互富内容直接用 tooltip 原语；装饰箭头不参与指针命中，避免挡住下方链接。对话索引细刻度和
   ProjectPicker 内嵌 X 不再套触发器，用 aria-label；组件的标题 prop 不属于 tooltip。
 
 ## 消息流的视觉配方
@@ -278,9 +278,12 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   库的 visibility/scrollable 快照不作为索引判断源。
 - 用量行位于正文 footer，`text-[11px] text-muted-foreground tabular-nums`；
   显示输入/输出/缓存/成本/耗时，零值和无数据项省略，格式机制见 [用量与成本](模块/用量与成本.md)。
-- 产物区位于终答与用量之间，使用shadcn Nova Card的sm档；每项文件图标、名称、类型/大小、说明与原生Button/菜单。
-  首屏3项可展开全部；状态用Badge，交付副本与当前原件动作分别标明。门控和版本机制见[产物文件卡片](模块/产物文件卡片.md)。
-- Markdown 使用 Streamdown + Shiki + CJK；本地链接显示文件图标与原标签，悬停/聚焦给完整路径；
+- 产物区位于终答与用量之间，使用shadcn Nova Card的sm档横向文件行：左侧图标、中间名称/类型、右侧ButtonGroup组合“打开＋下拉”；
+  文件图标用Material Icon Theme原始彩色SVG，size-6，不加底色或图标框；正文文件链接共用同一组件，size-4。
+  不设“交付文件”标题或数量行，另存等动作收进菜单，正常项不常显大小、申报说明或保存状态。首屏3项可展开全部，异常提示与回合Badge保留；
+  文件动作失败用AlertDialog与“知道了”关闭钮，长路径可换行滚动。门控和版本机制见[产物文件卡片](模块/产物文件卡片.md)。
+- Markdown 使用 Streamdown + Shiki + CJK；本地链接显示Material文件图标与原标签，不加背景，自动识别的文件名使用普通文本链接；
+  hover/键盘聚焦用shadcn Tooltip显示可换行的完整路径与原生复制图标钮，复制钮用icon-sm档并与路径垂直居中，400ms延迟；右键用ContextMenu提供文件动作，错误用独立AlertDialog。
   图标与整个标签为两个布局项，文字渐显片段在标签内自然排版，不逐片添加间距；文本预览顶部显示已定位的行列或范围。
   网页链接阻止窗口内导航，再 window.open，脚注走文内跳转。文件机制见[正文文件链接](模块/正文文件链接.md)。
   文件预览沿用右侧 HomeTabs 区域，≤1100px 用 Dialog；宽窄切换不保留空白遮罩。
