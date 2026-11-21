@@ -102,7 +102,7 @@ function SectionHeader({
             opacity 藏而非条件渲染 —— 占位恒定，标题文字不随显隐跳动 */}
         <IconChevronDown
           className={cn(
-            'size-[13px] shrink-0 transition-all',
+            'size-[13px] shrink-0 transition-[rotate,opacity] duration-200 ease-out motion-reduce:transition-none',
             open && 'opacity-0 group-hover:opacity-100',
             !open && '-rotate-90'
           )}
@@ -163,7 +163,8 @@ const ChatRow = memo(function ChatRow({
         render={
           <div
             className={cn(
-              'group relative flex h-8 items-center rounded-md',
+              // 屏外行只保留固定高度占位，开合不必计算全部菜单子树；DOM 仍保留供键盘聚焦。
+              'group relative flex h-8 items-center rounded-md [content-visibility:auto] [contain-intrinsic-size:auto_2rem]',
               ROW_HOVER,
               active && ROW_ACTIVE
             )}
@@ -243,7 +244,7 @@ const ChatRow = memo(function ChatRow({
   )
 })
 
-/** 项目行 + 展开态的子会话行；文件夹图标旋转过渡（同 svg，不替换实例）。
+/** 项目行 + 展开态的子会话行；文件夹图标在固定框内交叉渐变，不替换实例。
     回调同为 id 签名 + 父组件稳定引用（memo 生效前提，同 ChatRow 注释） */
 const ProjectRow = memo(function ProjectRow({
   projectId,

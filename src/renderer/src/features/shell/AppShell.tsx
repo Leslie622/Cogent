@@ -72,7 +72,8 @@ export function AppShell() {
               {/* 内容层：固定像素宽（min-w-60 = 下限 240px 兜底）。content-sidebar
                   内容随 AppView 换：首页（件 4）与设置（件 6）已落地，其余视图
                   侧栏属后续件 */}
-              <div ref={sidebar.contentRef} className="h-full min-w-60" style={{ width: sidebar.widthPx }}>
+              {/* 固定尺寸内容常驻合成层，裁剪窗只改变可见范围，保持静止图标像素稳定。 */}
+              <div ref={sidebar.contentRef} className="h-full min-w-60 transform-gpu" style={{ width: sidebar.widthPx }}>
                 {view === 'home' ? (
                   <HomeSidebar />
                 ) : view === 'settings' ? (

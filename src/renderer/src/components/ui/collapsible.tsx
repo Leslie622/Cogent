@@ -12,7 +12,7 @@ function CollapsibleTrigger({ ...props }: CollapsiblePrimitive.Trigger.Props) {
   )
 }
 
-/** 导航列表常驻以保留嵌套项目状态；开合由原语管理，过渡只负责呈现。 */
+/** 导航列表常驻以保留嵌套项目状态；起步态只用于恢复显示，反向开合从当前高度续接。 */
 function CollapsibleContent({
   variant = "default",
   className,
@@ -25,15 +25,17 @@ function CollapsibleContent({
       data-slot="collapsible-content"
       keepMounted={navigation}
       className={navigation ? cn(
-        "grid min-w-0 grid-rows-[minmax(0,0fr)] opacity-0 transition-[grid-template-rows,opacity] duration-200 ease-out data-open:grid-rows-[minmax(0,1fr)] data-open:opacity-100 data-starting-style:grid-rows-[minmax(0,0fr)] data-starting-style:opacity-0 data-ending-style:grid-rows-[minmax(0,0fr)] data-ending-style:opacity-0 motion-reduce:transition-none",
-        "[&>div]:transition-[padding] [&>div]:duration-200 [&>div]:ease-out data-open:[&>div]:pt-0.5 data-starting-style:[&>div]:pt-0 data-ending-style:[&>div]:pt-0 motion-reduce:[&>div]:transition-none",
+        "grid min-w-0 grid-rows-[minmax(0,0fr)] transition-[grid-template-rows] duration-200 ease-out data-open:grid-rows-[minmax(0,1fr)] data-starting-style:starting:grid-rows-[minmax(0,0fr)] data-ending-style:grid-rows-[minmax(0,0fr)] motion-reduce:transition-none",
         className
       ) : className}
       {...props}
     >
       {navigation ? (
-        <div className="flex min-h-0 min-w-0 flex-col gap-0.5 overflow-hidden">
-          {children}
+        <div className="min-h-0 min-w-0 overflow-hidden">
+          {/* 裁剪层不做 flex 容器，避免收拢轨道压缩行高；间距随完整列表一起被裁。 */}
+          <div className="flex min-w-0 flex-col gap-0.5 pt-0.5">
+            {children}
+          </div>
         </div>
       ) : children}
     </CollapsiblePrimitive.Panel>

@@ -26,6 +26,7 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
   图标为 20px（`size-5`），普通态与激活态尺寸一致。
 - `content-sidebar` 是普通 flex 像素宽块，不进 react-resizable-panels（RRP）；
   CSS 保证缩放时像素宽稳定，避免百分比尺寸经 JS 校正产生脏帧。
+  外层裁剪窗收拢宽度，内部保宽、全高内容以 `transform-gpu` 常驻合成层，保持静止图标的栅格稳定。
 - `SidebarResizeHandle` 使用 pointer capture + rAF 直写宽度；拖过下限有阻力，
   越过 min/2 折叠（落点 `collapsedWidth`：侧栏折成 0，模型设置左栏折成 48px
   图标栏），反向对称恢复；键盘 ±16px，双击回默认。
@@ -100,11 +101,11 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 
 | 部件 | 视觉与组件配方 |
 | --- | --- |
-| 列表行 | h-8、relative/group；会话主按钮撑满行高与宽度，内边距及项目缩进放在按钮内；常态 pr-4，动作显现时 pr-14；右侧绝对钮簇独立操作，等待确认 tag 放在主按钮内 |
+| 列表行 | h-8、relative/group；会话行使用 `content-visibility:auto` 与 `contain-intrinsic-size:auto 2rem`，屏外保留固定高度占位；主按钮撑满行高与宽度，内边距及项目缩进放在按钮内；常态 pr-4，动作显现时 pr-14；右侧绝对钮簇独立操作，等待确认 tag 放在主按钮内 |
 | 列表菜单 | ContextMenuTrigger 的 `render` 承载整行；动作数据同时供右键和“更多”菜单消费 |
 | 聊天重命名 | 聊天右键菜单“重命名”打开 Dialog + Input；预填并聚焦全选；原生取消/保存按钮，Enter 保存、Esc 关闭；错误留在弹窗 |
 | 项目移除 | “更多”与右键菜单共用 AlertDialog；描述含项目名与保留范围，原生取消钮和 destructive 确认钮；在途显示“移除中…”并禁用按钮，错误留在弹窗；成功反馈用 sonner 短语通知 |
-| 侧栏折叠 | `CollapsibleContent variant="navigation"`，200ms ease-out；keepMounted，收起 inert，结束后 hidden |
+| 侧栏折叠 | `CollapsibleContent variant="navigation"`，200ms ease-out，仅过渡 grid 轨道；裁剪层与自然高度列表分开，间距固定，不整块淡出；起步样式只在恢复显示时生效；keepMounted，收起 inert，结束后 hidden |
 | 等待确认 tag | 占行尾动作簇的位置，常显；emerald `/15` 背景 + 实色深绿文字 + 小呼吸点 |
 | 输入区 | `InputGroup variant="composer"`：`rounded-2xl` 大圆角、薄边、浮层投影 `shadow-composer` token（浅 `0 4px 12px rgb(0 0 0/0.05)`，深同几何提黑 alpha 0.4；shadcn 无官方阴影 token，自建于 globals.css）；浅色白卡，深色用抬亮的 card 底色。发送钮禁用不降低整卡透明度；聚焦不改变描边、底色与阴影。新聊天的灰色信息条两侧内收 16px、下沿被输入卡覆盖 12px，形成前后叠层；外观原理见[输入区外观](技术笔记/输入区外观.md) |
 | 附件区 | 同一 InputGroup 内、正文上方的 block-start addon；空时不占位。输入区 AttachmentGroup 自动换行，最高 160px，超过后纵向滚动；不加边缘渐隐 mask，单卡也完整显示；图片和文件卡外层统一 rounded-lg（10px）；图片用 Attachment image 变体的 45px 正方形缩略图，不显示文件名/大小/读取说明，简短导入/错误状态放底部，重试放左上；文件/视频用 sm、file 变体，最小高 45px、按内容收缩且最大宽度 180px，文件名单行省略，悬停显示全名；关闭统一用 AttachmentRemove 放右上角，悬停卡片或按钮获键盘焦点时显示，图片/文件同位置同尺寸，文件预留按钮位置避免遮挡或跳动；输入与历史沿用同一尺寸规则 |
