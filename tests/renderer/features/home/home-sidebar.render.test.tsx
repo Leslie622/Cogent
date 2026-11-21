@@ -1,5 +1,5 @@
-/** 侧栏导航：新聊天去重、会话整行热区、独立动作与归档撤销 toast。 */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+/** 侧栏导航：新聊天去重、会话热区、独立动作、归档撤销与项目移除确认。 */
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { emptyBucket, useChatStore } from '@/stores/chat'
@@ -184,5 +184,91 @@ describe('聊天右键重命名', () => {
     expect(engineRequest).toHaveBeenCalledWith('session.rename', { sessionId: oldSession.id, title: '自定义标题' })
     expect(screen.getByRole('button', { name: '自定义标题' })).toBeInTheDocument()
     expect(useChatStore.getState().activeSessionId).toBeNull()
+  })
+})
+
+describe('项目移除确认', () => {
+  const project = { id: 'project', name: '项目一', cwds: ['C:/project'], createdAt: 1 }
+
+  it.each([
+    ['普通', '更多'], ['普通', '右键'], ['置顶', '更多'], ['置顶', '右键'],
+  ])('%s项目从%s入口先确认，取消不请求、不通知', async (kind, entry) => {
+    const user = userEvent.setup()
+    const target = { ...project, ...(kind === '置顶' && { pinnedAt: 1 }) }
+    engineRequest.mockResolvedValue([target])
+    render(<HomeSidebar />)
+    const row = await screen.findByRole('button', { name: project.name })
+    if (entry === '右键') fireEvent.contextMenu(row)
+    else await user.click(within(row.parentElement!).getByRole('button', { name: '更多' }))
+    await user.click(await screen.findByRole('menuitem', { name: '移除项目' }))
+    const dialog = await screen.findByRole('alertdialog', { name: '移除项目？' })
+    expect(dialog).toHaveTextContent('项目「项目一」')
+    expect(dialog).toHaveTextContent('项目中的聊天和本地文件会保留')
+    expect(engineRequest).not.toHaveBeenCalledWith('project.delete', expect.anything())
+    expect(toastSuccess).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(engineRequest).not.toHaveBeenCalledWith('project.delete', expect.anything())
+    expect(useProjectStore.getState().projects).toEqual([target])
+    expect(toastSuccess).not.toHaveBeenCalled()
+  })
+
+  it('确认后等待请求完成才通知，在途不能重复提交或关闭，成功保留聊天', async () => {
+    const user = userEvent.setup()
+    let resolveDelete!: () => void
+    const pending = new Promise<void>((resolve) => { resolveDelete = resolve })
+    engineRequest.mockImplementation((method) => {
+      if (method === 'project.list') return Promise.resolve([project])
+      if (method === 'project.delete') return pending
+      throw new Error(`未预期的方法：${method}`)
+    })
+    const chat = { ...oldSession, projectId: project.id }
+    useChatStore.setState({ sessions: [chat] })
+    render(<HomeSidebar />)
+    fireEvent.contextMenu(await screen.findByRole('button', { name: project.name }))
+    await user.click(await screen.findByRole('menuitem', { name: '移除项目' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(within(dialog).getByRole('button', { name: '移除项目' }))
+    const confirm = within(dialog).getByRole('button', { name: '移除中…' })
+    expect(confirm).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: '取消' })).toBeDisabled()
+    await user.click(confirm)
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    expect(engineRequest.mock.calls.filter(([method]) => method === 'project.delete')).toEqual([
+      ['project.delete', { projectId: project.id }],
+    ])
+    expect(useProjectStore.getState().projects).toEqual([project])
+    expect(toastSuccess).not.toHaveBeenCalled()
+    await act(async () => { resolveDelete(); await pending })
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: project.name })).not.toBeInTheDocument()
+    expect(useProjectStore.getState().projects).toEqual([])
+    expect(useChatStore.getState().sessions).toEqual([chat])
+    expect(toastSuccess).toHaveBeenCalledExactlyOnceWith('项目已移除')
+  })
+
+  it('移除失败保留项目和弹窗、显示错误，重试成功才通知', async () => {
+    const user = userEvent.setup()
+    const remove = vi.fn<() => Promise<void>>().mockRejectedValueOnce(new Error("Error invoking remote method 'engine:request': Error: 磁盘写入失败"))
+      .mockResolvedValueOnce(undefined)
+    engineRequest.mockImplementation((method) => {
+      if (method === 'project.list') return Promise.resolve([project])
+      if (method === 'project.delete') return remove()
+      throw new Error(`未预期的方法：${method}`)
+    })
+    render(<HomeSidebar />)
+    fireEvent.contextMenu(await screen.findByRole('button', { name: project.name }))
+    await user.click(await screen.findByRole('menuitem', { name: '移除项目' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(within(dialog).getByRole('button', { name: '移除项目' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^磁盘写入失败$/)
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    expect(useProjectStore.getState().projects).toEqual([project])
+    expect(toastSuccess).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: '移除项目' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(remove).toHaveBeenCalledTimes(2)
+    expect(toastSuccess).toHaveBeenCalledExactlyOnceWith('项目已移除')
   })
 })

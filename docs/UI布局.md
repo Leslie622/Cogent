@@ -99,6 +99,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 | 列表行 | h-8、relative/group；会话主按钮撑满行高与宽度，内边距及项目缩进放在按钮内；常态 pr-4，动作显现时 pr-14；右侧绝对钮簇独立操作，等待确认 tag 放在主按钮内 |
 | 列表菜单 | ContextMenuTrigger 的 `render` 承载整行；动作数据同时供右键和“更多”菜单消费 |
 | 聊天重命名 | 聊天右键菜单“重命名”打开 Dialog + Input；预填并聚焦全选；原生取消/保存按钮，Enter 保存、Esc 关闭；错误留在弹窗 |
+| 项目移除 | “更多”与右键菜单共用 AlertDialog；描述含项目名与保留范围，原生取消钮和 destructive 确认钮；在途显示“移除中…”并禁用按钮，错误留在弹窗；成功反馈用 sonner 短语通知 |
 | 侧栏折叠 | `CollapsibleContent variant="navigation"`，200ms ease-out；keepMounted，收起 inert，结束后 hidden |
 | 等待确认 tag | 占行尾动作簇的位置，常显；emerald `/15` 背景 + 实色深绿文字 + 小呼吸点 |
 | 输入区 | `InputGroup variant="composer"`：`rounded-2xl` 大圆角、薄边、浮层投影 `shadow-composer` token（浅 `0 4px 12px rgb(0 0 0/0.05)`，深同几何提黑 alpha 0.4；shadcn 无官方阴影 token，自建于 globals.css）；浅色白卡，深色用抬亮的 card 底色。发送钮禁用不降低整卡透明度；聚焦不改变描边、底色与阴影。新聊天的灰色信息条两侧内收 16px、下沿被输入卡覆盖 12px，形成前后叠层；外观原理见[输入区外观](技术笔记/输入区外观.md) |

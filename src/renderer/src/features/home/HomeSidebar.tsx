@@ -51,6 +51,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { ProjectDialog } from './ProjectDialog'
+import { RemoveProjectDialog } from './RemoveProjectDialog'
 import { RenameChatDialog } from './RenameChatDialog'
 import { useChatStore, type SessionSummary } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
@@ -432,6 +433,7 @@ export function HomeSidebar() {
   // 编辑项目弹窗（入口 = 项目行菜单「编辑」）：持 projectId 而非布尔 —— key
   // 之用，弹窗每次打开都是全新实例（name 初值从 store 取，免手写重置）
   const [editProjectId, setEditProjectId] = useState<string | null>(null)
+  const [removeProjectId, setRemoveProjectId] = useState<string | null>(null)
   const [renameChatId, setRenameChatId] = useState<string | null>(null)
   const renameChat = useCallback((chatId: string) => setRenameChatId(chatId), [])
 
@@ -453,7 +455,6 @@ export function HomeSidebar() {
   const selectSession = useChatStore((s) => s.selectSession)
   const projects = useProjectStore((s) => s.projects)
   const loadProjects = useProjectStore((s) => s.load)
-  const removeProject = useProjectStore((s) => s.remove)
   const setPinnedProject = useProjectStore((s) => s.setPinned)
   // 视图态只管"新聊天进行中"的信息区/无行选中；chat 行高亮直接看 chat store 的
   // activeSessionId（选中后两者同源同变）
@@ -506,6 +507,7 @@ export function HomeSidebar() {
   // 编辑弹窗的目标（菜单打开时行在渲染 = store 必有；编辑中项目被删则 undefined
   // → 弹窗条件渲染自然消失）
   const editingProject = editProjectId !== null ? projects.find((p) => p.id === editProjectId) : undefined
+  const removingProject = projects.find((p) => p.id === removeProjectId)
   const chatsByProject = useMemo(() => {
     const map = new Map<string, SessionSummary[]>()
     for (const project of projects) {
@@ -567,13 +569,8 @@ export function HomeSidebar() {
     void useChatStore.getState().setPinned(chatId, pinned)
   }, [])
 
-  /** 删除项目（不级联删会话，引擎 delete 语义）；id 签名直传 ProjectRow */
-  const deleteProject = useCallback(
-    (projectId: string) => {
-      void removeProject(projectId)
-    },
-    [removeProject]
-  )
+  /** 双菜单入口只打开确认层，移除请求由弹窗在用户确认后发起。 */
+  const deleteProject = useCallback((projectId: string) => setRemoveProjectId(projectId), [])
 
   /** 编辑项目（开改名弹窗）；id 签名 + 稳定引用（ProjectRow memo 前提） */
   const editProject = useCallback((projectId: string) => {
@@ -792,6 +789,10 @@ export function HomeSidebar() {
 
       {renamingChat !== undefined && (
         <RenameChatDialog key={renamingChat.id} chat={renamingChat} onClose={() => setRenameChatId(null)} />
+      )}
+
+      {removingProject !== undefined && (
+        <RemoveProjectDialog key={removingProject.id} project={removingProject} onClose={() => setRemoveProjectId(null)} />
       )}
 
       {/* 编辑项目：与创建同一张表单（改名 + 目录增删，新加目录才走信任确认）。
