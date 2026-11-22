@@ -1,0 +1,234 @@
+{
+  "passed": true,
+  "runId": "workspace-memory-7a9731cf-e679-4ab3-ace3-097a069647d3",
+  "phase": 1,
+  "stage": "原生关闭产品窗口",
+  "checks": [
+    "真实main/preload/renderer首页就绪",
+    "默认收起、零标签、零文件面板、零webview",
+    "启动无Tooltip且焦点未落入工作区或Tooltip触发器",
+    "preload不再提供工作区保存请求或ACK接口",
+    "初始工作区旧数据库清理已完成",
+    "原生WebContents中没有后台网页实例",
+    "使用正常GPU启动参数",
+    "仅在IndexedDB种旧快照，未注入业务store",
+    "原生指针可命中 [aria-label=展开标签页区]",
+    "原生指针可命中 [aria-label=打开文件导航]",
+    "原生指针可命中 [aria-label=打开文件]",
+    "真实选择本地文本后Host读取并渲染源码",
+    "只调用一次真实文件选择入口",
+    "原生滚轮改变文本阅读位置并停止滚动",
+    "原生指针可命中 [aria-label=新建标签页]",
+    "原生指针可命中 [aria-label=打开内置浏览器]",
+    "原生指针可命中 [data-workspace-panel]:not([hidden]) [aria-label=网页地址或搜索]",
+    "真实webview打开随机本地HTTP网页",
+    "网页标题与真实地址回显",
+    "原生指针可命中 [aria-controls=\"workspace-panel-371d3d24-0bef-49e5-8623-7b3472c7f128\"]",
+    "切回文件保留本进程阅读位置",
+    "原生指针可命中 [aria-controls=\"workspace-panel-87fb3760-654a-4a6d-a3b4-5a7b90b95ef5\"]",
+    "切回网页保留本进程真实地址",
+    "标签切换保留同一个原生网页实例",
+    "原生指针可命中 [aria-label=新建标签页]",
+    "原生指针可命中 [aria-label=打开内置浏览器]",
+    "原生指针可命中 [aria-label=\"关闭 浏览器\"]",
+    "原生指针可命中 [aria-controls=\"workspace-panel-87fb3760-654a-4a6d-a3b4-5a7b90b95ef5\"]",
+    "原生CtrlShiftT受信任按键确实到达工作区",
+    "本进程CtrlShiftT仍能恢复刚关闭的标签",
+    "原生指针可命中 [aria-label=\"关闭 浏览器\"]",
+    "保留文件网页与本进程recent记录后正常关窗",
+    "文件打开、阅读、网页导航、关闭重开均未覆写旧数据库sentinel",
+    "renderer没有控制台错误",
+    "整个运行没有workspace保存握手或未保存询问",
+    "原生指针可命中 [aria-label=关闭]",
+    "正常窗口关闭完成，无workspace:flush ACK或未保存提示"
+  ],
+  "measurements": {
+    "startup": {
+      "collapsed": true,
+      "tabCount": 0,
+      "panelCount": 0,
+      "webviews": 0,
+      "visibleTooltips": [],
+      "workspaceFocused": false,
+      "focusedTooltipTrigger": false,
+      "focus": "<body class=\"antialiased\">\n    <div id=\"root\"><div class=\"chrome-surface flex h-dvh flex-col text-sidebar-foreground\"><header class=\"app-header flex h-10 shrink-0 items-center pr-2 text-muted-foreground\" style=\"app-region: drag;\"><div class=\"flex items-center gap-2 pl-2\" style=\"app-region: no-drag;\"><button type=\"button\" tabindex=\"0\" data-slot=\"tooltip-trigger\" aria-label=\"折叠侧边栏\" id=\"base-ui-_r_1_\" data-base-ui-tooltip-trigger=\"\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all ou",
+      "oldFlushApi": "undefined",
+      "oldAckApi": "undefined",
+      "guestCount": 0
+    },
+    "gpu": {
+      "2d_canvas": "enabled",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "enabled",
+      "multiple_raster_threads": "enabled_on",
+      "opengl": "enabled_on",
+      "rasterization": "enabled",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "enabled",
+      "video_encode": "enabled",
+      "webgl": "enabled",
+      "webgpu": "enabled",
+      "webnn": "disabled_off"
+    },
+    "legacyFixture": {
+      "version": 1,
+      "sentinel": "workspace-memory-7a9731cf-e679-4ab3-ace3-097a069647d3",
+      "scopes": {
+        "draft:default": {
+          "tabs": [
+            {
+              "id": "legacy-file",
+              "scopeId": "draft:default",
+              "kind": "file",
+              "title": "Legacy file",
+              "createdAt": 1,
+              "source": {
+                "scope": {
+                  "contextId": "restore",
+                  "refs": [],
+                  "workspaceScopeId": "draft:default"
+                },
+                "target": "C:\\Users\\41631\\AppData\\Local\\Temp\\cogent-workspace-memory-pcO0w7\\outside-workspace\\memory-only-reading.txt"
+              },
+              "resourceKey": "legacy-file-key",
+              "navigation": 1
+            },
+            {
+              "id": "legacy-browser",
+              "scopeId": "draft:default",
+              "kind": "browser",
+              "title": "Legacy browser",
+              "createdAt": 2,
+              "url": "http://127.0.0.1:54190/memory/workspace-memory-7a9731cf-e679-4ab3-ace3-097a069647d3?legacy=1",
+              "history": {
+                "entries": [
+                  {
+                    "url": "http://127.0.0.1:54190/memory/workspace-memory-7a9731cf-e679-4ab3-ace3-097a069647d3?legacy=1",
+                    "title": "Legacy browser"
+                  }
+                ],
+                "index": 0
+              }
+            }
+          ],
+          "activeId": "legacy-browser",
+          "collapsed": false,
+          "expanded": true,
+          "width": 680,
+          "grantIds": []
+        }
+      },
+      "recent": [
+        {
+          "id": "legacy-closed-file",
+          "scopeId": "draft:default",
+          "kind": "file",
+          "title": "Legacy file",
+          "createdAt": 1,
+          "source": {
+            "scope": {
+              "contextId": "restore",
+              "refs": [],
+              "workspaceScopeId": "draft:default"
+            },
+            "target": "C:\\Users\\41631\\AppData\\Local\\Temp\\cogent-workspace-memory-pcO0w7\\outside-workspace\\memory-only-reading.txt"
+          },
+          "resourceKey": "legacy-file-key",
+          "navigation": 1
+        }
+      ],
+      "views": {
+        "legacy-file": {
+          "scrollTop": 1440,
+          "scrollLeft": 0,
+          "selection": {
+            "anchor": 10,
+            "head": 20
+          }
+        }
+      }
+    },
+    "readingBefore": {
+      "scrollTop": 700,
+      "tabId": "371d3d24-0bef-49e5-8623-7b3472c7f128"
+    },
+    "browser": {
+      "tabId": "87fb3760-654a-4a6d-a3b4-5a7b90b95ef5",
+      "url": "http://127.0.0.1:54190/memory/workspace-memory-7a9731cf-e679-4ab3-ace3-097a069647d3",
+      "guestId": 2
+    },
+    "readingAfter": {
+      "scrollTop": 700
+    },
+    "shortcuts": [
+      [
+        {
+          "key": "T",
+          "trusted": true,
+          "control": true,
+          "shift": true,
+          "workspace": true
+        }
+      ]
+    ],
+    "beforeClose": {
+      "collapsed": false,
+      "tabCount": 2,
+      "panelCount": 2,
+      "webviews": 1,
+      "visibleTooltips": [],
+      "workspaceFocused": true,
+      "focusedTooltipTrigger": true,
+      "focus": "<button type=\"button\" data-orientation=\"horizontal\" data-activation-direction=\"left\" aria-disabled=\"false\" tabindex=\"0\" role=\"tab\" aria-controls=\"workspace-panel-87fb3760-654a-4a6d-a3b4-5a7b90b95ef5\" aria-selected=\"true\" id=\"workspace-tab-87fb3760-654a-4a6d-a3b4-5a7b90b95ef5\" data-slot=\"tooltip-trigger\" aria-roledescription=\"sortable\" aria-describedby=\"DndDescribedBy-0\" data-base-ui-tooltip-trigger=\"\" class=\"relative inline-flex h-full min-w-0 flex-1 items-center gap-2 px-3 text-left text-sm font-normal outline-none disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-no",
+      "oldFlushApi": "undefined",
+      "oldAckApi": "undefined"
+    },
+    "closeMs": 16
+  },
+  "errors": [],
+  "ipc": [],
+  "dialogs": [],
+  "pickerCalls": [
+    {
+      "stage": "种旧数据库迁移夹具",
+      "options": {
+        "title": "选择文件",
+        "properties": [
+          "openFile",
+          "multiSelections"
+        ]
+      }
+    }
+  ],
+  "closed": true,
+  "elapsedMs": 4164,
+  "ownedPids": [
+    30340,
+    10576,
+    8696,
+    31080,
+    27844,
+    16160,
+    31772
+  ],
+  "electron": "40.9.3",
+  "chromium": "144.0.7559.236",
+  "cleanup": {
+    "exitCode": 0,
+    "timedOut": false,
+    "interrupted": false,
+    "ownedPids": [
+      30340,
+      10576,
+      8696,
+      31080,
+      27844,
+      16160,
+      31772
+    ],
+    "forcedPids": [],
+    "remainingPids": []
+  }
+}

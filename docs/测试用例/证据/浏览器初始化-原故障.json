@@ -1,0 +1,193 @@
+{
+  "passed": false,
+  "mode": "development",
+  "stage": "启动浏览器1",
+  "checks": [
+    "真实首页与main/preload桥就绪",
+    "真实Vite开发renderer已加载",
+    "真实Host进程完成session.list往返",
+    "控件就绪 [aria-label=展开标签页区]",
+    "控件就绪 [aria-label=打开内置浏览器]"
+  ],
+  "requests": [
+    {
+      "id": 1,
+      "method": "reserve",
+      "params": {
+        "scopeId": "draft:00438806-fdbb-48e2-b366-a7c4241ba757",
+        "tabId": "314031e6-2a0e-4ede-8c0f-8dae97d8e969"
+      },
+      "calledAt": 8873,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8878,
+      "reservation": {
+        "lease": "652c94d3-438a-4a41-822d-8248fae5b1ce",
+        "tabId": "314031e6-2a0e-4ede-8c0f-8dae97d8e969",
+        "partition": "persist:cogent-workspace-browser-v1",
+        "bootstrapUrl": "about:blank#652c94d3-438a-4a41-822d-8248fae5b1ce"
+      },
+      "delayedReply": true,
+      "returnedAt": 9146
+    },
+    {
+      "id": 2,
+      "method": "reserve",
+      "params": {
+        "scopeId": "draft:00438806-fdbb-48e2-b366-a7c4241ba757",
+        "tabId": "314031e6-2a0e-4ede-8c0f-8dae97d8e969"
+      },
+      "calledAt": 8878,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8878,
+      "reservation": {
+        "lease": "652c94d3-438a-4a41-822d-8248fae5b1ce",
+        "tabId": "314031e6-2a0e-4ede-8c0f-8dae97d8e969",
+        "partition": "persist:cogent-workspace-browser-v1",
+        "bootstrapUrl": "about:blank#652c94d3-438a-4a41-822d-8248fae5b1ce"
+      },
+      "returnedAt": 8878
+    },
+    {
+      "id": 3,
+      "method": "attach",
+      "params": {
+        "lease": "652c94d3-438a-4a41-822d-8248fae5b1ce",
+        "webContentsId": 2
+      },
+      "calledAt": 9124,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 9125,
+      "returnedAt": 9126
+    },
+    {
+      "id": 4,
+      "method": "visibility",
+      "params": {
+        "lease": "652c94d3-438a-4a41-822d-8248fae5b1ce",
+        "active": true
+      },
+      "calledAt": 9145,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 9146,
+      "returnedAt": 9146
+    },
+    {
+      "id": 5,
+      "method": "preferences",
+      "params": {
+        "lease": "652c94d3-438a-4a41-822d-8248fae5b1ce"
+      },
+      "calledAt": 9146,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 9147,
+      "returnedAt": 9147
+    },
+    {
+      "id": 6,
+      "method": "release",
+      "params": {
+        "lease": "652c94d3-438a-4a41-822d-8248fae5b1ce"
+      },
+      "calledAt": 9147,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 9148,
+      "returnedAt": 9148
+    },
+    {
+      "id": 7,
+      "method": "history",
+      "params": {
+        "lease": "652c94d3-438a-4a41-822d-8248fae5b1ce"
+      },
+      "calledAt": 9148,
+      "stage": "启动浏览器1",
+      "status": "error",
+      "returnedAt": 9149,
+      "error": "Error: 网页标签已关闭或不属于当前窗口"
+    },
+    {
+      "id": 8,
+      "method": "visibility",
+      "params": {
+        "lease": "652c94d3-438a-4a41-822d-8248fae5b1ce",
+        "active": true
+      },
+      "calledAt": 9157,
+      "stage": "启动浏览器1",
+      "status": "error",
+      "returnedAt": 9158,
+      "error": "Error: 网页标签已关闭或不属于当前窗口"
+    }
+  ],
+  "guests": [
+    {
+      "id": 2,
+      "createdAt": 8897,
+      "urls": [
+        {
+          "url": "about:blank#652c94d3-438a-4a41-822d-8248fae5b1ce",
+          "at": 9106
+        }
+      ],
+      "destroyedAt": 9148
+    }
+  ],
+  "rendererErrors": [],
+  "leasesBeforeCleanup": [],
+  "remainingLeases": [],
+  "ownedPids": [
+    32968,
+    21828,
+    26108,
+    24704,
+    27252,
+    1344,
+    4672
+  ],
+  "elapsedMs": 39139,
+  "electron": "40.9.3",
+  "chromium": "144.0.7559.236",
+  "error": "Error: 超时：浏览器1完成真实attach/visibility并启用地址栏",
+  "stack": "Error: 超时：浏览器1完成真实attach/visibility并启用地址栏\n    at wait (file:///C:/Users/41631/AppData/Local/Temp/cogent-browser-startup-5HzeRV/development/driver.mjs:85:11)\n    at async driver (file:///C:/Users/41631/AppData/Local/Temp/cogent-browser-startup-5HzeRV/development/driver.mjs:170:7)",
+  "failedStage": "启动浏览器1",
+  "dom": {
+    "url": "http://127.0.0.1:64053/",
+    "text": "文件\n编辑\n视图\n帮助\nCogent\n新聊天\n项目\n暂无项目\n最近\n无聊天\n新聊天\nScroll to end\n选择项目\n变更前确认\n配置模型\n工作区\n浏览器\nError invoking remote method 'cogent:browser:request': Error: 网页标签已关闭或不属于当前窗口\n重试",
+    "panes": [
+      {
+        "tabId": "314031e6-2a0e-4ede-8c0f-8dae97d8e969",
+        "alert": "Error invoking remote method 'cogent:browser:request': Error: 网页标签已关闭或不属于当前窗口重试",
+        "disabled": true
+      }
+    ]
+  },
+  "cleanup": {
+    "exitCode": 0,
+    "timedOut": false,
+    "interrupted": false,
+    "forcedPids": [],
+    "remainingPids": [],
+    "ownedPids": [
+      32968,
+      21828,
+      26108,
+      24704,
+      27252,
+      1344,
+      4672
+    ]
+  },
+  "renderer": {
+    "url": "http://127.0.0.1:64053",
+    "devServer": true,
+    "host": "127.0.0.1",
+    "randomPort": true
+  },
+  "fixtureRequests": []
+}

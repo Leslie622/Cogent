@@ -12,6 +12,8 @@
 import type { AttachmentMethods, AttachmentRef, DirectoryRef } from '@shared/attachments'
 import type { FileMethods, FileContext, FileReference, FileActionRequest } from '@shared/files'
 import type { OutputMethods, TurnOutputs } from '@shared/outputs'
+import type { FileViewMethods } from '@shared/file-views'
+import type { BrowserMethods, BrowserEvent } from '@shared/browser'
 type OutputParams = { [K in keyof OutputMethods]: OutputMethods[K]['params'] }
 type OutputResults = { [K in keyof OutputMethods]: OutputMethods[K]['result'] }
 type FileParams = { [K in keyof FileMethods]: FileMethods[K]['params'] }
@@ -22,6 +24,9 @@ type AttachmentResults = { [K in keyof AttachmentMethods]: AttachmentMethods[K][
 declare global {
   interface Window {
     cogent: {
+      fileViewsRequest: <M extends keyof FileViewMethods>(method: M, params: FileViewMethods[M]['params']) => Promise<FileViewMethods[M]['result']>
+      browserRequest: <M extends keyof BrowserMethods>(method: M, params: BrowserMethods[M]['params']) => Promise<BrowserMethods[M]['result']>
+      onBrowserEvent: (callback: (event: BrowserEvent) => void) => () => void
       fileAction: (request: FileActionRequest) => Promise<{ canceled: boolean }>
       configureFileEditor: () => Promise<{ canceled: boolean }>
       filePath: (file: File) => string
@@ -381,6 +386,7 @@ export interface SkillSummary {
  * bug（'sessionId' in event 永假 → 事件被静默丢弃），类型必须忠实于运行时形状。
  */
 export type EngineEvent =
+  | { method: 'fileViews.directoryChanged'; params: { contextId: string; directoryId: string; generation: number; error?: string } }
   | { method: 'outputs.updated'; params: TurnOutputs }
   | { method: 'outputs.error'; params: { sessionId: string; turnId: string; message: string } }
   | { method: 'files.invalidated'; params: Record<string, never> }

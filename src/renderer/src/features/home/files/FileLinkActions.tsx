@@ -1,7 +1,9 @@
 /** 文件链接的 hover/右键交互；临时解析句柄用完释放，状态随链接来源身份隔离。 */
 import { useId, useRef, useState, type ReactElement } from 'react'
 import { IconCheck, IconCopy, IconDownload, IconExternalLink, IconEye, IconFolder, IconPencil } from '@tabler/icons-react'
-import type { FileAction, FileDescriptor, FileKind } from '@shared/files'
+import type { FileAction, FileKind } from '@shared/files'
+import type { FileViewLease } from '@shared/file-views'
+import { acquireFile, releaseFile } from '@/features/workspace/file-client'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -19,40 +21,31 @@ export function FileLinkActions({ scope, target, title, children, onPreview }: {
   const [copied, setCopied] = useState(false)
   const requesting = useRef(false)
   const tooltipId = useId()
-  const release = (file: FileDescriptor) => window.cogent.engineRequest('files.cancel', {
-    sessionId: scope.sessionId, operationId: crypto.randomUUID(), fileId: file.fileId
-  })
-  const withFile = async (operation: (file: FileDescriptor) => void | Promise<void>) => {
-    const file = await window.cogent.engineRequest('files.resolve', {
-      sessionId: scope.sessionId, turnId: scope.turnId, rawTarget: target, relativeTo: scope.relativeTo
-    })
-    try { await operation(file) }
-    finally { await release(file) }
+  const withFile = async (operation: (lease: FileViewLease) => void | Promise<void>) => {
+    const lease = await acquireFile(scope, target, crypto.randomUUID())
+    try { await operation(lease) }
+    finally { await releaseFile(lease.leaseId) }
   }
   const resolveHint = () => {
     if (requesting.current) return
     requesting.current = true
     setCopied(false)
     setHint({ path: null, kind: null, error: null })
-    void withFile((file) => setHint({ path: file.delivery?.sourcePath ?? file.path, kind: file.kind, error: null }))
+    void withFile(({ descriptor: file }) => setHint({ path: file.delivery?.sourcePath ?? file.path, kind: file.kind, error: null }))
       .catch((error: unknown) => setHint({ path: null, kind: null, error: reason(error) }))
       .finally(() => { requesting.current = false })
   }
   const fail = (error: unknown) => { setTooltipOpen(false); setError(reason(error)) }
   const copy = async () => {
     try {
-      await withFile((file) => navigator.clipboard.writeText(file.delivery?.sourcePath ?? file.path))
+      await withFile(({ descriptor: file }) => navigator.clipboard.writeText(file.delivery?.sourcePath ?? file.path))
       setCopied(true)
     } catch (error) { fail(error) }
   }
   const action = async (action: FileAction) => {
     try {
-      await withFile(async (file) => {
-        const current = file.delivery !== undefined && (action === 'editor' || action === 'reveal')
-          ? await window.cogent.engineRequest('outputs.resolve', { ...file.delivery.target, version: 'current' }) : file
-        try {
-          await window.cogent.fileAction({ sessionId: scope.sessionId, fileId: current.fileId, action, location: file.location })
-        } finally { if (current !== file) await release(current) }
+      await withFile(async (lease) => {
+        await window.cogent.fileViewsRequest('fileViews.action', { leaseId: lease.leaseId, action, location: lease.descriptor.location })
       })
     } catch (error) { fail(error) }
   }

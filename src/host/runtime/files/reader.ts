@@ -17,6 +17,7 @@ import { parseInWorker } from '../read-attachment'
 
 type Source = { context: Pick<FileContext, 'cwd' | 'roots' | 'platform'>; saved: boolean }
 type Entry = {
+  independent: boolean
   sessionId: string
   alias: string
   real: string
@@ -34,6 +35,17 @@ export interface DeliveryRegistration {
 }
 type Operation = { controller: AbortController; users: number }
 const TYPES: Record<string, [FileKind, string]> = {
+  '.html': ['text', 'text/html'],
+  '.htm': ['text', 'text/html'],
+  '.css': ['text', 'text/css'],
+  '.js': ['text', 'text/javascript'],
+  '.mjs': ['text', 'text/javascript'],
+  '.svg': ['text', 'image/svg+xml'],
+  '.json': ['text', 'application/json'],
+  '.woff': ['other', 'font/woff'],
+  '.woff2': ['other', 'font/woff2'],
+  '.ttf': ['other', 'font/ttf'],
+  '.wasm': ['other', 'application/wasm'],
   '.md': ['markdown', 'text/markdown'],
   '.mdx': ['text', 'text/plain'],
   '.png': ['image', 'image/png'],
@@ -44,7 +56,10 @@ const TYPES: Record<string, [FileKind, string]> = {
   '.bmp': ['image', 'image/bmp'],
   '.pdf': ['pdf', 'application/pdf'],
   '.docx': ['office', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  '.doc': ['office', 'application/msword'],
   '.xlsx': ['office', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+  '.xlsm': ['office', 'application/vnd.ms-excel.sheet.macroEnabled.12'],
+  '.xls': ['office', 'application/vnd.ms-excel'],
   '.pptx': ['office', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
   '.mp3': ['audio', 'audio/mpeg'],
   '.wav': ['audio', 'audio/wav'],
@@ -68,18 +83,34 @@ export class FileService {
   private canceled = new Set<string>()
   private active = 0
   private queue: Array<() => void> = []
+  private desktopSources = new Map<string, Source>()
   constructor(
     private source: (sessionId: string, turnId?: string) => Source,
     private parse = parseInWorker
   ) {}
 
+  private origin(owner: string, turnId?: string): Source { return this.desktopSources.get(owner) ?? this.source(owner, turnId) }
+  registerDesktopOwner(owner: string, roots: string[]): void {
+    this.desktopSources.set(owner, { context: { cwd: roots[0], roots, platform: process.platform }, saved: false })
+  }
+  releaseDesktopOwner(owner: string): void { this.releaseSession(owner); this.desktopSources.delete(owner) }
+  /** 显式 lease 使用独立登记，释放时不会夺走旧 files.resolve 调用方的 ID。 */
+  release(handle: FileHandle): void {
+    const entry = this.entries.get(handle.fileId)
+    if (entry === undefined) return
+    if (entry.sessionId !== handle.sessionId) throw new Error('文件登记不属于此 owner')
+    this.entries.delete(handle.fileId)
+    entry.delivery?.release()
+  }
+
   async resolve(
     sessionId: string,
     rawTarget: string,
     turnId?: string,
-    relativeTo?: string
+    relativeTo?: string,
+    independent = false
   ): Promise<FileDescriptor> {
-    const origin = this.source(sessionId, turnId)
+    const origin = this.origin(sessionId, turnId)
     if (relativeTo !== undefined) {
       const entry = await this.checked({ sessionId, fileId: relativeTo })
       if (entry.delivery !== undefined) return entry.delivery.relative(rawTarget)
@@ -91,13 +122,13 @@ export class FileService {
     // relativeTo 指的是预览来源文件，其目录是 Markdown 本地依赖的基准。
     if (relativeTo !== undefined) base.cwd = dirname(base.cwd)
     const target = resolveFileTarget(rawTarget, base, homedir())
-    return this.registerPath(sessionId, target.path, turnId, undefined, target, origin.saved)
+    return this.registerPath(sessionId, target.path, turnId, undefined, target, origin.saved, independent)
   }
 
   /** Host 内部字面路径登记口；产物路径不经过 Markdown URI/行列解析。 */
   async registerPath(sessionId: string, path: string, turnId?: string, delivery?: DeliveryRegistration,
-    target: { location?: FileDescriptor['location']; locationWarning?: string } = {}, saved = true): Promise<FileDescriptor> {
-    this.source(sessionId, turnId)
+    target: { location?: FileDescriptor['location']; locationWarning?: string } = {}, saved = true, independent = false): Promise<FileDescriptor> {
+    this.origin(sessionId, turnId)
     const alias = path
     const real = await realpath(alias)
     const info = await stat(real)
@@ -116,9 +147,10 @@ export class FileService {
         entry.alias === alias &&
         entry.real === real
     )
-    const fileId = delivery === undefined ? existing?.descriptor.fileId ?? randomUUID() : randomUUID()
+    const fileId = delivery === undefined && !independent ? existing?.descriptor.fileId ?? randomUUID() : randomUUID()
     const descriptor: FileDescriptor = {
       fileId,
+      canonicalKey: process.platform === 'win32' ? real.toLowerCase() : real,
       serviceId: this.serviceId,
       path: delivery?.sourcePath ?? alias,
       name: basename(alias),
@@ -131,12 +163,14 @@ export class FileService {
       ...(target.location !== undefined && { location: target.location }),
       ...(target.locationWarning !== undefined && { locationWarning: target.locationWarning })
     }
-    this.entries.set(fileId, { sessionId, alias, real, descriptor, turnId, delivery })
+    // realpath/stat期间来源可能已经被删除；不能在撤销后重新登记一份迟到句柄。
+    this.origin(sessionId, turnId)
+    this.entries.set(fileId, { sessionId, alias, real, descriptor, turnId, delivery, independent })
     return descriptor
   }
 
   private async checked(handle: FileHandle): Promise<Entry> {
-    this.source(handle.sessionId)
+    this.origin(handle.sessionId)
     const entry = this.entries.get(handle.fileId)
     if (entry === undefined || entry.sessionId !== handle.sessionId)
       throw new Error('文件标识已失效，请重新点击文件链接')
@@ -153,6 +187,12 @@ export class FileService {
       name: entry.descriptor.name,
       kind: info.isDirectory() ? ('directory' as const) : entry.descriptor.kind
     }
+  }
+  /** 受管网页预览只在 Host 内取规范路径；外部仍通过有版本的分片读取。 */
+  async previewTarget(handle: FileHandle) {
+    const entry = await this.checked(handle)
+    if (version(await stat(entry.real)) !== entry.descriptor.version) throw new Error('文件已变化，请重新加载')
+    return { path: entry.real, version: entry.descriptor.version }
   }
 
   private async job<T>(
@@ -201,8 +241,9 @@ export class FileService {
   }
   releaseSession(sessionId: string): void {
     for (const key of this.canceled) if (key.startsWith(sessionId + '/')) this.canceled.delete(key)
+    // 显式登记由FileViewsService先撤销lease，最后一个在途hold结束后release；旧入口仍立即清理。
     for (const [id, entry] of this.entries)
-      if (entry.sessionId === sessionId) { entry.delivery?.release(); this.entries.delete(id) }
+      if (entry.sessionId === sessionId && !entry.independent) { entry.delivery?.release(); this.entries.delete(id) }
     for (const [key, operation] of this.operations)
       if (key.startsWith(sessionId + '/')) {
         operation.controller.abort()

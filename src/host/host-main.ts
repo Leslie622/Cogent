@@ -80,6 +80,8 @@ import { startHttpRpc } from './http/server'
 import { createCapabilityStore, createRootSecret } from './http/auth'
 import { AttachmentConfig, attachmentHandlers } from './runtime/attachment-config'
 import { FileService } from './runtime/files/reader'
+import { FileViewsService } from './runtime/file-views/service'
+import { fileViewHandlers } from './runtime/file-views/handlers'
 import { outputHandlers } from './runtime/outputs/handlers'
 import { fileHandlers } from './runtime/files/handlers'
 import { prepareDirectoryReferences } from './runtime/directory-references'
@@ -162,6 +164,7 @@ async function main(): Promise<void> {
     STORAGE_ROOT
   )
   const files = new FileService((sessionId, turnId) => sessions.fileContext(sessionId, turnId))
+  const fileViews = new FileViewsService(files, sessions.outputs, undefined, (value) => notify('fileViews.directoryChanged', value))
   startup('装配请求路由')
 
   /**
@@ -356,6 +359,7 @@ async function main(): Promise<void> {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.delete 需要 { sessionId: string }')
     }
     const deleted = sessions.delete(p.sessionId)
+    fileViews.releaseSession(p.sessionId)
     files.releaseSession(p.sessionId)
     return { deleted }
   }
@@ -788,6 +792,7 @@ async function main(): Promise<void> {
    */
   const handlers = new Map<string, (params: unknown) => unknown>([
     ...fileHandlers(files),
+    ...fileViewHandlers(fileViews),
     ...outputHandlers(sessions.outputs, files, (sessionId) => { sessions.fileContext(sessionId) }),
     ...attachmentHandlers(sessions.attachments, new AttachmentConfig(STORAGE_ROOT)),
     ['initialize', handleInitialize],
@@ -939,9 +944,11 @@ async function main(): Promise<void> {
   // bash/powershell 自管单命令进程树（abort/超时杀），但无全局登记表 ——
   // 引擎退出时在跑的命令在 unix 上留孤儿是 pi 上游语义（工具系统.md 已记）
   stdin.on('close', () => {
+    fileViews.dispose()
     process.exit(0)
   })
   process.on('SIGTERM', () => {
+    fileViews.dispose()
     process.exit(0)
   })
   startup('stdio 就绪，等待 initialize')

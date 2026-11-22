@@ -1,0 +1,5 @@
+
+> cogent@0.1.0 lint
+> node scripts/check-typography.mjs && eslint .
+
+字号检查通过：205 个文件。

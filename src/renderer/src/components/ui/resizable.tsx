@@ -16,12 +16,12 @@ function ResizablePanelGroup({
   const [ready, setReady] = useState(false)
   useLayoutEffect(() => {
     let timer2 = 0
-    const timer1 = setTimeout(() => {
-      timer2 = setTimeout(() => setReady(true), 0)
+    const timer1 = window.setTimeout(() => {
+      timer2 = window.setTimeout(() => setReady(true), 0)
     }, 0)
     return () => {
-      clearTimeout(timer1)
-      clearTimeout(timer2)
+      window.clearTimeout(timer1)
+      window.clearTimeout(timer2)
     }
   }, [])
 

@@ -19,6 +19,8 @@ export interface FileReference {
 export type FileKind =
   'text' | 'markdown' | 'image' | 'pdf' | 'office' | 'audio' | 'video' | 'directory' | 'other'
 export interface FileDescriptor {
+  /** Host 按真实目标计算；显示路径仍保留用户使用的别名。 */
+  canonicalKey?: string
   fileId: string
   serviceId: string
   path: string

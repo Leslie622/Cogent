@@ -1,0 +1,202 @@
+
+> cogent@0.1.0 test
+> node tests/run-tests.mjs run --maxWorkers=1
+
+
+ RUN  v5.1.0 C:/Users/41631/Desktop/Cogent-multi-tab-workspace
+
+[engine] [startup] +31ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +767ms 初始化模型运行时
+[engine] [startup] +785ms 恢复本地存储与会话
+[engine] [startup] +787ms 装配请求路由
+[engine] [startup] +788ms stdio 就绪，等待 initialize
+[engine] [startup] +790ms 收到 initialize，校验并同步凭据
+[engine] [startup] +790ms initialize 完成
+[engine] [startup] +28ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +749ms 初始化模型运行时
+[engine] [startup] +767ms 恢复本地存储与会话
+[engine] [startup] +771ms 装配请求路由
+[engine] [startup] +772ms stdio 就绪，等待 initialize
+[engine] [startup] +773ms 收到 initialize，校验并同步凭据
+[engine] [startup] +773ms initialize 完成
+[engine] [startup] +31ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +752ms 初始化模型运行时
+[engine] [startup] +773ms 恢复本地存储与会话
+[engine] [startup] +775ms 装配请求路由
+[engine] [startup] +776ms stdio 就绪，等待 initialize
+[engine] [startup] +777ms 收到 initialize，校验并同步凭据
+[engine] [startup] +777ms initialize 完成
+[engine] [startup] +29ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +743ms 初始化模型运行时
+[engine] [startup] +760ms 恢复本地存储与会话
+[engine] [startup] +764ms 装配请求路由
+[engine] [startup] +765ms stdio 就绪，等待 initialize
+[engine] [startup] +766ms 收到 initialize，校验并同步凭据
+[engine] [startup] +766ms initialize 完成
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +737ms 初始化模型运行时
+[engine] [startup] +758ms 恢复本地存储与会话
+[engine] [startup] +760ms 装配请求路由
+[engine] [startup] +762ms stdio 就绪，等待 initialize
+[engine] [startup] +763ms 收到 initialize，校验并同步凭据
+[engine] [startup] +763ms initialize 完成
+[engine] [host] 手动压缩被拒（pi 原文）: Nothing to compact (session too small)
+[engine] [host] 手动压缩被拒（pi 原文）: Already compacted
+[engine] [startup] +38ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +748ms 初始化模型运行时
+[engine] [startup] +766ms 恢复本地存储与会话
+[engine] [startup] +768ms 装配请求路由
+[engine] [startup] +770ms stdio 就绪，等待 initialize
+[engine] [startup] +771ms 收到 initialize，校验并同步凭据
+[engine] [startup] +771ms initialize 完成
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +747ms 初始化模型运行时
+[engine] [startup] +765ms 恢复本地存储与会话
+[engine] [startup] +769ms 装配请求路由
+[engine] [startup] +770ms stdio 就绪，等待 initialize
+[engine] [startup] +771ms 收到 initialize，校验并同步凭据
+[engine] [startup] +771ms initialize 完成
+[engine] [startup] +29ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +768ms 初始化模型运行时
+[engine] [startup] +786ms 恢复本地存储与会话
+[engine] [startup] +788ms 装配请求路由
+[engine] [startup] +789ms stdio 就绪，等待 initialize
+[engine] [startup] +791ms 收到 initialize，校验并同步凭据
+[engine] [startup] +791ms initialize 完成
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +735ms 初始化模型运行时
+[engine] [startup] +752ms 恢复本地存储与会话
+[engine] [startup] +755ms 装配请求路由
+[engine] [startup] +756ms stdio 就绪，等待 initialize
+[engine] [startup] +758ms 收到 initialize，校验并同步凭据
+[engine] [startup] +758ms initialize 完成
+[engine] [startup] +29ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +740ms 初始化模型运行时
+[engine] [startup] +758ms 恢复本地存储与会话
+[engine] [startup] +761ms 装配请求路由
+[engine] [startup] +762ms stdio 就绪，等待 initialize
+[engine] [startup] +763ms 收到 initialize，校验并同步凭据
+[engine] [startup] +763ms initialize 完成
+[engine] [startup] +28ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +738ms 初始化模型运行时
+[engine] [startup] +756ms 恢复本地存储与会话
+[engine] [startup] +758ms 装配请求路由
+[engine] [startup] +759ms stdio 就绪，等待 initialize
+[engine] [startup] +760ms 收到 initialize，校验并同步凭据
+[engine] [startup] +760ms initialize 完成
+[engine] [startup] +29ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +739ms 初始化模型运行时
+[engine] [startup] +757ms 恢复本地存储与会话
+[engine] [startup] +760ms 装配请求路由
+[engine] [startup] +761ms stdio 就绪，等待 initialize
+[engine] [startup] +762ms 收到 initialize，校验并同步凭据
+[engine] [startup] +762ms initialize 完成
+[engine] [startup] +28ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +744ms 初始化模型运行时
+[engine] [startup] +761ms 恢复本地存储与会话
+[engine] [startup] +764ms 装配请求路由
+[engine] [startup] +765ms stdio 就绪，等待 initialize
+[engine] [startup] +766ms 收到 initialize，校验并同步凭据
+[engine] [startup] +766ms initialize 完成
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +741ms 初始化模型运行时
+[engine] [startup] +760ms 恢复本地存储与会话
+[engine] [startup] +762ms 装配请求路由
+[engine] [startup] +763ms 启动 HTTP 监听
+[engine] [host] http rpc listening on 127.0.0.1:54855
+[engine] [startup] +770ms stdio 就绪，等待 initialize
+[engine] [startup] +771ms 收到 initialize，校验并同步凭据
+[engine] [startup] +771ms initialize 完成
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +758ms 初始化模型运行时
+[engine] [startup] +777ms 恢复本地存储与会话
+[engine] [startup] +779ms 装配请求路由
+[engine] [startup] +780ms 启动 HTTP 监听
+[engine] [host] http rpc listening on 127.0.0.1:65302
+[engine] [startup] +787ms stdio 就绪，等待 initialize
+[engine] [startup] +788ms 收到 initialize，校验并同步凭据
+[engine] [startup] +788ms initialize 完成
+[engine] [host] token verify failed
+[engine] [startup] +2116ms 收到 initialize，校验并同步凭据
+[engine] [startup] +2116ms initialize 完成
+[engine] [startup] +29ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +747ms 初始化模型运行时
+[engine] [startup] +766ms 恢复本地存储与会话
+[engine] [startup] +768ms 装配请求路由
+[engine] [startup] +769ms 启动 HTTP 监听
+[engine] [host] http rpc listening on 127.0.0.1:65306
+[engine] [startup] +775ms stdio 就绪，等待 initialize
+[engine] [startup] +776ms 收到 initialize，校验并同步凭据
+[engine] [startup] +779ms initialize 完成
+[engine] [startup] +34ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +754ms 初始化模型运行时
+[engine] [startup] +774ms 恢复本地存储与会话
+[engine] [startup] +777ms 装配请求路由
+[engine] [startup] +778ms stdio 就绪，等待 initialize
+[engine] [startup] +779ms 收到 initialize，校验并同步凭据
+[engine] [startup] +779ms initialize 完成
+[engine] [startup] +29ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +738ms 初始化模型运行时
+[engine] [startup] +756ms 恢复本地存储与会话
+[engine] [startup] +758ms 装配请求路由
+[engine] [startup] +759ms 启动 HTTP 监听
+[engine] [host] http rpc listening on 127.0.0.1:18962
+[engine] [startup] +765ms stdio 就绪，等待 initialize
+[engine] [startup] +766ms 收到 initialize，校验并同步凭据
+[engine] [startup] +766ms initialize 完成
+[cogent-mcp] ready（scope=write）
+[cogent-mcp] ready（scope=readonly）
+[engine] [startup] +1846ms 收到 initialize，校验并同步凭据
+[engine] [startup] +1846ms initialize 完成
+[engine] [startup] +27ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +758ms 初始化模型运行时
+[engine] [startup] +777ms 恢复本地存储与会话
+[engine] [startup] +780ms 装配请求路由
+[engine] [startup] +781ms stdio 就绪，等待 initialize
+[engine] [startup] +782ms 收到 initialize，校验并同步凭据
+[engine] [startup] +782ms initialize 完成
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +738ms 初始化模型运行时
+[engine] [startup] +755ms 恢复本地存储与会话
+[engine] [startup] +757ms 装配请求路由
+[engine] [startup] +759ms stdio 就绪，等待 initialize
+[engine] [startup] +760ms 收到 initialize，校验并同步凭据
+[engine] [startup] +760ms initialize 完成
+[engine] [startup] +29ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +740ms 初始化模型运行时
+[engine] [startup] +758ms 恢复本地存储与会话
+[engine] [startup] +760ms 装配请求路由
+[engine] [startup] +761ms stdio 就绪，等待 initialize
+[engine] [startup] +762ms 收到 initialize，校验并同步凭据
+[engine] [startup] +762ms initialize 完成
+[engine] [host] 技能目录诊断（会话 3a024445-6ff4-427c-b01b-163aba84d17c）: 技能 "commit-check" 同名冲突：C:\Users\41631\AppData\Local\Temp\cogent-skills-ws-l1qg9Q\.cogent\skills\commit-check\SKILL.md 覆盖 C:\Users\41631\AppData\Local\Temp\cogent-skills-home-31g2VK\skills\commit-check\SKILL.md
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +738ms 初始化模型运行时
+[engine] [startup] +758ms 恢复本地存储与会话
+[engine] [startup] +761ms 装配请求路由
+[engine] [startup] +762ms stdio 就绪，等待 initialize
+[engine] [startup] +763ms 收到 initialize，校验并同步凭据
+[engine] [startup] +763ms initialize 完成
+[engine] [startup] +29ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +742ms 初始化模型运行时
+[engine] [startup] +760ms 恢复本地存储与会话
+[engine] [startup] +762ms 装配请求路由
+[engine] [startup] +764ms stdio 就绪，等待 initialize
+[engine] [startup] +765ms 收到 initialize，校验并同步凭据
+[engine] [startup] +765ms initialize 完成
+[engine] [startup] +28ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +753ms 初始化模型运行时
+[engine] [startup] +772ms 恢复本地存储与会话
+[engine] [startup] +775ms 装配请求路由
+[engine] [startup] +776ms stdio 就绪，等待 initialize
+[engine] [startup] +777ms 收到 initialize，校验并同步凭据
+[engine] [startup] +777ms initialize 完成
+[host] token verify failed
+[host] token verify failed
+[host] token verify failed
+
+ Test Files  151 passed (151)
+      Tests  1214 passed | 1 skipped (1215)
+   Start at  16:57:39
+   Duration  304.56s (tests 39%, environment 27%, import 25%, setup 5%, transform 3%)
+

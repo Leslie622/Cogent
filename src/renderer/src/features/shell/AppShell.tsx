@@ -1,27 +1,7 @@
-/**
- * 应用骨架（UI 件 1 改版，只搭块不填内容）。区域代号（AGENTS.md「区域代号」，
- * 描述/注释/命名统一用它）：
- *
- *   shell ─┬─ header            头部：40px 拖拽区，chrome 底色
- *          └─ body              主体
- *             ├─ app-sidebar    应用侧边栏：固定 50px 图标栏，与 header 融合
- *             └─ content        内容区白卡（左上圆角 --shell-radius + border-l
- *                ├─ content-sidebar  240–360px 可拖可折叠（折成 0），微灰底。
- *                │                 普通 flex 像素宽块（不进 RRP，方案同 Themd）：
- *                │                 窗口缩放零 JS 参与，宽 + 折叠态 localStorage
- *                │                 记忆（use-content-sidebar-split）
- *                └─ content-main     纯白主体（flex-1 吃掉窗口缩放的全部增量）
- *
- * chrome 底色（bg-sidebar）铺最外层 —— header 与 app-sidebar 同色融合成 L 形；
- * content 白卡浮在 chrome 上（border-l 贴弧自描边 + 紧投影）。
- * content 内部的分栏分两类引擎（2026-11-12 定，详见 docs/UI布局.md）：本层的
- * content-sidebar 是像素语义，普通 flex + 自绘拖拽条（SidebarResizeHandle）+
- * 像素记忆；content-main 内部的分屏（HomeMain 主要区|标签页区）是真百分比
- * 语义，仍走 react-resizable-panels v4 + GlowResizeHandle。
- * header 内容（件 2，AppHeader）：折叠开关/菜单/窗口控制 —— 折叠开关直接用
- * hook 的 toggle（宽度记忆不动，展开回原宽）。
- * app-sidebar 内容（件 3，AppSidebar）是路由钮：切 AppView，content 两个面板
- * 的占位随路由换 —— 真实内容属各视图后续件。
+/** 应用外壳：header/app-sidebar与可折叠content-sidebar。
+ * content-main由WorkspaceFrame常驻承载工作区，路由内容作为其普通子区域。
+ * 左侧像素分栏使用useContentSidebarSplit；右侧工作区按像素留位/手动占满，
+ * 切路由或宽窄布局均保留同一网页内容父节点。详见docs/UI布局.md。
  */
 import { AppHeader } from '@/features/shell/AppHeader'
 import { AppSidebar } from '@/features/shell/AppSidebar'
@@ -37,6 +17,7 @@ import {
 } from '@/hooks/use-content-sidebar-split'
 import { useUiStore, VIEW_LABELS } from '@/stores/ui'
 import { useWindowMediaQuery } from '@/hooks/use-window-media-query'
+import { WorkspaceFrame } from '@/features/workspace/WorkspaceFrame'
 
 export function AppShell() {
   // content-sidebar 分栏：像素宽状态机 + localStorage 记忆，机制全在 hook；
@@ -98,6 +79,7 @@ export function AppShell() {
                 内容随 AppView 换：首页（HomeMain，件 5 —— 内部再分
                 [主要区 | 标签页区]）与设置（SettingsMain，件 6）已落地 */}
             <div className="min-w-0 flex-1">
+              <WorkspaceFrame visible={view === 'home'} autoCollapsed={sidebarAutoCollapsed}>
               {view === 'home' ? (
                 <HomeMain />
               ) : view === 'settings' ? (
@@ -107,6 +89,7 @@ export function AppShell() {
                   {VIEW_LABELS[view]}
                 </div>
               )}
+              </WorkspaceFrame>
             </div>
           </div>
         </main>

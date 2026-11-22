@@ -1,0 +1,458 @@
+{
+  "passed": true,
+  "stage": "资源清理",
+  "checks": [
+    "完整产品首页与preload就绪",
+    "控件可点击 [aria-label=展开标签页区]",
+    "控件可点击 [aria-label=打开文件导航]",
+    "控件可点击 [aria-label=添加目录]",
+    "原生picker授权的目录经Host列出真实夹具",
+    "控件可点击 [aria-label=展开工作区]",
+    "显示入口 文件",
+    "控件可点击 [data-renderer-target]",
+    "显示入口 visual.docx",
+    "控件可点击 [data-renderer-target]",
+    "真实文件入口打开且唯一工具行面包屑切换 visual.docx",
+    "DOCX真实生成双section页面且包内图片完成解码",
+    "DOCX保留两节不同pgMar、页眉页脚、表格和图片，非文字提取页",
+    "显示入口 下一页",
+    "控件可点击 [data-renderer-target]",
+    "DOCX页导航进入第二节",
+    "显示入口 文件",
+    "控件可点击 [data-renderer-target]",
+    "显示入口 visual.xlsx",
+    "控件可点击 [data-renderer-target]",
+    "真实文件入口打开且唯一工具行面包屑切换 visual.xlsx",
+    "XLSX真实WASM工作簿与两张工作表就绪",
+    "XLSX真实SVG图表可见",
+    "XLSX Canvas实际绘制蓝色表头、合并填充和已知红色包内图片",
+    "XLSX Canvas保留已知样式填充，图表有真实SVG几何",
+    "显示入口 Notes",
+    "控件可点击 [data-renderer-target]",
+    "真实点击切换Notes工作表",
+    "显示入口 visual.docx",
+    "控件可点击 [data-renderer-target]",
+    "显示入口 visual.xlsx",
+    "控件可点击 [data-renderer-target]",
+    "文件切换保留DOCX生成根和XLSX当前工作表",
+    "显示入口 Summary",
+    "控件可点击 [data-renderer-target]",
+    "控件可点击 [aria-label=设置]",
+    "显示入口 设置",
+    "控件可点击 [data-renderer-target]",
+    "显示入口 外观",
+    "控件可点击 [data-renderer-target]",
+    "控件可点击 [aria-label=深色浅色]",
+    "显示入口 深色",
+    "控件可点击 [data-renderer-target]",
+    "控件可点击 [aria-label=首页]",
+    "设置返回真实工作区",
+    "真实主题控件切入暗色",
+    "路由隐藏与暗色切换后XLSX Canvas实际重绘",
+    "控件可点击 [aria-label=设置]",
+    "显示入口 设置",
+    "控件可点击 [data-renderer-target]",
+    "显示入口 外观",
+    "控件可点击 [data-renderer-target]",
+    "控件可点击 [aria-label=深色浅色]",
+    "显示入口 浅色",
+    "控件可点击 [data-renderer-target]",
+    "控件可点击 [aria-label=首页]",
+    "设置返回真实工作区",
+    "显示入口 文件",
+    "控件可点击 [data-renderer-target]",
+    "显示入口 visual.pptx",
+    "控件可点击 [data-renderer-target]",
+    "真实文件入口打开且唯一工具行面包屑切换 visual.pptx",
+    "PPTX文字、图片与原生ECharts图表实际完成绘制",
+    "PPTX图表Canvas有实际绘制像素",
+    "控件可点击 [data-workspace-panel]:not([hidden]) [aria-label=下一张幻灯片]",
+    "PPTX页导航进入原始第二张幻灯片",
+    "显示入口 文件",
+    "控件可点击 [data-renderer-target]",
+    "显示入口 visual.pdf",
+    "控件可点击 [data-renderer-target]",
+    "真实文件入口打开且唯一工具行面包屑切换 visual.pdf",
+    "react-pdf真实Canvas与Research Paper文字层就绪",
+    "PDF页面Canvas有实际绘制像素",
+    "真实鼠标拖动可以选择PDF文字",
+    "显示入口 下一页",
+    "控件可点击 [data-renderer-target]",
+    "PDF切换实际第二页Canvas与文字层",
+    "隐藏PPTX释放绘制handle与活动页面",
+    "显示入口 文件",
+    "控件可点击 [data-renderer-target]",
+    "显示入口 visual.md",
+    "控件可点击 [data-renderer-target]",
+    "真实文件入口打开且唯一工具行面包屑切换 visual.md",
+    "Markdown公式生成KaTeX，Mermaid生成实际流程图SVG",
+    "显示入口 文件",
+    "控件可点击 [data-renderer-target]",
+    "显示入口 visual.svg",
+    "控件可点击 [data-renderer-target]",
+    "真实文件入口打开且唯一工具行面包屑切换 visual.svg",
+    "SVG经原生img解码，未内联执行SVG脚本",
+    "显示入口 源码",
+    "控件可点击 [data-renderer-target]",
+    "SVG源码实际进入Pierre内容渲染与shadow DOM",
+    "SVG源码通过Shiki WASM实际产生多色XML语法token",
+    "显示入口 预览",
+    "控件可点击 [data-renderer-target]",
+    "SVG可从源码返回同一文件预览",
+    "六种文件均由真实文件入口读取，空白对话未暗建session",
+    "控件可点击 [aria-label=标签页列表]",
+    "显示入口 关闭全部标签页",
+    "控件可点击 [data-renderer-target]",
+    "全部关闭后所有文件查看器从产品树移除",
+    "本轮IPC文件租约与在途操作清零"
+  ],
+  "errors": [],
+  "measurements": {
+    "docx": {
+      "pages": [
+        {
+          "padding": "36pt",
+          "width": "612pt",
+          "height": "792pt",
+          "rect": {
+            "width": 816,
+            "height": 1056
+          }
+        },
+        {
+          "padding": "72pt",
+          "width": "612pt",
+          "height": "792pt",
+          "rect": {
+            "width": 816,
+            "height": 1056
+          }
+        }
+      ],
+      "headers": 2,
+      "footers": 2,
+      "tables": 2,
+      "images": 2,
+      "text": "\n.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5-wrapper { background: gray; padding: 30px; padding-bottom: 0px; display: flex; flex-flow: column; align-items: center; } \n.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5-wrapper>section.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5 { background: white; box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); margin-bottom: 30px; }\n.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5 { color: black; hyphens: auto; text-underline-position: from-font; }\nsection.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5 { box-sizing: border-box; display: flex; flex-flow: column nowrap; position: relative; overflow: hidden; }\nsection.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5>article { margin-bottom: auto; z-index: 1; }\nsection.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5>footer { z-index: 1; }\n.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5 table { border-collapse: collapse; }\n.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5 table td, .cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5 table th { vertical-align: top; }\n.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5 p { margin: 0pt; min-height: 1em; }\n.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5 span { white-space: pre-wrap; overflow-wrap: break-word; }\n.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5 a { color: inherit; text-decoration: inherit; }\n.cogent-docx-08e9dd64-60f9-4cf1-9159-f368b2d2dff5 svg { fill: transparent; }\nRenderer header: preservedDOCX Visual Renderer — Section APaper, text, table and embedded pictureRegionRevenueNorth330South265Renderer footer: preservedRenderer header: preservedDOCX Section B — 独立页边距Second section keeps its own margins. 第二页正文。RegionRevenueNorth330South265Renderer footer: preserved"
+    },
+    "xlsx": {
+      "pixels": [
+        {
+          "width": 2405,
+          "height": 2310,
+          "nonwhite": 26541,
+          "blue": 7844,
+          "amber": 12691,
+          "red": 2939
+        },
+        {
+          "width": 2405,
+          "height": 1,
+          "nonwhite": 602,
+          "blue": 0,
+          "amber": 0,
+          "red": 0
+        },
+        {
+          "width": 1,
+          "height": 2310,
+          "nonwhite": 578,
+          "blue": 0,
+          "amber": 0,
+          "red": 0
+        },
+        {
+          "width": 1,
+          "height": 1,
+          "nonwhite": 1,
+          "blue": 0,
+          "amber": 0,
+          "red": 0
+        },
+        {
+          "width": 1,
+          "height": 32,
+          "nonwhite": 8,
+          "blue": 0,
+          "amber": 0,
+          "red": 0
+        },
+        {
+          "width": 2405,
+          "height": 32,
+          "nonwhite": 987,
+          "blue": 74,
+          "amber": 27,
+          "red": 0
+        },
+        {
+          "width": 53,
+          "height": 1,
+          "nonwhite": 14,
+          "blue": 0,
+          "amber": 0,
+          "red": 0
+        },
+        {
+          "width": 53,
+          "height": 2310,
+          "nonwhite": 2229,
+          "blue": 365,
+          "amber": 106,
+          "red": 0
+        },
+        {
+          "width": 53,
+          "height": 32,
+          "nonwhite": 21,
+          "blue": 0,
+          "amber": 0,
+          "red": 0
+        }
+      ],
+      "chart": "Visual Revenue Chart"
+    },
+    "pptx": {
+      "pixels": [
+        {
+          "width": 567,
+          "height": 504,
+          "nonwhite": 13858,
+          "blue": 13277,
+          "amber": 0,
+          "red": 0
+        }
+      ],
+      "shapes": 3
+    },
+    "pdf": {
+      "pixels": [
+        {
+          "width": 1165,
+          "height": 1648,
+          "nonwhite": 4270,
+          "blue": 1069,
+          "amber": 412,
+          "red": 687
+        }
+      ],
+      "selectionPoints": {
+        "start": {
+          "x": 698,
+          "y": 313
+        },
+        "end": {
+          "x": 919,
+          "y": 313
+        }
+      },
+      "selectionDom": {
+        "hit": "<span role=\"presentation\" dir=\"ltr\" style=\"left: 12.1%; top: 8.8%; font-size: calc(var(--total-scale-factor) *20.00px); font-family: sans-serif; transform: scaleX(1.05553);\">Research Paper</span>",
+        "userSelect": "text",
+        "focused": true
+      },
+      "selection": "Research Paper"
+    }
+  },
+  "pickers": [
+    {
+      "title": "选择目录",
+      "selected": "C:\\Users\\41631\\AppData\\Local\\Temp\\cogent-file-renderers-A0Awar\\workspace"
+    }
+  ],
+  "requests": [
+    {
+      "method": "fileViews.openContext"
+    },
+    {
+      "method": "fileViews.openContext"
+    },
+    {
+      "method": "fileViews.listDirectory"
+    },
+    {
+      "method": "fileViews.acquire",
+      "source": "context",
+      "path": "C:\\Users\\41631\\AppData\\Local\\Temp\\cogent-file-renderers-A0Awar\\workspace\\visual.docx",
+      "kind": "office"
+    },
+    {
+      "method": "fileViews.readChunk"
+    },
+    {
+      "method": "fileViews.acquire",
+      "source": "context",
+      "path": "C:\\Users\\41631\\AppData\\Local\\Temp\\cogent-file-renderers-A0Awar\\workspace\\visual.xlsx",
+      "kind": "office"
+    },
+    {
+      "method": "fileViews.readChunk"
+    },
+    {
+      "method": "fileViews.acquire",
+      "source": "context",
+      "path": "C:\\Users\\41631\\AppData\\Local\\Temp\\cogent-file-renderers-A0Awar\\workspace\\visual.pptx",
+      "kind": "office"
+    },
+    {
+      "method": "fileViews.readChunk"
+    },
+    {
+      "method": "fileViews.acquire",
+      "source": "context",
+      "path": "C:\\Users\\41631\\AppData\\Local\\Temp\\cogent-file-renderers-A0Awar\\workspace\\visual.pdf",
+      "kind": "pdf"
+    },
+    {
+      "method": "fileViews.readChunk"
+    },
+    {
+      "method": "fileViews.acquire",
+      "source": "context",
+      "path": "C:\\Users\\41631\\AppData\\Local\\Temp\\cogent-file-renderers-A0Awar\\workspace\\visual.md",
+      "kind": "markdown"
+    },
+    {
+      "method": "fileViews.readText"
+    },
+    {
+      "method": "fileViews.acquire",
+      "source": "context",
+      "path": "C:\\Users\\41631\\AppData\\Local\\Temp\\cogent-file-renderers-A0Awar\\workspace\\visual.svg",
+      "kind": "text"
+    },
+    {
+      "method": "fileViews.readText"
+    },
+    {
+      "method": "fileViews.closeContext"
+    },
+    {
+      "method": "fileViews.closeContext"
+    },
+    {
+      "method": "fileViews.cancel"
+    },
+    {
+      "method": "fileViews.release"
+    },
+    {
+      "method": "fileViews.cancel"
+    },
+    {
+      "method": "fileViews.release"
+    },
+    {
+      "method": "fileViews.cancel"
+    },
+    {
+      "method": "fileViews.release"
+    },
+    {
+      "method": "fileViews.cancel"
+    },
+    {
+      "method": "fileViews.release"
+    },
+    {
+      "method": "fileViews.cancel"
+    },
+    {
+      "method": "fileViews.release"
+    },
+    {
+      "method": "fileViews.cancel"
+    },
+    {
+      "method": "fileViews.release"
+    }
+  ],
+  "leases": 0,
+  "inFlight": 0,
+  "ownedPids": [
+    15496,
+    24912,
+    25788,
+    1640,
+    33140
+  ],
+  "electron": "40.9.3",
+  "chromium": "144.0.7559.236",
+  "boundaries": [
+    "正常GPU隔离Windows产品窗口；不代表其他平台",
+    "合成DOCX/XLSX/PPTX原件；未验证真实OLE .doc/.xls",
+    "样本和来源哈希另存fixtures.json；没有直接改store或伪造文件预览内容"
+  ],
+  "cleanup": {
+    "ownedPids": [
+      15496,
+      24912,
+      25788,
+      1640,
+      33140
+    ],
+    "remainingPids": [],
+    "forcedPids": [],
+    "exitCode": 0,
+    "timedOut": false
+  },
+  "fixtures": {
+    "sources": [
+      {
+        "kind": "image",
+        "path": "reference/pi/packages/ai/test/data/red-circle.png",
+        "sha256": "8a0661c7398b69a4051a47733b6ed5540b23549f2245ba2d608fd9d050b7e919"
+      },
+      {
+        "kind": "pptx",
+        "path": "reference/zcode/apps/zcode-cli/packages/office-runtime/fixtures/launch.pptx",
+        "sha256": "851fa7c77eb468520ee91d1809b0adfb96e61e9f8fb5e8130da23116e7e831ea"
+      },
+      {
+        "kind": "pdf",
+        "path": "reference/zcode/apps/zcode-cli/packages/office-runtime/fixtures/paper.pdf",
+        "sha256": "8af44540bfa51852259d8747db68e2a72dc4891e4b12fe6987b6a3d1717b32ad"
+      }
+    ],
+    "fixtures": [
+      {
+        "name": "visual.docx",
+        "bytes": 9852,
+        "sha256": "a15d50e6b16207aa2ad82c1c19f521287273cd772570370645cc653a1cd0dbf2"
+      },
+      {
+        "name": "visual.xlsx",
+        "bytes": 36452,
+        "sha256": "38d8e898755be8422de287f69e10b72337cf211088e55a808d3ee1c8c7f2255d"
+      },
+      {
+        "name": "visual.pptx",
+        "bytes": 131896,
+        "sha256": "ec16cc170243fefc48f111f81934e156ff14ff5fff8d900ea921c61270568d2a"
+      },
+      {
+        "name": "visual.pdf",
+        "bytes": 3843,
+        "sha256": "8af44540bfa51852259d8747db68e2a72dc4891e4b12fe6987b6a3d1717b32ad"
+      },
+      {
+        "name": "visual.md",
+        "bytes": 89,
+        "sha256": "5dd6e4f4810d0eca1eec6b86ec573f80c71c8ee39276c24a47b8a46bb9809e53"
+      },
+      {
+        "name": "visual.svg",
+        "bytes": 306,
+        "sha256": "91ae9031cde85247064d1d1ec6307b07f1f6db2e7e164c1760248fb65b53eb26"
+      }
+    ],
+    "generation": {
+      "docx": "JSZip OOXML: two equal-size sections, 36pt/72pt margins, header/footer, table and PNG",
+      "xlsx": "ExcelJS: two sheets, styles, merged A1:F1, cached formulas, PNG; OOXML bar-chart drawing added to package",
+      "pptx": "Readonly copy of Zcode launch.pptx; slide1 replaced with explicit text/shape/PNG/chart, original slides2/3 retained",
+      "pdf": "Readonly copy of Zcode paper.pdf (two pages)",
+      "markdown": "Math block and Mermaid flowchart",
+      "svg": "Static SVG with native text, circle and rectangle"
+    }
+  }
+}

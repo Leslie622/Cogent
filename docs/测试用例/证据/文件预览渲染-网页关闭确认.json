@@ -1,0 +1,222 @@
+{
+  "electron": "40.9.3",
+  "stages": [
+    {
+      "name": "product-import",
+      "at": 16
+    },
+    {
+      "name": "reserve",
+      "at": 877
+    },
+    {
+      "name": "navigate",
+      "at": 1404
+    },
+    {
+      "name": "native-activation",
+      "at": 1476
+    },
+    {
+      "name": "cancel-request",
+      "at": 1738
+    },
+    {
+      "name": "cancel-reply",
+      "at": 1748
+    },
+    {
+      "name": "cancel-form",
+      "at": 1749
+    },
+    {
+      "name": "cancel-stable-200ms",
+      "at": 1950
+    },
+    {
+      "name": "cancel-lease-valid",
+      "at": 1953
+    },
+    {
+      "name": "confirm-request",
+      "at": 1954
+    },
+    {
+      "name": "confirm-reply",
+      "at": 1970
+    },
+    {
+      "name": "cleanup",
+      "at": 1971
+    }
+  ],
+  "events": [
+    {
+      "name": "did-start-navigation",
+      "stage": "navigate",
+      "at": 1410,
+      "defaultPrevented": false,
+      "args": [
+        "http://127.0.0.1:60912/",
+        false,
+        true,
+        8,
+        4
+      ],
+      "destroyed": false
+    },
+    {
+      "name": "did-navigate",
+      "stage": "navigate",
+      "at": 1449,
+      "defaultPrevented": false,
+      "args": [
+        "http://127.0.0.1:60912/",
+        200,
+        "OK"
+      ],
+      "destroyed": false
+    },
+    {
+      "name": "did-stop-loading",
+      "stage": "navigate",
+      "at": 1465,
+      "defaultPrevented": false,
+      "args": [],
+      "destroyed": false
+    },
+    {
+      "name": "will-prevent-unload",
+      "stage": "cancel-request",
+      "at": 1744,
+      "defaultPrevented": false,
+      "args": [],
+      "destroyed": false
+    },
+    {
+      "name": "did-fail-load",
+      "stage": "cancel-request",
+      "at": 1745,
+      "defaultPrevented": false,
+      "args": [
+        -3,
+        "ERR_ABORTED",
+        "about:blank",
+        true
+      ],
+      "destroyed": false
+    },
+    {
+      "name": "did-stop-loading",
+      "stage": "cancel-request",
+      "at": 1746,
+      "defaultPrevented": false,
+      "args": [],
+      "destroyed": false
+    },
+    {
+      "name": "will-prevent-unload",
+      "stage": "confirm-request",
+      "at": 1956,
+      "defaultPrevented": true,
+      "args": [],
+      "destroyed": false
+    },
+    {
+      "name": "did-start-navigation",
+      "stage": "confirm-request",
+      "at": 1957,
+      "defaultPrevented": false,
+      "args": [
+        "about:blank",
+        false,
+        true,
+        8,
+        4
+      ],
+      "destroyed": false
+    },
+    {
+      "name": "did-navigate",
+      "stage": "confirm-request",
+      "at": 1961,
+      "defaultPrevented": false,
+      "args": [
+        "about:blank",
+        -1,
+        ""
+      ],
+      "destroyed": false
+    },
+    {
+      "name": "destroyed",
+      "stage": "confirm-request",
+      "at": 1967,
+      "defaultPrevented": false,
+      "args": [],
+      "destroyed": true
+    }
+  ],
+  "questions": [
+    {
+      "choice": 1,
+      "stage": "cancel-request",
+      "at": 1743,
+      "title": "离开网页"
+    },
+    {
+      "choice": 0,
+      "stage": "confirm-request",
+      "at": 1956,
+      "title": "离开网页"
+    }
+  ],
+  "errors": [],
+  "passed": true,
+  "stage": "cleanup",
+  "ownedPids": [
+    17676,
+    28336,
+    29204,
+    25712,
+    5048,
+    33704
+  ],
+  "guestId": 2,
+  "initialUnloadListeners": [
+    "(event) => {\n\t\t\tif (dialog.showMessageBoxSync(this.window(tab), {\n\t\t\t\ttype: \"question\",\n\t\t\t\ttitle: \"离开网页\",\n\t\t\t\tmessage: \"此网页可能有未保存的内容，仍然离开？\",\n\t\t\t\tbuttons: [\"离开\", \"留在此页\"],\n\t\t\t\tdefaultId: 1,\n\t\t\t\tcancelId: 1\n\t\t\t}) === 0) event.preventDefault();\n\t\t\telse if (tab.closeAttempt !== void 0) tab.closeAttempt.canceled = true;\n\t\t}"
+  ],
+  "cancelledClose": {
+    "closed": false,
+    "keepMounted": false
+  },
+  "formAfterCancel": "unsaved",
+  "formAfter200ms": "unsaved",
+  "confirmedClose": {
+    "closed": true,
+    "keepMounted": false
+  },
+  "publicStates": [
+    {
+      "url": "http://127.0.0.1:60912/",
+      "title": "Beforeunload fixture"
+    },
+    {
+      "url": "http://127.0.0.1:60912/",
+      "title": "Beforeunload fixture"
+    },
+    {
+      "url": "http://127.0.0.1:60912/",
+      "title": "Beforeunload fixture"
+    },
+    {
+      "url": "http://127.0.0.1:60912/",
+      "title": "Beforeunload fixture"
+    }
+  ],
+  "elapsedMs": 1991,
+  "cleanup": {
+    "remainingPids": []
+  },
+  "exitCode": 0
+}

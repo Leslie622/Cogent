@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "mode": "development",
+      "passed": true,
+      "result": "C:\\Users\\41631\\Desktop\\Cogent-multi-tab-workspace\\tmp\\browser-startup-after-fix\\development\\result.json"
+    },
+    {
+      "mode": "production",
+      "passed": true,
+      "result": "C:\\Users\\41631\\Desktop\\Cogent-multi-tab-workspace\\tmp\\browser-startup-after-fix\\production\\result.json"
+    }
+  ],
+  "rendererDevServerClosed": true,
+  "fixtureServerClosed": true,
+  "temporaryProfileRemoved": true
+}

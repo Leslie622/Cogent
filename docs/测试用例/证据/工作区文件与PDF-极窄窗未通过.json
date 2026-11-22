@@ -1,0 +1,238 @@
+{
+  "passed": false,
+  "checks": [
+    "产品首页加载",
+    "未发送草稿的项目选择入口就绪",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "真实项目选择Popover已打开",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "创建项目第一步就绪",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "控件可点击 [role=dialog] input[placeholder=\"项目名称\"]",
+    "指针目标可命中 [role=dialog] input[placeholder=\"项目名称\"]",
+    "原生全选已生效 [role=dialog] input[placeholder=\"项目名称\"]",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "原生选择器选中本轮隔离项目目录",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "项目目录信任确认就绪",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "真实创建并信任项目后草稿回显项目名",
+    "控件可点击 [aria-label=展开标签页区]",
+    "指针目标可命中 [aria-label=展开标签页区]",
+    "启动页就绪",
+    "控件可点击 [aria-label=打开文件导航]",
+    "指针目标可命中 [aria-label=打开文件导航]",
+    "未发送聊天打开项目导航并显示真实目录文件",
+    "10,000节点目录虚拟化且不创建聊天",
+    "控件可点击 [aria-label=搜索项目文件]",
+    "指针目标可命中 [aria-label=搜索项目文件]",
+    "原生全选已生效 [aria-label=搜索项目文件]",
+    "搜索未展开文件 alpha.txt",
+    "文件搜索完成 alpha.txt",
+    "控件可点击 [aria-label=文件搜索结果] button",
+    "指针目标可命中 [aria-label=文件搜索结果] button",
+    "文件独立预览 alpha.txt",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "控件可点击 [aria-label=搜索项目文件]",
+    "指针目标可命中 [aria-label=搜索项目文件]",
+    "原生全选已生效 [aria-label=搜索项目文件]",
+    "搜索未展开文件 beta.md",
+    "文件搜索完成 beta.md",
+    "控件可点击 [aria-label=文件搜索结果] button",
+    "指针目标可命中 [aria-label=文件搜索结果] button",
+    "文件独立预览 beta.md",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "切换文件保留阅读位置",
+    "控件可点击 [aria-label=新建标签页]",
+    "指针目标可命中 [aria-label=新建标签页]",
+    "浏览器启动入口",
+    "控件可点击 [aria-label=打开内置浏览器]",
+    "指针目标可命中 [aria-label=打开内置浏览器]",
+    "独立浏览器实例就绪",
+    "控件可点击 [aria-label=网页地址或搜索]",
+    "指针目标可命中 [aria-label=网页地址或搜索]",
+    "原生全选已生效 [aria-label=网页地址或搜索]",
+    "真实网页加载",
+    "网页输入框就绪",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "切换标签保留guest与表单",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "拖动前alpha标签实际激活",
+    "真实指针拖动仅改变标签头顺序",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "拖动后同guest与表单保留",
+    "控件可点击 [aria-label=设置]",
+    "指针目标可命中 [aria-label=设置]",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "设置页隐藏工作区并解除焦点入口",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "控件可点击 [aria-label=深色浅色]",
+    "指针目标可命中 [aria-label=深色浅色]",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "控件可点击 [aria-label=首页]",
+    "指针目标可命中 [aria-label=首页]",
+    "设置往返保留表单",
+    "控件可点击 [aria-label=浏览器菜单]",
+    "指针目标可命中 [aria-label=浏览器菜单]",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "真实菜单与Dialog覆盖网页",
+    "控件可点击 [role=dialog] [data-slot=dialog-close]",
+    "指针目标可命中 [role=dialog] [data-slot=dialog-close]",
+    "真实指针命中浮层且不穿透网页",
+    "实际应用主题 light",
+    "放宽恢复原工作区开态 light/400",
+    "窄窗左右侧栏同步自动收起 light/400",
+    "控件可点击 [aria-label=展开标签页区]",
+    "指针目标可命中 [aria-label=展开标签页区]",
+    "窄窗手动重新打开工作区 light/400"
+  ],
+  "measurements": {
+    "project": {
+      "name": "工作区验收项目",
+      "pickers": [
+        {
+          "title": "选择项目文件夹",
+          "selected": "C:\\Users\\41631\\AppData\\Local\\Temp\\cogent-workspace-electron-ARWSfU\\workspace"
+        }
+      ],
+      "createdViaUi": true
+    },
+    "treeFirstMs": 402.37120000000004,
+    "treeDom": 30,
+    "search": [
+      {
+        "query": "alpha.txt",
+        "firstMs": 494.65530000000035,
+        "completeMs": 495.1392000000001
+      },
+      {
+        "query": "beta.md",
+        "firstMs": 457.3877999999995,
+        "completeMs": 457.6151999999993
+      }
+    ],
+    "alpha.txt": 526,
+    "beta.md": 379,
+    "dragGeometry": {
+      "from": {
+        "x": 1135,
+        "y": 64
+      },
+      "to": {
+        "x": 1315,
+        "y": 64
+      },
+      "order": [
+        "文件",
+        "alpha.txt",
+        "beta.md",
+        "Workspace fixture"
+      ]
+    },
+    "dragFrameIntervals": [
+      1.6000000000003638,
+      5.5,
+      11,
+      5.699999999999818,
+      5.5,
+      5.599999999999454,
+      5.5,
+      5.600000000000364,
+      5.5,
+      5.699999999999818,
+      5.400000000000546,
+      5.599999999999454,
+      5.600000000000364,
+      5.5,
+      5.5,
+      5.599999999999454,
+      5.600000000000364,
+      5.600000000000364,
+      5.5,
+      5.599999999999454,
+      5.5,
+      5.600000000000364,
+      5.5,
+      5.599999999999454,
+      5.5,
+      5.5,
+      5.600000000000364,
+      5.5,
+      5.600000000000364,
+      5.5,
+      5.699999999999818,
+      5.5,
+      5.5,
+      5.599999999999454,
+      5.600000000000364,
+      5.5,
+      5.600000000000364,
+      11.199999999999818
+    ],
+    "focusTransitions": [
+      {
+        "stage": "设置之前",
+        "selected": "Workspace fixture",
+        "workspaceInert": false,
+        "focused": {
+          "tag": "BUTTON",
+          "role": "tab",
+          "label": null,
+          "text": "Workspace fixture"
+        },
+        "guestId": 2,
+        "form": "keep-form-identity"
+      },
+      {
+        "stage": "设置之中",
+        "workspaceInert": true,
+        "focused": {
+          "tag": "DIV",
+          "role": "menuitem",
+          "label": null,
+          "text": "设置"
+        },
+        "guestId": 2,
+        "form": "keep-form-identity"
+      },
+      {
+        "stage": "回到首页",
+        "selected": "Workspace fixture",
+        "workspaceInert": false,
+        "focused": {
+          "tag": "BUTTON",
+          "role": "tab",
+          "label": null,
+          "text": "Workspace fixture"
+        },
+        "guestId": 2,
+        "form": "keep-form-identity"
+      }
+    ]
+  },
+  "errors": [
+    "{\"keylog\":[{\"type\":\"keydown\",\"key\":\"Enter\",\"value\":\"http://127.0.0.1:54610/\"},{\"type\":\"keypress\",\"key\":\"Enter\",\"value\":\"http://127.0.0.1:54610/\"},{\"type\":\"change\",\"value\":\"http://127.0.0.1:54610/\"},{\"type\":\"submit\",\"value\":\"http://127.0.0.1:54610/\"},{\"type\":\"keyup\",\"key\":\"Enter\",\"value\":\"http://127.0.0.1:54610/\"}],\"focus\":\"<button type=\\\"button\\\" data-active=\\\"\\\" data-orientation=\\\"horizontal\\\" data-activation-direction=\\\"none\\\" aria-disabled=\\\"false\\\" tabindex=\\\"-1\\\" role=\\\"tab\\\" aria-controls=\\\"workspace-panel-eb8f4b2e-9b35-48f3-b007-a8479fbd58ef\\\" aria-selected=\\\"true\\\" id=\\\"workspace-tab-eb8f4b2e-9b35-48f3-b007-a8479fbd58ef\\\" data-composite-item-active=\\\"\\\" data-slot=\\\"tooltip-trigger\\\" aria-roledescription=\\\"sortable\\\" aria-describedby=\\\"DndDescribedBy-2\\\" data-base-ui-tooltip-trigger=\\\"\\\" class=\\\"relative inline-flex h-full min-w-0 flex-1 items-center gap-2 px-3 text-left text-sm font-normal outline-none disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*='size-'])]:size-4\\\"><svg xmlns=\\\"http://www.w3.org/2000/svg\\\" width=\\\"24\\\" height=\\\"24\\\" viewBox=\\\"0 0 24 24\\\" fill=\\\"none\\\" stroke=\\\"currentColor\\\" stroke-width=\\\"2\\\" stroke-linecap=\\\"round\\\" stroke-linejoin=\\\"round\\\" class=\\\"lucide lucide-globe size-4\\\" aria-hidden=\\\"true\\\"><circle cx=\\\"12\\\" cy=\\\"12\\\" r=\\\"10\\\"></circle><path d=\\\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\\\"></path><path d=\\\"M2 12h20\\\"></path></svg><span class=\\\"truncate\\\">Workspace fixture</span></button>\",\"guests\":[{\"id\":2,\"url\":\"http://127.0.0.1:54610/\"}]}"
+  ],
+  "error": "Error: 响应式并排/几何失败：{\"width\":400,\"left\":211,\"right\":400,\"panelWidth\":189,\"overflow\":false,\"activeHeaderVisible\":false,\"mode\":\"split\",\"chatInteractive\":true}",
+  "stack": "Error: 响应式并排/几何失败：{\"width\":400,\"left\":211,\"right\":400,\"panelWidth\":189,\"overflow\":false,\"activeHeaderVisible\":false,\"mode\":\"split\",\"chatInteractive\":true}\n    at driver (file:///C:/Users/41631/AppData/Local/Temp/cogent-workspace-electron-ARWSfU/driver-create.mjs:327:192)",
+  "cleanup": {
+    "remainingPids": []
+  }
+}

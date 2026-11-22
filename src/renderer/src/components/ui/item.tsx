@@ -40,6 +40,7 @@ const itemVariants = cva(
     variants: {
       variant: {
         default: "border-transparent",
+        plain: "border-0",
         outline: "border-border",
         muted: "border-transparent bg-muted/50",
       },
@@ -87,6 +88,8 @@ const itemMediaVariants = cva(
       variant: {
         default: "bg-transparent",
         icon: "[&_svg:not([class*='size-'])]:size-4",
+        // 启动器用固定媒体块承载能力图标，条目仍复用同一套内容与动作布局。
+        tile: "size-14 rounded-lg bg-muted text-muted-foreground group-data-[size=xs]/item:size-10 group-has-data-[slot=item-description]/item:translate-y-0 group-has-data-[slot=item-description]/item:self-center [&_svg:not([class*='size-'])]:size-6 group-data-[size=xs]/item:[&_svg:not([class*='size-'])]:size-5",
         image:
           "size-10 overflow-hidden rounded-sm group-data-[size=sm]/item:size-8 group-data-[size=xs]/item:size-6 [&_img]:size-full [&_img]:object-cover",
       },

@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import { pdfAssets } from './scripts/pdf-assets'
+import { previewLicenses } from './scripts/preview-licenses'
 
 /** 合并 SDK 后仍以原包定位资源，避免图片 worker、扩展别名和包元数据指向 out/。 */
 function preservePiModuleUrls(): Plugin {
@@ -50,7 +51,8 @@ export default defineConfig({
           index: resolve('src/electron/main/index.ts'),
           host: resolve('src/host/index.ts'),
           mcp: resolve('src/host/mcp-server/main.ts'),
-          'attachment-worker': resolve('src/host/runtime/attachment-worker.ts')
+          'attachment-worker': resolve('src/host/runtime/attachment-worker.ts'),
+          'file-view-worker': resolve('src/host/runtime/file-views/scan-worker.ts')
         }
       }
     }
@@ -64,7 +66,8 @@ export default defineConfig({
         // 输出 CJS，index 同转 CJS 由 Electron 非沙箱 preload 兼容）
         input: {
           index: resolve('src/electron/preload/index.ts'),
-          guest: resolve('src/electron/preload/guest.ts')
+          guest: resolve('src/electron/preload/guest.ts'),
+          'browser-dialog': resolve('src/electron/preload/browser-dialog.ts')
         },
         output: {
           format: 'cjs',
@@ -80,6 +83,6 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [react(), tailwindcss(), pdfAssets()]
+    plugins: [react(), tailwindcss(), pdfAssets(), previewLicenses()]
   }
 })

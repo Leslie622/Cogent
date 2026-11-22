@@ -231,7 +231,7 @@ export class OutputsService {
     if (await this.storage.load(sessionId, turnId) !== undefined) return undefined
     return '如有需要单独交给用户的文件，请在终答前调用 report_outputs；仅修改源码或读取参考文件不必申报。'
   }
-  async resolve(target: OutputTarget, files: FileService): Promise<FileDescriptor> {
+  async resolve(target: OutputTarget, files: FileService, independent = false): Promise<FileDescriptor> {
     const docs = await this.get(target.sessionId, target.turnId)
     const doc: TurnOutputs | undefined = docs.at(0)
     if (doc === undefined || target.revision > doc.revision) throw new Error('产物版本不存在')
@@ -239,36 +239,37 @@ export class OutputsService {
     if (item === undefined) throw new Error('该产物已撤回或不属于本回合')
     // 更新中沿用已发布字节；更新完成后的旧卡不能悄悄解析到另一份新交付。
     if (target.revision !== doc.revision) throw new Error('产物卡已更新，请从当前卡片重新打开')
-    return this.register(doc, item, target.version, files)
+    return this.register(doc, item, target.version, files, independent)
   }
-  private async register(doc: TurnOutputs, item: OutputItem, version: 'delivery' | 'current', files: FileService): Promise<FileDescriptor> {
+  private async register(doc: TurnOutputs, item: OutputItem, version: 'delivery' | 'current', files: FileService, independent = false): Promise<FileDescriptor> {
     if (version === 'current' || item.copy.status === 'source-only') {
       await this.storage.inspect(item.sourcePath, item.realPath)
-      return files.registerPath(doc.sessionId, item.sourcePath, doc.turnId)
+      return files.registerPath(doc.sessionId, item.sourcePath, doc.turnId, undefined, {}, true, independent)
     }
     const path = await this.storage.verify(item)
     const deliveryItem = { ...item, copy: item.copy }
     const relativePath = item.copy.relativePath
     this.pinned.set(relativePath, { item, sessionId: doc.sessionId, count: (this.pinned.get(relativePath)?.count ?? 0) + 1 })
-    return files.registerPath(doc.sessionId, path, doc.turnId, {
+    const release = () => {
+      const pin = this.pinned.get(relativePath)
+      if (pin === undefined) return
+      pin.count--
+      if (pin.count === 0) this.pinned.delete(relativePath)
+    }
+    try { return await files.registerPath(doc.sessionId, path, doc.turnId, {
       sourcePath: item.sourcePath, confirmedAt: item.confirmedAt,
       target: { sessionId: doc.sessionId, turnId: doc.turnId, revision: doc.revision, outputId: item.outputId, version: 'delivery' },
-      release: () => {
-        const pin = this.pinned.get(relativePath)
-        if (pin === undefined) return
-        pin.count--
-        if (pin.count === 0) this.pinned.delete(relativePath)
-      },
+      release,
       actionTarget: () => this.storage.export(deliveryItem),
       relative: async (raw) => {
         const { resolveFileTarget } = await import('../files/paths')
         const dependency = resolveFileTarget(raw, { cwd: dirname(item.sourcePath), platform: process.platform }, homedir())
         const match = doc.published.find((candidate) => canonical(resolve(candidate.sourcePath)) === canonical(dependency.path))
         if (match === undefined || match.copy.status !== 'saved') throw new Error('依赖未保存；请单独打开当前原文件查看')
-        const descriptor = await this.register(doc, match, 'delivery', files)
+        const descriptor = await this.register(doc, match, 'delivery', files, independent)
         return { ...descriptor, ...(dependency.location !== undefined && { location: dependency.location }) }
       }
-    })
+    }, {}, true, independent) } catch (error) { release(); throw error }
   }
   private async clean(old: TurnOutputs | undefined, current: TurnOutputs): Promise<void> {
     if (old === undefined) return

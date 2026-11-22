@@ -1,0 +1,282 @@
+
+> cogent@0.1.0 test
+> node tests/run-tests.mjs run
+
+
+ RUN  v5.1.0 C:/Users/41631/Desktop/Cogent-multi-tab-workspace
+
+[host] token verify failed
+[host] token verify failed
+[host] token verify failed
+ ❯ |web| tests/renderer/features/workspace/office-preview.render.test.tsx (3 tests | 1 failed) 8393ms
+   ❯ Office视觉入口 (3)
+     × 扫描真实ZIP目录而不展开；坏包、大成员和过多条目明确拒绝 6798ms
+ ❯ |web| tests/renderer/features/settings/font-picker.render.test.tsx (4 tests | 1 failed) 16498ms
+   × 弹窗不聚焦搜索框，正文和代码的中英文可独立搜索、选择和保存 8315ms
+ ❯ |web| tests/renderer/features/settings/appearance.render.test.tsx (12 tests | 1 failed) 21759ms
+   × 主题色紧随深浅模式，卡片单选即时保存，键盘可切换且跟随明暗预览 5124ms
+ ❯ |web| tests/renderer/features/settings/general.render.test.tsx (11 tests | 1 failed) 6191ms
+   × 对话区块缺省详细 / 两位小数，实际选择即时保存，重读后仍保留 5354ms
+ ❯ |web| tests/renderer/features/workspace/file-workspace-pane.render.test.tsx (4 tests | 1 failed) 7225ms
+   ❯ 文件工作面组合 (4)
+     × 一棵树与单工具行复用文件内容，折叠、跨scope和草稿迁移均不释放lease 5727ms
+[engine] [startup] +32ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +843ms 初始化模型运行时
+[engine] [startup] +862ms 恢复本地存储与会话
+[engine] [startup] +864ms 装配请求路由
+[engine] [startup] +866ms stdio 就绪，等待 initialize
+[engine] [startup] +867ms 收到 initialize，校验并同步凭据
+[engine] [startup] +867ms initialize 完成
+[engine] [startup] +27ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +767ms 初始化模型运行时
+[engine] [startup] +784ms 恢复本地存储与会话
+[engine] [startup] +788ms 装配请求路由
+[engine] [startup] +789ms stdio 就绪，等待 initialize
+[engine] [startup] +790ms 收到 initialize，校验并同步凭据
+[engine] [startup] +790ms initialize 完成
+[engine] [startup] +29ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +747ms 初始化模型运行时
+[engine] [startup] +765ms 恢复本地存储与会话
+[engine] [startup] +767ms 装配请求路由
+[engine] [startup] +768ms stdio 就绪，等待 initialize
+[engine] [startup] +769ms 收到 initialize，校验并同步凭据
+[engine] [startup] +770ms initialize 完成
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +737ms 初始化模型运行时
+[engine] [startup] +756ms 恢复本地存储与会话
+[engine] [startup] +759ms 装配请求路由
+[engine] [startup] +760ms stdio 就绪，等待 initialize
+[engine] [startup] +761ms 收到 initialize，校验并同步凭据
+[engine] [startup] +761ms initialize 完成
+[engine] [startup] +31ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +743ms 初始化模型运行时
+[engine] [startup] +765ms 恢复本地存储与会话
+[engine] [startup] +767ms 装配请求路由
+[engine] [startup] +768ms stdio 就绪，等待 initialize
+[engine] [startup] +769ms 收到 initialize，校验并同步凭据
+[engine] [startup] +769ms initialize 完成
+[engine] [host] 手动压缩被拒（pi 原文）: Nothing to compact (session too small)
+[engine] [host] 手动压缩被拒（pi 原文）: Already compacted
+[engine] [startup] +35ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +741ms 初始化模型运行时
+[engine] [startup] +759ms 恢复本地存储与会话
+[engine] [startup] +762ms 装配请求路由
+[engine] [startup] +763ms stdio 就绪，等待 initialize
+[engine] [startup] +765ms 收到 initialize，校验并同步凭据
+[engine] [startup] +765ms initialize 完成
+[engine] [startup] +27ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +712ms 初始化模型运行时
+[engine] [startup] +732ms 恢复本地存储与会话
+[engine] [startup] +736ms 装配请求路由
+[engine] [startup] +737ms stdio 就绪，等待 initialize
+[engine] [startup] +739ms 收到 initialize，校验并同步凭据
+[engine] [startup] +739ms initialize 完成
+[engine] [startup] +29ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +725ms 初始化模型运行时
+[engine] [startup] +743ms 恢复本地存储与会话
+[engine] [startup] +746ms 装配请求路由
+[engine] [startup] +747ms stdio 就绪，等待 initialize
+[engine] [startup] +748ms 收到 initialize，校验并同步凭据
+[engine] [startup] +748ms initialize 完成
+[engine] [startup] +26ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +711ms 初始化模型运行时
+[engine] [startup] +728ms 恢复本地存储与会话
+[engine] [startup] +731ms 装配请求路由
+[engine] [startup] +732ms stdio 就绪，等待 initialize
+[engine] [startup] +733ms 收到 initialize，校验并同步凭据
+[engine] [startup] +733ms initialize 完成
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +719ms 初始化模型运行时
+[engine] [startup] +736ms 恢复本地存储与会话
+[engine] [startup] +739ms 装配请求路由
+[engine] [startup] +740ms stdio 就绪，等待 initialize
+[engine] [startup] +741ms 收到 initialize，校验并同步凭据
+[engine] [startup] +741ms initialize 完成
+[engine] [startup] +35ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +764ms 初始化模型运行时
+[engine] [startup] +782ms 恢复本地存储与会话
+[engine] [startup] +785ms 装配请求路由
+[engine] [startup] +786ms stdio 就绪，等待 initialize
+[engine] [startup] +787ms 收到 initialize，校验并同步凭据
+[engine] [startup] +787ms initialize 完成
+[engine] [startup] +31ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +735ms 初始化模型运行时
+[engine] [startup] +754ms 恢复本地存储与会话
+[engine] [startup] +756ms 装配请求路由
+[engine] [startup] +757ms 启动 HTTP 监听
+[engine] [host] http rpc listening on 127.0.0.1:51174
+[engine] [startup] +765ms stdio 就绪，等待 initialize
+[engine] [startup] +766ms 收到 initialize，校验并同步凭据
+[engine] [startup] +769ms initialize 完成
+[engine] [startup] +47ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +760ms 初始化模型运行时
+[engine] [startup] +779ms 恢复本地存储与会话
+[engine] [startup] +781ms 装配请求路由
+[engine] [startup] +782ms stdio 就绪，等待 initialize
+[engine] [startup] +783ms 收到 initialize，校验并同步凭据
+[engine] [startup] +783ms initialize 完成
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +733ms 初始化模型运行时
+[engine] [startup] +750ms 恢复本地存储与会话
+[engine] [startup] +753ms 装配请求路由
+[engine] [startup] +754ms 启动 HTTP 监听
+[engine] [host] http rpc listening on 127.0.0.1:60639
+[engine] [startup] +760ms stdio 就绪，等待 initialize
+[engine] [startup] +761ms 收到 initialize，校验并同步凭据
+[engine] [startup] +761ms initialize 完成
+[engine] [startup] +25ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +729ms 初始化模型运行时
+[engine] [startup] +746ms 恢复本地存储与会话
+[engine] [startup] +748ms 装配请求路由
+[engine] [startup] +749ms 启动 HTTP 监听
+[engine] [host] http rpc listening on 127.0.0.1:56989
+[engine] [startup] +755ms stdio 就绪，等待 initialize
+[engine] [startup] +756ms 收到 initialize，校验并同步凭据
+[engine] [startup] +756ms initialize 完成
+[engine] [host] token verify failed
+[engine] [startup] +2087ms 收到 initialize，校验并同步凭据
+[engine] [startup] +2087ms initialize 完成
+[engine] [startup] +28ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +761ms 初始化模型运行时
+[engine] [startup] +778ms 恢复本地存储与会话
+[engine] [startup] +780ms 装配请求路由
+[engine] [startup] +781ms 启动 HTTP 监听
+[engine] [host] http rpc listening on 127.0.0.1:18962
+[engine] [startup] +787ms stdio 就绪，等待 initialize
+[engine] [startup] +788ms 收到 initialize，校验并同步凭据
+[engine] [startup] +788ms initialize 完成
+[cogent-mcp] ready（scope=write）
+[cogent-mcp] ready（scope=readonly）
+[engine] [startup] +1851ms 收到 initialize，校验并同步凭据
+[engine] [startup] +1851ms initialize 完成
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +739ms 初始化模型运行时
+[engine] [startup] +757ms 恢复本地存储与会话
+[engine] [startup] +760ms 装配请求路由
+[engine] [startup] +761ms stdio 就绪，等待 initialize
+[engine] [startup] +762ms 收到 initialize，校验并同步凭据
+[engine] [startup] +762ms initialize 完成
+[engine] [startup] +25ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +715ms 初始化模型运行时
+[engine] [startup] +732ms 恢复本地存储与会话
+[engine] [startup] +735ms 装配请求路由
+[engine] [startup] +736ms stdio 就绪，等待 initialize
+[engine] [startup] +737ms 收到 initialize，校验并同步凭据
+[engine] [startup] +737ms initialize 完成
+[engine] [startup] +32ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +737ms 初始化模型运行时
+[engine] [startup] +756ms 恢复本地存储与会话
+[engine] [startup] +758ms 装配请求路由
+[engine] [startup] +760ms stdio 就绪，等待 initialize
+[engine] [startup] +761ms 收到 initialize，校验并同步凭据
+[engine] [startup] +761ms initialize 完成
+[engine] [startup] +32ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +748ms 初始化模型运行时
+[engine] [startup] +769ms 恢复本地存储与会话
+[engine] [startup] +771ms 装配请求路由
+[engine] [startup] +773ms stdio 就绪，等待 initialize
+[engine] [startup] +775ms 收到 initialize，校验并同步凭据
+[engine] [startup] +775ms initialize 完成
+[engine] [startup] +30ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +739ms 初始化模型运行时
+[engine] [startup] +758ms 恢复本地存储与会话
+[engine] [startup] +761ms 装配请求路由
+[engine] [startup] +762ms stdio 就绪，等待 initialize
+[engine] [startup] +763ms 收到 initialize，校验并同步凭据
+[engine] [startup] +764ms initialize 完成
+[engine] [host] 技能目录诊断（会话 278af7fa-3e2d-4cbe-9e75-50c6519c667a）: 技能 "commit-check" 同名冲突：C:\Users\41631\AppData\Local\Temp\cogent-skills-ws-1ulr7p\.cogent\skills\commit-check\SKILL.md 覆盖 C:\Users\41631\AppData\Local\Temp\cogent-skills-home-xii8kX\skills\commit-check\SKILL.md
+[engine] [startup] +28ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +739ms 初始化模型运行时
+[engine] [startup] +758ms 恢复本地存储与会话
+[engine] [startup] +760ms 装配请求路由
+[engine] [startup] +761ms stdio 就绪，等待 initialize
+[engine] [startup] +763ms 收到 initialize，校验并同步凭据
+[engine] [startup] +763ms initialize 完成
+[engine] [startup] +29ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +746ms 初始化模型运行时
+[engine] [startup] +763ms 恢复本地存储与会话
+[engine] [startup] +765ms 装配请求路由
+[engine] [startup] +767ms stdio 就绪，等待 initialize
+[engine] [startup] +768ms 收到 initialize，校验并同步凭据
+[engine] [startup] +768ms initialize 完成
+[engine] [startup] +32ms 加载 Host 模块（node v22.23.5）
+[engine] [startup] +731ms 初始化模型运行时
+[engine] [startup] +750ms 恢复本地存储与会话
+[engine] [startup] +752ms 装配请求路由
+[engine] [startup] +753ms stdio 就绪，等待 initialize
+[engine] [startup] +754ms 收到 initialize，校验并同步凭据
+[engine] [startup] +754ms initialize 完成
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |web| tests/renderer/features/settings/appearance.render.test.tsx > 主题色紧随深浅模式，卡片单选即时保存，键盘可切换且跟随明暗预览
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/renderer/features/settings/appearance.render.test.tsx:25:1
+     23| })
+     24|
+     25| it('主题色紧随深浅模式，卡片单选即时保存，键盘可切换且跟随明暗预览', async () => {
+       | ^
+     26|   const user = userEvent.setup()
+     27|   render(<AppearanceSection />)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |web| tests/renderer/features/settings/font-picker.render.test.tsx > 弹窗不聚焦搜索框，正文和代码的中英文可独立搜索、选择和保存
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/renderer/features/settings/font-picker.render.test.tsx:27:1
+     25| })
+     26|
+     27| it('弹窗不聚焦搜索框，正文和代码的中英文可独立搜索、选择和保存', async () => {
+       | ^
+     28|   const queryLocalFonts = vi.fn().mockResolvedValue([
+     29|     { family: '霞鹜文楷', style: 'Regular' },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |web| tests/renderer/features/settings/general.render.test.tsx > 对话区块缺省详细 / 两位小数，实际选择即时保存，重读后仍保留
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/renderer/features/settings/general.render.test.tsx:26:1
+     24| })
+     25|
+     26| it('对话区块缺省详细 / 两位小数，实际选择即时保存，重读后仍保留', async () => {
+       | ^
+     27|   const user = userEvent.setup()
+     28|   const openOptions = async (trigger: HTMLElement) => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |web| tests/renderer/features/workspace/file-workspace-pane.render.test.tsx > 文件工作面组合 > 一棵树与单工具行复用文件内容，折叠、跨scope和草稿迁移均不释放lease
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/renderer/features/workspace/file-workspace-pane.render.test.tsx:61:3
+     59|
+     60| describe('文件工作面组合', () => {
+     61|   it('一棵树与单工具行复用文件内容，折叠、跨scope和草稿迁移均不释放lease', async () => {
+       |   ^
+     62|     const scope = 'draft:stable', other = 'draft:other'
+     63|     useWorkspaceStore.getState().setScope(scope)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |web| tests/renderer/features/workspace/office-preview.render.test.tsx > Office视觉入口 > 扫描真实ZIP目录而不展开；坏包、大成员和过多条目明确拒绝
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/renderer/features/workspace/office-preview.render.test.tsx:13:3
+     11|
+     12| describe('Office视觉入口', () => {
+     13|   it('扫描真实ZIP目录而不展开；坏包、大成员和过多条目明确拒绝', () => {
+       |   ^
+     14|     expect(() => validateOfficeArchive(archive(), 'a.docx')).not.toThr…
+     15|     expect(() => validateOfficeArchive(new ArrayBuffer(4), 'a.docx')).…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  5 failed | 145 passed (150)
+      Tests  5 failed | 1200 passed | 1 skipped (1206)
+   Start at  15:46:55
+   Duration  151.26s (import 31%, tests 29%, environment 23%, transform 12%, setup 6%)
+

@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { FileActionRequest } from '../../shared/files'
+import { FILE_VIEWS_CHANNEL, type FileViewMethods } from '../../shared/file-views'
+import { BROWSER_CHANNEL, type BrowserMethods, type BrowserEvent } from '../../shared/browser'
 import {
   IPC,
   type AppStatus,
@@ -31,6 +33,13 @@ type CustomProvidersPayload = { providers: CustomProviderDef[]; overrides: Provi
  * 暴露的 API 形状即 CogentApi，renderer 侧类型由此导出。
  */
 const api = {
+  fileViewsRequest: <M extends keyof FileViewMethods>(method: M, params: FileViewMethods[M]['params']): Promise<FileViewMethods[M]['result']> => ipcRenderer.invoke(FILE_VIEWS_CHANNEL, { method, params }),
+  browserRequest: <M extends keyof BrowserMethods>(method: M, params: BrowserMethods[M]['params']): Promise<BrowserMethods[M]['result']> => ipcRenderer.invoke(BROWSER_CHANNEL.request, { method, params }),
+  onBrowserEvent: (callback: (event: BrowserEvent) => void): (() => void) => {
+    const listener = (_event: unknown, event: BrowserEvent): void => callback(event)
+    ipcRenderer.on(BROWSER_CHANNEL.event, listener)
+    return () => ipcRenderer.removeListener(BROWSER_CHANNEL.event, listener)
+  },
   fileAction: (request: FileActionRequest): Promise<{ canceled: boolean }> => ipcRenderer.invoke(IPC.filesAction, request),
   configureFileEditor: (): Promise<{ canceled: boolean }> => ipcRenderer.invoke(IPC.filesConfigureEditor),
   filePath: (file: File): string => webUtils.getPathForFile(file),

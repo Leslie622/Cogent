@@ -10,13 +10,14 @@
 import { ipcMain } from 'electron'
 import { IPC, type GuestCredentialsResult } from '../../../shared/ipc'
 import type { IpcDeps } from './index'
+import { isTrustedAppGuest } from '../webview-policy'
 
 export function registerGuestIpc(deps: IpcDeps): void {
   ipcMain.handle(IPC.guestCredentials, async (event): Promise<GuestCredentialsResult> => {
     // 信任边界：sender 是跨信任边界的外部页面环境（经硬化 webview），在此做
     // 唯一一次校验 —— 非 webview guest（主 UI preload 伪造调用等）直接拒
-    if (event.sender.getType() !== 'webview') {
-      throw new Error('凭证入口仅对 webview guest 开放')
+    if (!isTrustedAppGuest(event.sender) || event.senderFrame !== event.sender.mainFrame || event.sender.hostWebContents === null) {
+      throw new Error('凭证入口仅对已登记的可信应用页面开放')
     }
     const port = deps.host.getHttpPort()
     if (port === undefined) {

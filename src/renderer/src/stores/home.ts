@@ -8,6 +8,7 @@
  */
 import { create } from 'zustand'
 import type { PermissionMode } from '@/env.d'
+import { useWorkspaceStore } from './workspace'
 
 function newDraftId(): string {
   const id = crypto.randomUUID()
@@ -78,6 +79,7 @@ export const useHomeStore = create<HomeState>((set) => ({
   finishNewChat: (draftId, chatId) => set((state) => {
     const visible = state.session.kind === 'new' && (state.session.draftId ?? 'default') === draftId
     if (!visible && state.newDraft.draftId !== draftId) return state
+    useWorkspaceStore.getState().bindDraft('draft:' + draftId, chatId)
     return { newDraft: { kind: 'new', draftId: newDraftId() }, ...(visible && { session: { kind: 'chat', chatId } as HomeSession }) }
   }),
 }))

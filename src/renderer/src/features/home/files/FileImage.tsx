@@ -2,6 +2,7 @@
 import { useContext, useEffect, useState } from 'react'
 import { FILE_LIMITS } from '@shared/files'
 import { FileLink, FileLinkContext } from './FileLink'
+import { acquireFile, releaseFile, cancelFileOperation } from '@/features/workspace/file-client'
 export function FileImage({ target, alt }: { target: string; alt: string }) {
   const scope = useContext(FileLinkContext)
   const [url, setUrl] = useState<string | null>(null)
@@ -11,18 +12,15 @@ export function FileImage({ target, alt }: { target: string; alt: string }) {
     const controller = new AbortController()
     const isActive = () => !controller.signal.aborted
     let objectUrl: string | undefined
-    let fileId: string | undefined
+    let leaseId: string | undefined
     const operationId = crypto.randomUUID()
     void (async () => {
-      const file = await window.cogent.engineRequest('files.resolve', {
-        sessionId: scope.sessionId,
-        turnId: scope.turnId,
-        rawTarget: target,
-        relativeTo: scope.relativeTo
-      })
-      fileId = file.fileId
+      const lease = await acquireFile(scope, target, operationId)
+      const file = lease.descriptor
+      leaseId = lease.leaseId
       if (!isActive()) {
-        await window.cogent.engineRequest('files.cancel', { sessionId: scope.sessionId, operationId, fileId })
+        await releaseFile(leaseId)
+        leaseId = undefined
         return
       }
       if (file.kind !== 'image' || file.size > FILE_LIMITS.image)
@@ -30,9 +28,8 @@ export function FileImage({ target, alt }: { target: string; alt: string }) {
       const chunks: Uint8Array<ArrayBuffer>[] = []
       let offset = 0
       for (;;) {
-        const part = await window.cogent.engineRequest('files.readChunk', {
-          sessionId: scope.sessionId,
-          fileId: file.fileId,
+        const part = await window.cogent.fileViewsRequest('fileViews.readChunk', {
+          leaseId: lease.leaseId,
           version: file.version,
           operationId,
           offset,
@@ -53,11 +50,8 @@ export function FileImage({ target, alt }: { target: string; alt: string }) {
       controller.abort()
       setUrl(null)
       if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl)
-      void window.cogent
-        .engineRequest('files.cancel', { sessionId: scope.sessionId, operationId, fileId })
-        .catch(() => {
-          /* 取消阶段 Host 可能已退出。 */
-        })
+      void cancelFileOperation(operationId).catch(() => {})
+      if (leaseId !== undefined) void releaseFile(leaseId).catch(() => {})
     }
   }, [scope, target])
   return (

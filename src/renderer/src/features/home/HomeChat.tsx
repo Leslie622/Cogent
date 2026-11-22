@@ -24,7 +24,6 @@ import {
   IconDeviceDesktop,
   IconDots,
   IconFolder,
-  IconLayoutSidebarRightCollapse,
   IconLayoutSidebarRightExpand,
   IconPlayerPlayFilled,
   IconSquare,
@@ -109,7 +108,6 @@ function ChatHeader({
   project,
   lastActiveAt,
   tabsCollapsed,
-  tabsToggleDisabled,
   onToggleTabs,
 }: {
   title: string
@@ -118,11 +116,10 @@ function ChatHeader({
   /** 同项目各会话的最近更新时间（毫秒）；无记录不显活动行 */
   lastActiveAt?: number
   tabsCollapsed: boolean
-  tabsToggleDisabled?: boolean
   onToggleTabs: () => void
 }) {
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
+    <header data-chat-header className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
       {project !== undefined ? (
         <HoverCard>
           {/* delay/closeDelay 是 preview-card Trigger 的 prop（Root 没有）；
@@ -179,22 +176,16 @@ function ChatHeader({
           <IconDots className="size-4" />
         </Button>
       </Hint>
-      {/* 标签页区折叠开关：系列图标两态，同 AppHeader 的 content-sidebar 开关 */}
-      <Hint tip={tabsCollapsed ? '展开标签页区' : '折叠标签页区'} side="bottom">
+      {tabsCollapsed && <Hint tip="展开标签页区" side="bottom">
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label={tabsCollapsed ? '展开标签页区' : '折叠标签页区'}
-          disabled={tabsToggleDisabled}
+          aria-label="展开标签页区"
           onClick={onToggleTabs}
         >
-          {tabsCollapsed ? (
-            <IconLayoutSidebarRightExpand className="size-[19px]" />
-          ) : (
-            <IconLayoutSidebarRightCollapse className="size-[19px]" />
-          )}
+          <IconLayoutSidebarRightExpand className="size-[19px]" />
         </Button>
-      </Hint>
+      </Hint>}
     </header>
   )
 }
@@ -565,11 +556,9 @@ function ChatComposer({
 
 export function HomeChat({
   tabsCollapsed,
-  tabsToggleDisabled,
   onToggleTabs,
 }: {
   tabsCollapsed: boolean
-  tabsToggleDisabled?: boolean
   onToggleTabs: () => void
 }) {
   const session = useHomeStore((s) => s.session)
@@ -631,7 +620,6 @@ export function HomeChat({
         project={project}
         lastActiveAt={lastActiveAt}
         tabsCollapsed={tabsCollapsed}
-        tabsToggleDisabled={tabsToggleDisabled}
         onToggleTabs={onToggleTabs}
       />
       {/* 吸底跟随不走库 autoScroll（已关）：其 RO→rAF→scrollTo 链路慢一帧，
