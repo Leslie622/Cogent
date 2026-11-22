@@ -14,6 +14,9 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
+        // 侧栏入口与会话行使用同深度的软叠背景，明暗主题均沿用同一配方。
+        "ghost-soft":
+          "hover:bg-accent-foreground/5 hover:text-foreground aria-expanded:bg-accent-foreground/5 aria-expanded:text-foreground",
         // 项目信息条已有 muted 底色，悬停需软叠才能看见；空值仅降低文字层级。
         project:
           "text-foreground data-[empty=true]:text-muted-foreground hover:bg-accent-foreground/5 aria-expanded:bg-muted",

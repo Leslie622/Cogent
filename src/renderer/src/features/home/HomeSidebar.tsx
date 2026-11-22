@@ -32,13 +32,14 @@ import {
   IconPencil,
   IconPin,
   IconPinFilled,
-  IconSearch,
   IconTrash,
 } from '@tabler/icons-react'
+import { SearchIcon } from 'lucide-react'
 import { cn } from 'cn'
 import { toast } from 'sonner'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   DropdownMenu,
@@ -604,15 +605,15 @@ export function HomeSidebar() {
       {/* 头部：路由标题（首页 = 应用名）+ 搜索钮（行为空位） */}
       <div className="flex h-12 shrink-0 items-center justify-between pl-4 pr-2.5">
         <span className="text-base font-semibold">Cogent</span>
-        <Hint tip="搜索" side="bottom">
+        <Hint tip={<span className="flex items-center gap-2">搜索<KbdGroup><Kbd>Ctrl</Kbd>+<Kbd>K</Kbd></KbdGroup></span>} side="bottom">
           <Button
-            variant="ghost"
+            variant="ghost-soft"
             size="icon-xs"
             className="size-7"
             aria-label="搜索"
             onClick={() => useSearchStore.getState().setOpen(true)}
           >
-            <IconSearch className="size-4" />
+            <SearchIcon className="size-4" />
           </Button>
         </Hint>
       </div>

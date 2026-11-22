@@ -174,7 +174,8 @@ function CommandItem({
       {...props}
     >
       {children}
-      <CheckIcon className="ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100" />
+      {/* 搜索项只导航，不预留勾选图标槽，保持内容两侧留白对称。 */}
+      {variant === "default" && <CheckIcon className="ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100" />}
     </CommandPrimitive.Item>
   )
 }

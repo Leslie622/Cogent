@@ -23,6 +23,8 @@ export default tseslint.config(
       'out/**',
       'coverage/**',
       'dist/**',
+      // 独立文档的单文件产物含打包依赖，源码继续参与根目录 lint。
+      'docs/架构地图/dist/**',
       'node_modules/**',
       'eslint.config.mjs',
       'scripts/**',

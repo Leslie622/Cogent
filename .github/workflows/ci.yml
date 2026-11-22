@@ -20,13 +20,20 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            docs/架构地图/package-lock.json
       - name: 缓存 Electron 二进制
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\electron\Cache
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
+      # 根 lint 包含文档源码，类型检查所需依赖也必须先安装。
+      - run: npm --prefix docs/架构地图 ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      - run: npm --prefix docs/架构地图 test
+      - run: npm --prefix docs/架构地图 run build
