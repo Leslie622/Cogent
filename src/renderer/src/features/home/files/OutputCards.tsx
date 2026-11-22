@@ -12,6 +12,7 @@ import { FileLinkContext } from './FileLink'
 import { useChatStore } from '@/stores/chat'
 import { useFilePreviewStore } from '@/stores/file-preview'
 import { FileActionErrorDialog } from './FileActionErrorDialog'
+import { acquireFile, releaseFile } from '@/features/workspace/file-client'
 
 function OutputCard({ doc, item }: { doc: TurnOutputs; item: OutputItem }) {
   const [error, setError] = useState<string | null>(null)
@@ -21,9 +22,9 @@ function OutputCard({ doc, item }: { doc: TurnOutputs; item: OutputItem }) {
   const action = async (action: 'open' | 'save' | 'reveal' | 'editor') => {
     setError(null)
     try {
-      const descriptor = await window.cogent.engineRequest('outputs.resolve', { ...target, version: action === 'reveal' || action === 'editor' ? 'current' : 'delivery' })
-      try { await window.cogent.fileAction({ sessionId: doc.sessionId, fileId: descriptor.fileId, action }) }
-      finally { await window.cogent.engineRequest('files.cancel', { sessionId: doc.sessionId, operationId: crypto.randomUUID(), fileId: descriptor.fileId }) }
+      const lease = await acquireFile({ sessionId: doc.sessionId, refs: [] }, item.sourcePath, crypto.randomUUID(), { ...target, version: action === 'reveal' || action === 'editor' ? 'current' : 'delivery' })
+      try { await window.cogent.fileViewsRequest('fileViews.action', { leaseId: lease.leaseId, action }) }
+      finally { await releaseFile(lease.leaseId) }
     } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
   }
   const type = item.name.includes('.') ? item.name.split('.').at(-1)!.toUpperCase() : '文件'

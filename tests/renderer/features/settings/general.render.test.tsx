@@ -1,5 +1,5 @@
 /** 常规对话偏好的真实控件接线、即时消费与持久化边界。 */
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { GeneralSection } from '@/features/settings/GeneralSection'
@@ -28,6 +28,18 @@ afterEach(() => {
 
 it('对话区块缺省详细 / 两位小数，实际选择即时保存，重读后仍保留', async () => {
   const user = userEvent.setup()
+  const openOptions = async (trigger: HTMLElement) => {
+    await user.click(trigger)
+    // Base UI 将鼠标打开排到下一动画帧；点击完成不代表 listbox 已经提交。
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'))
+    return within(await screen.findByRole('listbox'))
+  }
+  const closed = async (trigger: HTMLElement) => {
+    await waitFor(() => {
+      expect(trigger).toHaveAttribute('aria-expanded', 'false')
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    })
+  }
   render(<GeneralSection />)
   await waitFor(() => expect(screen.getByRole('switch', { name: '自动生成会话名称' })).toBeChecked())
   expect(screen.getByRole('heading', { name: '对话' })).toBeVisible()
@@ -41,19 +53,22 @@ it('对话区块缺省详细 / 两位小数，实际选择即时保存，重读�
   expect(processUsage).toBeChecked()
   expect(useAppearanceStore.getState().showProcessUsage).toBe(true)
 
-  await user.click(verbosity)
-  expect((await screen.findAllByRole('option')).map((option) => option.textContent)).toEqual(['简洁', '详细'])
-  await user.click(await screen.findByRole('option', { name: '简洁' }))
+  const verbosityOptions = await openOptions(verbosity)
+  expect(verbosityOptions.getAllByRole('option').map((option) => option.textContent)).toEqual(['简洁', '详细'])
+  await user.click(await verbosityOptions.findByRole('option', { name: '简洁' }))
+  await closed(verbosity)
   expect(verbosity).toHaveTextContent('简洁')
   expect(useAppearanceStore.getState().outputVerbosity).toBe('low')
   for (const [label, value] of [['整数', 0], ['1 位小数', 1], ['2 位小数', 2]] as const) {
-    await user.click(precision)
-    await user.click(await screen.findByRole('option', { name: label }))
+    const precisionOptions = await openOptions(precision)
+    await user.click(await precisionOptions.findByRole('option', { name: label }))
+    await closed(precision)
     expect(precision).toHaveTextContent(label)
     expect(useAppearanceStore.getState().durationPrecision).toBe(value)
   }
-  await user.click(precision)
-  await user.click(await screen.findByRole('option', { name: '整数' }))
+  const precisionOptions = await openOptions(precision)
+  await user.click(await precisionOptions.findByRole('option', { name: '整数' }))
+  await closed(precision)
   const saved = localStorage.getItem(storageKey)!
   expect(JSON.parse(saved)).toMatchObject({ state: { outputVerbosity: 'low', showProcessUsage: true, durationPrecision: 0 } })
   act(() => { useAppearanceStore.setState(defaults) })

@@ -1,0 +1,980 @@
+{
+  "passed": true,
+  "mode": "development",
+  "stage": "关闭全部",
+  "checks": [
+    "真实首页与main/preload桥就绪",
+    "真实Vite开发renderer已加载",
+    "真实Host进程完成session.list往返",
+    "控件就绪 [aria-label=展开标签页区]",
+    "控件就绪 [aria-label=打开内置浏览器]",
+    "浏览器1完成真实attach/visibility并启用地址栏",
+    "旧effect迟到release已完成且使用独立lease",
+    "开发StrictMode同tab独立lease，旧release未撤销新guest",
+    "控件就绪 [data-workspace-panel]:not([hidden]) [data-browser-pane] [aria-label=\"网页地址或搜索\"]",
+    "浏览器1经真实地址栏导航本地夹具",
+    "控件就绪 [aria-label=新建标签页]",
+    "控件就绪 [aria-label=打开内置浏览器]",
+    "attach失败明确显示错误并保持地址栏未就绪",
+    "显示入口 重试",
+    "控件就绪 [data-startup-target]",
+    "浏览器2完成真实attach/visibility并启用地址栏",
+    "旧effect迟到release已完成且使用独立lease",
+    "开发StrictMode同tab独立lease，旧release未撤销新guest",
+    "重试已销毁失败guest并创建新guest",
+    "用户点击重试后使用新guest与新lease",
+    "控件就绪 [data-workspace-panel]:not([hidden]) [data-browser-pane] [aria-label=\"网页地址或搜索\"]",
+    "浏览器2经真实地址栏导航本地夹具",
+    "控件就绪 [aria-label=新建标签页]",
+    "控件就绪 [aria-label=打开内置浏览器]",
+    "浏览器3完成真实attach/visibility并启用地址栏",
+    "旧effect迟到release已完成且使用独立lease",
+    "开发StrictMode同tab独立lease，旧release未撤销新guest",
+    "控件就绪 [data-workspace-panel]:not([hidden]) [data-browser-pane] [aria-label=\"网页地址或搜索\"]",
+    "浏览器3经真实地址栏导航本地夹具",
+    "控件就绪 [role=tab][id=\"workspace-tab-b258eac3-7056-43f0-829c-b8ff5fd35879\"]",
+    "真实标签切换恢复 b258eac3-7056-43f0-829c-b8ff5fd35879",
+    "同一guest保留表单与滚动 b258eac3-7056-43f0-829c-b8ff5fd35879",
+    "控件就绪 [role=tab][id=\"workspace-tab-ee1e83af-14e6-45fd-a9ca-87faae52abdc\"]",
+    "真实标签切换恢复 ee1e83af-14e6-45fd-a9ca-87faae52abdc",
+    "同一guest保留表单与滚动 ee1e83af-14e6-45fd-a9ca-87faae52abdc",
+    "控件就绪 [role=tab][id=\"workspace-tab-df57de54-8cd0-4921-84f0-d677e924fccd\"]",
+    "真实标签切换恢复 df57de54-8cd0-4921-84f0-d677e924fccd",
+    "同一guest保留表单与滚动 df57de54-8cd0-4921-84f0-d677e924fccd",
+    "三个浏览器未暗建聊天session",
+    "控件就绪 [aria-label=标签页列表]",
+    "显示入口 关闭全部标签页",
+    "控件就绪 [data-startup-target]",
+    "真实关闭全部移除所有pane",
+    "全部lease和原生guest归零"
+  ],
+  "requests": [
+    {
+      "id": 1,
+      "method": "reserve",
+      "params": {
+        "scopeId": "draft:1c9c8f79-b997-4c1b-a261-4d3b95dab53c",
+        "tabId": "b258eac3-7056-43f0-829c-b8ff5fd35879"
+      },
+      "calledAt": 8596,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8601,
+      "reservation": {
+        "lease": "a8920017-9e74-432f-8a6b-5a4dc41738e0",
+        "tabId": "b258eac3-7056-43f0-829c-b8ff5fd35879",
+        "partition": "persist:cogent-workspace-browser-v1",
+        "bootstrapUrl": "about:blank#a8920017-9e74-432f-8a6b-5a4dc41738e0"
+      },
+      "delayedReply": true,
+      "returnedAt": 8801
+    },
+    {
+      "id": 2,
+      "method": "reserve",
+      "params": {
+        "scopeId": "draft:1c9c8f79-b997-4c1b-a261-4d3b95dab53c",
+        "tabId": "b258eac3-7056-43f0-829c-b8ff5fd35879"
+      },
+      "calledAt": 8601,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8601,
+      "reservation": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710",
+        "tabId": "b258eac3-7056-43f0-829c-b8ff5fd35879",
+        "partition": "persist:cogent-workspace-browser-v1",
+        "bootstrapUrl": "about:blank#8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "returnedAt": 8601
+    },
+    {
+      "id": 3,
+      "method": "attach",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710",
+        "webContentsId": 2
+      },
+      "calledAt": 8781,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8783,
+      "returnedAt": 8783
+    },
+    {
+      "id": 4,
+      "method": "visibility",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710",
+        "active": true
+      },
+      "calledAt": 8800,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8801,
+      "returnedAt": 8801
+    },
+    {
+      "id": 5,
+      "method": "preferences",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "calledAt": 8801,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8802,
+      "returnedAt": 8802
+    },
+    {
+      "id": 6,
+      "method": "release",
+      "params": {
+        "lease": "a8920017-9e74-432f-8a6b-5a4dc41738e0"
+      },
+      "calledAt": 8802,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8802,
+      "returnedAt": 8802
+    },
+    {
+      "id": 7,
+      "method": "history",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "calledAt": 8802,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8803,
+      "returnedAt": 8803
+    },
+    {
+      "id": 8,
+      "method": "visibility",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710",
+        "active": true
+      },
+      "calledAt": 8808,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8808,
+      "returnedAt": 8808
+    },
+    {
+      "id": 9,
+      "method": "history",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "calledAt": 8843,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8843,
+      "returnedAt": 8843
+    },
+    {
+      "id": 10,
+      "method": "navigate",
+      "params": {
+        "url": "http://127.0.0.1:57840/page?tab=1",
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "calledAt": 8902,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8945,
+      "returnedAt": 8945
+    },
+    {
+      "id": 11,
+      "method": "history",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "calledAt": 8911,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 8911,
+      "returnedAt": 8911
+    },
+    {
+      "id": 12,
+      "method": "history",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "calledAt": 9003,
+      "stage": "启动浏览器1",
+      "status": "ok",
+      "handledAt": 9004,
+      "returnedAt": 9004
+    },
+    {
+      "id": 13,
+      "method": "visibility",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710",
+        "active": false
+      },
+      "calledAt": 9227,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9227,
+      "returnedAt": 9227
+    },
+    {
+      "id": 14,
+      "method": "history",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "calledAt": 9237,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9237,
+      "returnedAt": 9237
+    },
+    {
+      "id": 15,
+      "method": "reserve",
+      "params": {
+        "scopeId": "draft:1c9c8f79-b997-4c1b-a261-4d3b95dab53c",
+        "tabId": "ee1e83af-14e6-45fd-a9ca-87faae52abdc"
+      },
+      "calledAt": 9267,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9268,
+      "reservation": {
+        "lease": "212487f8-3fbf-456a-a4f6-6275485cd652",
+        "tabId": "ee1e83af-14e6-45fd-a9ca-87faae52abdc",
+        "partition": "persist:cogent-workspace-browser-v1",
+        "bootstrapUrl": "about:blank#212487f8-3fbf-456a-a4f6-6275485cd652"
+      },
+      "delayedReply": true,
+      "returnedAt": 9749
+    },
+    {
+      "id": 16,
+      "method": "reserve",
+      "params": {
+        "scopeId": "draft:1c9c8f79-b997-4c1b-a261-4d3b95dab53c",
+        "tabId": "ee1e83af-14e6-45fd-a9ca-87faae52abdc"
+      },
+      "calledAt": 9268,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9268,
+      "reservation": {
+        "lease": "6db5750a-5b98-43f9-9172-65949dd01940",
+        "tabId": "ee1e83af-14e6-45fd-a9ca-87faae52abdc",
+        "partition": "persist:cogent-workspace-browser-v1",
+        "bootstrapUrl": "about:blank#6db5750a-5b98-43f9-9172-65949dd01940"
+      },
+      "returnedAt": 9268
+    },
+    {
+      "id": 17,
+      "method": "attach",
+      "params": {
+        "lease": "6db5750a-5b98-43f9-9172-65949dd01940",
+        "webContentsId": 3
+      },
+      "calledAt": 9426,
+      "stage": "启动浏览器2",
+      "status": "error",
+      "injected": true,
+      "returnedAt": 9426,
+      "error": "Error: 验收注入：首次浏览器连接失败"
+    },
+    {
+      "id": 18,
+      "method": "release",
+      "params": {
+        "lease": "6db5750a-5b98-43f9-9172-65949dd01940"
+      },
+      "calledAt": 9569,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9569,
+      "returnedAt": 9569
+    },
+    {
+      "id": 19,
+      "method": "reserve",
+      "params": {
+        "scopeId": "draft:1c9c8f79-b997-4c1b-a261-4d3b95dab53c",
+        "tabId": "ee1e83af-14e6-45fd-a9ca-87faae52abdc"
+      },
+      "calledAt": 9571,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9571,
+      "reservation": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6",
+        "tabId": "ee1e83af-14e6-45fd-a9ca-87faae52abdc",
+        "partition": "persist:cogent-workspace-browser-v1",
+        "bootstrapUrl": "about:blank#63ba86d9-7f38-4e74-81a4-d7e1fde79ff6"
+      },
+      "returnedAt": 9571
+    },
+    {
+      "id": 20,
+      "method": "attach",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6",
+        "webContentsId": 4
+      },
+      "calledAt": 9716,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9716,
+      "returnedAt": 9716
+    },
+    {
+      "id": 21,
+      "method": "visibility",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6",
+        "active": true
+      },
+      "calledAt": 9749,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9749,
+      "returnedAt": 9749
+    },
+    {
+      "id": 22,
+      "method": "preferences",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6"
+      },
+      "calledAt": 9749,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9749,
+      "returnedAt": 9749
+    },
+    {
+      "id": 23,
+      "method": "release",
+      "params": {
+        "lease": "212487f8-3fbf-456a-a4f6-6275485cd652"
+      },
+      "calledAt": 9749,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9750,
+      "returnedAt": 9750
+    },
+    {
+      "id": 24,
+      "method": "visibility",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6",
+        "active": true
+      },
+      "calledAt": 9758,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9759,
+      "returnedAt": 9759
+    },
+    {
+      "id": 25,
+      "method": "history",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6"
+      },
+      "calledAt": 9784,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9784,
+      "returnedAt": 9784
+    },
+    {
+      "id": 26,
+      "method": "navigate",
+      "params": {
+        "url": "http://127.0.0.1:57840/page?tab=2",
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6"
+      },
+      "calledAt": 9841,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9863,
+      "returnedAt": 9863
+    },
+    {
+      "id": 27,
+      "method": "history",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6"
+      },
+      "calledAt": 9849,
+      "stage": "启动浏览器2",
+      "status": "ok",
+      "handledAt": 9849,
+      "returnedAt": 9849
+    },
+    {
+      "id": 28,
+      "method": "history",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6"
+      },
+      "calledAt": 9996,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 9996,
+      "returnedAt": 9996
+    },
+    {
+      "id": 29,
+      "method": "visibility",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6",
+        "active": false
+      },
+      "calledAt": 10024,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10024,
+      "returnedAt": 10024
+    },
+    {
+      "id": 30,
+      "method": "history",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6"
+      },
+      "calledAt": 10034,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10034,
+      "returnedAt": 10034
+    },
+    {
+      "id": 31,
+      "method": "reserve",
+      "params": {
+        "scopeId": "draft:1c9c8f79-b997-4c1b-a261-4d3b95dab53c",
+        "tabId": "df57de54-8cd0-4921-84f0-d677e924fccd"
+      },
+      "calledAt": 10065,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10066,
+      "reservation": {
+        "lease": "b8e7fe00-4cd8-4d84-8ce6-b964f8d4778e",
+        "tabId": "df57de54-8cd0-4921-84f0-d677e924fccd",
+        "partition": "persist:cogent-workspace-browser-v1",
+        "bootstrapUrl": "about:blank#b8e7fe00-4cd8-4d84-8ce6-b964f8d4778e"
+      },
+      "delayedReply": true,
+      "returnedAt": 10210
+    },
+    {
+      "id": 32,
+      "method": "reserve",
+      "params": {
+        "scopeId": "draft:1c9c8f79-b997-4c1b-a261-4d3b95dab53c",
+        "tabId": "df57de54-8cd0-4921-84f0-d677e924fccd"
+      },
+      "calledAt": 10066,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10066,
+      "reservation": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e",
+        "tabId": "df57de54-8cd0-4921-84f0-d677e924fccd",
+        "partition": "persist:cogent-workspace-browser-v1",
+        "bootstrapUrl": "about:blank#71776975-1dbc-449d-ab9a-e033c57aa00e"
+      },
+      "returnedAt": 10066
+    },
+    {
+      "id": 33,
+      "method": "attach",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e",
+        "webContentsId": 5
+      },
+      "calledAt": 10198,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10198,
+      "returnedAt": 10198
+    },
+    {
+      "id": 34,
+      "method": "visibility",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e",
+        "active": true
+      },
+      "calledAt": 10209,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10210,
+      "returnedAt": 10210
+    },
+    {
+      "id": 35,
+      "method": "preferences",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e"
+      },
+      "calledAt": 10210,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10211,
+      "returnedAt": 10211
+    },
+    {
+      "id": 36,
+      "method": "release",
+      "params": {
+        "lease": "b8e7fe00-4cd8-4d84-8ce6-b964f8d4778e"
+      },
+      "calledAt": 10211,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10211,
+      "returnedAt": 10211
+    },
+    {
+      "id": 37,
+      "method": "visibility",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e",
+        "active": true
+      },
+      "calledAt": 10213,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10213,
+      "returnedAt": 10213
+    },
+    {
+      "id": 38,
+      "method": "history",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e"
+      },
+      "calledAt": 10222,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10223,
+      "returnedAt": 10223
+    },
+    {
+      "id": 39,
+      "method": "navigate",
+      "params": {
+        "url": "http://127.0.0.1:57840/page?tab=3",
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e"
+      },
+      "calledAt": 10254,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10277,
+      "returnedAt": 10277
+    },
+    {
+      "id": 40,
+      "method": "history",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e"
+      },
+      "calledAt": 10257,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10257,
+      "returnedAt": 10257
+    },
+    {
+      "id": 41,
+      "method": "history",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e"
+      },
+      "calledAt": 10311,
+      "stage": "启动浏览器3",
+      "status": "ok",
+      "handledAt": 10311,
+      "returnedAt": 10311
+    },
+    {
+      "id": 42,
+      "method": "visibility",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710",
+        "active": true
+      },
+      "calledAt": 10429,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10429,
+      "returnedAt": 10429
+    },
+    {
+      "id": 43,
+      "method": "visibility",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e",
+        "active": false
+      },
+      "calledAt": 10430,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10430,
+      "returnedAt": 10430
+    },
+    {
+      "id": 44,
+      "method": "history",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "calledAt": 10435,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10436,
+      "returnedAt": 10436
+    },
+    {
+      "id": 45,
+      "method": "history",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e"
+      },
+      "calledAt": 10436,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10436,
+      "returnedAt": 10436
+    },
+    {
+      "id": 46,
+      "method": "visibility",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710",
+        "active": false
+      },
+      "calledAt": 10470,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10470,
+      "returnedAt": 10470
+    },
+    {
+      "id": 47,
+      "method": "visibility",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6",
+        "active": true
+      },
+      "calledAt": 10470,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10470,
+      "returnedAt": 10470
+    },
+    {
+      "id": 48,
+      "method": "history",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "calledAt": 10474,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10474,
+      "returnedAt": 10474
+    },
+    {
+      "id": 49,
+      "method": "history",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6"
+      },
+      "calledAt": 10474,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10474,
+      "returnedAt": 10474
+    },
+    {
+      "id": 50,
+      "method": "visibility",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6",
+        "active": false
+      },
+      "calledAt": 10502,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10502,
+      "returnedAt": 10502
+    },
+    {
+      "id": 51,
+      "method": "visibility",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e",
+        "active": true
+      },
+      "calledAt": 10503,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10503,
+      "returnedAt": 10503
+    },
+    {
+      "id": 52,
+      "method": "history",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6"
+      },
+      "calledAt": 10507,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10507,
+      "returnedAt": 10507
+    },
+    {
+      "id": 53,
+      "method": "history",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e"
+      },
+      "calledAt": 10507,
+      "stage": "隐藏恢复",
+      "status": "ok",
+      "handledAt": 10507,
+      "returnedAt": 10507
+    },
+    {
+      "id": 54,
+      "method": "close",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "calledAt": 10689,
+      "stage": "关闭全部",
+      "status": "ok",
+      "handledAt": 10703,
+      "returnedAt": 10703,
+      "result": {
+        "closed": true,
+        "keepMounted": false
+      }
+    },
+    {
+      "id": 55,
+      "method": "release",
+      "params": {
+        "lease": "8e2629ed-5b11-490f-b575-bfd5de253710"
+      },
+      "calledAt": 10724,
+      "stage": "关闭全部",
+      "status": "ok",
+      "handledAt": 10724,
+      "returnedAt": 10724
+    },
+    {
+      "id": 56,
+      "method": "close",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6"
+      },
+      "calledAt": 10731,
+      "stage": "关闭全部",
+      "status": "ok",
+      "handledAt": 10742,
+      "returnedAt": 10742,
+      "result": {
+        "closed": true,
+        "keepMounted": false
+      }
+    },
+    {
+      "id": 57,
+      "method": "release",
+      "params": {
+        "lease": "63ba86d9-7f38-4e74-81a4-d7e1fde79ff6"
+      },
+      "calledAt": 10796,
+      "stage": "关闭全部",
+      "status": "ok",
+      "handledAt": 10796,
+      "returnedAt": 10796
+    },
+    {
+      "id": 58,
+      "method": "close",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e"
+      },
+      "calledAt": 10801,
+      "stage": "关闭全部",
+      "status": "ok",
+      "handledAt": 10808,
+      "returnedAt": 10808,
+      "result": {
+        "closed": true,
+        "keepMounted": false
+      }
+    },
+    {
+      "id": 59,
+      "method": "release",
+      "params": {
+        "lease": "71776975-1dbc-449d-ab9a-e033c57aa00e"
+      },
+      "calledAt": 10846,
+      "stage": "关闭全部",
+      "status": "ok",
+      "handledAt": 10846,
+      "returnedAt": 10846
+    }
+  ],
+  "guests": [
+    {
+      "id": 2,
+      "createdAt": 8623,
+      "urls": [
+        {
+          "url": "about:blank#8e2629ed-5b11-490f-b575-bfd5de253710",
+          "at": 8768
+        },
+        {
+          "url": "http://127.0.0.1:57840/page?tab=1",
+          "at": 8927
+        },
+        {
+          "url": "about:blank",
+          "at": 10694
+        }
+      ],
+      "destroyedAt": 10703
+    },
+    {
+      "id": 3,
+      "createdAt": 9282,
+      "urls": [
+        {
+          "url": "about:blank#6db5750a-5b98-43f9-9172-65949dd01940",
+          "at": 9413
+        }
+      ],
+      "destroyedAt": 9569
+    },
+    {
+      "id": 4,
+      "createdAt": 9584,
+      "urls": [
+        {
+          "url": "about:blank#63ba86d9-7f38-4e74-81a4-d7e1fde79ff6",
+          "at": 9702
+        },
+        {
+          "url": "http://127.0.0.1:57840/page?tab=2",
+          "at": 9848
+        },
+        {
+          "url": "about:blank",
+          "at": 10734
+        }
+      ],
+      "destroyedAt": 10741
+    },
+    {
+      "id": 5,
+      "createdAt": 10078,
+      "urls": [
+        {
+          "url": "about:blank#71776975-1dbc-449d-ab9a-e033c57aa00e",
+          "at": 10186
+        },
+        {
+          "url": "http://127.0.0.1:57840/page?tab=3",
+          "at": 10261
+        },
+        {
+          "url": "about:blank",
+          "at": 10804
+        }
+      ],
+      "destroyedAt": 10808
+    }
+  ],
+  "injectedFailure": {
+    "lease": "6db5750a-5b98-43f9-9172-65949dd01940",
+    "guestId": 3,
+    "tabId": "ee1e83af-14e6-45fd-a9ca-87faae52abdc",
+    "at": 9426
+  },
+  "rendererErrors": [],
+  "leasesBeforeCleanup": [],
+  "remainingLeases": [],
+  "ownedPids": [
+    20140,
+    23956,
+    9968,
+    30740,
+    3352,
+    29672,
+    33416,
+    21336,
+    4120,
+    16424
+  ],
+  "elapsedMs": 10856,
+  "electron": "40.9.3",
+  "chromium": "144.0.7559.236",
+  "cleanup": {
+    "exitCode": 0,
+    "timedOut": false,
+    "interrupted": false,
+    "forcedPids": [],
+    "remainingPids": [],
+    "ownedPids": [
+      20140,
+      23956,
+      9968,
+      30740,
+      3352,
+      29672,
+      33416,
+      21336,
+      4120,
+      16424
+    ]
+  },
+  "renderer": {
+    "url": "http://127.0.0.1:57841",
+    "devServer": true,
+    "host": "127.0.0.1",
+    "randomPort": true
+  },
+  "fixtureRequests": [
+    {
+      "url": "/page?tab=1",
+      "at": 1795332439310
+    },
+    {
+      "url": "/page?tab=2",
+      "at": 1795332440236
+    },
+    {
+      "url": "/page?tab=3",
+      "at": 1795332440648
+    }
+  ]
+}

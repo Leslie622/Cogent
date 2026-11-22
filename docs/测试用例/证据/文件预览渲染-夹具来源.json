@@ -1,0 +1,59 @@
+{
+  "sources": [
+    {
+      "kind": "image",
+      "path": "reference/pi/packages/ai/test/data/red-circle.png",
+      "sha256": "8a0661c7398b69a4051a47733b6ed5540b23549f2245ba2d608fd9d050b7e919"
+    },
+    {
+      "kind": "pptx",
+      "path": "reference/zcode/apps/zcode-cli/packages/office-runtime/fixtures/launch.pptx",
+      "sha256": "851fa7c77eb468520ee91d1809b0adfb96e61e9f8fb5e8130da23116e7e831ea"
+    },
+    {
+      "kind": "pdf",
+      "path": "reference/zcode/apps/zcode-cli/packages/office-runtime/fixtures/paper.pdf",
+      "sha256": "8af44540bfa51852259d8747db68e2a72dc4891e4b12fe6987b6a3d1717b32ad"
+    }
+  ],
+  "fixtures": [
+    {
+      "name": "visual.docx",
+      "bytes": 9852,
+      "sha256": "1326f43e1f7a3fa9afc8c3844cd7785546338dba4c2eab8cd259f932e182482d"
+    },
+    {
+      "name": "visual.xlsx",
+      "bytes": 36452,
+      "sha256": "dbe0cb9aea1721482e6870f36698a117e2266ea02286a2f2b78980433c753014"
+    },
+    {
+      "name": "visual.pptx",
+      "bytes": 131896,
+      "sha256": "dcfd41533c2fc6118ca089b222749004560e5960c5dccf075c303650aac4fe0f"
+    },
+    {
+      "name": "visual.pdf",
+      "bytes": 3843,
+      "sha256": "8af44540bfa51852259d8747db68e2a72dc4891e4b12fe6987b6a3d1717b32ad"
+    },
+    {
+      "name": "visual.md",
+      "bytes": 89,
+      "sha256": "5dd6e4f4810d0eca1eec6b86ec573f80c71c8ee39276c24a47b8a46bb9809e53"
+    },
+    {
+      "name": "visual.svg",
+      "bytes": 306,
+      "sha256": "91ae9031cde85247064d1d1ec6307b07f1f6db2e7e164c1760248fb65b53eb26"
+    }
+  ],
+  "generation": {
+    "docx": "JSZip OOXML: two equal-size sections, 36pt/72pt margins, header/footer, table and PNG",
+    "xlsx": "ExcelJS: two sheets, styles, merged A1:F1, cached formulas, PNG; OOXML bar-chart drawing added to package",
+    "pptx": "Readonly copy of Zcode launch.pptx; slide1 replaced with explicit text/shape/PNG/chart, original slides2/3 retained",
+    "pdf": "Readonly copy of Zcode paper.pdf (two pages)",
+    "markdown": "Math block and Mermaid flowchart",
+    "svg": "Static SVG with native text, circle and rectangle"
+  }
+}

@@ -26,7 +26,12 @@ declare global {
   }
 }
 
-window.cogent = { onWindowState: () => () => {}, onEngineEvent: () => () => {} } as unknown as typeof window.cogent
+// 像素场景挂载完整 AppShell，包含常驻但收起的工作区；订阅桩不创建真实浏览器。
+window.cogent = {
+  onWindowState: () => () => {},
+  onEngineEvent: () => () => {},
+  onBrowserEvent: () => () => {},
+} as unknown as typeof window.cogent
 useProjectStore.setState({ loaded: true, load: async () => {}, projects: [
   { id: 'project', name: '项目一', cwds: ['C:/fixture'], createdAt: 1 },
   { id: 'pinned', name: '置顶项目', cwds: ['C:/pinned'], createdAt: 1, pinnedAt: 1 },

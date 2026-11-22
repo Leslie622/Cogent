@@ -21,6 +21,9 @@ import { registerSettingsIpc } from './settings'
 import { registerStorageIpc } from './storage'
 import { registerAttachmentIpc } from './attachments'
 import { registerFileIpc } from './files'
+import { registerFileViewsIpc } from './file-views'
+import { registerBrowserIpc } from './browser'
+import { createFileViewPreviewSource } from '../file-views/preview'
 
 export interface IpcDeps {
   host: HostManager
@@ -43,4 +46,6 @@ export function registerIpc(deps: IpcDeps, store: CredentialStore, customProvide
   registerStorageIpc()
   registerAttachmentIpc(deps)
   registerFileIpc(deps)
+  registerFileViewsIpc(deps)
+  registerBrowserIpc({ ...deps, resolveBrowserPreview: (source, selectedRoot) => createFileViewPreviewSource(deps, source.leaseId, selectedRoot) })
 }

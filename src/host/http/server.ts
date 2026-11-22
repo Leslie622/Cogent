@@ -120,7 +120,7 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
 /** 档位判定（/rpc 与 /ws 共用）：method 非字符串或不在表内 = 放行交 handleFrame */
 function scopeAllows(scope: TokenScope, method: unknown): boolean {
   // 桌面路径/分片/预览/草稿只属于壳；admin 也不能从远程取得本机文件入口。
-  if (typeof method === 'string' && (method.startsWith('attachments.') || method.startsWith('files.') || method.startsWith('outputs.'))) return false
+  if (typeof method === 'string' && (method.startsWith('attachments.') || method.startsWith('files.') || method.startsWith('outputs.') || method.startsWith('fileViews.'))) return false
   if (typeof method !== 'string' || !(method in METHOD_MIN_SCOPE)) return true
   return SCOPE_RANK[scope] >= SCOPE_RANK[METHOD_MIN_SCOPE[method]]
 }
@@ -211,7 +211,7 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
         resolve({
           port: info.port,
           broadcastEvent: (frame) => {
-            if (frame.method.startsWith('outputs.')) return
+            if (frame.method.startsWith('outputs.') || frame.method.startsWith('fileViews.')) return
             const line = JSON.stringify(frame)
             for (const client of clients) {
               if (client.readyState === WebSocket.OPEN) client.send(line)

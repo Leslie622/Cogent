@@ -7,7 +7,7 @@
  * 每批发布的重渲染（历史消息另由 MessageRow 的 memo 挡在重解析之外）。
  * 插件：@streamdown/code = Shiki 高亮（语言按需懒加载，与 @lobehub/ui 共享同一
  * 份 shiki 传递依赖，主题 github-light/dark）；@streamdown/cjk = CJK 友好解析
- * （加粗/删除线紧贴中文标点不失效）。math/mermaid 插件不装（后续件按需）。
+ * （加粗/删除线紧贴中文标点不失效）。文件预览另外按需加载 math/mermaid。
  * 偏离包默认的四处，各有明确理由：
  * ① 链接重写：点击 preventDefault 后改道 window.open —— 主进程只挂了
  *    setWindowOpenHandler 守卫，裸 <a> 的窗口内导航（will-navigate）
@@ -25,7 +25,7 @@
  *    具体接法见 docs/技术笔记/流式呈现动效.md。
  * md-body 作用域隔离主题；Themd 基准和用户最高优先层见 docs/技术笔记/对话内容主题.md。
  */
-import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { Block, Streamdown, defaultComponents, defaultRehypePlugins, defaultRemarkPlugins, parseMarkdownIntoBlocks, type BlockProps, type Components } from 'streamdown'
 import { code } from '@streamdown/code'
 import { cjk } from '@streamdown/cjk'
@@ -45,6 +45,9 @@ import { callouts } from '@/lib/theme/callouts'
 import { decodeFileEnvelope, decodeFileLink, fileLinksPlugin } from '@/lib/file-links'
 import { FileLink, FileLinkContext, FileLinkNestingContext } from '@/features/home/files/FileLink'
 import { FileImage } from '@/features/home/files/FileImage'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { useWorkspaceStore } from '@/stores/workspace'
+import { ExternalLink, Globe } from 'lucide-react'
 
 const plugins = { code, cjk }
 /** 原生完整安全管线后追加可信提示块适配；静态路径不经过 BlockComponent。 */
@@ -94,32 +97,44 @@ const components: Components = {
     return <defaultComponents.img src={src} alt={alt} {...props} />
   },
   a: function MarkdownLink({ node, children, href, title, ...props }) {
+    const scope = useContext(FileLinkContext)
     const file = decodeFileEnvelope(href)
     if (file?.imageAlt !== undefined) return <FileImage target={file.target} alt={file.imageAlt} />
     if (file !== undefined) return <FileLink target={file.target} title={title}>{children}</FileLink>
     if (href?.startsWith('#') && !href.startsWith('#cogent-file:')) return <a href={href} {...props} onClick={(event) => { event.preventDefault(); document.getElementById(href.slice(1))?.scrollIntoView() }}>{children}</a>
     if (href === undefined || !/^(?:https?:\/\/|\/\/)/i.test(href)) return <span>{children}</span>
+    const url = href.startsWith('//') ? `https:${href}` : href
+    const external = () => { window.open(url) }
     return (
-    <FileLinkNestingContext.Provider value><a
+    <FileLinkNestingContext.Provider value><ContextMenu><ContextMenuTrigger className="select-text" render={<a
       href={href}
       target="_blank"
       rel="noreferrer"
       className="wrap-anywhere appearance-none text-left"
       onClick={(event) => {
         event.preventDefault()
-        window.open(href.startsWith('//') ? `https:${href}` : href)
+        external()
       }}
       {...props}
     >
       {children}
-    </a></FileLinkNestingContext.Provider>
+    </a>} />
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => {
+          const workspace = useWorkspaceStore.getState()
+          workspace.openBrowser(url, undefined, scope?.workspaceScopeId ?? scope?.sessionId ?? workspace.activeScopeId)
+        }}><Globe />内置浏览器打开</ContextMenuItem>
+        <ContextMenuItem onClick={external}><ExternalLink />系统浏览器打开</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu></FileLinkNestingContext.Provider>
     )
   },
 }
 
 /** streaming只表示业务仍在输出；终态的既有Block树短暂保留到真实过渡结束，再恢复原生static语义。
  * 字号/行高由主题基础样式消费，收尾设计见docs/技术笔记/流式呈现动效.md。 */
-export function Markdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
+export function Markdown({ content, streaming = false, documentPlugins }: { content: string; streaming?: boolean; documentPlugins?: ComponentProps<typeof Streamdown>['plugins'] }) {
+  const activePlugins = useMemo(() => documentPlugins === undefined ? plugins : { ...plugins, ...documentPlugins }, [documentPlugins])
   const fileScope = useContext(FileLinkContext)
   const fileLinks = useMemo(() => fileLinksPlugin(fileScope?.refs), [fileScope?.refs])
   const remarkPlugins = useMemo(() => [...Object.values(defaultRemarkPlugins), fileLinks], [fileLinks])
@@ -202,7 +217,7 @@ export function Markdown({ content, streaming = false }: { content: string; stre
       <StreamingRevealContext.Provider value={revealState}>
         <Streamdown
           mode={renderStreaming ? 'streaming' : 'static'}
-          plugins={plugins}
+          plugins={activePlugins}
           rehypePlugins={themedRehypePlugins}
           remarkPlugins={remarkPlugins}
           // Streamdown 的 memo 不比较 remarkPlugins，但会比较 data 属性；用词表身份触发重解析，不换 key 重挂正文。

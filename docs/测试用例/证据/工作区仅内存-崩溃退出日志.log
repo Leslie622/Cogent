@@ -1,0 +1,65 @@
+
+[main] host starting (bin C:\Users\41631\Desktop\Cogent-multi-tab-workspace\resources\runtime\win-x64\bin\node.exe, entry C:\Users\41631\Desktop\Cogent-multi-tab-workspace\out\main\host.js)
+[host] [startup] +33ms 加载 Host 模块（node v22.23.5）
+[main] engine event: {"jsonrpc":"2.0","method":"files.invalidated","params":{}}
+Error occurred in handler for 'engine:request': Error: host closed
+    at HostManager.close (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:202:79)
+    at HostManager.terminate (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:195:8)
+    at HostManager.stop (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:188:8)
+    at EventEmitter.<anonymous> (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:3673:9)
+    at EventEmitter.emit (node:events:520:35)
+Error occurred in handler for 'engine:request': Error: host closed
+    at HostManager.close (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:202:79)
+    at HostManager.terminate (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:195:8)
+    at HostManager.stop (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:188:8)
+    at EventEmitter.<anonymous> (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:3673:9)
+    at EventEmitter.emit (node:events:520:35)
+Error occurred in handler for 'engine:request': Error: host closed
+    at HostManager.close (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:202:79)
+    at HostManager.terminate (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:195:8)
+    at HostManager.stop (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:188:8)
+    at EventEmitter.<anonymous> (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:3673:9)
+    at EventEmitter.emit (node:events:520:35)
+Error occurred in handler for 'engine:request': Error: host closed
+    at HostManager.close (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:202:79)
+    at HostManager.terminate (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:195:8)
+    at HostManager.stop (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:188:8)
+    at EventEmitter.<anonymous> (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:3673:9)
+    at EventEmitter.emit (node:events:520:35)
+Error occurred in handler for 'engine:request': Error: host closed
+    at HostManager.close (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:202:79)
+    at HostManager.terminate (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:195:8)
+    at HostManager.stop (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:188:8)
+    at EventEmitter.<anonymous> (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:3673:9)
+    at EventEmitter.emit (node:events:520:35)
+[main] host start failed: Error: host closed
+    at HostManager.close (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:202:79)
+    at HostManager.terminate (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:195:8)
+    at HostManager.stop (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:188:8)
+    at EventEmitter.<anonymous> (file:///C:/Users/41631/Desktop/Cogent-multi-tab-workspace/out/main/index.js:3673:9)
+    at EventEmitter.emit (node:events:520:35)
+[33016:1122/193322.973:ERROR:gpu\ipc\client\command_buffer_proxy_impl.cc:327] GPU state invalid after WaitForGetOffsetInRange.
+[33016:1122/193322.973:ERROR:gpu\ipc\client\command_buffer_proxy_impl.cc:327] GPU state invalid after WaitForGetOffsetInRange.
+{
+  "checks": [
+    "实际main/preload/renderer启动",
+    "真实主renderer崩溃，main与Host仍存活",
+    "工作区不保存，崩溃后的关闭不需要renderer保存确认"
+  ],
+  "questions": [],
+  "errors": [],
+  "passed": true,
+  "crash": "crashed",
+  "ownedPids": [
+    33016,
+    33636,
+    30296,
+    31836,
+    32548
+  ],
+  "windowDestroyed": true,
+  "cleanup": {
+    "remainingPids": [],
+    "exitCode": 0
+  }
+}

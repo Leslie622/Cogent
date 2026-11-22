@@ -144,7 +144,9 @@ export function fileLinksPlugin(refs: readonly FileReference[] = []) {
         node.url !== undefined
       ) {
         const raw = rawWindowsDestination(node, source) ?? node.url
-        if (raw !== 'streamdown:incomplete-link' && parseFileTarget(raw) !== undefined) {
+        // 桌面页面没有可继承的网页协议；清洗前明确 HTTPS，保持 //host/path 的网页语义。
+        if (node.type !== 'image' && raw.startsWith('//')) node.url = `https:${raw}`
+        else if (raw !== 'streamdown:incomplete-link' && parseFileTarget(raw) !== undefined) {
           if (node.type === 'image') {
             // 默认图片安全插件拒绝片段 src；先变成惰性内部链接，清洗后再由委托加载 Blob。
             const alt = node.alt ?? ''

@@ -12,7 +12,8 @@ import '@/globals.css'
 declare global { interface Window { themeResult?: { passed: boolean; results: string[]; error?: string } } }
 const unbind = bindAppearanceDom()
 const follow = { latin: 'theme', cjk: 'theme' } as const
-const picture = './sample.svg'
+// 此夹具测网络图片的主题几何；本地文件目标需要独立FileLinkScope/Host，另由完整产品验证。
+const picture = new URL('./sample.svg', window.location.href).href
 const text = '# 一级\n\n正文 **加粗** *强调* ~~删除~~ [链接](https://example.com) `inline`\n\n## 二级\n\n### 三级\n\n#### 四级\n\n##### 五级\n\n###### 六级\n\n- 列表\n  - 嵌套\n\n任务：\n\n- [x] 已完成\n- [ ] 未完成\n\n> 引用\n\n> [!NOTE]\n> 提示正文\n\n| 表头 | 第二列 |\n| --- | --- |\n| 内容 | 内容 |\n\n```js\nconst value = 1;\nconsole.log(value);\n```' + `\n\n![样例](${picture})\n\n<script>window.badScript=true</script>`
 const source = '<h1>一级</h1><p>正文 <strong>加粗</strong></p><h2>二级</h2><h3>三级</h3><h4>四级</h4><h5>五级</h5><h6>六级</h6><ul><li>列表<ul><li>嵌套</li></ul></li></ul><blockquote><p>引用</p></blockquote><table><thead><tr><th>表头</th></tr></thead><tbody><tr><td>内容</td></tr></tbody></table>'
 const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))

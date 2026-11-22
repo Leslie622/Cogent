@@ -8,6 +8,9 @@ export function pdfAssets(): Plugin {
     const root = resolve('node_modules/pdfjs-dist', directory)
     for (const name of readdirSync(root)) if (/\.(bcmap|pfb|ttf|wasm|js)$/.test(name)) files.set(`pdfjs/${directory}/${name}`, resolve(root, name))
   }
+  // PPTX 的 EMF 内嵌PDF也在独立worker中消费同版PDF.js，不能依赖打包后的import.meta.resolve。
+  files.set('pdfjs/pdf.min.mjs', resolve('node_modules/pdfjs-dist/build/pdf.min.mjs'))
+  files.set('pdfjs/pdf.worker.min.mjs', resolve('node_modules/pdfjs-dist/build/pdf.worker.min.mjs'))
   return {
     name: 'cogent-pdf-assets',
     configureServer(server) {
@@ -15,7 +18,7 @@ export function pdfAssets(): Plugin {
         const key = (request.url ?? '').split('?')[0].replace(/^\//, '')
         const file = files.get(key)
         if (file === undefined) return next()
-        response.setHeader('Content-Type', file.endsWith('.wasm') ? 'application/wasm' : file.endsWith('.js') ? 'application/javascript' : 'application/octet-stream')
+        response.setHeader('Content-Type', file.endsWith('.wasm') ? 'application/wasm' : /\.m?js$/.test(file) ? 'application/javascript' : 'application/octet-stream')
         response.end(readFileSync(file))
       })
     },

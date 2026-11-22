@@ -24,6 +24,8 @@ npm --prefix docs/架构地图 run build
 
 检查命令：
 
+本项目也参与[根目录与 CI 检查](../模块/测试.md)，须先完成上面的两处依赖安装。
+
 ```powershell
 npm --prefix docs/架构地图 run lint
 npm --prefix docs/架构地图 run typecheck

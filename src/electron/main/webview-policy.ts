@@ -6,8 +6,9 @@
  * 白名单页面。renderer 写了 preload/src 也会被覆盖，配置失误不可能把
  * 未硬化页面放出去。
  */
-import { app } from 'electron'
+import { app, type WebContents } from 'electron'
 import { join } from 'node:path'
+import { configureBrowserAttachment } from './browser/runtime'
 
 /** guest preload 唯一允许的路径（构建产物 out/preload/guest.cjs） */
 export function guestPreloadPath(): string {
@@ -16,10 +17,15 @@ export function guestPreloadPath(): string {
 
 /** 3a 页面白名单：demo 页（与宿主同源的静态页）。真实第三方页面接入时扩表 */
 const PAGE_WHITELIST = ['/demo.html']
+const trustedGuests = new WeakSet<WebContents>()
+export function isTrustedAppGuest(guest: WebContents): boolean { return trustedGuests.has(guest) }
 
 export function hardenWebviewAttachment(): void {
   app.on('web-contents-created', (_event, contents) => {
+    const pending: boolean[] = []
     contents.on('will-attach-webview', (event, webPreferences, params) => {
+      const browser = configureBrowserAttachment(contents, webPreferences, params)
+      if (browser !== undefined) { if (!browser) event.preventDefault(); else pending.push(false); return }
       // src 校验：相对宿主页面解析后必须同源且在白名单
       // （dev = http://localhost:<port>/demo.html；打包 = file://.../demo.html）
       let srcUrl: URL
@@ -47,6 +53,20 @@ export function hardenWebviewAttachment(): void {
       webPreferences.contextIsolation = true
       webPreferences.webSecurity = true
       webPreferences.preload = guestPreloadPath()
+      pending.push(true)
+    })
+    contents.on('did-attach-webview', (_event, guest) => {
+      // browser-dialog preload 与可信应用 SDK 是两个独立身份，不能只凭 webview 类型发票据。
+      if (pending.shift() === true && guest.hostWebContents === contents) {
+        trustedGuests.add(guest)
+        guest.on('will-frame-navigate', event => {
+          if (!event.isMainFrame) return
+          try {
+            const host = new URL(contents.getURL()), target = new URL(event.url)
+            if (host.protocol === 'file:' ? target.protocol !== 'file:' || !PAGE_WHITELIST.some(page => target.pathname.endsWith(page)) : target.origin !== host.origin || !PAGE_WHITELIST.some(page => target.pathname.endsWith(page))) event.preventDefault()
+          } catch { event.preventDefault() }
+        })
+      }
     })
   })
 }

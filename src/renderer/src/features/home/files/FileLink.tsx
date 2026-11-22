@@ -3,15 +3,17 @@ import { createContext, useContext, type ReactNode } from 'react'
 import type { FileReference } from '@shared/files'
 import { parseFileTarget } from '@shared/file-target'
 import { FileIcon } from '@/components/FileIcon'
+import { Hint } from '@/components/Hint'
 import { useFilePreviewStore } from '@/stores/file-preview'
 import { FileLinkActions } from './FileLinkActions'
+import type { FileTabSource } from '@/stores/workspace'
 
-export interface FileLinkScope {
-  sessionId: string
-  turnId?: string
+export type FileLinkScope = ({ sessionId: string; turnId?: string; contextId?: never } | { contextId: string; sessionId?: never; turnId?: never }) & {
   refs: readonly FileReference[]
   relativeTo?: string
   preview?: boolean
+  workspaceScopeId?: string
+  parentSource?: FileTabSource
 }
 export const FileLinkContext = createContext<FileLinkScope | null>(null)
 export const FileLinkNestingContext = createContext(false)
@@ -26,11 +28,11 @@ export function FileLink({
 }) {
   const scope = useContext(FileLinkContext)
   const nested = useContext(FileLinkNestingContext)
-  if (scope === null || nested) return <span title={target}>{children}</span>
+  if (scope === null || nested) return <Hint tip={target}><span>{children}</span></Hint>
   const preview = () => void useFilePreviewStore.getState().open(scope, target)
   return (
     <FileLinkNestingContext.Provider value>
-      <FileLinkActions key={JSON.stringify([scope.sessionId, scope.turnId, scope.relativeTo, target])} scope={scope} target={target} title={title} onPreview={preview}>
+      <FileLinkActions key={JSON.stringify([scope.sessionId, scope.contextId, scope.turnId, scope.relativeTo, target])} scope={scope} target={target} title={title} onPreview={preview}>
         <a
           href="#"
           data-file-link={target}

@@ -1,0 +1,3778 @@
+{
+  "scope": "完整产品工作区创建或恢复",
+  "passed": true,
+  "checks": [
+    "产品首页加载",
+    "控件可点击 [aria-label=展开标签页区]",
+    "指针目标可命中 [aria-label=展开标签页区]",
+    "启动页就绪",
+    "控件可点击 [aria-label=打开文件导航]",
+    "指针目标可命中 [aria-label=打开文件导航]",
+    "未发送聊天打开文件导航",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "系统选择目录后Headless Tree显示真实文件",
+    "10,000节点目录虚拟化且不创建聊天",
+    "控件可点击 [aria-label=搜索项目文件]",
+    "指针目标可命中 [aria-label=搜索项目文件]",
+    "原生全选已生效 [aria-label=搜索项目文件]",
+    "搜索未展开文件 alpha.txt",
+    "文件搜索完成 alpha.txt",
+    "控件可点击 [aria-label=文件搜索结果] button",
+    "指针目标可命中 [aria-label=文件搜索结果] button",
+    "文件独立预览 alpha.txt",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "控件可点击 [aria-label=搜索项目文件]",
+    "指针目标可命中 [aria-label=搜索项目文件]",
+    "原生全选已生效 [aria-label=搜索项目文件]",
+    "搜索未展开文件 beta.md",
+    "文件搜索完成 beta.md",
+    "控件可点击 [aria-label=文件搜索结果] button",
+    "指针目标可命中 [aria-label=文件搜索结果] button",
+    "文件独立预览 beta.md",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "切换文件保留阅读位置",
+    "控件可点击 [aria-label=新建标签页]",
+    "指针目标可命中 [aria-label=新建标签页]",
+    "浏览器启动入口",
+    "控件可点击 [aria-label=打开内置浏览器]",
+    "指针目标可命中 [aria-label=打开内置浏览器]",
+    "独立浏览器实例就绪",
+    "控件可点击 [aria-label=网页地址或搜索]",
+    "指针目标可命中 [aria-label=网页地址或搜索]",
+    "原生全选已生效 [aria-label=网页地址或搜索]",
+    "真实网页加载",
+    "网页输入框就绪",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "切换标签保留guest与表单",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "拖动前alpha标签实际激活",
+    "真实指针拖动仅改变标签头顺序",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "拖动后同guest与表单保留",
+    "控件可点击 [aria-label=设置]",
+    "指针目标可命中 [aria-label=设置]",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "设置页隐藏工作区并解除焦点入口",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "控件可点击 [aria-label=深色浅色]",
+    "指针目标可命中 [aria-label=深色浅色]",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "控件可点击 [aria-label=首页]",
+    "指针目标可命中 [aria-label=首页]",
+    "设置往返保留表单",
+    "控件可点击 [aria-label=浏览器菜单]",
+    "指针目标可命中 [aria-label=浏览器菜单]",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "真实菜单与Dialog覆盖网页",
+    "控件可点击 [role=dialog] [data-slot=dialog-close]",
+    "指针目标可命中 [role=dialog] [data-slot=dialog-close]",
+    "真实指针命中浮层且不穿透网页",
+    "实际应用主题 light",
+    "实际应用主题 dark",
+    "明暗×5窗口宽度保持同guest与表单",
+    "热切换采样窗口实际前台",
+    "控件可点击 [aria-label=新建标签页]",
+    "指针目标可命中 [aria-label=新建标签页]",
+    "控件可点击 [aria-label=打开内置浏览器]",
+    "指针目标可命中 [aria-label=打开内置浏览器]",
+    "控件可点击 [data-workspace-panel]:not([hidden]) [aria-label=网页地址或搜索]",
+    "指针目标可命中 [data-workspace-panel]:not([hidden]) [aria-label=网页地址或搜索]",
+    "原生全选已生效 [data-workspace-panel]:not([hidden]) [aria-label=网页地址或搜索]",
+    "真实HTTP Basic challenge显示用户名密码对话框",
+    "控件可点击 [aria-label=身份验证用户名]",
+    "指针目标可命中 [aria-label=身份验证用户名]",
+    "原生全选已生效 [aria-label=身份验证用户名]",
+    "控件可点击 [aria-label=身份验证密码]",
+    "指针目标可命中 [aria-label=身份验证密码]",
+    "原生全选已生效 [aria-label=身份验证密码]",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "真实HTTP Basic答复通过且页面完成加载",
+    "身份验证浮层自然退场后继续操作",
+    "控件可点击 [aria-label=\"关闭 Workspace authenticated\"]",
+    "指针目标可命中 [aria-label=\"关闭 Workspace authenticated\"]",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "100个逻辑标签只保留已访问的网页实例",
+    "控件可点击 [data-test-click=target]",
+    "指针目标可命中 [data-test-click=target]",
+    "200次热切换无串内容"
+  ],
+  "measurements": {
+    "treeFirstMs": 288.2890000000002,
+    "treeDom": 30,
+    "search": [
+      {
+        "query": "alpha.txt",
+        "firstMs": 437.51929999999993,
+        "completeMs": 437.87570000000005
+      },
+      {
+        "query": "beta.md",
+        "firstMs": 453.8008,
+        "completeMs": 454.39609999999993
+      }
+    ],
+    "alpha.txt": 389,
+    "beta.md": 86,
+    "dragGeometry": {
+      "from": {
+        "x": 1087,
+        "y": 96
+      },
+      "to": {
+        "x": 1247,
+        "y": 96
+      },
+      "order": [
+        "文件",
+        "alpha.txt",
+        "beta.md",
+        "Workspace fixture"
+      ]
+    },
+    "dragFrameIntervals": [
+      -3.800000000000182,
+      5.600000000000364,
+      5.5,
+      11.099999999999454,
+      11.100000000000364,
+      5.600000000000364,
+      5.5,
+      5.599999999999454,
+      5.5,
+      5.5,
+      5.699999999999818,
+      5.5,
+      5.5,
+      5.600000000000364,
+      5.600000000000364,
+      5.5,
+      5.599999999999454,
+      5.600000000000364,
+      5.399999999999636,
+      5.600000000000364,
+      5.599999999999454,
+      5.5,
+      5.600000000000364,
+      5.600000000000364,
+      5.5,
+      5.5,
+      5.599999999999454,
+      5.5,
+      5.699999999999818,
+      5.400000000000546,
+      5.599999999999454,
+      5.5,
+      5.600000000000364,
+      5.600000000000364,
+      5.699999999999818,
+      5.399999999999636,
+      5.600000000000364,
+      16.800000000000182
+    ],
+    "focusTransitions": [
+      {
+        "stage": "设置之前",
+        "selected": "Workspace fixture",
+        "workspaceInert": false,
+        "focused": {
+          "tag": "BUTTON",
+          "role": "tab",
+          "label": null,
+          "text": "Workspace fixture"
+        },
+        "guestId": 2,
+        "form": "keep-form-identity"
+      },
+      {
+        "stage": "设置之中",
+        "workspaceInert": true,
+        "focused": {
+          "tag": "DIV",
+          "role": "menuitem",
+          "label": null,
+          "text": "设置"
+        },
+        "guestId": 2,
+        "form": "keep-form-identity"
+      },
+      {
+        "stage": "回到首页",
+        "selected": "Workspace fixture",
+        "workspaceInert": false,
+        "focused": {
+          "tag": "BUTTON",
+          "role": null,
+          "label": "首页",
+          "text": ""
+        },
+        "guestId": 2,
+        "form": "keep-form-identity"
+      }
+    ],
+    "matrix": [
+      {
+        "theme": "light",
+        "width": 400,
+        "left": 53,
+        "right": 400,
+        "panelWidth": 347,
+        "overflow": false,
+        "activeHeaderVisible": true,
+        "mode": "overlay"
+      },
+      {
+        "theme": "light",
+        "width": 760,
+        "left": 51,
+        "right": 760,
+        "panelWidth": 709,
+        "overflow": false,
+        "activeHeaderVisible": true,
+        "mode": "overlay"
+      },
+      {
+        "theme": "light",
+        "width": 1100,
+        "left": 352,
+        "right": 1100,
+        "panelWidth": 748,
+        "overflow": false,
+        "activeHeaderVisible": true,
+        "mode": "overlay"
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "left": 960,
+        "right": 1440,
+        "panelWidth": 480,
+        "overflow": false,
+        "activeHeaderVisible": true,
+        "mode": "split"
+      },
+      {
+        "theme": "light",
+        "width": 1920,
+        "left": 1440,
+        "right": 1920,
+        "panelWidth": 480,
+        "overflow": false,
+        "activeHeaderVisible": true,
+        "mode": "split"
+      },
+      {
+        "theme": "dark",
+        "width": 400,
+        "left": 53,
+        "right": 400,
+        "panelWidth": 347,
+        "overflow": false,
+        "activeHeaderVisible": true,
+        "mode": "overlay"
+      },
+      {
+        "theme": "dark",
+        "width": 760,
+        "left": 51,
+        "right": 760,
+        "panelWidth": 709,
+        "overflow": false,
+        "activeHeaderVisible": true,
+        "mode": "overlay"
+      },
+      {
+        "theme": "dark",
+        "width": 1100,
+        "left": 352,
+        "right": 1100,
+        "panelWidth": 748,
+        "overflow": false,
+        "activeHeaderVisible": true,
+        "mode": "overlay"
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "left": 960,
+        "right": 1440,
+        "panelWidth": 480,
+        "overflow": false,
+        "activeHeaderVisible": true,
+        "mode": "split"
+      },
+      {
+        "theme": "dark",
+        "width": 1920,
+        "left": 1440,
+        "right": 1920,
+        "panelWidth": 480,
+        "overflow": false,
+        "activeHeaderVisible": true,
+        "mode": "split"
+      }
+    ],
+    "switchContext": [
+      {
+        "index": 0,
+        "elapsed": 16,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 1,
+        "elapsed": 13.199999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 2,
+        "elapsed": 12.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 3,
+        "elapsed": 13.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 4,
+        "elapsed": 12.799999997019768,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 5,
+        "elapsed": 12.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 6,
+        "elapsed": 12.099999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 7,
+        "elapsed": 11.199999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 8,
+        "elapsed": 12.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 9,
+        "elapsed": 11.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 10,
+        "elapsed": 11.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 11,
+        "elapsed": 10.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 12,
+        "elapsed": 11.099999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 13,
+        "elapsed": 10.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 14,
+        "elapsed": 12.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 15,
+        "elapsed": 13.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 16,
+        "elapsed": 14.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 17,
+        "elapsed": 11,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 18,
+        "elapsed": 11.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 19,
+        "elapsed": 10.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 20,
+        "elapsed": 9.900000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 21,
+        "elapsed": 11.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 22,
+        "elapsed": 10.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 23,
+        "elapsed": 9.899999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 24,
+        "elapsed": 11.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 25,
+        "elapsed": 10.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 26,
+        "elapsed": 11.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 27,
+        "elapsed": 10.299999997019768,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 28,
+        "elapsed": 11.400000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 29,
+        "elapsed": 10.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 30,
+        "elapsed": 12.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 31,
+        "elapsed": 12,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 32,
+        "elapsed": 10.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 33,
+        "elapsed": 10.299999997019768,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 34,
+        "elapsed": 10.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 35,
+        "elapsed": 10.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 36,
+        "elapsed": 9.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 37,
+        "elapsed": 9.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 38,
+        "elapsed": 10.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 39,
+        "elapsed": 9.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 40,
+        "elapsed": 11.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 41,
+        "elapsed": 10.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 42,
+        "elapsed": 11.199999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 43,
+        "elapsed": 16.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 44,
+        "elapsed": 11.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 45,
+        "elapsed": 12.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 46,
+        "elapsed": 11.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 47,
+        "elapsed": 11.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 48,
+        "elapsed": 13.200000002980232,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 49,
+        "elapsed": 12.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 50,
+        "elapsed": 15.900000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 51,
+        "elapsed": 12.799999997019768,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 52,
+        "elapsed": 10.200000002980232,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 53,
+        "elapsed": 9.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 54,
+        "elapsed": 14.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 55,
+        "elapsed": 10,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 56,
+        "elapsed": 10.299999997019768,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 57,
+        "elapsed": 9.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 58,
+        "elapsed": 11,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 59,
+        "elapsed": 9.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 60,
+        "elapsed": 10,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 61,
+        "elapsed": 10.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 62,
+        "elapsed": 9.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 63,
+        "elapsed": 8.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 64,
+        "elapsed": 9.899999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 65,
+        "elapsed": 11.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 66,
+        "elapsed": 9.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 67,
+        "elapsed": 10.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 68,
+        "elapsed": 10,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 69,
+        "elapsed": 11,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 70,
+        "elapsed": 8.700000002980232,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 71,
+        "elapsed": 9.099999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 72,
+        "elapsed": 8.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 73,
+        "elapsed": 9.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 74,
+        "elapsed": 9.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 75,
+        "elapsed": 10.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 76,
+        "elapsed": 11.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 77,
+        "elapsed": 11.200000002980232,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 78,
+        "elapsed": 10.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 79,
+        "elapsed": 12.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 80,
+        "elapsed": 11,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 81,
+        "elapsed": 10.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 82,
+        "elapsed": 12,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 83,
+        "elapsed": 10.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 84,
+        "elapsed": 10.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 85,
+        "elapsed": 9.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 86,
+        "elapsed": 11.200000002980232,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 87,
+        "elapsed": 11,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 88,
+        "elapsed": 11.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 89,
+        "elapsed": 10.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 90,
+        "elapsed": 10.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 91,
+        "elapsed": 10.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 92,
+        "elapsed": 9,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 93,
+        "elapsed": 10.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 94,
+        "elapsed": 10.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 95,
+        "elapsed": 10.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 96,
+        "elapsed": 9.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 97,
+        "elapsed": 10.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 98,
+        "elapsed": 9.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 99,
+        "elapsed": 11.900000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 100,
+        "elapsed": 11.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 101,
+        "elapsed": 11.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 102,
+        "elapsed": 10.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 103,
+        "elapsed": 10.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 104,
+        "elapsed": 11.200000002980232,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 105,
+        "elapsed": 18.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 106,
+        "elapsed": 11.799999997019768,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 107,
+        "elapsed": 11.899999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 108,
+        "elapsed": 10.900000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 109,
+        "elapsed": 10.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 110,
+        "elapsed": 9.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 111,
+        "elapsed": 11,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 112,
+        "elapsed": 10.400000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 113,
+        "elapsed": 11,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 114,
+        "elapsed": 9.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 115,
+        "elapsed": 14.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 116,
+        "elapsed": 8.899999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 117,
+        "elapsed": 9.799999997019768,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 118,
+        "elapsed": 9.199999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 119,
+        "elapsed": 9.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 120,
+        "elapsed": 9.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 121,
+        "elapsed": 9.899999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 122,
+        "elapsed": 8.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 123,
+        "elapsed": 8.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 124,
+        "elapsed": 8.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 125,
+        "elapsed": 10.299999997019768,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 126,
+        "elapsed": 9.400000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 127,
+        "elapsed": 8.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 128,
+        "elapsed": 8.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 129,
+        "elapsed": 9.199999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 130,
+        "elapsed": 8.199999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 131,
+        "elapsed": 8.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 132,
+        "elapsed": 8.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 133,
+        "elapsed": 11.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 134,
+        "elapsed": 11.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 135,
+        "elapsed": 9.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 136,
+        "elapsed": 10.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 137,
+        "elapsed": 9.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 138,
+        "elapsed": 9.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 139,
+        "elapsed": 9.099999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 140,
+        "elapsed": 10.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 141,
+        "elapsed": 8.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 142,
+        "elapsed": 10.200000002980232,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 143,
+        "elapsed": 13.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 144,
+        "elapsed": 12.199999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 145,
+        "elapsed": 11.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 146,
+        "elapsed": 11.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 147,
+        "elapsed": 13.099999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 148,
+        "elapsed": 12.400000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 149,
+        "elapsed": 8.900000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 150,
+        "elapsed": 11.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 151,
+        "elapsed": 8.799999997019768,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 152,
+        "elapsed": 8.900000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 153,
+        "elapsed": 9.900000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 154,
+        "elapsed": 9.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 155,
+        "elapsed": 7.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 156,
+        "elapsed": 8.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 157,
+        "elapsed": 10.199999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 158,
+        "elapsed": 10.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 159,
+        "elapsed": 8.400000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 160,
+        "elapsed": 8.199999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 161,
+        "elapsed": 8.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 162,
+        "elapsed": 9.099999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 163,
+        "elapsed": 9.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 164,
+        "elapsed": 8.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 165,
+        "elapsed": 11.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 166,
+        "elapsed": 9.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 167,
+        "elapsed": 8.099999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 168,
+        "elapsed": 8.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 169,
+        "elapsed": 8.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 170,
+        "elapsed": 10,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 171,
+        "elapsed": 8.400000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 172,
+        "elapsed": 9.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 173,
+        "elapsed": 8.900000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 174,
+        "elapsed": 8.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 175,
+        "elapsed": 9.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 176,
+        "elapsed": 9.899999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 177,
+        "elapsed": 8.600000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 178,
+        "elapsed": 9,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 179,
+        "elapsed": 9.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 180,
+        "elapsed": 13.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 181,
+        "elapsed": 8.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 182,
+        "elapsed": 10.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 183,
+        "elapsed": 9.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 184,
+        "elapsed": 10.099999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 185,
+        "elapsed": 9.100000001490116,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 186,
+        "elapsed": 9,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 187,
+        "elapsed": 9.400000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 188,
+        "elapsed": 8.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 189,
+        "elapsed": 8.800000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 190,
+        "elapsed": 8.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 191,
+        "elapsed": 8.699999999254942,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 192,
+        "elapsed": 9.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 193,
+        "elapsed": 9.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 194,
+        "elapsed": 8.399999998509884,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 195,
+        "elapsed": 8.900000002235174,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 196,
+        "elapsed": 8.599999997764826,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 197,
+        "elapsed": 9.5,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 198,
+        "elapsed": 9.300000000745058,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      },
+      {
+        "index": 199,
+        "elapsed": 10,
+        "before": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        },
+        "after": {
+          "focused": true,
+          "visible": true,
+          "minimized": false,
+          "documentVisibility": "visible"
+        }
+      }
+    ],
+    "switches": {
+      "samples": [
+        7.699999999254942,
+        8.099999997764826,
+        8.199999999254942,
+        8.199999999254942,
+        8.300000000745058,
+        8.300000000745058,
+        8.399999998509884,
+        8.399999998509884,
+        8.399999998509884,
+        8.399999998509884,
+        8.400000002235174,
+        8.400000002235174,
+        8.5,
+        8.5,
+        8.5,
+        8.599999997764826,
+        8.599999997764826,
+        8.600000001490116,
+        8.600000001490116,
+        8.600000001490116,
+        8.699999999254942,
+        8.699999999254942,
+        8.699999999254942,
+        8.699999999254942,
+        8.699999999254942,
+        8.699999999254942,
+        8.700000002980232,
+        8.799999997019768,
+        8.800000000745058,
+        8.800000000745058,
+        8.800000000745058,
+        8.800000000745058,
+        8.899999998509884,
+        8.900000002235174,
+        8.900000002235174,
+        8.900000002235174,
+        8.900000002235174,
+        9,
+        9,
+        9,
+        9.099999997764826,
+        9.099999997764826,
+        9.099999997764826,
+        9.100000001490116,
+        9.100000001490116,
+        9.100000001490116,
+        9.100000001490116,
+        9.100000001490116,
+        9.199999999254942,
+        9.199999999254942,
+        9.300000000745058,
+        9.300000000745058,
+        9.300000000745058,
+        9.300000000745058,
+        9.300000000745058,
+        9.300000000745058,
+        9.300000000745058,
+        9.399999998509884,
+        9.399999998509884,
+        9.399999998509884,
+        9.399999998509884,
+        9.399999998509884,
+        9.400000002235174,
+        9.400000002235174,
+        9.5,
+        9.5,
+        9.5,
+        9.599999997764826,
+        9.599999997764826,
+        9.599999997764826,
+        9.600000001490116,
+        9.600000001490116,
+        9.699999999254942,
+        9.699999999254942,
+        9.699999999254942,
+        9.699999999254942,
+        9.699999999254942,
+        9.799999997019768,
+        9.800000000745058,
+        9.800000000745058,
+        9.899999998509884,
+        9.899999998509884,
+        9.899999998509884,
+        9.899999998509884,
+        9.900000002235174,
+        9.900000002235174,
+        10,
+        10,
+        10,
+        10,
+        10,
+        10.099999997764826,
+        10.199999999254942,
+        10.200000002980232,
+        10.200000002980232,
+        10.299999997019768,
+        10.299999997019768,
+        10.299999997019768,
+        10.299999997019768,
+        10.300000000745058,
+        10.300000000745058,
+        10.300000000745058,
+        10.300000000745058,
+        10.300000000745058,
+        10.399999998509884,
+        10.399999998509884,
+        10.399999998509884,
+        10.400000002235174,
+        10.5,
+        10.5,
+        10.5,
+        10.5,
+        10.5,
+        10.599999997764826,
+        10.599999997764826,
+        10.599999997764826,
+        10.599999997764826,
+        10.599999997764826,
+        10.599999997764826,
+        10.600000001490116,
+        10.600000001490116,
+        10.600000001490116,
+        10.600000001490116,
+        10.699999999254942,
+        10.699999999254942,
+        10.800000000745058,
+        10.800000000745058,
+        10.800000000745058,
+        10.800000000745058,
+        10.800000000745058,
+        10.800000000745058,
+        10.800000000745058,
+        10.900000002235174,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11.099999997764826,
+        11.100000001490116,
+        11.100000001490116,
+        11.199999999254942,
+        11.199999999254942,
+        11.200000002980232,
+        11.200000002980232,
+        11.200000002980232,
+        11.300000000745058,
+        11.300000000745058,
+        11.300000000745058,
+        11.300000000745058,
+        11.300000000745058,
+        11.399999998509884,
+        11.399999998509884,
+        11.399999998509884,
+        11.400000002235174,
+        11.5,
+        11.5,
+        11.5,
+        11.599999997764826,
+        11.599999997764826,
+        11.599999997764826,
+        11.599999997764826,
+        11.699999999254942,
+        11.699999999254942,
+        11.799999997019768,
+        11.800000000745058,
+        11.800000000745058,
+        11.899999998509884,
+        11.900000002235174,
+        12,
+        12,
+        12.099999997764826,
+        12.100000001490116,
+        12.100000001490116,
+        12.100000001490116,
+        12.100000001490116,
+        12.199999999254942,
+        12.400000002235174,
+        12.5,
+        12.600000001490116,
+        12.799999997019768,
+        12.799999997019768,
+        12.800000000745058,
+        12.800000000745058,
+        13.099999997764826,
+        13.100000001490116,
+        13.199999999254942,
+        13.200000002980232,
+        13.5,
+        13.5,
+        13.600000001490116,
+        14.300000000745058,
+        14.699999999254942,
+        14.699999999254942,
+        15.900000002235174,
+        16,
+        16.5,
+        18.600000001490116
+      ],
+      "p50": 10.300000000745058,
+      "p95": 13.5,
+      "max": 18.600000001490116
+    }
+  },
+  "errors": [],
+  "actualDpr": 1,
+  "gpuStatusAtCompletion": {
+    "2d_canvas": "enabled",
+    "direct_rendering_display_compositor": "disabled_off_ok",
+    "gpu_compositing": "enabled",
+    "multiple_raster_threads": "enabled_on",
+    "opengl": "enabled_on",
+    "rasterization": "enabled",
+    "raw_draw": "disabled_off_ok",
+    "skia_graphite": "disabled_off",
+    "trees_in_viz": "disabled_off",
+    "video_decode": "enabled",
+    "video_encode": "enabled",
+    "webgl": "enabled",
+    "webgpu": "enabled",
+    "webnn": "disabled_off"
+  },
+  "ownedPids": [
+    27956,
+    24288,
+    27728,
+    2316,
+    8868,
+    30376
+  ],
+  "electron": "40.9.3",
+  "chrome": "144.0.7559.236",
+  "platform": "win32",
+  "cleanup": {
+    "exitedPids": [
+      27956,
+      24288,
+      27728,
+      2316,
+      8868,
+      30376
+    ],
+    "remainingPids": []
+  }
+}

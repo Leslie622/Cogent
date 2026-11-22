@@ -19,6 +19,7 @@
 import { create } from 'zustand'
 import type { ChatMessage, PermissionMode } from '@/env.d'
 import { useHomeStore } from '@/stores/home'
+import { disposeWorkspaceScope } from '@/features/workspace/runtime'
 import { useEngineStore } from '@/stores/engine'
 import { useProjectStore } from '@/stores/project'
 import { useAttachmentStore } from '@/stores/attachments'
@@ -271,6 +272,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   deleteSession: async (sessionId) => {
+    if (!(await disposeWorkspaceScope(sessionId))) return
     await window.cogent.engineRequest('session.delete', { sessionId })
     historyLoads.delete(sessionId)
     messageDeltas.discard(sessionId)

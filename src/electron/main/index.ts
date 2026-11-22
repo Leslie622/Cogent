@@ -12,6 +12,7 @@ import { registerNotifyIpc, registerSoundScheme } from './notifications'
 import { ensureTray, installCloseBehavior, restoreMainWindow } from './window-close'
 import { hardenWebviewAttachment } from './webview-policy'
 import { IPC } from '../../shared/ipc'
+import { registerBrowserScheme } from './browser/local-preview'
 
 // app.commandLine.appendSwitch('disable-lcd-text')
 
@@ -37,6 +38,7 @@ if (readSettingsFile().hardwareAcceleration === false) {
 
 // cogent-sound:// 特权协议声明（registerSchemesAsPrivileged 只准 ready 前调）
 registerSoundScheme()
+registerBrowserScheme()
 
 let mainWindow: BrowserWindow | null = null
 let host: HostManager | null = null
@@ -59,6 +61,7 @@ function createWindow(): void {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
       // 关 Chromium 后台节流（2026-11-11）：默认开时窗口失焦/被遮挡（用户正盯
       // 控制台窗口看时间线）setInterval 被节流到分钟级 —— 「工作中」计时器冻在
       // 挂载值不动，而 spinner 是合成器动画照转，观感即"计时器卡死"。VS Code

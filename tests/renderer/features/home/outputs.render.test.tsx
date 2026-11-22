@@ -70,28 +70,26 @@ describe('产物卡片呈现', () => {
     { label: '在原目录定位', action: 'reveal', version: 'current' }
   ])('下拉菜单的 $label 使用正确版本并释放文件登记', async ({ label, action, version }) => {
     const interaction = userEvent.setup()
-    const engineRequest = vi.fn().mockResolvedValue({ fileId: 'output-file' })
-    const fileAction = vi.fn().mockResolvedValue(undefined)
-    window.cogent.engineRequest = engineRequest
-    window.cogent.fileAction = fileAction
+    const engineRequest = vi.fn<(method: string, params: unknown) => Promise<unknown>>().mockResolvedValue({ leaseId: 'output-file' })
+    const fileAction = vi.fn<(params: unknown) => Promise<unknown>>().mockResolvedValue(undefined)
+    window.cogent.fileViewsRequest = ((method: string, params: unknown) => method === 'fileViews.action' ? fileAction(params) : engineRequest(method, params)) as typeof window.cogent.fileViewsRequest
     seed(snapshot())
     render(<TurnGroup turn={{ user, items: [answer] }} sessionId="s1" phase="done" />)
     await interaction.click(screen.getByRole('button', { name: '报告.txt 更多操作' }))
     await interaction.click(await screen.findByRole('menuitem', { name: label }))
-    expect(engineRequest).toHaveBeenCalledWith('outputs.resolve', { sessionId: 's1', turnId: 't1', revision: 3, outputId: '报告.txt', version })
-    expect(fileAction).toHaveBeenCalledWith({ sessionId: 's1', fileId: 'output-file', action })
-    await waitFor(() => expect(engineRequest).toHaveBeenCalledWith('files.cancel', { sessionId: 's1', fileId: 'output-file', operationId: expect.any(String) as string }))
+    expect(engineRequest).toHaveBeenCalledWith('fileViews.acquire', { source: { kind: 'output', target: { sessionId: 's1', turnId: 't1', revision: 3, outputId: '报告.txt', version } }, operationId: expect.any(String) as string })
+    expect(fileAction).toHaveBeenCalledWith({ leaseId: 'output-file', action })
+    await waitFor(() => expect(engineRequest).toHaveBeenCalledWith('fileViews.release', { leaseId: 'output-file' }))
     expect(screen.queryByRole('alertdialog')).toBeNull()
   })
   it.each(['resolve', 'action'])('编辑原件在%s阶段失败用弹窗提示，文件行不插入错误，关闭后可重试', async (failure) => {
     const interaction = userEvent.setup()
     const missing = new Error('ENOENT: no such file or directory, realpath /work/报告.txt')
-    const engineRequest = vi.fn().mockResolvedValue({ fileId: 'output-file' })
-    const fileAction = vi.fn().mockResolvedValue(undefined)
+    const engineRequest = vi.fn<(method: string, params: unknown) => Promise<unknown>>().mockResolvedValue({ leaseId: 'output-file' })
+    const fileAction = vi.fn<(params: unknown) => Promise<unknown>>().mockResolvedValue(undefined)
     if (failure === 'resolve') engineRequest.mockRejectedValueOnce(missing)
     else fileAction.mockRejectedValueOnce(missing)
-    window.cogent.engineRequest = engineRequest
-    window.cogent.fileAction = fileAction
+    window.cogent.fileViewsRequest = ((method: string, params: unknown) => method === 'fileViews.action' ? fileAction(params) : engineRequest(method, params)) as typeof window.cogent.fileViewsRequest
     seed(snapshot())
     render(<TurnGroup turn={{ user, items: [answer] }} sessionId="s1" phase="done" />)
     const card = document.querySelector('[data-output-card]') as HTMLElement
@@ -101,13 +99,13 @@ describe('产物卡片呈现', () => {
     expect(dialog).toHaveTextContent(missing.message)
     expect(card).not.toHaveTextContent('ENOENT')
     expect(screen.queryByRole('menu')).toBeNull()
-    if (failure === 'action') expect(engineRequest).toHaveBeenCalledWith('files.cancel', { sessionId: 's1', fileId: 'output-file', operationId: expect.any(String) as string })
+    if (failure === 'action') expect(engineRequest).toHaveBeenCalledWith('fileViews.release', { leaseId: 'output-file' })
     else expect(fileAction).not.toHaveBeenCalled()
     await interaction.click(within(dialog).getByRole('button', { name: '知道了' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     await interaction.click(screen.getByRole('button', { name: '报告.txt 更多操作' }))
     await interaction.click(await screen.findByRole('menuitem', { name: '编辑当前原文件' }))
-    expect(fileAction).toHaveBeenLastCalledWith({ sessionId: 's1', fileId: 'output-file', action: 'editor' })
+    expect(fileAction).toHaveBeenLastCalledWith({ leaseId: 'output-file', action: 'editor' })
     expect(screen.queryByRole('alertdialog')).toBeNull()
   })
   it('简化后仍显示最终版本未确认警告', () => {

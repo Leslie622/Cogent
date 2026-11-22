@@ -6,9 +6,12 @@ import { pathToFileURL } from 'node:url'
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
 import electron from 'electron'
+
+for (const entry of ['out/main/index.js', 'out/renderer/index.html']) if (!existsSync(resolve(entry))) throw new Error('完整产品构建缺失：'+entry+'；先 npm run build')
 const root = mkdtempSync(join(tmpdir(), 'cogent-outputs-electron-'))
-const home = join(root, 'home'), workspace = join(root, 'workspace'), evidence = resolve('tmp/outputs-electron')
+const home = join(root, 'home'), workspace = join(root, 'workspace'), evidence = resolve(process.env.OUTPUTS_EVIDENCE ?? 'tmp/outputs-electron')
 for (const dir of [home, workspace, evidence]) mkdirSync(dir, { recursive: true })
+rmSync(join(evidence, 'result.json'), { force: true })
 writeFileSync(join(home, 'settings.json'), JSON.stringify({ version: 1, closeBehavior: 'quit', soundEnabled: false, toastEnabled: false }))
 writeFileSync(join(workspace, '说明.md'), '# 交付说明\n\n![随附图片](picture.png)\n\n[未保存依赖](missing.txt)\n\n[交付报告](' + encodeURIComponent('报告 #%.txt') + ')')
 copyFileSync(resolve('reference/pi/packages/ai/test/data/red-circle.png'), join(workspace, 'picture.png'))
@@ -51,7 +54,8 @@ const created=new Promise(done=>app.once('browser-window-created',(_event,win)=>
 let win;
 const evaluate=source=>win.webContents.executeJavaScript(source,true);
 const wait=async(condition,label)=>{const end=Date.now()+30000;while(Date.now()<end){if(await condition()){checks.push(label);console.log('[验收] '+label);return}await new Promise(done=>setTimeout(done,50))}throw new Error('超时：'+label)};
-const content=()=>evaluate('document.querySelector("[data-file-preview]")?.innerText??""');
+// Pierre 源码行在 Shadow DOM；只读取当前可见查看器的实际行，避免CSS或隐藏源码页签造成假阳性。
+const content=()=>evaluate('(()=>{const root=document.querySelector("[data-workspace-panel]:not([hidden]) [data-file-preview]");const code=Array.from(root?.querySelectorAll("[data-code-preview] diffs-container")??[]).filter(host=>host.getClientRects().length>0).flatMap(host=>Array.from(host.shadowRoot?.querySelectorAll("[data-line]")??[],line=>line.textContent??""));return (root?.innerText??"")+"\\n"+code.join("")})()');
 const clickPreview=async name=>evaluate('Array.from(document.querySelectorAll("[data-output-card]")).find(card=>card.innerText.includes('+JSON.stringify(name)+')).querySelector("button").click()');
 const clickOutputMenu=async name=>evaluate('Array.from(document.querySelectorAll("[data-output-card]")).find(card=>card.innerText.includes('+JSON.stringify(name)+')).querySelector("[aria-haspopup=menu]").click()');
 const reload=async()=>{const loaded=new Promise(done=>win.webContents.once('did-finish-load',done));win.reload();await loaded};
@@ -94,23 +98,32 @@ void(async()=>{try{
   await clickOutputMenu('报告 #%.txt');await wait(()=>evaluate('document.querySelector("[role=menu]")===null'),'下拉菜单可以关闭');
  }
  await clickPreview('报告 #%.txt');await wait(async()=>(await content()).includes('最终交付B'),'默认预览交付最终字节B');
- await wait(async()=>(await content()).includes('交付副本'),'预览明确标交付版本');
+ await wait(()=>evaluate('document.querySelector("[data-workspace-panel]:not([hidden]) [data-file-preview]")?.dataset.fileDelivery==="saved"'),'预览持有已保存交付版本');
+ await evaluate('document.querySelector("[data-file-toolbar] [aria-label=文件操作]").click()');
+ await wait(()=>evaluate('Array.from(document.querySelectorAll("[role=menuitem]")).some(el=>el.textContent==="文件信息")'),'文件工具菜单提供信息入口');
+ await evaluate('Array.from(document.querySelectorAll("[role=menuitem]")).find(el=>el.textContent==="文件信息").click()');
+ await wait(()=>evaluate('(()=>{const info=document.querySelector("[role=dialog]");return !!info&&!!info.querySelector("p.break-all")?.textContent&&info.textContent.includes("文件信息")&&info.textContent.includes("报告 #%.txt")&&info.textContent.includes("交付副本")&&info.textContent.includes("确认时间")})()'),'文件信息明确标交付版本、文件路径与确认时间');
+ await evaluate('document.querySelector("[role=dialog] [data-slot=dialog-close]").click()');
+ await wait(()=>evaluate('document.querySelector("[role=dialog]")===null'),'文件信息可以关闭');
  if(phase==='first'){
   writeFileSync(join(spec.workspace,'报告 #%.txt'),'当前原件C');rmSync(join(spec.workspace,'picture.png'));
-  await clickPreview('说明.md');await wait(()=>evaluate('document.querySelector("[data-file-preview] img")?.naturalWidth>0'),'删除原图后Markdown仍使用同清单副本');
-  await evaluate('Array.from(document.querySelectorAll("[data-file-preview] [data-file-link]")).find(el=>el.textContent==="未保存依赖").click()');
+  await clickPreview('说明.md');await wait(()=>evaluate('document.querySelector("[data-workspace-panel]:not([hidden]) [data-file-preview] img")?.naturalWidth>0'),'删除原图后Markdown仍使用同清单副本');
+  await evaluate('Array.from(document.querySelectorAll("[data-workspace-panel]:not([hidden]) [data-file-preview] [data-file-link]")).find(el=>el.textContent==="未保存依赖").click()');
   await wait(async()=>(await content()).includes('依赖未保存'),'未随附内链明确报依赖未保存');
-  await clickPreview('说明.md');await wait(()=>evaluate('document.querySelector("[data-file-preview] img")?.naturalWidth>0'),'重新打开交付Markdown');
-  await evaluate('Array.from(document.querySelectorAll("[data-file-preview] [data-file-link]")).find(el=>el.textContent==="交付报告").click()');
+  await clickPreview('说明.md');await wait(()=>evaluate('document.querySelector("[data-workspace-panel]:not([hidden]) [data-file-preview] img")?.naturalWidth>0'),'重新打开交付Markdown');
+  await evaluate('Array.from(document.querySelectorAll("[data-workspace-panel]:not([hidden]) [data-file-preview] [data-file-link]")).find(el=>el.textContent==="交付报告").click()');
   await wait(async()=>(await content()).includes('最终交付B'),'交付Markdown内链打开同清单字节');
-  await evaluate('Array.from(document.querySelectorAll("[data-file-preview] button")).find(el=>el.textContent==="重新加载").click()');
+  await evaluate('document.querySelector("[data-file-toolbar] [aria-label=文件操作]").click()');
+  await wait(()=>evaluate('Array.from(document.querySelectorAll("[role=menuitem]")).some(el=>el.textContent==="重新加载")'),'重新加载收入文件操作菜单');
+  await evaluate('Array.from(document.querySelectorAll("[role=menuitem]")).find(el=>el.textContent==="重新加载").click()');
   await wait(async()=>(await content()).includes('最终交付B'),'交付内链子预览可以重新加载');
   await clickPreview('报告 #%.txt');await wait(async()=>(await content()).includes('最终交付B'),'原件改为C后交付仍为B');
-  const descriptor=await evaluate('(async()=>{const sessions=await window.cogent.engineRequest("session.list",{});const [doc]=await window.cogent.engineRequest("outputs.get",{sessionId:sessions[0].id});const item=doc.published.find(item=>item.name==="报告 #%.txt");return window.cogent.engineRequest("outputs.resolve",{sessionId:doc.sessionId,turnId:doc.turnId,revision:doc.revision,outputId:item.outputId,version:"delivery"})})()');
-  const handle={sessionId:descriptor.delivery.target.sessionId,fileId:descriptor.fileId};
-  await evaluate('window.cogent.fileAction('+JSON.stringify({...handle,action:'save'})+')');
+  const lease=await evaluate('(async()=>{const sessions=await window.cogent.engineRequest("session.list",{});const [doc]=await window.cogent.engineRequest("outputs.get",{sessionId:sessions[0].id});const item=doc.published.find(item=>item.name==="报告 #%.txt");return window.cogent.fileViewsRequest("fileViews.acquire",{source:{kind:"output",target:{sessionId:doc.sessionId,turnId:doc.turnId,revision:doc.revision,outputId:item.outputId,version:"delivery"}},operationId:crypto.randomUUID()})})()');
+  const handle={leaseId:lease.leaseId};
+  await evaluate('window.cogent.fileViewsRequest("fileViews.action",'+JSON.stringify({...handle,action:'save'})+')');
   if(readFileSync(saved,'utf8')!=='最终交付B')throw new Error('另存没有使用交付字节');checks.push('实际主进程另存动作取交付字节');
-  await evaluate('window.cogent.fileAction('+JSON.stringify({...handle,action:'open'})+')');writeFileSync(opened.at(-1),'外部编辑');
+  await evaluate('window.cogent.fileViewsRequest("fileViews.action",'+JSON.stringify({...handle,action:'open'})+')');writeFileSync(opened.at(-1),'外部编辑');
+  await evaluate('window.cogent.fileViewsRequest("fileViews.release",'+JSON.stringify(handle)+')');
   await clickPreview('报告 #%.txt');await wait(async()=>(await content()).includes('最终交付B'),'外部打开导出副本，改写不会损坏交付版本');
   rmSync(join(spec.workspace,'报告 #%.txt'));
   await clickOutputMenu('报告 #%.txt');await wait(()=>evaluate('document.querySelector("[role=menu]")!==null'),'原件删除后仍能打开文件菜单');
@@ -124,7 +137,8 @@ void(async()=>{try{
   await clickPreview('报告 #%.txt');await wait(async()=>(await content()).includes('最终交付B'),'关闭原件错误弹窗后交付副本仍可预览');
  }else{
   checks.push('产品进程重启后交付副本恢复，原件已删除');
-  await evaluate('document.querySelector("[aria-label=关闭文件预览]").click()');
+  const closing=await evaluate('(()=>{const id=document.querySelector("[data-workspace-panel]:not([hidden])").dataset.workspacePanel;document.getElementById("workspace-tab-"+id).nextElementSibling.click();return id})()');
+  await wait(()=>evaluate('document.getElementById("workspace-panel-"+'+JSON.stringify(closing)+')===null'),'重启后通过标签关闭仅释放目标文件');
   await fetch(spec.endpoint+'/clear');await send('替换清空交付文件');await evaluate('window.outputTerminal');
   const docs=await evaluate('(async()=>{const sessions=await window.cogent.engineRequest("session.list",{});return window.cogent.engineRequest("outputs.get",{sessionId:sessions[0].id})})()');
   if(docs.length!==2||!docs.some(doc=>doc.declared&&doc.published.length===0)||!docs.some(doc=>doc.published.length===4))throw new Error('清空或回合归属错误');checks.push('新回合替换/非法候选/明确清空不影响旧回合卡');
@@ -137,9 +151,11 @@ let child
 try {
   const results = []
   for (const phase of ['first', 'restore']) {
+    rmSync(join(evidence, phase + '.json'), { force: true })
     const env = { ...process.env, COGENT_HOME: home, USERPROFILE: home, HOME: home, OUTPUT_PHASE: phase }; delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_RENDERER_URL
     child = spawn(electron, [driver], { cwd: process.cwd(), stdio: 'inherit', windowsHide: true, env })
-    await new Promise((done, fail) => { child.once('error', fail); child.once('exit', done) })
+    const exitCode = await new Promise((done, fail) => { child.once('error', fail); child.once('exit', done) })
+    if (exitCode !== 0) throw new Error('产物 Electron 驱动异常退出：'+exitCode)
     const file = join(evidence, phase + '.json'); const result = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { passed: false }
     results.push(result); if (!result.passed) break
   }

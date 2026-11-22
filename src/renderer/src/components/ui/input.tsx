@@ -12,20 +12,27 @@ const inputVariants = cva(
         default: "",
         embedded: "border-0 bg-transparent px-0 shadow-none dark:bg-transparent",
       },
+      size: {
+        default: "",
+        // 工具栏与 xs 按钮共用紧凑档；数字输入不额外叠加原生步进钮。
+        xs: "min-h-6 rounded-[min(var(--radius-md),10px)] px-1 py-0.5 text-xs text-center tabular-nums md:text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+      },
     },
     defaultVariants: {
       variant: "default",
+      size: "default",
     },
   }
 )
 
-function Input({ className, type, variant = "default", ...props }: React.ComponentProps<"input"> & VariantProps<typeof inputVariants>) {
+function Input({ className, type, variant = "default", size = "default", ...props }: Omit<React.ComponentProps<"input">, "size"> & VariantProps<typeof inputVariants>) {
   return (
     <InputPrimitive
       type={type}
       data-slot="input"
       data-variant={variant}
-      className={cn(inputVariants({ variant }), className)}
+      data-size={size}
+      className={cn(inputVariants({ variant, size }), className)}
       {...props}
     />
   )

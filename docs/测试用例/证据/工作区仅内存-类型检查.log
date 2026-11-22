@@ -1,0 +1,4 @@
+
+> cogent@0.1.0 typecheck
+> tsc --noEmit --composite false -p tsconfig.node.json && tsc --noEmit --composite false -p tsconfig.web.json
+

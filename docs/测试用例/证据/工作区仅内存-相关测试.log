@@ -1,0 +1,13 @@
+
+> cogent@0.1.0 test
+> node tests/run-tests.mjs run --project web tests/renderer/stores/workspace-memory.test.ts tests/renderer/stores/workspace.test.ts tests/renderer/features/workspace/workspace-focus.render.test.tsx tests/renderer/features/workspace/workspace-frame.render.test.tsx --maxWorkers=1
+
+
+ RUN  v5.1.0 C:/Users/41631/Desktop/Cogent-multi-tab-workspace
+
+
+ Test Files  4 passed (4)
+      Tests  16 passed (16)
+   Start at  19:17:58
+   Duration  7.23s (environment 62%, import 15%, setup 12%, tests 6%, transform 4%)
+

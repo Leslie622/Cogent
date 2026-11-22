@@ -11,16 +11,17 @@ const descriptor = (overrides: Partial<FileDescriptor> = {}): FileDescriptor => 
   fileId: 'file-1', serviceId: 'service', path: 'C:/项目/完整路径/说明.md', name: '说明.md', kind: 'markdown',
   mime: 'text/markdown', size: 10, version: 'v1', source: 'saved', location: { line: 2, column: 3 }, ...overrides
 })
-const engineRequest = vi.fn()
-const fileAction = vi.fn()
+const engineRequest = vi.fn<(method: string, params: unknown) => Promise<unknown>>()
+const fileAction = vi.fn<(params: unknown) => Promise<unknown>>()
+const lease = (file = descriptor()) => ({ leaseId: file.fileId, descriptor: file, canonicalKey: file.path, ownerId: 'host' })
 const link = () => screen.getByRole('link', { name: '说明.md' })
 const content = <FileLink target="./说明.md:2:3">说明.md</FileLink>
 function mount() { return render(<FileLinkContext.Provider value={scope}>{content}</FileLinkContext.Provider>) }
 
 beforeEach(() => {
-  engineRequest.mockReset().mockImplementation((method: string) => Promise.resolve(method === 'files.resolve' ? descriptor() : { ok: true }))
+  engineRequest.mockReset().mockImplementation((method: string) => Promise.resolve(method === 'fileViews.acquire' ? lease() : { ok: true }))
   fileAction.mockReset().mockResolvedValue(undefined)
-  window.cogent = { engineRequest, fileAction } as unknown as typeof window.cogent
+  window.cogent = { fileViewsRequest: (method: string, params: unknown) => method === 'fileViews.action' ? fileAction(params) : engineRequest(method, params) } as unknown as typeof window.cogent
 })
 afterEach(() => vi.restoreAllMocks())
 
@@ -33,8 +34,8 @@ describe('文件链接交互', () => {
     await user.hover(link())
     const tooltip = await screen.findByRole('tooltip')
     await waitFor(() => expect(tooltip).toHaveTextContent('C:/项目/完整路径/说明.md'))
-    expect(engineRequest).toHaveBeenCalledWith('files.resolve', { sessionId: 's1', turnId: 't1', rawTarget: './说明.md:2:3', relativeTo: undefined })
-    await waitFor(() => expect(engineRequest).toHaveBeenCalledWith('files.cancel', { sessionId: 's1', fileId: 'file-1', operationId: expect.any(String) as string }))
+    expect(engineRequest).toHaveBeenCalledWith('fileViews.acquire', { source: { kind: 'session', sessionId: 's1', turnId: 't1', rawTarget: './说明.md:2:3', relativeTo: undefined }, operationId: expect.any(String) as string })
+    await waitFor(() => expect(engineRequest).toHaveBeenCalledWith('fileViews.release', { leaseId: 'file-1' }))
   })
   it('Tooltip 里的复制按钮可点击，复制实际绝对路径而不打开预览', async () => {
     const user = userEvent.setup()
@@ -70,8 +71,8 @@ describe('文件链接交互', () => {
     mount()
     fireEvent.contextMenu(link())
     await user.click(await screen.findByRole('menuitem', { name: label }))
-    expect(fileAction).toHaveBeenCalledWith({ sessionId: 's1', fileId: 'file-1', action, location: { line: 2, column: 3 } })
-    expect(engineRequest).toHaveBeenCalledWith('files.cancel', { sessionId: 's1', fileId: 'file-1', operationId: expect.any(String) as string })
+    expect(fileAction).toHaveBeenCalledWith({ leaseId: 'file-1', action, location: { line: 2, column: 3 } })
+    expect(engineRequest).toHaveBeenCalledWith('fileViews.release', { leaseId: 'file-1' })
   })
   it('原生动作失败使用独立弹窗，关闭后仍可重试', async () => {
     const user = userEvent.setup()
@@ -109,25 +110,24 @@ describe('文件链接交互', () => {
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
     const target = { sessionId: 's1', turnId: 't1', revision: 3, outputId: 'output-1', version: 'delivery' as const }
     const delivery = descriptor({ path: 'C:/受管副本/说明.md', delivery: { sourcePath: 'C:/项目/完整路径/说明.md', confirmedAt: 1, target } })
-    engineRequest.mockImplementation((method: string) => Promise.resolve(method === 'files.resolve' ? delivery : method === 'outputs.resolve' ? descriptor({ fileId: 'current-file' }) : { ok: true }))
+    engineRequest.mockImplementation((method: string) => Promise.resolve(method === 'fileViews.acquire' ? lease(delivery) : { ok: true }))
     mount()
     fireEvent.contextMenu(link())
     await user.click(await screen.findByRole('menuitem', { name: '复制完整路径' }))
     expect(write).toHaveBeenCalledWith('C:/项目/完整路径/说明.md')
     fireEvent.contextMenu(link())
     await user.click(await screen.findByRole('menuitem', { name: '编辑当前原文件' }))
-    expect(engineRequest).toHaveBeenCalledWith('outputs.resolve', { ...target, version: 'current' })
-    expect(fileAction).toHaveBeenCalledWith({ sessionId: 's1', fileId: 'current-file', action: 'editor', location: { line: 2, column: 3 } })
-    for (const fileId of ['file-1', 'current-file']) expect(engineRequest).toHaveBeenCalledWith('files.cancel', { sessionId: 's1', fileId, operationId: expect.any(String) as string })
+    expect(fileAction).toHaveBeenCalledWith({ leaseId: 'file-1', action: 'editor', location: { line: 2, column: 3 } })
+    expect(engineRequest).toHaveBeenCalledWith('fileViews.release', { leaseId: 'file-1' })
   })
   it('切换来源后旧 hover 结果不覆盖新路径，迟到句柄仍释放', async () => {
     const user = userEvent.setup()
     let resolveOld!: (value: FileDescriptor) => void
-    engineRequest.mockImplementation((method: string, params: { sessionId: string }) => {
-      if (method !== 'files.resolve') return Promise.resolve({ ok: true })
-      return params.sessionId === 's1'
-        ? new Promise<FileDescriptor>((resolve) => { resolveOld = resolve })
-        : Promise.resolve(descriptor({ fileId: 'file-2', path: 'C:/另一个项目/说明.md' }))
+    engineRequest.mockImplementation((method: string, params: unknown) => {
+      if (method !== 'fileViews.acquire') return Promise.resolve({ ok: true })
+      return (params as { source: { sessionId: string } }).source.sessionId === 's1'
+        ? new Promise((resolve) => { resolveOld = file => resolve(lease(file)) })
+        : Promise.resolve(lease(descriptor({ fileId: 'file-2', path: 'C:/另一个项目/说明.md' })))
     })
     const view = mount()
     await user.hover(link())
@@ -137,6 +137,6 @@ describe('文件链接交互', () => {
     await screen.findByText('C:/另一个项目/说明.md')
     await act(async () => { resolveOld(descriptor()); await Promise.resolve() })
     expect(screen.getByRole('tooltip')).toHaveTextContent('C:/另一个项目/说明.md')
-    expect(engineRequest).toHaveBeenCalledWith('files.cancel', { sessionId: 's1', fileId: 'file-1', operationId: expect.any(String) as string })
+    expect(engineRequest).toHaveBeenCalledWith('fileViews.release', { leaseId: 'file-1' })
   })
 })

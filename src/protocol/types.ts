@@ -18,6 +18,7 @@ export const PROTOCOL_VERSION = 3
 import type { SessionSearchMethods } from '../shared/session-search'
 import type { AttachmentMethods } from '../shared/attachments'
 import type { FileMethods, FileInternalMethods, FileContext, FileReference } from '../shared/files'
+import type { FileViewHostMethods } from '../shared/file-views'
 import type { OutputMethods, TurnOutputs } from '../shared/outputs'
 import type { SessionTitleMethods } from '../shared/session-title'
 
@@ -1038,7 +1039,7 @@ export interface CapabilityIssueResult {
 /**
  * method 注册表：键名即线上协议。新增 method = 在此加一行 + 服务端加 handler。
  */
-export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, SessionTitleMethods, SessionSearchMethods {
+export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, FileViewHostMethods, SessionTitleMethods, SessionSearchMethods {
   initialize: { params: InitializeParams; result: InitializeResult }
   'session.list': { params: Record<string, never>; result: SessionSummary[] }
   'session.create': { params: { title?: string; permissionMode?: PermissionMode; planEnabled?: boolean; cwd?: string; projectId?: string }; result: SessionSummary }
@@ -1099,6 +1100,7 @@ export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInt
 // ———— 事件映射（host → 宿主；骨架期先定形状，随实现细化） ————
 
 export interface ProtocolEvents {
+  'fileViews.directoryChanged': { contextId: string; directoryId: string; generation: number; error?: string }
   'message.source': { sessionId: string; turnId: string; role: 'user' | 'assistant'; sourceId: string }
   'outputs.updated': TurnOutputs
   'outputs.error': { sessionId: string; turnId: string; message: string }

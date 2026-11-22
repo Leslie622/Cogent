@@ -274,10 +274,25 @@
   mask-image: linear-gradient(
     to right,
     transparent,
-    black var(--scroll-fade-size),
-    black calc(100% - var(--scroll-fade-size)),
+    black var(--scroll-fade-left, var(--scroll-fade-size)),
+    black calc(100% - var(--scroll-fade-right, var(--scroll-fade-size))),
     transparent
   );
+}
+
+/* 面包屑与标签栏只在尚可滚动的一侧渐隐；深色主题也透出原底色。 */
+.scroll-fade-edges {
+  --scroll-fade-left: 0px;
+  --scroll-fade-right: 0px;
+}
+.scroll-fade-edges[data-scroll-left] {
+  --scroll-fade-left: var(--scroll-fade-size);
+}
+.scroll-fade-edges[data-scroll-right] {
+  --scroll-fade-right: var(--scroll-fade-size);
+}
+.scroll-fade-edges:not([data-scroll-left]):not([data-scroll-right]) {
+  mask-image: none;
 }
 
 /* ── 文字 shimmer（"思考中/工作中"标题淡带扫光，trace 运行态引用）──
@@ -828,6 +843,11 @@ input[data-slot='input']:not([data-variant='embedded']):focus-visible,
 }
 .content-typography { font-size: 0.875rem; }
 .code-typography { font-size: var(--app-code-size); line-height: 1.6; }
+[data-code-preview] .code-typography {
+  --diffs-font-family: var(--t-code-font, var(--font-mono));
+  --diffs-font-size: var(--app-code-size);
+  --diffs-line-height: 1.6;
+}
 
 /* 搜索高亮由 CSS 范围绘制，不插入会破坏 Markdown/复制/选区的节点。 */
 ::highlight(cogent-search), .search-mark { background-color: transparent; }
