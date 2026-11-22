@@ -4,8 +4,8 @@ import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 
 const sources = [
-  ['zcode/LICENSE', 'patches/Zcode-LICENSE'],
-  ['zcode/来源说明.md', 'patches/来源说明.md'],
+  ['zcode/LICENSE', 'licenses/file-preview/Zcode-LICENSE'],
+  ['zcode/来源说明.md', 'licenses/file-preview/补丁来源说明.md'],
   ['duke-sheets/LICENSE', 'licenses/file-preview/duke-sheets-LICENSE'],
   ...[
     ['@pierre/diffs', 'LICENSE.md'], ['@pierre/diffs/node_modules/shiki', 'LICENSE'],

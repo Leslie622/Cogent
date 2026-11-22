@@ -2,6 +2,8 @@ node_modules/
 out/
 dist/
 *.log
+# 文档引用的验收日志需要随源码保留，临时运行日志仍被忽略。
+!docs/测试用例/证据/*.log
 *.tsbuildinfo
 .DS_Store
 .env
