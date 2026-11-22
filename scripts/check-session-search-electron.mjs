@@ -55,6 +55,35 @@ void(async()=>{try{
  await wait(()=>evaluate('Array.from(document.querySelectorAll("button")).some(el=>el.textContent==="调研 Cogent 会话搜索")'),'临时聊天在侧栏可见');
  await evaluate('Array.from(document.querySelectorAll("button")).find(el=>el.textContent==="调研 Cogent 会话搜索").click()');
  await wait(()=>evaluate('document.querySelector("[data-chat-session]")?.dataset.chatSession==='+JSON.stringify(spec.id)),'历史聊天通过产品桥接加载');
+ const tooltipMetrics=[],originalDark=await evaluate('document.documentElement.classList.contains("dark")'),baseDpr=await evaluate('devicePixelRatio');
+ for(const dark of [false,true])for(const zoom of [1,1.25]){
+  win.webContents.sendInputEvent({type:'mouseMove',x:5,y:5});
+  await wait(()=>evaluate('document.querySelector("[data-slot=tooltip-content]")===null'),'切换主题或缩放前关闭 Tooltip');
+  win.webContents.setZoomFactor(zoom);
+  await wait(()=>evaluate('Math.abs(devicePixelRatio-'+baseDpr*zoom+')<0.001'),'页面缩放应用到实际像素比');
+  await evaluate('document.documentElement.classList.toggle("dark",'+dark+')');
+  const position=await evaluate('(()=>{const r=document.querySelector("[aria-label=搜索]").getBoundingClientRect();return{x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()');
+  // Electron 输入和截图使用窗口 DIP；页面坐标需计入页面缩放。
+  win.webContents.sendInputEvent({type:'mouseMove',x:Math.round(position.x*zoom),y:Math.round(position.y*zoom)});
+  await wait(()=>evaluate('Array.from(document.querySelectorAll("[data-slot=tooltip-content]")).some(el=>el.textContent==="搜索Ctrl+K"&&el.querySelectorAll("[data-slot=kbd]").length===2&&el.getAnimations({subtree:true}).every(a=>a.playState==="finished"))'),'搜索 Tooltip 显示 Ctrl+K 键帽且动画结束');
+  await capture('tooltip-frame-'+(dark?'dark':'light')+'-'+zoom+'.png');
+  const rects=await evaluate('(()=>{const tip=document.querySelector("[data-slot=tooltip-content]"),key=tip.querySelector("[data-slot=kbd]").getBoundingClientRect(),box=tip.getBoundingClientRect();return{dpr:devicePixelRatio,key:{x:Math.floor(key.x),y:Math.floor(key.y),width:Math.ceil(key.width),height:Math.ceil(key.height)},tip:{x:Math.floor(box.x-6),y:Math.floor(box.y-6),width:Math.ceil(box.width+12),height:Math.ceil(box.height+12)}}})()');
+  for(const rect of [rects.key,rects.tip]){rect.x=Math.floor(rect.x*zoom);rect.y=Math.floor(rect.y*zoom);rect.width=Math.ceil(rect.width*zoom);rect.height=Math.ceil(rect.height*zoom)}
+  await win.webContents.capturePage(rects.tip).then(image=>writeFileSync(join(spec.evidence,'tooltip-'+(dark?'dark':'light')+'-'+zoom+'.png'),image.toPNG()));
+  const withArrow=(await win.webContents.capturePage(rects.key)).toBitmap();
+  // 比较真实键帽像素，防止箭头再次遮住文字；不以 CSS 层级数值冒充呈现结果。
+  await evaluate('document.querySelector("[data-slot=tooltip-arrow]").style.visibility="hidden";new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
+  const withoutArrow=(await win.webContents.capturePage(rects.key)).toBitmap();
+  let changedPixels=0;
+  for(let offset=0;offset<withArrow.length;offset+=4)if(!withArrow.subarray(offset,offset+4).equals(withoutArrow.subarray(offset,offset+4)))changedPixels++;
+  tooltipMetrics.push({dark,zoom,dpr:rects.dpr,changedPixels});
+  if(changedPixels!==0)throw new Error('Tooltip 箭头影响键帽像素：'+JSON.stringify(tooltipMetrics.at(-1)));
+  checks.push((dark?'深色':'浅色')+' '+zoom*100+'% 缩放时箭头不遮挡键帽');
+  await evaluate('document.querySelector("[data-slot=tooltip-arrow]").style.visibility=""');
+ }
+ win.webContents.sendInputEvent({type:'mouseMove',x:5,y:5});
+ win.webContents.setZoomFactor(1);
+ await evaluate('document.documentElement.classList.toggle("dark",'+originalDark+')');
  await evaluate('document.querySelector("[aria-label=搜索]").click()');
  await wait(()=>evaluate('document.activeElement?.getAttribute("cmdk-input")!==null&&document.activeElement?.tagName==="INPUT"'),'搜索打开并自动聚焦');
  await wait(()=>evaluate('document.querySelectorAll("[cmdk-item]").length===6&&Array.from(document.querySelectorAll("[cmdk-item]")).every(el=>!el.textContent.includes("未归类")&&!el.textContent.includes("1970")&&el.querySelector(".text-muted-foreground")?.textContent!=="1970/1/1")&&!document.querySelector("[data-slot=dialog-content][data-open]").textContent.includes("标题与聊天正文")'),'未搜索列表仅标题与实际项目名，无未归类、日期和右下角文案');
@@ -92,7 +121,7 @@ void(async()=>{try{
  win.webContents.sendInputEvent({type:'keyUp',keyCode:'K',modifiers:['control']});
  await wait(()=>evaluate('document.querySelector("[data-slot=dialog-content][data-open] [cmdk-input]")!==null'),'窄窗快捷键打开搜索');
  await capture('narrow.png');
- const result={passed:errors.length===0,checks,errors,metrics:{...await evaluate('window.searchMetrics'),items:itemMetrics},electron:process.versions.electron};writeFileSync(join(spec.evidence,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+ const result={passed:errors.length===0,checks,errors,metrics:{...await evaluate('window.searchMetrics'),items:itemMetrics,tooltip:tooltipMetrics},electron:process.versions.electron};writeFileSync(join(spec.evidence,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
 }catch(error){if(win&&!win.isDestroyed())await win.webContents.capturePage().then(image=>writeFileSync(join(spec.evidence,'failure.png'),image.toPNG()));const result={passed:false,checks,errors,error:String(error),stack:error.stack};writeFileSync(join(spec.evidence,'result.json'),JSON.stringify(result,null,2));console.error(result)}finally{app.quit()}})();
 `)
 let child

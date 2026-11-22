@@ -1,0 +1,42 @@
+/* 只负责文档布局与画布专有元素；控件皮肤、字体和字号由共享 shadcn 与 globals.css 提供。 */
+@import '@xyflow/react/dist/style.css';
+@import '../../../src/renderer/src/globals.css';
+@source './**/*.{ts,tsx}';
+@source '../../../src/renderer/src/components/ui';
+
+/* 文档使用中性色；共享外观仍负责明暗与字号，不消费桌面壳的彩色皮肤。 */
+.architecture-app { --content-sidebar: var(--muted); --chrome-accent: var(--foreground); display: flex; height: 100dvh; overflow: hidden; background: var(--background); }
+.architecture-side { flex: none; width: var(--side-width); overflow: hidden; transition: width 180ms ease-out; }
+.architecture-side[data-collapsed='true'] { width: 0; }
+.architecture-left { --side-width: 212px; }
+.architecture-right { --side-width: 320px; }
+.architecture-side-content { width: var(--side-width); height: 100%; }
+.architecture-sidebar { display: flex; flex-direction: column; height: 100%; background: var(--muted); border-right: 1px solid var(--border); }
+.side-header { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; height: 56px; padding: 0 16px; }
+.architecture-main { position: relative; min-width: 0; flex: 1; height: 100%; overflow: hidden; container-type: inline-size; }
+.architecture-canvas { position: relative; height: 100%; }
+.canvas-top-controls { position: absolute; inset: 16px 16px auto; display: flex; justify-content: space-between; gap: 8px; pointer-events: none; }
+.canvas-top-controls > div { pointer-events: auto; background: var(--background); border-radius: var(--radius-lg); }
+.react-flow { --xy-background-color: var(--background); --xy-edge-stroke: var(--muted-foreground); }
+.react-flow__node { cursor: pointer; }
+.react-flow__handle { visibility: hidden; }
+.architecture-node { width: 100%; height: 100%; position: relative; }
+.architecture-node[data-selected='true']::after { content: ''; position: absolute; inset: -4px; border: 1px solid var(--chrome-accent); border-radius: calc(var(--radius-xl) + 4px); pointer-events: none; }
+.architecture-boundary { height: 100%; border: 1px dashed var(--muted-foreground); border-radius: var(--radius-xl); background: var(--content-sidebar); }
+.architecture-boundary-heading { position: absolute; left: 16px; top: 16px; display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); }
+.architecture-relationship { color: var(--muted-foreground); pointer-events: none; }
+.architecture-relationship rect { fill: var(--background); }
+.architecture-relationship text { fill: var(--muted-foreground); }
+.canvas-controls { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; align-items: center; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--background); }
+.module-panel { display: flex; flex-direction: column; height: 100%; border-left: 1px solid var(--border); background: var(--background); }
+.module-panel-content { min-height: 0; overflow-y: auto; padding: 16px 16px 24px; }
+.skip-link { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 8px 12px; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); transform: translateY(-200%); }
+.skip-link:focus { transform: translateY(0); }
+
+@container (max-width: 300px) { .architecture-view-controls { display: none; } }
+@container (max-width: 200px) { .theme-control { display: none; } }
+
+@media (max-width: 699px) {
+  .architecture-right { --side-width: min(320px, calc(100vw - 64px)); }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; } }

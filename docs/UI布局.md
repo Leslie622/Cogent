@@ -3,6 +3,26 @@
 > 本文负责区域、视觉配方、组件用法与样式陷阱；功能机制见对应模块页。
 > 区域代号用于描述、注释和组件命名。历史过程查 Git，不在本文追加实施流水账。
 
+## 架构地图
+
+独立文档项目位于 `docs/架构地图/`；机制与验收见[模块文档](模块/架构地图.md)。
+全高三栏：左侧导航 212px、中间画布自动填满、右侧说明 320px；侧栏只有「架构总览」。
+左右分别折叠至 0，展开按钮留在画布上方，说明区独立滚动，不移到图下方。
+进入 999px 及以下窗口收起左栏，699px 及以下同时收起右栏；窄屏手动展开一侧时收起另一侧。
+使用 shadcn 中性色，文档容器将进程底色与选中描边映射到共享 `--muted` 和 `--foreground`，
+不消费桌面彩色皮肤。节点使用原生 Card、Button、Badge，展示名称、技术标识和能力状态；正文放右栏。
+大区块不显示状态；具体模块已实现时只显示绿色勾图标。部分实现模块按能力分行，行尾显示绿色完成点或橙色待完成点；待实现模块保留文字标记，底色仍为中性色。
+中栏保留图、总览/接入/执行视图按钮与画布操作，无外层标题、页脚或提示文案；字体与字号沿用正文阶梯。
+主流程从左向右，连线使用 LikeC4 原生正交路径与圆角；默认至少 85% 缩放，从左侧入口开始阅读，
+可拖动或适应全图。标签遮罩与几何布局尺寸一致，避免文字挡线；工具条上下预留空间。
+接入场景放在传输入口左侧；总览合并 HTTP 与 WS 为「网络入口」，Cogent 原生调用、自有协议调用方和 MCP 适配各连一条线。
+外部 Agent 经「标准 MCP · stdio」连接「MCP 协议适配（MCP Server）」，后者再以 Cogent 原生协议连接网络入口；不展示脚本场景。
+自有协议调用方直接以点线连接自定义协议适配，标注「协议适配关系」，说明该适配器的消费方；实际调用沿传输、认证链路。
+点线使用圆端点与 `1 5` 间隔，待实现调用使用 `5 4` 长虚线，避免混淆关系与完成度；不增加自有协议视图。
+各视图统一使用 LikeC4 层间距 160、节点间距 96。接线文字写明动作，并列项使用「与」或间隔号，斜杠仅用于实际接口路径；连线交叉处用局部留白表示跨越。
+页面以 8px 为主要间距步长：顶栏、区块标题与说明区边距 16px，正文段落间隔 16px、分节 24px，
+图标与标题间隔 8px；卡片保留共享组件的 12px 内距和 4px 行距。普通状态行占 20px，混合完成度用两行能力明细替代技术标识与总状态，避免增加卡片高度。
+
 ## 布局结构
 
 主窗口由 Electron 限制最小尺寸为 400×600px；初始尺寸为 1120×730px。
@@ -48,7 +68,7 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 | header + app-sidebar | `.chrome-surface` 消费主题色的 135° 三段渐变；森林 / 薄荷 / 蜜蜂 / 羊皮纸 / 海盐 / 暮紫各有浅深两套，默认薄荷；共享色板在 `lib/interface-skins.ts` |
 | content-sidebar / main | `--content-sidebar` 随主题色与明暗换套；main 沿用 `--background`，浅色纯白、深色中性暗底，形成层级 |
 | hover / active | 黑低透明软叠 `bg-foreground/5` 或 `bg-accent-foreground/5`；active 保持同一深度 |
-| 行内小钮 | 一律原生 ghost（hover `bg-muted`）；软叠配方只属于自绘行，不落在 Button 调用点 |
+| 行内小钮 | 原生 ghost（hover `bg-muted`）；侧栏搜索入口用 Button ghost-soft，与会话行同为 `bg-accent-foreground/5`；软叠由组件变体提供，不落在 Button 调用点 |
 | 文字 | 实色 token；次级 `muted-foreground`，placeholder `--placeholder`；层级靠实色深浅 |
 | 语义色 | destructive 错误红；warning 琥珀 `oklch(0.666 0.155 70)`；chrome-accent 品牌蓝 `#0231fa` |
 | 聚焦 | 组件共用 `--focus-width: 1px` 与 `--focus-color` 内贴实线，浅色 `oklch(0.556 0 0)`、深色 `oklch(0.708 0 0)`，默认 150ms 淡入淡出；已有动效的控件沿用其时长，reduced-motion 直接切换。自定义输入不显示聚焦描边，包括原生 input、自定义外壳内的 `Input variant="embedded"` 与对话输入卡 composer；普通 Input、Textarea、InputGroup 保留统一效果 |
@@ -58,6 +78,8 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 
 应用文字使用 Electron 40.9.3 的原生字体渲染，常规字重保持 400，不施加全局文字描边。
 字体选择与绘制边界见[对话内容主题](技术笔记/对话内容主题.md)。
+SVG 图标的栅格化策略与硬件加速总开关见[设置页](模块/设置页.md)，
+实测对照见[SVG图标栅格化](技术笔记/SVG图标栅格化.md)。
 启动参数的对照验证需完整重启应用；字体清晰度与 DPI 的最终结论在实际 Electron 验证。
 
 UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时间等行头收回
@@ -242,7 +264,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   填充与拇指 280ms ease-out 同步。ContextWindowSlider 是它的上下文域适配。
 - 图标以 `@tabler/icons-react` 为主，使用前验证导出存在；active 用成对 Filled 变体。
   shadcn 原语内部 lucide 图标保持原样。
-- 图标提示统一 `Hint`；可交互富内容直接用 tooltip 原语；装饰箭头不参与指针命中，避免挡住下方链接。对话索引细刻度和
+- 图标提示统一 `Hint`；可交互富内容直接用 tooltip 原语；Tooltip 的 SVG 三角箭头只在浮层外绘制且不参与指针命中，避免遮挡键帽或下方链接。键帽在 Tooltip 内使用 `border-background/30` 弱边框。对话索引细刻度和
   ProjectPicker 内嵌 X 不再套触发器，用 aria-label；组件的标题 prop 不属于 tooltip。
 
 ## 消息流的视觉配方
@@ -320,13 +342,14 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 
 ## 会话搜索浮层
 
-侧栏搜索按钮与 Ctrl+K 共用 Nova CommandDialog 的 search 尺寸档：顶部 15vh、
+侧栏搜索按钮使用 Lucide SearchIcon，与 Ctrl+K 共用 Nova CommandDialog 的 search 尺寸档：顶部 15vh、
 最大宽 2xl，固定高 `min(36rem,70dvh)`；输入自动聚焦，底部保留键盘提示。
+侧栏搜索按钮的 Hint 同行显示“搜索”和 Ctrl+K，快捷键用 KbdGroup 与 Kbd 键帽组合。
 输入下直接显示结果分区，不放项目筛选或包含归档控件。
 CommandGroup 统一标“聊天”，每个会话一个 CommandItem：图标、标题、右侧项目，
 只显示实际存在的项目名，不显示未归类、已移除项目或日期；空查询为单行标题，
 有正文命中才在标题下内嵌一行摘要，不另列用户/助手项。更多结果在列表内。
-CommandItem 的 search 变体使用 `px-3 py-2.5`，默认文字/图标为次要色，
+CommandItem 的 search 变体使用 `px-3 py-2.5`，不预留勾选图标槽，内容左右均留 12px；默认文字/图标为次要色，
 只有 hover 时一起转为主色；键盘选中保留背景提示，不自动改变文字色。命中标记继承项颜色。
 中段填满剩余空间并独立滚动；加载时由 shadcn Spinner 居中占位，结果/空态不改变高度。
 CommandList 的 fill 布局档取消默认限高。原语选择器按 cmdk 的

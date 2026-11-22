@@ -1,0 +1,164 @@
+// 目标架构：结构、接线与视图在此维护；能力完成度与源码依据由模块说明统一维护。
+specification {
+  element system {
+    style { color muted; size xs }
+  }
+  element component {
+    style {
+      color muted
+      size xs
+    }
+  }
+}
+
+model {
+  desktop = component '主 UI 桌面壳' {
+    technology 'Electron · IPC'
+  }
+  nativeClients = component 'Cogent 原生调用' {
+    technology 'UI · 远程服务'
+    description '使用 Cogent 原生协议的 UI 或远程服务；按调用所用协议分类，不把远程等同于 UI。'
+  }
+  customClients = component '自有协议调用方' {
+    technology 'UI · 远程服务'
+    description '已有自己协议的 UI（远程、内嵌、自定义）或远程服务，需要 Cogent 适配其协议。'
+  }
+  externalAgent = component '外部 Agent' {
+    technology 'MCP 客户端'
+  }
+  mcp = component 'MCP 协议适配' {
+    technology 'MCP Server'
+    description '独立 MCP Server 将标准 MCP 工具调用转换成 Cogent 原生方法，并将结果与错误包装回 MCP 响应。'
+  }
+
+  access = system '传输入口' {
+    technology 'stdio · HTTP · WS'
+
+    stdio = component 'stdio JSON-RPC' {
+      technology '进程管道'
+      description 'Electron 主进程通过子进程管道调用 Host；UI 通过 preload 与 IPC 交给主进程。'
+    }
+
+    network = system '网络入口' {
+      technology 'HTTP · WebSocket 传输'
+      http = component 'HTTP' {
+        technology '请求与响应'
+        description '通过 HTTP 发起调用，Cogent 原生入口为 /rpc；自定义旧路由由目标协议适配层处理。'
+      }
+      ws = component 'WebSocket' {
+        technology '双向调用与事件'
+        description '通过 /ws 持续连接，支持方法调用与事件推送。'
+      }
+    }
+  }
+
+  host = system '引擎服务（Host）' {
+    technology '独立 Node 进程'
+
+    authentication = component '身份认证' {
+      technology 'Host token · 用户 token'
+      description '验证凭据，建立调用身份；现有 Host token 与未来用户系统采用可替换的认证实现。'
+    }
+
+    native = component 'Cogent 原生协议' {
+      technology 'JSON-RPC 2.0 子集'
+      description 'Cogent 原生方法、参数、响应与通知；外部客户端可直接使用。'
+    }
+
+    adapter = component '自定义协议适配' {
+      technology '兼容 /xxx/chat 等接口'
+      description '供沿用自定义接口格式的 UI 等客户端调用，双向转换请求、响应、错误与流式事件。'
+    }
+
+    policy = component '权限检查' {
+      technology '方法 · 项目 · 会话'
+      description '在统一调用上检查方法权限和资源归属，Cogent 原生协议与适配协议遵循同一策略。'
+    }
+
+    api = component 'HostApi 分发' {
+      technology '方法注册表'
+      description '将获得授权的统一调用分发到会话、任务及能力服务。'
+    }
+
+    runtime = system 'Agent 执行' {
+      technology '会话 · pi · 能力'
+      sessions = component '会话与任务' {
+        technology 'SessionManager'
+        description '任务受理、取消、恢复、业务存储与事件投影。'
+      }
+      capabilities = component 'Agent 能力' {
+        technology 'Tools · MCP · Skills'
+        description '工具、技能、钩子、交互与审批通过 pi 扩展形状装配。'
+      }
+      kernel = component 'pi 内核' {
+        technology 'AgentSession · SDK'
+        description 'Agent 循环、工具执行、上下文压缩与转录。'
+      }
+      sessions <-> kernel 'CogentKernel'
+      capabilities -> kernel '工具与扩展'
+    }
+
+    provider = component '模型协议适配' {
+      technology 'Provider · 远端契约'
+      description '将 pi 的模型调用转换成远端 API，并还原响应与流；保留自定义旧契约扩展位。'
+    }
+
+    authentication <-> native 'Cogent 原生协议'
+    authentication <-> adapter '适配调用方协议'
+    native <-> policy '统一调用'
+    adapter <-> policy '统一调用'
+    policy <-> api '授权后执行'
+    api <-> runtime.sessions '会话调用'
+    runtime.kernel <-> provider '模型调用与流式返回'
+  }
+
+  users = component '用户系统' {
+    technology '用户身份与凭据'
+    description '未来提供用户 token 验证与身份信息，不绑定具体登录平台。'
+  }
+
+  models = component '远端模型 API' {
+    technology 'HTTP 流式响应'
+    description '既有模型 API 或需要保留契约的远端 /xxx/chat 服务。'
+  }
+
+  access.stdio <-> host.native '本机调用身份'
+  desktop <-> access.stdio 'IPC 转管道'
+  nativeClients <-> access.network.http 'Cogent 原生协议'
+  nativeClients <-> access.network.ws 'Cogent 原生协议'
+  customClients <-> access.network.http '自定义协议'
+  customClients <-> access.network.ws '自定义协议'
+  customClients -> host.adapter '协议适配关系' {
+    style { line dotted }
+    description '表示此调用方消费该适配能力；实际请求仍经网络入口与身份认证。'
+  }
+  externalAgent <-> mcp '标准 MCP · stdio'
+  mcp <-> access.network.http '方法调用'
+  mcp <-> access.network.ws '事件订阅'
+  access.network.http <-> host.authentication '携带 token'
+  access.network.ws <-> host.authentication '握手认证'
+  users -> host.authentication '用户身份验证'
+  host.provider <-> models '远端协议'
+}
+
+views {
+  view overview {
+    title 'Cogent 目标架构'
+    include desktop, nativeClients, customClients, externalAgent, mcp, access.*, host.authentication, host.native, host.adapter, host.policy, host.api, host.runtime, host.provider, models
+    include mcp -> access.network with { title 'Cogent 原生协议' }
+    include access.network -> host.authentication with { title '验证凭据' }
+    autoLayout LeftRight 160 96 ortho
+  }
+
+  view ingress of access {
+    title '接入、认证与协议适配'
+    include desktop, nativeClients, customClients, externalAgent, mcp, access.stdio, access.network.*, users, host.authentication, host.native, host.adapter, host.policy, host.api
+    autoLayout LeftRight 160 96 ortho
+  }
+
+  view execution of host.runtime {
+    title '执行、能力与出站适配'
+    include host.api, host.runtime.*, host.provider, models
+    autoLayout LeftRight 160 96 ortho
+  }
+}

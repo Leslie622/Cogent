@@ -21,6 +21,13 @@ import { IPC } from '../../shared/ipc'
 // 若残余 CT 日志等其他 Google 域请求再逐项补）。
 app.commandLine.appendSwitch('disable-component-update')
 
+// Windows 实测 GPU 栅格化使 SVG path 在 16–128px 下出现明显阶梯；
+// 仅将栅格绘制交给 CPU，保留 GPU 合成。须在 ready 前应用，原理与证据见
+// docs/技术笔记/SVG图标栅格化.md；硬件加速总开关关闭时仍由下方完整禁用。
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-gpu-rasterization')
+}
+
 // Chrome 硬件加速（设置页开关）：关掉可规避部分显卡/驱动导致的白屏、闪退、
 // 渲染异常。disableHardwareAcceleration 只准在 app ready 前调 —— 启动期读档
 // 消费，设置页改的是盘上值，重启后在此生效（「修改后需重启」即此）
