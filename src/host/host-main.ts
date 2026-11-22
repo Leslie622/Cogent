@@ -21,8 +21,11 @@
  * 的请求路由/鉴权都挂在它上 —— 必须先建再装配会话运行时，main() 收拢全部
  * 启动序列，拒绝顶层零散 await。
  */
+import { validateSearchQuery } from './runtime/search/validation'
+
 import { createInterface } from 'node:readline'
 import { homedir } from 'node:os'
+import { validateTitleSettings } from './runtime/session-title-config'
 import { join } from 'node:path'
 import {
   PROTOCOL_VERSION,
@@ -274,6 +277,12 @@ async function main(): Promise<void> {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'models.test 需要 { providerId: 非空 string, modelId: 非空 string }')
     }
     return sessions.testModel(p.providerId, p.modelId)
+  }
+
+  /** 会话检索与现有 HostApi 同门校验，不给 renderer 文件系统入口。 */
+  function handleSessionSearch(params: unknown) {
+    validateSearchQuery(params)
+    return sessions.search(params)
   }
 
   /** session.messages 入口校验：sessionId 非空 string */
@@ -797,11 +806,19 @@ async function main(): Promise<void> {
     ...attachmentHandlers(sessions.attachments, new AttachmentConfig(STORAGE_ROOT)),
     ['initialize', handleInitialize],
     ['session.list', () => sessions.list()],
+    ['session.search', handleSessionSearch],
+    ['session.search.rebuild', () => sessions.searchService.rebuild()],
     ['session.create', handleSessionCreate],
     ['session.delete', handleSessionDelete],
     ['session.messages', handleSessionMessages],
     ['session.setPinned', handleSessionSetPinned],
     ['session.rename', handleSessionRename],
+    ['session.titleSettings.get', () => sessions.titleSettings.get()],
+    ['session.titleSettings.set', (params) => {
+      try { validateTitleSettings(params) }
+      catch (error) { throw new ProtocolError(RpcErrorCode.InvalidParams, error instanceof Error ? error.message : String(error)) }
+      return sessions.titleSettings.set(params)
+    }],
     ['session.archive', handleSessionArchive],
     ['session.listArchived', () => sessions.listArchived()],
     ['session.setPermission', handleSessionSetPermission],

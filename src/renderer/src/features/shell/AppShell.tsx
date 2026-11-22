@@ -3,6 +3,7 @@
  * 左侧像素分栏使用useContentSidebarSplit；右侧工作区按像素留位/手动占满，
  * 切路由或宽窄布局均保留同一网页内容父节点。详见docs/UI布局.md。
  */
+import { SessionSearch } from '@/features/home/search/SessionSearch'
 import { AppHeader } from '@/features/shell/AppHeader'
 import { AppSidebar } from '@/features/shell/AppSidebar'
 import { HomeSidebar } from '@/features/home/HomeSidebar'
@@ -30,6 +31,7 @@ export function AppShell() {
 
   return (
     <div className="chrome-surface flex h-dvh flex-col text-sidebar-foreground">
+      <SessionSearch />
       <AppHeader sidebarCollapsed={sidebarCollapsed} sidebarToggleDisabled={sidebarAutoCollapsed} onToggleSidebar={sidebar.toggle} />
       <div className="flex min-h-0 flex-1">
         {/* 应用侧栏：上/下两组路由钮（chrome 底色与 header 融合） */}
@@ -53,7 +55,8 @@ export function AppShell() {
               {/* 内容层：固定像素宽（min-w-60 = 下限 240px 兜底）。content-sidebar
                   内容随 AppView 换：首页（件 4）与设置（件 6）已落地，其余视图
                   侧栏属后续件 */}
-              <div ref={sidebar.contentRef} className="h-full min-w-60" style={{ width: sidebar.widthPx }}>
+              {/* 固定尺寸内容常驻合成层，裁剪窗只改变可见范围，保持静止图标像素稳定。 */}
+              <div ref={sidebar.contentRef} className="h-full min-w-60 transform-gpu" style={{ width: sidebar.widthPx }}>
                 {view === 'home' ? (
                   <HomeSidebar />
                 ) : view === 'settings' ? (
@@ -68,6 +71,7 @@ export function AppShell() {
             {/* 自绘拖拽条：样式/光带/状态机与 GlowResizeHandle 同构；拖过下限
                 折叠成 0、再向外拖恢复、键盘 ±16、双击回默认 */}
             {!sidebarAutoCollapsed && <SidebarResizeHandle
+              withHandle={view !== 'home'}
               min={SIDEBAR_WIDTH_MIN}
               max={SIDEBAR_WIDTH_MAX}
               readWidth={sidebar.readWidth}

@@ -3,7 +3,7 @@
  * 与 theme store 同层定调：纯渲染端视觉偏好，不进引擎/协议/settings.json
  * （跨设备同步是真墙：引擎侧无设置同步通道）。
  * 消费点：共享 appearance-dom（明暗/皮肤/换行/强调色/字号，覆盖所有窗口）、
- * ToolCard / 轨迹与统计行（输出详细程度/耗时精度）、markdown.tsx（lineNumbers / shikiTheme）、ChatTheme（isDark 选套 +
+ * ToolCard / 轨迹与统计行（输出详细程度/过程请求详情/耗时精度）、markdown.tsx（lineNumbers / shikiTheme）、ChatTheme（isDark 选套 +
  * buildUserTokens 用户覆盖合并进编译）。
  * 持久化读取是信任边界（约定.md §1.1）：merge 校验字段形状，坏档回落默认。
  */
@@ -72,6 +72,8 @@ export const DEFAULT_UI_FONT_SIZE = 14
 
 interface AppearanceState {
   outputVerbosity: OutputVerbosity
+  /** 仅控制过程中的单次请求统计；最终回合汇总独立显示，默认关闭。 */
+  showProcessUsage: boolean
   durationPrecision: DurationPrecision
   colorMode: ColorMode
   interfaceSkin: InterfaceSkinId
@@ -88,6 +90,7 @@ interface AppearanceState {
   codeFont: FontPair
   accent: Accent
   setOutputVerbosity: (verbosity: OutputVerbosity) => void
+  setShowProcessUsage: (show: boolean) => void
   setDurationPrecision: (precision: DurationPrecision) => void
   setColorMode: (mode: ColorMode) => void
   setInterfaceSkin: (skin: InterfaceSkinId) => void
@@ -145,6 +148,7 @@ export const useAppearanceStore = create<AppearanceState>()(
   persist(
     (set) => ({
       outputVerbosity: 'high',
+      showProcessUsage: false,
       durationPrecision: 2,
       colorMode: 'light',
       interfaceSkin: DEFAULT_INTERFACE_SKIN,
@@ -156,6 +160,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       codeFont: THEME_FONTS,
       accent: 'default',
       setOutputVerbosity: (outputVerbosity) => set({ outputVerbosity }),
+      setShowProcessUsage: (showProcessUsage) => set({ showProcessUsage }),
       setDurationPrecision: (durationPrecision) => set({ durationPrecision }),
       setColorMode: (colorMode) => set({ colorMode }),
       setInterfaceSkin: (interfaceSkin) => set({ interfaceSkin }),
@@ -174,6 +179,7 @@ export const useAppearanceStore = create<AppearanceState>()(
         return {
           ...current,
           outputVerbosity: raw?.outputVerbosity === 'low' ? 'low' : 'high',
+          showProcessUsage: raw?.showProcessUsage === true,
           durationPrecision:
             raw?.durationPrecision === 0 || raw?.durationPrecision === 1 ? raw.durationPrecision : 2,
           colorMode:

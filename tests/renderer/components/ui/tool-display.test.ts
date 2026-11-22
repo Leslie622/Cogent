@@ -3,27 +3,15 @@ import { describe, expect, it } from 'vitest'
 import { askUserSummary, diffCount, mcpDisplayName, parseToolSummary, toolKindLabel } from '@/components/ui/tool-display'
 
 describe('toolKindLabel', () => {
-  it('running 用进行形，其余三态共用完成形（失败的「已写入」指动作已发生）', () => {
-    expect(toolKindLabel('read', 'running')).toBe('正在读取')
-    expect(toolKindLabel('read', 'ok')).toBe('已读取')
-    expect(toolKindLabel('read_attachment', 'running')).toBe('正在读取附件')
-    expect(toolKindLabel('read_attachment', 'ok')).toBe('已读取附件')
-    expect(toolKindLabel('write', 'error')).toBe('已写入')
-    expect(toolKindLabel('write', 'blocked')).toBe('已写入')
-  })
-
-  it('find 与 grep 共用搜索词；shell 双名（bash/powershell）共用执行命令', () => {
-    expect(toolKindLabel('find', 'ok')).toBe('已搜索')
-    expect(toolKindLabel('grep', 'ok')).toBe('已搜索')
-    expect(toolKindLabel('powershell', 'ok')).toBe('执行命令')
-    expect(toolKindLabel('bash', 'running')).toBe('正在执行')
-  })
-
-  it('mcp__ 前缀走「正在调用/已调用」，未知名兜底「正在执行/已执行」', () => {
-    expect(toolKindLabel('mcp__image_search__search_image', 'running')).toBe('正在调用')
-    expect(toolKindLabel('mcp__image_search__search_image', 'ok')).toBe('已调用')
-    expect(toolKindLabel('glob', 'ok')).toBe('已执行')
-    expect(toolKindLabel('旧历史名', 'running')).toBe('正在执行')
+  it.each([
+    ['read', '读取'], ['read_attachment', '附件'], ['write', '写入'], ['edit', '编辑'],
+    ['find', '搜索'], ['grep', '搜索'], ['glob', '搜索'], ['ls', '目录'],
+    ['powershell', '终端'], ['bash', '终端'], ['todo_write', '待办'], ['ask_user', '提问'],
+    ['enter_plan', '计划'], ['submit_plan', '计划'],
+    ['list_mcp_resources', 'MCP'], ['list_mcp_resource_templates', 'MCP'], ['read_mcp_resource', 'MCP'],
+    ['mcp__image_search__search_image', 'MCP'], ['旧历史名', '工具'], ['constructor', '工具']
+  ])('%s 按用途归类为 %s', (name, label) => {
+    expect(toolKindLabel(name)).toBe(label)
   })
 })
 

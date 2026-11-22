@@ -45,6 +45,14 @@ export function layerDot(layer: ConsoleLayer): string {
 }
 
 export const KINDS: Record<InspectEntryKind, KindPresentation> = {
+  'title.started': {
+    icon: IconPrompt, layer: 'api', label: '标题 · 独立请求',
+    explain: '首条真实输入触发的后台标题请求，与聊天上下文隔离；请求标识和所属 Run 在启动时冻结。',
+  },
+  'title.finished': {
+    icon: IconFileText, layer: 'api', label: '标题 · 辅助结果',
+    explain: '标题生成、保存或取消的结果。辅助用量单独记账，不增加聊天消息用量；缺少定价的自定义模型成本显示未知。',
+  },
   'run.started': {
     icon: IconPlayerTrackNext,
     layer: 'session',
@@ -55,7 +63,7 @@ export const KINDS: Record<InspectEntryKind, KindPresentation> = {
     icon: IconCircleCheck,
     layer: 'session',
     label: '会话 · run 完成',
-    explain: '引擎循环收尾：最终回复已经过 run.completed 事件送回聊天界面。概览是本轮各轮次的总账（tokens/成本/耗时）。',
+    explain: '引擎循环收尾：最终回复已经过 run.completed 事件送回聊天界面。此处复用同 run 最后一轮的终态消息展示完整回复；记录信息是本次运行各轮次的总账（tokens/成本/耗时）。',
   },
   'run.failed': {
     icon: IconCircleX,

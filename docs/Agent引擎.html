@@ -275,6 +275,7 @@
     <tr><th>职责</th><th>代表方法</th><th>事实入口</th></tr>
     <tr><td>会话与运行</td><td>session.* / agent.submit / agent.abort</td><td><a href="模块/会话与对话.md">会话与对话</a></td></tr>
     <tr><td>权限与交互</td><td>session.setPermission / setPlanMode / approval/question/plan.respond</td><td><a href="模块/审批与权限.md">审批</a>、<a href="模块/交互座.md">交互座</a></td></tr>
+    <tr><td>会话搜索</td><td>session.search / session.search.rebuild</td><td><a href="模块/会话搜索.md">派生索引、中文短词与原文定位</a>；来源通过 message.source 与消息 sources 同步</td></tr>
     <tr><td>目录与能力</td><td>models.list / providers.custom.sync / mcp.* / skills.*</td><td><a href="模块/凭据与模型目录.md">模型目录</a>、<a href="模块/MCP座.md">MCP</a>、<a href="模块/技能座.md">技能</a></td></tr>
     <tr><td>项目、观测与传输</td><td>project.* / inspect.* / capability.issue</td><td><a href="模块/工作区与项目.md">项目</a>、<a href="模块/运行时控制台.md">控制台</a>、<a href="模块/HTTP通道.md">HTTP通道</a></td></tr>
   </table>
@@ -435,7 +436,7 @@
     与上下文口径（pi 投影已裁影子区）分离）。</li>
     <li><b>submit</b>：可选换模型（先按 provider/model 精确找，再退化为全目录按 id 找；setModel/setThinkingLevel
     判等再调 —— pi 树对"每次调用落一条"的 API 要按需调用，空条目会干扰压缩切点）；
-    未手动命名时首条消息自动截 24 字作会话标题；聊天右键菜单可通过弹窗调用 <code>session.rename</code>，先落盘再广播摘要，改名不改变最近活动排序；streaming 与手动压缩操作 map 覆盖准备、恢复、续写全程。</li>
+    新会话首条消息先截 24 字作临时标题，再由独立后台模型概括，成功保存后广播摘要；手动名称优先，停止首轮、删除、退出均取消旧任务。标题开关与模型归 Host 配置，用量独立记入控制台。聊天右键菜单通过 <code>session.rename</code> 先落盘再广播，改名不改变最近活动排序；streaming 与手动压缩操作 map 覆盖准备、恢复、续写全程。</li>
     <li><b>准备期取消</b>：本次 owner 记录 stopRequested，await 后核对归属；prompt 的 started 回调补取消，
     链式 prepareRequest 在原 hook 前后检查 signal。manual compaction_start 补压缩取消；删除后的迟到实例 dispose，已进入 pi 准备的调用另由一次性 core 启动监听补取消。</li>
     <li><b>终态纪律</b>：已进入 pi 的 run 在 <code>agent_settled</code> 定案；未进入 run 的早停与 handled

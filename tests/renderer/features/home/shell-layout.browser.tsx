@@ -14,7 +14,7 @@ function assert(condition: boolean, message: string): void {
 
 async function run() {
   if (new URLSearchParams(location.search).has('frame')) {
-    window.cogent = { onWindowState: () => () => {} } as unknown as typeof window.cogent
+    window.cogent = { onWindowState: () => () => {}, onEngineEvent: () => () => {} } as unknown as typeof window.cogent
     useProjectStore.setState({ load: async () => {}, loaded: true })
     useHomeStore.setState({ session: { kind: 'chat', chatId: 'shell-fixture' } })
     useChatStore.setState({ activeSessionId: 'shell-fixture', sessions: [{ id: 'shell-fixture', title: '缩窗后保留对话', createdAt: 0, updatedAt: 0, planEnabled: true }], bySession: {

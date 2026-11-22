@@ -100,7 +100,7 @@ describe('产物正式交付链', () => {
     expect((await docs(empty))[0]).toMatchObject({ declared: true, active: [], published: [] })
     expect(readFileSync(join(cwd, 'B.zip'), 'utf8')).toBe('existing zip bytes')
   })
-  it('漏报不造卡；正文提路径不自动交付，普通聊天无额外模型请求', async () => {
+  it('漏报不造卡；正文提路径不自动交付，关闭自动标题时普通聊天无额外模型请求', async () => {
     const sid = await create(); const count = requests.length
     actions.push({ text: '参考 [ZIP](B.zip)，这里只是正文链接' })
     await submit(sid)

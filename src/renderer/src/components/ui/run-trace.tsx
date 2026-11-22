@@ -1,7 +1,7 @@
 /**
  * 回合轨迹容器（ZCode 式两态呈现的头条/工作中行，见 docs/模块/消息呈现.md）：
  * 一个回合（run）的过程（思考/工具/中间正文）收进一条可展开的轨迹 ——
- * RunTrace = 头条 + Trace 家族折叠体。头条是**终态**形态（已工作 Xs /
+ * RunTrace = 头条 + Trace 家族折叠体。头条是**终态**形态（用时 X 秒 /
  * 已停止 / 出错了）；live 期间不渲染本件（顶部头条只在收尾出现），
  * 底部由 WorkingLine 常驻「工作中」（光环动效图标 WorkingSpinner + 标题扫光 + 码表）。
  * 无过程体（D8 修订：纯文本回合也恒挂头条）时退化为单行头条、不可展开 ——
@@ -33,7 +33,7 @@ export type RunPhase = 'done' | 'stopped' | 'failed'
 function headerLabel(phase: RunPhase, durationMs: number | undefined, precision: DurationPrecision): string {
   if (phase === 'stopped') return '已停止'
   if (phase === 'failed') return '出错了'
-  return durationMs !== undefined ? `已工作 ${formatDuration(durationMs, precision)}` : '已工作'
+  return durationMs !== undefined ? `用时 ${formatDuration(durationMs, precision, 'chinese')}` : '用时'
 }
 
 /** 工作行局部时钟：只更新工作行自身，不惊动外层流式树。
@@ -56,7 +56,7 @@ function useElapsed(startTs: number): string {
       document.removeEventListener('visibilitychange', refresh)
     }
   }, [startTs])
-  return formatDuration(Math.max(now - startTs, 0), precision)
+  return formatDuration(Math.max(now - startTs, 0), precision, 'chinese')
 }
 
 /** 回合过程轨迹：终态头条 + 折叠体（children = 过程项，间距在此统一 ——
@@ -66,13 +66,17 @@ export function RunTrace({
   phase,
   durationMs,
   children,
+  revealKey,
 }: {
+  revealKey?: number
   phase: RunPhase
   durationMs?: number
   children?: React.ReactNode
 }) {
   // undefined = 未被用户动过，交出控制权跟随默认（D4）
   const [open, setOpen] = useState<boolean | undefined>(undefined)
+  // 一次搜索意图只展开一次；随后仍尊重用户手动收起。
+  useEffect(() => { if (revealKey !== undefined) setOpen(true) }, [revealKey])
   const precision = useAppearanceStore((state) => state.durationPrecision)
   const header = (
     <TraceLine status={phase === 'failed' ? 'error' : undefined}>

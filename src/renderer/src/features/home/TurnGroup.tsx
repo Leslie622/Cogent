@@ -5,23 +5,24 @@
  *   进行中：全部项（工具卡/中间正文/活跃占位）在同一平级列表按序直播（各行
  *   单行化，上方高度恒定），正文段 key 用回合内段序数（跨封段/跨终态稳定，
  *   见 docs/模块/消息呈现.md）+ 流内 WorkingLine；
- *   终态：过程收进 RunTrace 头条（已工作 Xs/已停止/出错了），末条有正文段 =
- *   终答常驻头条之下，用量聚合一行（过程展开时各段仍带自己的用量小字）。
+ *   终态：过程收进 RunTrace 头条（用时 X 秒/已停止/出错了），末条有正文段 =
+ *   终答常驻头条之下，用量聚合一行（过程各段的请求明细按显示偏好呈现）。
  * 无过程回合（单段纯文本）也恒挂头条（D8 修订 2026-11-11，ZCode 对齐：
  * 慢本身是信号），只是过程体为空不可展开。
  * 切分/聚合全是纯函数；TurnGroup memo 按项引用比较 —— 流式 delta 只重渲染
  * 活动回合，历史回合零重渲染。
  */
+import { useSearchStore } from '@/stores/search'
+
 import { memo, useMemo } from 'react'
 import type { FileReference } from '@shared/files'
-import { FileLink, FileLinkContext } from './files/FileLink'
-import { literalFileTarget } from '@/lib/file-links'
+import { FileLinkContext } from './files/FileLink'
 import { MessageScrollerItem } from '@/components/ui/message-scroller'
 import { Reasoning } from '@/components/ui/reasoning'
 import { RunTrace, WorkingLine } from '@/components/ui/run-trace'
 import { ToolCard } from '@/components/ui/tool'
 import type { ChatMessage, MessageUsage } from '@/env.d'
-import type { MessageItem } from '@/stores/chat'
+import type { ApprovalItem, MessageItem } from '@/stores/chat'
 import { MessageRow, UsageLine } from './MessageRow'
 import { ApprovalCard } from './ApprovalCard'
 import { CompactionBar, PrunedBar } from './CompactionBar'
@@ -30,9 +31,9 @@ import { useChatStore } from '@/stores/chat'
 
 /** 回合（一问一答 + 其间全部过程项）；user 缺省 = 无提问头组（历史投影尾部
  *  前导的兜底组）。startedAt = 无 user 头组的墙钟起点（继承最近 user 的
- *  timestamp —— 不继承的话 turnDurationMs 无起点、头条只剩「已工作」没秒数）。
+ *  timestamp —— 不继承的话 turnDurationMs 无起点、头条只剩「用时」没秒数）。
  *  压缩折叠条是**回合内的过程行**：不截断回合、不自成组
- *  —— 一条用户消息恒一个「已工作」头与一份总时长（bar 自成组曾被验收否决：
+ *  —— 一条用户消息恒一个「用时」头与一份总时长（bar 自成组曾被验收否决：
  *  一回合被多条 bar 切出多个工作头，形似多次独立工作） */
 export interface ChatTurn {
   user?: ChatMessage
@@ -47,7 +48,7 @@ export interface ChatTurn {
  *  - **轮间自动压缩**（run 内 checkpoint / 恢复路 continue，之后还有轮次）
  *    → 行内过程条，按时间序插在过程流里（ProcessItem 的 compaction 分支）；
  *  - **回合外压缩**（手动「立即压缩」/ idle，之后直到下一 user 无工作项）
- *    → **独立成行**直接可见 —— 它不是该回合过程的一部分，塞进「已工作」
+ *    → **独立成行**直接可见 —— 它不是该回合过程的一部分，塞进「用时」
  *    折叠体等于把用户的显式动作藏起来。
  */
 export function groupTurns(items: MessageItem[]): ChatTurn[] {
@@ -152,7 +153,7 @@ function turnDurationMs(turn: ChatTurn): number | undefined {
     }
     if (item.type === undefined) {
       // 压缩条跳过：run 后压缩的 bar 时间戳晚于末段（含摘要调用耗时），
-      // 计入会把「已工作」撑到下一个 run 的边界 —— 压缩是记账不是工作
+      // 计入会把「用时」撑到下一个 run 的边界 —— 压缩是记账不是工作
       if (item.role === 'compaction') continue
       return Math.max(item.timestamp + (item.durationMs ?? 0) - start, 0)
     }
@@ -219,7 +220,7 @@ function sumDurationMs(items: MessageItem[]): number | undefined {
 /**
  * 回合工具时长聚合：各工具 [startedAt, endedAt] 区间求**并集**而非简单相加 ——
  * pi 并行执行同批工具（实测 3 个 glob 同毫秒启动），逐个求和会按 CPU 时间口径
- * 重复计墙钟（1.58s 之和 vs 0.55s 实占），与「已工作」墙钟对不上账。并集后
+ * 重复计墙钟（1.58s 之和 vs 0.55s 实占），与「用时」墙钟对不上账。并集后
  * 模型 + 工具 ≈ 墙钟（残差 = 引擎开销，毫秒级）。缺打点的工具（blocked /
  * 旧转录 / 流式期事件项）自然跳过；无任何打点返回 undefined（不显示工具项）
  */
@@ -246,19 +247,18 @@ function sumToolMs(items: MessageItem[]): number | undefined {
 
 /** 过程项渲染：工具卡 / 审批卡 / 纯思考段（终答思考剥出的伪段）/ 中间正文段
  *  （后者带自己的用量小字 —— 展开过程的逐段透明度） */
-const ProcessItem = memo(function ProcessItem({ item }: { item: MessageItem }) {
+const ProcessItem = memo(function ProcessItem({ item, approval }: { item: MessageItem; approval?: ApprovalItem['status'] }) {
   if (item.type === 'tool') {
     return (
-      <><ToolCard
+      <ToolCard
         name={item.name}
         summary={item.summary}
         status={item.status}
         result={item.resultSummary}
         progress={item.progress}
         diff={item.diff}
+        approval={approval}
       />
-      {item.fileRefs?.map((ref) => <div className="ml-7" key={ref.path}><FileLink target={literalFileTarget(ref.path)}>{ref.path}</FileLink></div>)}
-      </>
     )
   }
   if (item.type === 'approval') {
@@ -280,21 +280,35 @@ const ProcessItem = memo(function ProcessItem({ item }: { item: MessageItem }) {
 })
 
 function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phase: TurnPhase; stopping?: boolean }) {
+  const revealKey = useSearchStore((state) => state.target !== null && turn.items.some((item) =>
+    item.type === undefined && item.sources?.some((source) => source.id === state.target!.hit.anchor.sourceId)) ? state.target.serial : undefined)
+  // 原始裁决继续留在会话桶；只合并有调用 ID 且工具仍在本回合的痕迹，
+  // 相同命令并行也不猜归属，旧事件或缺卡仍可独立查阅。
+  const toolIds = new Set(turn.items.filter((item) => item.type === 'tool').map((item) => item.id))
+  const approvals = new Map<string, ApprovalItem>()
+  for (const item of turn.items) {
+    if (item.type === 'approval' && item.callId !== undefined && toolIds.has(item.callId)) {
+      approvals.set(item.callId, item)
+    }
+  }
+  const items = turn.items.filter((item) =>
+    item.type !== 'approval' || item.callId === undefined || approvals.get(item.callId) !== item
+  )
   // 回合外压缩条独立行（手动「立即压缩」/idle，groupTurns 按「bar 之后
-  // 无工作项」判出）：不套「已工作」头条/统计行 —— 那是一个 run 的语义，
+  // 无工作项」判出）：不套「用时」头条/统计行 —— 那是一个 run 的语义，
   // 压缩不是 run，且它是用户的显式动作、要直接可见。组内可带 L1 prune
   // 副行（completed 手术一起插入）；其余项走 ProcessItem 兜底（无 user
   // 兜底组以 bar 开头的旧转录边角）
-  const first = turn.items[0]
+  const first = items[0]
   if (turn.user === undefined && first.type === undefined && first.role === 'compaction') {
     return (
       <div className="flex flex-col gap-2">
-        {turn.items.map((item) => (
+        {items.map((item) => (
           <MessageScrollerItem key={item.id} messageId={item.id}>
             {item.type === undefined && item.role === 'compaction' ? (
               <CompactionBar message={item} />
             ) : (
-              <ProcessItem item={item} />
+              <ProcessItem item={item} approval={approvals.get(item.id)?.status} />
             )}
           </MessageScrollerItem>
         ))}
@@ -303,10 +317,10 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
   }
   // 零内容组的 done 相位不渲染过程件（D9 截断的副产物：压缩条把回合拆成
   // [user|空组] + [续组]，空组只剩用户泡 —— D8"纯文本恒挂头条"落在它头上
-  // 就是凭空的「已工作」空壳，验收实测双头条）。live 例外：乐观消息刚上屏
+  // 就是凭空的「用时」空壳，验收实测双头条）。live 例外：乐观消息刚上屏
   // 的工作中行还得有；stopped/failed 不走此路 —— 零产出的中止/失败头条
   // 是有效信息，保留
-  if (turn.items.length === 0 && phase === 'done') {
+  if (items.length === 0 && phase === 'done') {
     return turn.user !== undefined ? (
       <><MessageScrollerItem messageId={turn.user.id}>
         <MessageRow message={turn.user} />
@@ -321,7 +335,7 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
   // 对应物是协议 rowId（其轮/行 key 只依赖协议稳定 id）；工具/审批/裁剪/
   // 压缩条自带协议稳定 id（callId 等），直接用。
   let segmentSeq = 0
-  const itemKeys = turn.items.map((item) =>
+  const itemKeys = items.map((item) =>
     item.type === undefined && item.role === 'assistant' ? `seg-${segmentSeq++}` : item.id
   )
   const tailKey = `seg-${segmentSeq - 1}`
@@ -348,14 +362,14 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
             回合底缘比终态「出错了/已停止」头条多占一行 gap —— 立马失败的
             瞬时翻相让贴底内容跳这 12px。省掉后用户泡→状态行栈高与终态
             逐像素一致，翻相零位移 */}
-        {turn.items.length > 0 && (
+        {items.length > 0 && (
           <div className="flex min-w-0 flex-col gap-3">
-            {turn.items.map((item, index) => (
+            {items.map((item, index) => (
               <MessageScrollerItem key={itemKeys[index]} messageId={item.id}>
                 {item.type === undefined && item.role === 'assistant' ? (
                   <MessageRow message={item} />
                 ) : (
-                  <ProcessItem item={item} />
+                  <ProcessItem item={item} approval={approvals.get(item.id)?.status} />
                 )}
               </MessageScrollerItem>
             ))}
@@ -368,10 +382,10 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
       </>
     )
   }
-  const { process, answer, answerOriginal } = splitTurn(turn.items)
+  const { process, answer, answerOriginal } = splitTurn(items)
   if (phase === 'done' && process.length === 0) {
-    // 无过程回合（D8 修订 2026-11-11）：纯文本也恒挂「已工作」头条（ZCode
-    // 实测对齐：无思考无工具的问候也显示"已工作 4 秒"—— 慢本身是信号，
+    // 无过程回合（D8 修订 2026-11-11）：纯文本也恒挂「用时」头条（ZCode
+    // 实测对齐：无思考无工具的问候也显示耗时 —— 慢本身是信号，
     // 原"直出不挂条"让用户看着计时器数到 5s 后整行消失）；空过程体在
     // RunTrace 内退化为不可展开单行。统计行渲染**原文**（自带 usage/接口
     // 时长 —— 此分支没有聚合行，剥过的副本会丢统计，首验即栽过）
@@ -415,9 +429,9 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
             被中途改动，收起动画肉眼卡顿（2026-11-16 用户实测，决定 17；
             zcode 折叠体同为纯 div）。定位/刻度无消费方：scrollToMessage
             只有索引刻度在调、目标恒为 user 消息（顶层另有包装） */}
-        <RunTrace key="trace" phase={phase} durationMs={turnDurationMs(turn)}>
+        <RunTrace key="trace" phase={phase} durationMs={turnDurationMs(turn)} revealKey={revealKey}>
           {process.map((item) => (
-            <ProcessItem key={item.id} item={item} />
+            <ProcessItem key={item.id} item={item} approval={approvals.get(item.id)?.status} />
           ))}
         </RunTrace>
         {answer !== undefined && (

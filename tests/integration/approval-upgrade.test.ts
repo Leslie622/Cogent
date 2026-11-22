@@ -125,6 +125,7 @@ describe('审批集成（S1–S6 场景流，17 项断言）', () => {
     })
     check('1. respond(false, message) 受理', r1.result?.ok === true)
     const toolEnd1 = await engine.waitEvent('tool.completed', (p) => p.sessionId === s1)
+    check('审批事件携带对应工具调用 ID', typeof req1.params.callId === 'string' && req1.params.callId === toolEnd1.params.callId)
     check(
       '2. 工具 error 含「用户指示」+ 附言',
       toolEnd1.params.isError === true && (toolEnd1.params.summary ?? '').includes('用户指示') && (toolEnd1.params.summary ?? '').includes('notes/')

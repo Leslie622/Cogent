@@ -10,13 +10,16 @@ import { UsageLine } from '@/features/home/MessageRow'
 import { useAppearanceStore } from '@/stores/appearance'
 
 const storageKey = 'cogent-appearance'
-const defaults = { outputVerbosity: 'high', durationPrecision: 2 } as const
+const defaults = { outputVerbosity: 'high', showProcessUsage: false, durationPrecision: 2 } as const
+const bridge = window.cogent
 
 beforeEach(() => {
   useAppearanceStore.setState(defaults)
+  window.cogent = { ...bridge, engineRequest: vi.fn().mockResolvedValue({ enabled: true }) } as typeof window.cogent
 })
 
 afterEach(() => {
+  window.cogent = bridge
   cleanup()
   useAppearanceStore.setState(defaults)
   localStorage.removeItem(storageKey)
@@ -38,11 +41,17 @@ it('对话区块缺省详细 / 两位小数，实际选择即时保存，重读�
     })
   }
   render(<GeneralSection />)
+  await waitFor(() => expect(screen.getByRole('switch', { name: '自动生成会话名称' })).toBeChecked())
   expect(screen.getByRole('heading', { name: '对话' })).toBeVisible()
   const verbosity = screen.getByRole('combobox', { name: '输出详细程度' })
   const precision = screen.getByRole('combobox', { name: '耗时显示格式' })
+  const processUsage = screen.getByRole('switch', { name: '显示过程请求详情' })
   expect(verbosity).toHaveTextContent('详细')
   expect(precision).toHaveTextContent('2 位小数')
+  expect(processUsage).not.toBeChecked()
+  await user.click(processUsage)
+  expect(processUsage).toBeChecked()
+  expect(useAppearanceStore.getState().showProcessUsage).toBe(true)
 
   const verbosityOptions = await openOptions(verbosity)
   expect(verbosityOptions.getAllByRole('option').map((option) => option.textContent)).toEqual(['简洁', '详细'])
@@ -61,20 +70,29 @@ it('对话区块缺省详细 / 两位小数，实际选择即时保存，重读�
   await user.click(await precisionOptions.findByRole('option', { name: '整数' }))
   await closed(precision)
   const saved = localStorage.getItem(storageKey)!
-  expect(JSON.parse(saved)).toMatchObject({ state: { outputVerbosity: 'low', durationPrecision: 0 } })
+  expect(JSON.parse(saved)).toMatchObject({ state: { outputVerbosity: 'low', showProcessUsage: true, durationPrecision: 0 } })
   act(() => { useAppearanceStore.setState(defaults) })
   localStorage.setItem(storageKey, saved)
   await act(() => useAppearanceStore.persist.rehydrate())
   expect(verbosity).toHaveTextContent('简洁')
   expect(precision).toHaveTextContent('整数')
+  expect(processUsage).toBeChecked()
+  await user.click(processUsage)
+  expect(useAppearanceStore.getState().showProcessUsage).toBe(false)
+  await act(() => useAppearanceStore.persist.rehydrate())
+  expect(processUsage).not.toBeChecked()
 })
 
 it.each([
   [{}, defaults],
   [{ outputVerbosity: 'unknown', durationPrecision: 3 }, defaults],
   [{ outputVerbosity: null, durationPrecision: '1' }, defaults],
-  [{ outputVerbosity: 'low', durationPrecision: 0 }, { outputVerbosity: 'low', durationPrecision: 0 }],
-  [{ outputVerbosity: 'high', durationPrecision: 1 }, { outputVerbosity: 'high', durationPrecision: 1 }],
+  [{ showProcessUsage: 'true' }, defaults],
+  [{ showProcessUsage: 1 }, defaults],
+  [{ showProcessUsage: null }, defaults],
+  [{ showProcessUsage: true }, { ...defaults, showProcessUsage: true }],
+  [{ outputVerbosity: 'low', durationPrecision: 0 }, { ...defaults, outputVerbosity: 'low', durationPrecision: 0 }],
+  [{ outputVerbosity: 'high', durationPrecision: 1 }, { ...defaults, durationPrecision: 1 }],
 ])('旧档 / 非法值与合法值重读遵循受控值域：%j', async (stored, expected) => {
   localStorage.setItem(storageKey, JSON.stringify({ state: stored, version: 0 }))
   await act(() => useAppearanceStore.persist.rehydrate())
@@ -87,11 +105,11 @@ it('精度切换同步更新完成头条、思考和模型 / 工具统计；长�
     <Reasoning text="思考内容" running={false} durationMs={2_350} />
     <UsageLine durationMs={65_350} toolMs={3_725_350} />
   </>)
-  expect(screen.getByText('已工作 1m 5.35s')).toBeVisible()
+  expect(screen.getByText('用时 1 分 5.35 秒')).toBeVisible()
   expect(screen.getByText('持续了 2.35s')).toBeVisible()
   expect(screen.getByText('1m 5.35s 模型 · 1h 2m 工具')).toBeVisible()
   act(() => useAppearanceStore.getState().setDurationPrecision(0))
-  expect(screen.getByText('已工作 1m 5s')).toBeVisible()
+  expect(screen.getByText('用时 1 分 5 秒')).toBeVisible()
   expect(screen.getByText('持续了 2s')).toBeVisible()
   expect(screen.getByText('1m 5s 模型 · 1h 2m 工具')).toBeVisible()
 })
@@ -100,11 +118,11 @@ it('进行中的码表也消费精度，切档不重置计时起点', () => {
   vi.useFakeTimers()
   vi.setSystemTime(65_350)
   render(<MessageScrollerProvider><WorkingLine startTs={0} /></MessageScrollerProvider>)
-  expect(screen.getByText('1m 5.35s')).toBeVisible()
+  expect(screen.getByText('1 分 5.35 秒')).toBeVisible()
   act(() => useAppearanceStore.getState().setDurationPrecision(1))
-  expect(screen.getByText('1m 5.4s')).toBeVisible()
+  expect(screen.getByText('1 分 5.4 秒')).toBeVisible()
   act(() => { vi.advanceTimersByTime(1_000) })
-  expect(screen.getByText('1m 6.4s')).toBeVisible()
+  expect(screen.getByText('1 分 6.4 秒')).toBeVisible()
 })
 
 it.each([false, true])('简洁模式移除思考全文和流式摘要，切回详细恢复（running=%s）', (running) => {
@@ -125,9 +143,10 @@ it.each([false, true])('简洁模式移除思考全文和流式摘要，切回�
 })
 
 it('简洁模式隐藏单条与回合聚合统计，包括 token、缓存、成本和模型 / 工具耗时', () => {
+  useAppearanceStore.getState().setShowProcessUsage(true)
   const usage = { input: 120, output: 50, cacheRead: 80, cacheWrite: 20, totalTokens: 270, totalCost: 0.0012 }
   const { container } = render(<>
-    <UsageLine usage={usage} durationMs={2_350} />
+    <UsageLine usage={usage} durationMs={2_350} scope="process" />
     <UsageLine usage={usage} durationMs={65_350} toolMs={3_725_350} />
   </>)
   expect(container).toHaveTextContent('↑ 120')

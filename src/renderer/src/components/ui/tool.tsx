@@ -34,6 +34,7 @@ import { CodeBlock, CodeBlockContent } from '@/components/ui/code-block'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAppearanceStore } from '@/stores/appearance'
+import { ApprovalMark, type ApprovalStatus } from '@/components/ui/approval-mark'
 import { askUserSummary, diffCount, mcpDisplayName, parseToolSummary, toolKindLabel, type ToolDisplayStatus } from './tool-display'
 
 export type ToolStatus = ToolDisplayStatus
@@ -43,12 +44,15 @@ const TOOL_ICON: Record<string, React.ReactNode> = {
   read: <FileTextIcon />,
   read_attachment: <FileTextIcon />,
   glob: <FolderSearchIcon />,
+  find: <FolderSearchIcon />,
   grep: <SearchIcon />,
   ls: <FolderSearchIcon />,
   write: <WrenchIcon />,
   edit: <FileDiffIcon />,
   ask_user: <CircleHelpIcon />,
-  todo_write: <ListChecksIcon />
+  todo_write: <ListChecksIcon />,
+  bash: <TerminalIcon />,
+  powershell: <TerminalIcon />
 }
 
 /** edit 的展示 diff 行染色：+ 增 / - 删 / 其余（行号上下文）灰 */
@@ -150,7 +154,8 @@ export function ToolCard({
   status,
   result,
   progress,
-  diff
+  diff,
+  approval
 }: {
   /** 工具名（read/glob/grep/write/edit/bash…，图标与类别词映射键） */
   name: string
@@ -163,13 +168,15 @@ export function ToolCard({
   progress?: string
   /** edit 的展示 diff（带行号 +-/ 上下文） */
   diff?: string
+  /** 人工裁决痕迹按 callId 关联；与工具执行状态独立。 */
+  approval?: ApprovalStatus
 }) {
   // 开合只在"有输出可看"时有意义；运行中/拒绝是单行（官方同款），
   // 折叠状态留给完成/失败态
   const [open, setOpen] = useState(false)
   const showDetails = useAppearanceStore((state) => state.outputVerbosity === 'high')
-  const toolIcon = TOOL_ICON[name] ?? <TerminalIcon />
-  const kindLabel = toolKindLabel(name, status)
+  const toolIcon = TOOL_ICON[name] ?? <WrenchIcon />
+  const kindLabel = toolKindLabel(name)
   // 主文案：MCP 显示 server.tool（裸工具名无识别量），ask_user 数问题数
   // （参数是 questions 数组，裸剥壳会给用户看原始 JSON），其余剥 summary 壳
   const primary =
@@ -193,6 +200,7 @@ export function ToolCard({
           <span className="text-red-600 dark:text-red-400">-{counts.removed}</span>
         </span>
       )}
+      {approval !== undefined && <ApprovalMark status={approval} />}
       {status === 'error' && <ErrorStatus message={showDetails ? result : undefined} />}
       {status === 'blocked' && <TraceDescription>已拒绝</TraceDescription>}
     </TraceLine>

@@ -15,6 +15,8 @@
  * 布局手法：行 = 相对定位容器（hover 底色 + group），主点击区是占满的 button，
  * 动作钮 absolute 贴其右 —— 避免 button 嵌 button（非法结构）。
  */
+import { useSearchStore } from '@/stores/search'
+
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -102,7 +104,7 @@ function SectionHeader({
             opacity 藏而非条件渲染 —— 占位恒定，标题文字不随显隐跳动 */}
         <IconChevronDown
           className={cn(
-            'size-[13px] shrink-0 transition-all',
+            'size-[13px] shrink-0 transition-[rotate,opacity] duration-200 ease-out motion-reduce:transition-none',
             open && 'opacity-0 group-hover:opacity-100',
             !open && '-rotate-90'
           )}
@@ -163,7 +165,8 @@ const ChatRow = memo(function ChatRow({
         render={
           <div
             className={cn(
-              'group relative flex h-8 items-center rounded-md',
+              // 屏外行只保留固定高度占位，开合不必计算全部菜单子树；DOM 仍保留供键盘聚焦。
+              'group relative flex h-8 items-center rounded-md [content-visibility:auto] [contain-intrinsic-size:auto_2rem]',
               ROW_HOVER,
               active && ROW_ACTIVE
             )}
@@ -243,7 +246,7 @@ const ChatRow = memo(function ChatRow({
   )
 })
 
-/** 项目行 + 展开态的子会话行；文件夹图标旋转过渡（同 svg，不替换实例）。
+/** 项目行 + 展开态的子会话行；文件夹图标在固定框内交叉渐变，不替换实例。
     回调同为 id 签名 + 父组件稳定引用（memo 生效前提，同 ChatRow 注释） */
 const ProjectRow = memo(function ProjectRow({
   projectId,
@@ -607,17 +610,15 @@ export function HomeSidebar() {
             size="icon-xs"
             className="size-7"
             aria-label="搜索"
+            onClick={() => useSearchStore.getState().setOpen(true)}
           >
             <IconSearch className="size-4" />
           </Button>
         </Hint>
       </div>
 
-      {/* scrollbar-gutter-stable：内容超/不超一屏时滚动条空间常驻预留 —— 项目
-          展开/收起会跨越"是否出滚动条"的临界点，无预留时 13px 滚动条突然出现
-          会把整列内容向左挤一下（用户实测点击项目的"抖动"）。工具类是 message
-          -scroller 同款（globals.css .scrollbar-gutter-stable） */}
-      <div className="scrollbar-gutter-stable min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      {/* 原生细滚动条保留系统箭头并持续可见，未溢出时不预留轨道。 */}
+      <div className="scrollbar-native min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {/* 新聊天：整行动作项 → 无项目发起，主体信息区出"选择项目" */}
         <button
           type="button"

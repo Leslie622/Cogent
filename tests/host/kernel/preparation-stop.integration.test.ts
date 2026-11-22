@@ -159,6 +159,8 @@ beforeEach(async () => {
     if (method === 'run.failed') terminals.push({ method, params: params as ProtocolEvents['run.failed'] })
   }, new ProjectRegistry(storage), new ApprovalRegistry(root), new McpConfigStore(root),
   new SkillStore(root, join(root, 'agents')), new InspectStore(root), runtime, root)
+  // 请求数量与载荷断言只针对主 Agent，后台标题的并发/取消由标题专册覆盖。
+  manager.titleSettings.set({ enabled: false })
   manager.syncCustomProviders([{ id: PROVIDER, name: '准备期测试', baseUrl: endpoint, models: [],
     modelDefs: [{ id: MODEL, reasoning: false, input: ['text'], contextWindow: 128_000, maxTokens: 4_096 }]
   }], [])

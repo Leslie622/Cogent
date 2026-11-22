@@ -15,10 +15,12 @@
 /** 协议版本：语义承诺 = 帧格式与既有 method 语义不变，新增能力走可选字段/新 method */
 export const PROTOCOL_VERSION = 3
 
+import type { SessionSearchMethods } from '../shared/session-search'
 import type { AttachmentMethods } from '../shared/attachments'
 import type { FileMethods, FileInternalMethods, FileContext, FileReference } from '../shared/files'
 import type { FileViewHostMethods } from '../shared/file-views'
 import type { OutputMethods, TurnOutputs } from '../shared/outputs'
+import type { SessionTitleMethods } from '../shared/session-title'
 
 // ———— JSON-RPC 2.0 极简子集 ————
 
@@ -218,6 +220,8 @@ export interface ToolCallRecord {
  * 完整块结构化（phase/签名透传等）仍是路线第 1 项，届时继续以 optional 字段扩展。
  */
 export interface ChatMessage {
+  /** 来源与 UI key 分离；续写合并时区间一同平移。 */
+  sources?: import('../shared/session-search').MessageSource[]
   turnId?: string
   fileContext?: FileContext
   attachments?: import('../shared/attachments').AttachmentRef[]
@@ -984,6 +988,8 @@ export type InspectEntryKind =
   | 'tool.progress'
   | 'approval.asked'
   | 'approval.decided'
+  | 'title.started'
+  | 'title.finished'
 
 /**
  * 观测条目摘要（时间线一行）。刻意小体积：控制台未打开时引擎也在实时推送，
@@ -1033,7 +1039,7 @@ export interface CapabilityIssueResult {
 /**
  * method 注册表：键名即线上协议。新增 method = 在此加一行 + 服务端加 handler。
  */
-export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, FileViewHostMethods {
+export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, FileViewHostMethods, SessionTitleMethods, SessionSearchMethods {
   initialize: { params: InitializeParams; result: InitializeResult }
   'session.list': { params: Record<string, never>; result: SessionSummary[] }
   'session.create': { params: { title?: string; permissionMode?: PermissionMode; planEnabled?: boolean; cwd?: string; projectId?: string }; result: SessionSummary }
@@ -1095,6 +1101,7 @@ export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInt
 
 export interface ProtocolEvents {
   'fileViews.directoryChanged': { contextId: string; directoryId: string; generation: number; error?: string }
+  'message.source': { sessionId: string; turnId: string; role: 'user' | 'assistant'; sourceId: string }
   'outputs.updated': TurnOutputs
   'outputs.error': { sessionId: string; turnId: string; message: string }
   'files.invalidated': Record<string, never>
@@ -1174,6 +1181,8 @@ export interface ProtocolEvents {
   'approval.request': {
     sessionId: string
     requestId: string
+    /** 关联工具调用，避免相同摘要的并行调用共用审批痕迹；旧宿主可忽略。 */
+    callId?: string
     toolName: string
     kind: ToolKind
     summary: string

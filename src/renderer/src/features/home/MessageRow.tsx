@@ -27,6 +27,7 @@ import { AttachmentCards } from './AttachmentCards'
     MessageRow 是其类型流的终点，跟上才有完备分支（常态由 TurnGroup 的
     独立行快路接管，进不到这里） */
 export type MessageLike = {
+  sources?: import('@shared/session-search').MessageSource[]
   attachments?: AttachmentRef[]
   directories?: DirectoryRef[]
   id: string
@@ -61,6 +62,7 @@ export function formatCost(usd: number, estimated?: boolean): string {
  * assistant 消息元信息行（shadcn message 的 footer 位）：输入/输出 token +
  * 缓存读/写 + 成本 + 模型耗时（+ 工具耗时，回合聚合行）。数据无则整行不渲染 ——
  * 流式占位没有 usage，统计行随 run.completed 在回答完成时出现；简洁模式整行隐藏。
+ * 过程中的单次请求另受 showProcessUsage 控制，默认隐藏；回合汇总不消费此开关。
  * 零值省略：
  * 无缓存命中的回答不显示缓存项、无定价模型不显示成本（"没发生"与"值为 0"
  * 在此同义，常显一排 0 是噪音）。时长呈现：单条消息/纯工具回合只有模型时长，
@@ -70,16 +72,20 @@ export function formatCost(usd: number, estimated?: boolean): string {
 export function UsageLine({
   usage,
   durationMs,
-  toolMs
+  toolMs,
+  scope = 'turn'
 }: {
   usage?: MessageUsage
   durationMs?: number
   /** 工具执行墙钟（区间并集，TurnGroup sumToolMs）；仅回合聚合行传入 */
   toolMs?: number
+  /** 由调用位置区分过程明细与最终汇总，不能靠是否有工具耗时推断。 */
+  scope?: 'process' | 'turn'
 }) {
   const precision = useAppearanceStore((state) => state.durationPrecision)
   const showDetails = useAppearanceStore((state) => state.outputVerbosity === 'high')
-  if (!showDetails) return null
+  const showProcessUsage = useAppearanceStore((state) => state.showProcessUsage)
+  if (!showDetails || (scope === 'process' && !showProcessUsage)) return null
   const parts: string[] = []
   if (usage) {
     parts.push(`↑ ${formatTokens(usage.input)}`, `↓ ${formatTokens(usage.output)}`)
@@ -112,14 +118,14 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
   }
   if (message.role === 'user') {
     return (
-      <Message align="end">
+      <Message align="end" data-search-message={message.id}>
         <MessageContent>
           {(message.attachments !== undefined || message.directories !== undefined) && <AttachmentCards history items={[
             ...(message.attachments ?? []).map((ref) => ({ key: ref.id, name: ref.name, size: ref.size, ref, status: 'ready' as const })),
             ...(message.directories ?? []).map((directory) => ({ key: `directory:${directory.path}`, name: directory.name, size: 0, directory, status: 'ready' as const }))
           ]} />}
           {message.content !== '' && <Bubble variant="muted" align="end">
-            <BubbleContent className="content-typography">{message.content}</BubbleContent>
+            <BubbleContent data-search-body className="content-typography">{message.content}</BubbleContent>
           </Bubble>}
           <MessageFooter className="gap-1 px-0">
             {/* 时间戳是 chrome：select-none（气泡正文保持可选，zcode 时间戳同款） */}
@@ -148,7 +154,7 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
     )
   }
   return (
-    <Message align="start">
+    <Message align="start" data-search-message={message.id}>
       {/* 行距/左缘对齐 live 容器（gap-3、零缩进，2026-11-18 用户验收）：段内
           思考行/正文/统计行与平级工具行同一节奏 —— 此前 gap-1 px-0.5 让段内
           行距 4px（思考→正文视觉 13px vs 思考→工具行 22px）且整体右移 2px
@@ -171,7 +177,7 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
         {message.content !== '' && (
           <Markdown content={message.content} streaming={message.placeholder === true} />
         )}
-        <UsageLine usage={message.usage} durationMs={message.durationMs} />
+        <UsageLine usage={message.usage} durationMs={message.durationMs} scope="process" />
       </MessageContent>
     </Message>
   )

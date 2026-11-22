@@ -27,9 +27,11 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
   图标为 20px（`size-5`），普通态与激活态尺寸一致。
 - `content-sidebar` 是普通 flex 像素宽块，不进 react-resizable-panels（RRP）；
   CSS 保证缩放时像素宽稳定，避免百分比尺寸经 JS 校正产生脏帧。
+  外层裁剪窗收拢宽度，内部保宽、全高内容以 `transform-gpu` 常驻合成层，保持静止图标的栅格稳定。
 - `SidebarResizeHandle` 使用 pointer capture + rAF 直写宽度；拖过下限有阻力，
   越过 min/2 折叠（落点 `collapsedWidth`：侧栏折成 0，模型设置左栏折成 48px
   图标栏），反向对称恢复；键盘 ±16px，双击回默认。
+  首页会话列表右侧只显示分割线与拖拽光带，不显示中央胶囊；整条线仍可拖拽调宽。
 - `use-content-sidebar-split` 记忆宽度/折叠态，首帧直接还原；只在用户手势后落盘。
   模型设置左栏同方案（`use-provider-rail-split`，像素宽可拖可折）。
 - 窗口 ≤760px 自动折叠会话侧栏；自动约束不写入手动布局记忆，放宽后恢复原开合/宽度，
@@ -114,7 +116,9 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   focus ring。附件主触发器、代码块和滑杆拇指只在外层画线；
   自定义输入不参与：原生 input 即使带 tabindex 或 contenteditable 也不加入统一轮廓；
   自定义外壳内复用 Input 时使用 embedded 档，如项目弹窗的名称行，内部和外壳都不画聚焦线。
-  InputGroup 普通档在外层画线，composer 档不画聚焦线；内部按钮仍有各自的焦点提示。错误态保留
+  InputGroup 普通档在外层画线，composer 档与交互卡（审批、询问、方案）卡体不画聚焦线；
+  交互卡内的回答/附言输入使用 embedded 档；聊天滚动视口也不画聚焦线，
+  点击对话空白后按 Shift 不改变边缘。卡体和滚动视口仍接收键盘焦点，内部按钮保留焦点提示。错误态保留
   红色边框，菜单保留导航高亮。原理见
   [界面聚焦样式](技术笔记/界面聚焦样式.md)。
 - 必须核对的定制：slider 的 `thumbAlignment` / `thumbOnKeyDown` / marks 几何；
@@ -135,20 +139,20 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 
 | 部件 | 视觉与组件配方 |
 | --- | --- |
-| 列表行 | h-8、relative/group；会话主按钮撑满行高与宽度，内边距及项目缩进放在按钮内；常态 pr-4，动作显现时 pr-14；右侧绝对钮簇独立操作，等待确认 tag 放在主按钮内 |
+| 列表行 | h-8、relative/group；会话行使用 `content-visibility:auto` 与 `contain-intrinsic-size:auto 2rem`，屏外保留固定高度占位；主按钮撑满行高与宽度，内边距及项目缩进放在按钮内；常态 pr-4，动作显现时 pr-14；右侧绝对钮簇独立操作，等待确认 tag 放在主按钮内 |
 | 列表菜单 | ContextMenuTrigger 的 `render` 承载整行；动作数据同时供右键和“更多”菜单消费 |
 | 聊天重命名 | 聊天右键菜单“重命名”打开 Dialog + Input；预填并聚焦全选；原生取消/保存按钮，Enter 保存、Esc 关闭；错误留在弹窗 |
 | 项目移除 | “更多”与右键菜单共用 AlertDialog；描述含项目名与保留范围，原生取消钮和 destructive 确认钮；在途显示“移除中…”并禁用按钮，错误留在弹窗；成功反馈用 sonner 短语通知 |
-| 侧栏折叠 | `CollapsibleContent variant="navigation"`，200ms ease-out；keepMounted，收起 inert，结束后 hidden |
+| 侧栏折叠 | `CollapsibleContent variant="navigation"`，200ms ease-out，仅过渡 grid 轨道；裁剪层与自然高度列表分开，间距固定，不整块淡出；起步样式只在恢复显示时生效；keepMounted，收起 inert，结束后 hidden |
 | 等待确认 tag | 占行尾动作簇的位置，常显；emerald `/15` 背景 + 实色深绿文字 + 小呼吸点 |
 | 输入区 | `InputGroup variant="composer"`：`rounded-2xl` 大圆角、薄边、浮层投影 `shadow-composer` token（浅 `0 4px 12px rgb(0 0 0/0.05)`，深同几何提黑 alpha 0.4；shadcn 无官方阴影 token，自建于 globals.css）；浅色白卡，深色用抬亮的 card 底色。发送钮禁用不降低整卡透明度；聚焦不改变描边、底色与阴影。新聊天的灰色信息条两侧内收 16px、下沿被输入卡覆盖 12px，形成前后叠层；外观原理见[输入区外观](技术笔记/输入区外观.md) |
 | 附件区 | 同一 InputGroup 内、正文上方的 block-start addon；空时不占位。输入区 AttachmentGroup 自动换行，最高 160px，超过后纵向滚动；不加边缘渐隐 mask，单卡也完整显示；图片和文件卡外层统一 rounded-lg（10px）；图片用 Attachment image 变体的 45px 正方形缩略图，不显示文件名/大小/读取说明，简短导入/错误状态放底部，重试放左上；文件/视频用 sm、file 变体，最小高 45px、按内容收缩且最大宽度 180px，文件名单行省略，悬停显示全名；关闭统一用 AttachmentRemove 放右上角，悬停卡片或按钮获键盘焦点时显示，图片/文件同位置同尺寸，文件预留按钮位置避免遮挡或跳动；输入与历史沿用同一尺寸规则 |
 | 附件反馈 | 排队项显示“等待导入”/图片“等待中”，复制项显示进度；部分接收后的未添加数量位于输入卡底部，ghost/xs按钮打开Popover查看全部文件名与原因，明细最高160px纵向滚动，icon-xs按钮清除提示；不在正常就绪卡添加内部机制说明 |
 | 目录引用 | 加号触发DropdownMenu，含“添加图片或文件”“引用文件夹”；目录沿用最小45px高、最大180px、10px圆角文件卡，文件夹图标、名称、路径副标题，整卡可打开目录；无大小/另存，移除仍右上hover显示；历史与普通文件同行靠右 |
 | 底部工具行 | +、权限、计划 chip、上下文、模型；加号为InputGroupButton icon-sm（28×28px），与发送/停止钮等高；其余文字操作Button xs原生档、h-7；图标沿组件档位 |
-| 项目胶囊 | 触发钮内左图标原位交叉渐变为 X；16px 定宽叠层，不能另起独立关闭钮 |
+| 项目胶囊 | 使用 Button project 变体，hover 保留 `bg-accent-foreground/5` 软叠背景；未选时文字为次级色，悬停和展开仍保持，已选项目名为主文字色。已选态触发钮内左图标原位交叉渐变为 X；16px 定宽叠层，不能另起独立关闭钮 |
 | 会话信息卡 | 项目会话标题整体用非交互 span 触发 hover-card，延迟 400ms；标题全文、项目/主根、最近活动 |
-| 审批面板 | 替换输入区；竖排全宽选项、附言条、键盘提示与确认钮；裁决痕迹单行入过程流 |
+| 审批面板 | 替换输入区；竖排全宽选项、附言条、键盘提示与确认钮；裁决结果收进对应工具行图标，悬停显示结果；未配对痕迹保留独立审批行 |
 | TodoStrip | 右上角 w-80 浮卡，独立折叠钮；收起滑入角内成为 outline/pill 计数胶囊 |
 | QuestionPanel | 单题向导卡；header、问题、‹n/m›、编号选项、自由输入、忽略与继续/提交 |
 | PlanPanel | 审批母版；方案 pre 限高 max-h-64；批准/拒绝两选项，无切档下拉 |
@@ -190,7 +194,10 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   折叠箭头、正文块共用左基线，按钮内距由负外边距抵消，不叠加多层缩进。
   数据块标题、层级、搜索、复制与更多共用一行，窄栏允许操作组换行；字符/行数/格式、
   原文和换行开关收入更多菜单。正文只用一层浅底，无外框、横线和行号栏分隔线。
-  原文与代码共用详情页唯一纵向滚动条，不设固定 vh 上限；JSON默认展开2层。
+  详情页声明 size 查询容器，原文与代码块高度上限为 `min(60cqh, 40rem)`，按实际面板高度
+  给元信息与操作区留空间；长块内部滚动并阻止边缘滚动串到详情页；
+  CodeMirror 搜索栏在块顶部保持可见，详情页仅承担区块间滚动。JSON默认展开2层；
+  完整回复优先展开，思考与有正文时的原始消息 JSON 默认收起。
 
 - 通用设置骨架 `SettingsPage`：`max-w-3xl px-10 py-8` 单列，标题/可选描述/
   工具行/内容；页头块独立成 `SettingsHeader`（标题/描述/工具行），页头的
@@ -220,8 +227,11 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   内部色块与名称靠左，各行沿同一列起点排列；16个预设色的第二行也沿首行左端对齐。
   颜色复用界面主题色的当前明暗套点缀色。浮层使用 `PopoverContent color-picker` 档，
   沿窗口边界平移，避免窄窗上下两侧空间不足时翻到窗口外。
-- 常规页依次为「权限」「对话」「常规」三组；「对话」用两个 Select 呈现输出
-  详细程度与耗时显示格式。发送快捷键、关闭窗口时也使用 Select，行控件统一 w-40；
+- 常规页依次为「权限」「对话」「常规」三组；「对话」用 Switch 控制自动会话名称，
+  标题模型用 `w-60 max-w-full` 的 Select；输出详细程度与耗时显示格式也使用 Select。
+  「显示过程请求详情」使用 Switch，默认关闭；说明注明只作用于过程中的每次请求，
+  不影响最终总体统计。
+  发送快捷键、关闭窗口时使用 Select，短选项控件统一 w-40；
   快捷键选项用 kbd 键帽组合（`KbdGroup` + 弱色 `+` 相连），
   键帽带细描边以在菜单 hover 灰底上保持轮廓。「关闭窗口时」的 ask 档弹
   CloseAskDialog（shell 级，勾「不再询问」固化所选动作）。
@@ -289,11 +299,15 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   正文小一号），光学上提 0.075em。
   替换动效只动本组件与 `.working-spinner` CSS，保持 WorkingLine 接线。
   三角绕质心转 120° 会映射回自身，分相方案不能制造不同叶片位置。
-- 工具图标保持静态，类别词运行态扫光；失败仅“执行失败”点状下划线为红，
+- 工具图标保持静态，固定类别词运行态扫光，执行前后不换名；人工允许为工具行尾
+  16px 盾牌图标，拒绝/取消为对应图标，Tooltip 显示裁决结果；失败仅“执行失败”点状下划线为红，
   Tooltip 提供原因/复制，整行不染红。bash 进度为定高两行尾部 + 扫光细条。
+- 工具命令摘要、展开的普通输出与直播尾行统一使用 `text-muted-foreground`，
+  展开内容不切成正文黑色；输出颜色由 CodeBlock 默认变体统一提供，明暗主题同口径。
+  工具内容不使用边缘渐隐遮罩，普通输出与 diff 均完整显示；长内容保留原生滚动。
 - 详细模式的思考默认单行收起，摘要横向滚动并渐隐；展开限高内部滚动。
   简洁模式仅保留思考状态行与耗时，工具与思考均无详情入口，底部统计行不显示。
-- 终态“已工作 / 已停止 / 出错了”头条，下无分割线（2026-11-20 取消常驻线）；
+- 终态“用时 / 已停止 / 出错了”头条，下无分割线（2026-11-20 取消常驻线）；
   折叠内容与头条同级无导线。
   轨道必须 `minmax(0,0fr) ↔ minmax(0,1fr)`，内层纵向 padding 同曲线收拢；
   keepMounted，折叠体内部不套 content-visibility 包装。
@@ -316,6 +330,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   库的 visibility/scrollable 快照不作为索引判断源。
 - 用量行位于正文 footer，`text-[11px] text-muted-foreground tabular-nums`；
   显示输入/输出/缓存/成本/耗时，零值和无数据项省略，格式机制见 [用量与成本](模块/用量与成本.md)。
+  过程请求的用量行默认不占位，开启相应开关后在详细模式显示，最终总体统计保持原布局。
 - 产物区位于终答与用量之间，使用shadcn Nova Card的sm档横向文件行：左侧图标、中间名称/类型、右侧ButtonGroup组合“打开＋下拉”；
   文件图标用Material Icon Theme原始彩色SVG，size-6，不加底色或图标框；正文文件链接共用同一组件，size-4。
   不设“交付文件”标题或数量行，另存等动作收进菜单，正常项不常显大小、申报说明或保存状态。首屏3项可展开全部，异常提示与回合Badge保留；
@@ -340,17 +355,40 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   代码/表格按新挂载行淡入，旧行不重播；单元格或未闭合行内部增长直接显示。
   业务终态立即切换，已有正文淡入自然播完。系统 reduced-motion 禁用相应动效。
 - `.shimmer` 必须用 Tailwind `@utility` 注册；前景实色 + 透明淡带，300% 底、扫 2s 停 2s。
-  `.scroll-fade-b/-y/-x` 使用 24px mask；渐隐只作用边缘，不裁掉内容。
+  `.scroll-fade-b/-y/-x` 使用 24px mask，消费区域需留足边距，避免淡化首尾文字。
+
+## 会话搜索浮层
+
+侧栏搜索按钮与 Ctrl+K 共用 Nova CommandDialog 的 search 尺寸档：顶部 15vh、
+最大宽 2xl，固定高 `min(36rem,70dvh)`；输入自动聚焦，底部保留键盘提示。
+输入下直接显示结果分区，不放项目筛选或包含归档控件。
+CommandGroup 统一标“聊天”，每个会话一个 CommandItem：图标、标题、右侧项目，
+只显示实际存在的项目名，不显示未归类、已移除项目或日期；空查询为单行标题，
+有正文命中才在标题下内嵌一行摘要，不另列用户/助手项。更多结果在列表内。
+CommandItem 的 search 变体使用 `px-3 py-2.5`，默认文字/图标为次要色，
+只有 hover 时一起转为主色；键盘选中保留背景提示，不自动改变文字色。命中标记继承项颜色。
+中段填满剩余空间并独立滚动；加载时由 shadcn Spinner 居中占位，结果/空态不改变高度。
+CommandList 的 fill 布局档取消默认限高。原语选择器按 cmdk 的
+`data-selected="true"` 匹配，不能把 false 也染选中色；调用处不覆盖组件皮肤。
+底部只有键盘提示，不放搜索范围说明。
+命中高亮不加底色：标题/摘要通过加粗标记并继承项文字色，原文定位通过下划线提示。
+聊天上方提供命中序号、上下个与关闭按钮。
+机制与边界见[会话搜索](模块/会话搜索.md)。
 
 ## 滚动条
 
-全应用 webkit 定制：轨道 13px，滑块两侧 4px 透明 border + padding-box，
+默认 webkit 定制：轨道 13px，滑块两侧 4px 透明 border + padding-box，
 可见宽 5px；黑 18%，hover 30%。`use-scrollbar-auto-hide` 在 document 捕获
-scroll，给容器挂 `data-scrolling`，静默 600ms 后摘除；悬停 13px 命中区也显示。
-轨道占位不随透明度变化，保持 scrollbar-gutter-stable 的防抖语义。
+scroll，给容器挂 `data-scrolling`，静默 600ms 后摘除；默认滑块随标记隐藏，悬停 13px 命中区也显示。
+会话列表使用 `scrollbar-native`：标准 `scrollbar-width: thin` 与 `scrollbar-color`
+交给 Chromium 原生绘制，保留系统上下箭头；滑块黑 12%、轨道透明，鼠标移开和静默后均不隐藏。
+Windows/Electron 40 的细轨道实测为 10px，尺寸及箭头形态由系统主题决定，不手绘按钮。
+列表使用 `overflow-y-auto`，只在内容溢出时占用轨道宽度；空列表、短列表及
+收起后不再溢出的列表不预留滚动条槽。已有轨道的占位不随滑块透明度变化。
+需要防止居中列横跳的设置页和消息视口仍显式保留稳定槽。
 
-`scrollbar-width/color` 非 auto 会让 Chromium 绕过 webkit 定制；新容器不要随意
-加 scrollbar-thin。message-scroller 视口已按 data-slot 恢复 auto，code-block 同理。
+`scrollbar-width/color` 非 auto 会让 Chromium 绕过 webkit 定制；会话列表有意使用这条原生路径，
+其余沿用定制样式的容器不要随意加 scrollbar-thin。message-scroller 视口已按 data-slot 恢复 auto，code-block 同理。
 
 ## 样式与组件陷阱
 

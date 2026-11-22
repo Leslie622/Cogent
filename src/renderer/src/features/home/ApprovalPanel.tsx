@@ -152,9 +152,10 @@ function PendingApprovalCard({
   return (
     <div
       ref={cardRef}
+      data-slot="interaction-panel"
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="rounded-2xl border border-border bg-background p-4 outline-none"
+      className="rounded-2xl border border-border bg-background p-4"
     >
       {/* 标题行：参考图灰色小字「需要权限」 */}
       <div className="text-sm font-medium text-foreground">需要权限</div>
@@ -219,6 +220,7 @@ function PendingApprovalCard({
       {/* 附言（「告诉模型接下来怎么做」）：浅灰无框输入条；Enter = 拒绝并附言
           （isComposing 挡输入法），↑↓ 交还列表选择；聚焦时选项高亮让位 */}
       <Input
+        variant="embedded"
         value={note}
         onChange={(event) => setNote(event.target.value)}
         onFocus={clearSelection}

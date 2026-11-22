@@ -11,40 +11,33 @@
 export type ToolDisplayStatus = 'running' | 'ok' | 'error' | 'blocked'
 
 /**
- * 类别词表：进行形（running）/ 完成形（ok/error/blocked —— 失败的「已写入」
- * 指"写入这个动作发生了"，失败语义由行尾状态词独立承担，zcode 图 2 同构）。
- * 未知名（盘上旧转录的历史名）落到「正在执行/已执行」兜底档。
+ * 类别只表达工具用途，不随运行结果改名，避免拒绝写入时仍显示「已写入」。
+ * 运行由扫光表达，失败与拒绝由独立状态词表达；旧转录未知名保留通用「工具」。
  */
-const KIND_LABELS: Record<string, [string, string]> = {
-  read: ['正在读取', '已读取'],
-  read_attachment: ['正在读取附件', '已读取附件'],
-  write: ['正在写入', '已写入'],
-  edit: ['正在编辑', '已编辑'],
-  grep: ['正在搜索', '已搜索'],
-  find: ['正在搜索', '已搜索'],
-  ls: ['正在列出', '已列出'],
-  bash: ['正在执行', '执行命令'],
-  powershell: ['正在执行', '执行命令'],
-  todo_write: ['更新待办', '待办清单'],
-  ask_user: ['正在询问', '已询问'],
-  enter_plan: ['进入计划', '进入计划'],
-  submit_plan: ['提交方案', '提交方案'],
-  list_mcp_resources: ['正在读取', '已读取资源'],
-  list_mcp_resource_templates: ['正在读取', '已读取资源'],
-  read_mcp_resource: ['正在读取', '已读取资源']
+const KIND_LABELS: Record<string, string> = {
+  read: '读取',
+  read_attachment: '附件',
+  write: '写入',
+  edit: '编辑',
+  grep: '搜索',
+  find: '搜索',
+  glob: '搜索',
+  ls: '目录',
+  bash: '终端',
+  powershell: '终端',
+  todo_write: '待办',
+  ask_user: '提问',
+  enter_plan: '计划',
+  submit_plan: '计划',
+  list_mcp_resources: 'MCP',
+  list_mcp_resource_templates: 'MCP',
+  read_mcp_resource: 'MCP'
 }
 
-/** 类别词条查找：mcp__ 前缀统一「调用」档；未知名 undefined（兜底档在调用方） */
-function kindEntry(name: string): readonly [string, string] | undefined {
-  if (name.startsWith('mcp__')) return ['正在调用', '已调用']
-  return Object.hasOwn(KIND_LABELS, name) ? KIND_LABELS[name] : undefined
-}
-
-/** 类别词：running → 进行形，其余 → 完成形 */
-export function toolKindLabel(name: string, status: ToolDisplayStatus): string {
-  const entry = kindEntry(name)
-  if (entry === undefined) return status === 'running' ? '正在执行' : '已执行'
-  return status === 'running' ? entry[0] : entry[1]
+/** MCP 工具按来源归类，具体 server.tool 身份由主文案保留。 */
+export function toolKindLabel(name: string): string {
+  if (name.startsWith('mcp__')) return 'MCP'
+  return Object.hasOwn(KIND_LABELS, name) ? KIND_LABELS[name] : '工具'
 }
 
 /**

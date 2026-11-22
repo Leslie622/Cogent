@@ -2,9 +2,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { HomeChat } from '@/features/home/HomeChat'
+import { HomeSidebar } from '@/features/home/HomeSidebar'
 import { emptyBucket, useChatStore } from '@/stores/chat'
 import { useHomeStore } from '@/stores/home'
 import { useEngineStore } from '@/stores/engine'
+import { useProjectStore } from '@/stores/project'
+import { useScrollbarAutoHide } from '@/hooks/use-scrollbar-auto-hide'
 import '@/globals.css'
 
 declare global { interface Window { chatLayoutResult?: { passed: boolean; results?: unknown[]; error?: string } } }
@@ -38,6 +41,65 @@ const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message)
+}
+
+function SidebarFixture() {
+  useScrollbarAutoHide()
+  return <HomeSidebar />
+}
+
+async function checkSidebarGutter() {
+  const sessions = useChatStore.getState().sessions
+  const projectState = useProjectStore.getState()
+  const host = document.createElement('div')
+  host.style.cssText = 'position:fixed;top:0;left:0;height:320px'
+  document.body.append(host)
+  const sidebarRoot = createRoot(host)
+  const results = []
+  // 导航只消费内存夹具，项目初载不接真实 Host。
+  useProjectStore.setState({ projects: [], load: async () => {} })
+  try {
+    sidebarRoot.render(<SidebarFixture />)
+    for (const width of [240, 360]) {
+      host.style.width = `${width}px`
+      for (const count of [0, 1, 40, 1]) {
+        useChatStore.setState({ sessions: Array.from({ length: count }, (_, index) => ({
+          id: `sidebar-${index}`, title: `布局回归会话 ${index}`, createdAt: index, updatedAt: index,
+        })) })
+        await frame()
+        const list = host.querySelector<HTMLElement>('.overflow-y-auto')!
+        const overflowing = list.scrollHeight > list.clientHeight
+        const gutter = list.offsetWidth - list.clientWidth
+        assert(overflowing === (count === 40), `${width}px / ${count}项：列表溢出状态错误`)
+        assert(overflowing ? gutter > 0 : gutter === 0, `${width}px / ${count}项：滚动条占位 ${gutter}px`)
+        const nativeColor = getComputedStyle(list).scrollbarColor
+        if (overflowing) {
+          assert(!list.matches(':hover'), '常显回归必须在鼠标位于列表外时执行')
+          assert(getComputedStyle(list).scrollbarWidth === 'thin' && nativeColor !== 'auto',
+            `${width}px：原生细滚动条未生效`)
+        }
+        list.scrollTop = list.scrollHeight
+        assert(overflowing ? list.scrollTop > 0 : list.scrollTop === 0, `${width}px / ${count}项：列表滚动异常`)
+        if (overflowing) {
+          // 显式派发只验证捕获接线，避免后台窗口的原生 scroll 派发时机影响计时起点。
+          list.dispatchEvent(new Event('scroll'))
+          assert(list.hasAttribute('data-scrolling'), `${width}px：滚动未接入全局显隐计时器`)
+          // 等过实际的 600ms 隐藏阈值，验证滑块不依赖滚动标记保持可见。
+          await delay(700)
+          assert(!list.hasAttribute('data-scrolling'), '静默后滚动标记未释放')
+          assert(getComputedStyle(list).scrollbarColor === nativeColor,
+            `${width}px：停止滚动后原生滚动条颜色改变`)
+        }
+        results.push({ sidebarWidth: width, sessions: count, gutter })
+      }
+    }
+    return results
+  } finally {
+    sidebarRoot.unmount()
+    host.remove()
+    useChatStore.setState({ sessions })
+    useProjectStore.setState(projectState, true)
+  }
 }
 
 function App() {
@@ -161,6 +223,8 @@ function App() {
       assert(shortRow.style.position === '', '短内容不应固定到底部')
       assertVisible(shortRow, '短内容')
       results.push({ workingLine: '短内容随正文、停止在途与终态清理通过' })
+      document.documentElement.dataset.chatLayoutStage = '会话列表滚动条占位'
+      results.push(...await checkSidebarGutter())
       window.chatLayoutResult = { passed: true, results }
       setReport(`全部通过：真实 HomeChat 缩放与工作行可见性\n${JSON.stringify(results, null, 2)}`)
     }

@@ -19,7 +19,7 @@
  *   provider 自动重试，全部发生在 prompt() Promise 生命周期内）；Cogent 侧
  *   只做小窗自适应（见 factory 尾部的 settings 链式包裹）。
  */
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import {
   createAgentSession,
   createMcpExtension,
@@ -35,107 +35,15 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import type { Agent, AgentMessage } from '@earendil-works/pi-agent-core'
 import { createCogentHooks, wrapApprovalChain, wrapRequestCancellation } from '../runtime/hook-seat'
-import type { Usage } from '@earendil-works/pi-ai'
 import { adaptCompactionToWindow } from '../runtime/compaction'
 import type { McpSettingsPatch } from '../runtime/mcp-config'
 import { COGENT_TOOL_NAMES, MCP_TOOL_ALLOWLIST } from '../runtime/tool-meta'
-import { isAttachmentRef, isDirectoryRef, type AttachmentRef, type DirectoryRef } from '../../shared/attachments'
 import type { FileContext, FileReference } from '../../shared/files'
 import { toolFileReferences } from '../runtime/files/paths'
 
-/** 呈现元数据跟随用户条目；不把上传/预览信息塞进模型内容块。 */
-export interface AttachmentInput {
-  version: 1
-  userEntryId: string
-  inputId: string
-  text: string
-  attachments: AttachmentRef[]
-  directories?: DirectoryRef[]
-}
-export type AttachmentMessage = AgentMessage & { attachmentInput?: AttachmentInput; fileContext?: FileContext; toolFileRefs?: Record<string, FileReference[]> }
-
-/**
- * 投影源里的压缩条：pi 的 CompactionSummaryMessage 不带 usage
- * （createCompactionSummaryMessage 落树时丢弃），而 CompactionEntry 本身有
- * —— readPiTranscript 构造投影源时补挂（仅呈现口径，不回写 pi 树），
- * 历史折叠条的 summaryUsage 小字账由此而来。
- */
-export type CompactionBarSource = Extract<AgentMessage, { role: 'compactionSummary' }> & { usage?: Usage }
-
-/**
- * 会话目录编码（pi session-manager.ts:590 getDefaultSessionDirPath 同款，
- * 该函数未从包导出，此处照抄规则保持文件名/目录可互认）：
- * <agentDir>/sessions/--<cwd 盘符路径分隔符全换 - >--
- */
-function piSessionDir(cwd: string, agentDir: string): string {
-  const safePath = `--${resolve(cwd).replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
-  return join(resolve(agentDir), 'sessions', safePath)
-}
-
-/** Cogent Host 根（COGENT_HOME ?? ~/.cogent）下的 pi 域目录（全局架构 D5：agentDir） */
-export const PI_AGENT_DIR_NAME = 'pi'
-
-/**
- * 只读回查 pi JSONL（惰性会话的历史投影源，D9 保留式呈现的 pi 版）。
- * pi 的 buildSessionProjection 是**上下文口径**（影子区被摘要吸收后丢弃），
- * 而 Cogent 的历史回查是**呈现口径**（保留式：被摘要区原文照旧可滚，D9
- * 验收定稿）—— 故此处不走它，改遍历 getBranch() 全量条目自投影：message
- * 条目原样收，compaction 条目转 compactionSummary（pi 投影同款形状，
- * session-manager sessionEntryToContextMessages 对照，另补挂 usage 见
- * CompactionBarSource），影子区/多代压缩条全部保留。找不到会话文件返回
- * undefined（新会话未跑过、或已删除）。
- */
-export function readPiTranscript(cwd: string, hostRoot: string, sessionId: string): AttachmentMessage[] | undefined {
-  const sessionDir = piSessionDir(cwd, join(hostRoot, PI_AGENT_DIR_NAME))
-  const file = PiSessionManager.findById(cwd, sessionId, sessionDir)
-  if (file === undefined) return undefined
-  const messages: AttachmentMessage[] = []
-  const branch = PiSessionManager.open(file, sessionDir).getBranch()
-  const inputs = new Map<string, AttachmentInput>()
-  const contexts = new Map<string, FileContext>()
-  const references: Record<string, FileReference[]> = {}
-  for (const entry of branch) {
-    if (entry.type === 'custom' && entry.customType === 'cogent.file-context.v1') {
-      const data = entry.data as Partial<FileContext>
-      if (data.version !== 1 || typeof data.turnId !== 'string' || typeof data.userEntryId !== 'string' || typeof data.cwd !== 'string' ||
-        typeof data.platform !== 'string' || !Array.isArray(data.roots) || !data.roots.every((root) => typeof root === 'string')) throw new Error('文件来源元数据损坏')
-      contexts.set(data.userEntryId, data as FileContext)
-    }
-    if (entry.type === 'custom' && entry.customType === 'cogent.file-refs.v1') {
-      const data = entry.data as { callId?: unknown; refs?: unknown }
-      if (typeof data.callId !== 'string' || !Array.isArray(data.refs) || !data.refs.every((ref: unknown): ref is FileReference =>
-        typeof ref === 'object' && ref !== null && 'path' in ref && typeof ref.path === 'string' &&
-        (!('turnId' in ref) || typeof ref.turnId === 'string'))) throw new Error('工具文件引用元数据损坏')
-      references[data.callId] = data.refs
-    }
-    if (entry.type === 'custom' && entry.customType === 'cogent.attachment-input.v1') {
-      const data = entry.data as Partial<AttachmentInput>
-      if (data.version !== 1 || typeof data.userEntryId !== 'string' || typeof data.text !== 'string' ||
-        typeof data.inputId !== 'string' || !Array.isArray(data.attachments) || !data.attachments.every(isAttachmentRef) ||
-        (data.directories !== undefined && (!Array.isArray(data.directories) || !data.directories.every(isDirectoryRef)))) throw new Error('附件消息元数据损坏')
-      inputs.set(data.userEntryId, data as AttachmentInput)
-    }
-  }
-  let context: FileContext | undefined
-  for (const entry of branch) {
-    if (entry.type === 'message') {
-      const input = inputs.get(entry.id)
-      if (entry.message.role === 'user') context = contexts.get(entry.id) ?? (typeof entry.message.content === 'string' && entry.message.content.startsWith('[cogent:continue]') ? context : undefined)
-      messages.push({ ...entry.message, ...(input !== undefined && { attachmentInput: input }),
-        ...(context !== undefined && { fileContext: context }), toolFileRefs: references })
-    } else if (entry.type === 'compaction') {
-      const bar: CompactionBarSource = {
-        role: 'compactionSummary',
-        summary: entry.summary,
-        tokensBefore: entry.tokensBefore,
-        timestamp: new Date(entry.timestamp).getTime(),
-        ...(entry.usage !== undefined && { usage: entry.usage })
-      }
-      messages.push(bar)
-    }
-  }
-  return messages
-}
+import { PI_AGENT_DIR_NAME, piSessionDir, type AttachmentInput } from './transcript'
+export { readPiTranscript, PI_AGENT_DIR_NAME } from './transcript'
+export type { AttachmentMessage, CompactionBarSource } from './transcript'
 
 /**
  * 审批桥：判定与挂起语义住在 session.ts（mode 活值/规则表/北向请求都在那）。
@@ -155,6 +63,7 @@ export interface ApprovalBridge {
 
 export interface PiSessionOptions {
   /** appendMessage 返回后才有真实条目 id；公开 message_end 尚早于持久化。 */
+  onMessageCommitted?: (message: AgentMessage, entryId: string) => void
   onUserEntry?: (entryId: string, cwd: string) => { attachment?: Omit<AttachmentInput, 'userEntryId'>; fileContext?: FileContext } | undefined
   onFileReferences?: (callId: string, refs: FileReference[]) => void
   /** 会话主根（pi 的 cwd：项目发现 + 会话目录编码；无绑定根时调用方兜底主目录） */
@@ -226,6 +135,7 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
       if (input?.attachment !== undefined) piSessionManager.appendCustomEntry('cogent.attachment-input.v1', { ...input.attachment, userEntryId: id })
       if (input?.fileContext !== undefined) piSessionManager.appendCustomEntry('cogent.file-context.v1', input.fileContext)
     }
+    opts.onMessageCommitted?.(message, id)
     return id
   }
   // 扩展结果事件覆盖直接和嵌套工具；只记录成功且有明确路径的操作，不碰摘要文本。

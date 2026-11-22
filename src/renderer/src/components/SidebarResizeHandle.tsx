@@ -6,6 +6,8 @@ import { useDividerGlow } from '@/hooks/use-divider-glow'
 interface SidebarResizeHandleProps {
   min: number
   max: number
+  /** 中央胶囊只作拖拽提示，隐藏时仍由整条分割线承接交互。 */
+  withHandle?: boolean
   /** 折叠目标宽（px）。content-sidebar 折成 0（缺省）；模型设置左栏折成
       48px 图标栏 —— 拖过 min/2 落到该值而非 0 */
   collapsedWidth?: number
@@ -52,11 +54,11 @@ function horizontalResizeCursor(): string {
  * docs/UI布局.md）；键盘 ←/→ 步进 ±16px（折叠态 → 右键展开到下限），
  * 双击回默认。
  *
- * 样式与 shadcn ResizableHandle（withHandle 形态）逐字一致，data-separator
+ * 样式对齐 shadcn ResizableHandle，中央胶囊由 withHandle 控制；data-separator
  * 状态机（hover/active）与库同构 —— use-divider-glow 的光带与 AppShell 容器的
  * 「拖拽杀过渡」:has() 选择器都以它为观察源，自绘后光带/过渡行为不变。
  */
-export function SidebarResizeHandle({ min, max, collapsedWidth = 0, side = 'left', collapseThreshold = min / 2, label = '调整侧栏宽度', className, readWidth, writeWidth, onCommit, onReset }: SidebarResizeHandleProps) {
+export function SidebarResizeHandle({ min, max, withHandle = true, collapsedWidth = 0, side = 'left', collapseThreshold = min / 2, label = '调整侧栏宽度', className, readWidth, writeWidth, onCommit, onReset }: SidebarResizeHandleProps) {
   const frame = useRef<number | null>(null)
   const elementRef = useDividerGlow()
   const cleanupRef = useRef<(() => void) | null>(null)
@@ -188,7 +190,7 @@ export function SidebarResizeHandle({ min, max, collapsedWidth = 0, side = 'left
       className={cn('divider-glow bg-border relative flex w-px shrink-0 items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2', className)}
       style={{ touchAction: 'none' }}
     >
-      <div className="z-10 flex h-6 w-1 shrink-0 rounded-lg bg-border" />
+      {withHandle && <div className="z-10 flex h-6 w-1 shrink-0 rounded-lg bg-border" />}
     </div>
   )
 }

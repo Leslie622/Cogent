@@ -17,10 +17,9 @@ const codeBlockVariants = cva(
   {
     variants: {
       variant: {
-        // 无边框（2026-11-16 用户定调：工具卡折叠体里的输出盒不带框 —— 与
-        // 思考行/进度尾行同族的轻量呈现；CodeBlock 现仅 tool.tsx 消费，
-        // 改本体即全量生效。dark:bg-input/30 保留：暗色下轻微底色维持可读性）
-        default: "text-foreground dark:bg-input/30",
+        // 工具输出与命令摘要、直播尾行共用次级文字色，避免展开后突然变黑。
+        // CodeBlock 仅 tool.tsx 消费；在本体统一配色，暗色保留轻微底色。
+        default: "text-muted-foreground dark:bg-input/30",
         destructive:
           "border border-destructive/30 text-destructive dark:border-destructive/40",
       },
@@ -159,7 +158,7 @@ function CodeBlockContent({
       tabIndex={0}
       style={{ counterReset: `line ${startLine - 1}`, ...style }}
       className={cn(
-        "code-typography min-h-0 min-w-0 scroll-fade-x overflow-auto px-3 py-3 text-start font-mono leading-relaxed outline-none group-has-data-[slot=code-block-footer]/code-block:pb-2 group-has-data-[slot=code-block-header]/code-block:pt-2 group-data-[size=sm]/code-block:px-2.5 group-data-[size=sm]/code-block:py-2.5 group-data-[size=sm]/code-block:group-has-data-[slot=code-block-header]/code-block:pt-1.5 data-wrap:scroll-fade-y data-wrap:wrap-break-word data-wrap:whitespace-pre-wrap",
+        "code-typography min-h-0 min-w-0 overflow-auto px-3 py-3 text-start font-mono leading-relaxed outline-none group-has-data-[slot=code-block-footer]/code-block:pb-2 group-has-data-[slot=code-block-header]/code-block:pt-2 group-data-[size=sm]/code-block:px-2.5 group-data-[size=sm]/code-block:py-2.5 group-data-[size=sm]/code-block:group-has-data-[slot=code-block-header]/code-block:pt-1.5 data-wrap:wrap-break-word data-wrap:whitespace-pre-wrap",
         className
       )}
       {...props}

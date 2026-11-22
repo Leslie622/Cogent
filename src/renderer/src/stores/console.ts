@@ -5,6 +5,7 @@
  */
 import { create } from 'zustand'
 import type { InspectEntryDetail, InspectEntrySummary, SessionSummary } from '@/env.d'
+import { inspectDetailSource } from '@/lib/inspect-detail'
 
 /** 时间线的四层过滤开关键（解剖层次，见 kinds.ts 的 kind → layer 归并） */
 export type ConsoleLayer = 'api' | 'engine' | 'tool' | 'session'
@@ -109,20 +110,21 @@ export const useConsoleStore = create<ConsoleState>((set, get) => ({
 
   selectEntry: async (seq) => {
     set({ selectedSeq: seq, detailError: null })
-    // 无详情条目（run.started/completed 这类概览即全部的）不发起拉取 —— 引擎侧
-    // 该 seq 本就没存档，拉必报"不存在"（2026-11-10 用户报告的红字误报根因）
     const entry = get().entries.find((e) => e.seq === seq)
-    if (entry === undefined || !entry.hasDetail) return
-    const cached = get().details[seq]
+    if (entry === undefined) return
+    // 完成入口复用同 run 最后一轮的详情，历史记录也能读；其余无详情条目不发请求。
+    const source = inspectDetailSource(entry, get().entries)
+    if (!source.hasDetail) return
+    const cached = get().details[source.seq]
     if (cached !== undefined) return
     const sessionId = get().sessionId
     if (sessionId === null) return
     try {
-      const detail = await window.cogent.engineRequest('inspect.entry', { sessionId, seq })
+      const detail = await window.cogent.engineRequest('inspect.entry', { sessionId, seq: source.seq })
       // 会话维度竞态守卫：拉取期间切换了会话，晚到详情丢弃 —— seq 是会话内
       // 单调编号，跨会话同 seq 是常态，入缓存会把旧会话的数据写给新会话
       if (get().sessionId !== sessionId) return
-      set((state) => ({ details: { ...state.details, [seq]: detail } }))
+      set((state) => ({ details: { ...state.details, [source.seq]: detail } }))
     } catch (error) {
       // 本条的失败只归本条 —— 用户已点开别的条目/切换会话时不覆盖新选中态的展示
       if (get().selectedSeq !== seq || get().sessionId !== sessionId) return

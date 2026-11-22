@@ -20,6 +20,7 @@ import { join } from 'node:path'
 // （全局架构 D1），也不污染/不偷读用户自装 pi CLI 的域。??= 尊重外部显式
 // 覆盖（冒烟测试 / 并存调试）
 process.env.PI_CODING_AGENT_DIR ??= join(process.env.COGENT_HOME || join(homedir(), '.cogent'), 'pi')
+process.env.COGENT_SEARCH_WORKER ??= join(import.meta.dirname, 'search-worker.js')
 process.env.COGENT_ATTACHMENT_WORKER ??= join(import.meta.dirname, 'attachment-worker.js')
 
 // 必须在动态 import 前留痕：依赖模块求值卡住时，host-main 的任何日志都还执行不到。

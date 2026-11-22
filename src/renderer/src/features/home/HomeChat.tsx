@@ -4,7 +4,7 @@
  *      命令/状态由 HomeMain 经 props 下发，与 AppHeader 同一手法）
  *   ② 对话流：MessageScroller（@shadcn/react）—— 吸底/滚到底部悬浮钮现成；
  *      消息按回合分组渲染（TurnGroup，ZCode 式两态：过程直播 → 完成收进
- *      「已工作」轨迹，见 docs/模块/消息呈现.md）；消息源是 useChatStore
+ *      「用时」轨迹，见 docs/模块/消息呈现.md）；消息源是 useChatStore
  *      （引擎事件流驱动，流式占位 id='streaming' 由 store 维护）。
  *      对话正文是"正文类内容"，按 AGENTS.md 方针 5 在内容容器上 select-text 放开选中
  *   ③ 输入框：shadcn AI 组件（components/ui/input-group）—— 发送组合键按
@@ -74,6 +74,7 @@ import { TodoStrip } from './TodoStrip'
 import { QuestionPanel } from './QuestionPanel'
 import { PlanPanel } from './PlanPanel'
 import { findActiveModel, useEngineStore, type SendShortcut } from '@/stores/engine'
+import { SearchNavigator } from './search/SearchNavigator'
 import { ConversationIndex } from './ConversationIndex'
 import { ModelMenu } from './ModelMenu'
 import { ContextIndicator } from './ContextIndicator'
@@ -628,6 +629,7 @@ export function HomeChat({
           滚走释放/滚回恢复同样在彼处。defaultScrollPosition（初始定位）、
           发送时 scrollToEnd（显式 API）不受影响；悬浮钮显隐由库按位置自判 */}
       <MessageScrollerProvider defaultScrollPosition="end">
+        <SearchNavigator />
         {/* 内容区主体（relative 供 TodoStrip absolute 挂靠）：清单浮在消息流
             右上角（2026-11-16 用户定调），不再占输入区上方布局位 —— 跨回合的
             "进行中"状态与"当下"输入（下方的面板/输入框）彻底分离 */}

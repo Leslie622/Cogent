@@ -14,7 +14,7 @@ import { hardenWebviewAttachment } from './webview-policy'
 import { IPC } from '../../shared/ipc'
 import { registerBrowserScheme } from './browser/local-preview'
 
-app.commandLine.appendSwitch('disable-lcd-text')
+// app.commandLine.appendSwitch('disable-lcd-text')
 
 // Chromium 后台组件更新默认访问 Google 域，国内/信创内网下握手被重置，
 // 启动日志刷屏 ssl handshake failed（net_error -101）。本应用不走 Chrome

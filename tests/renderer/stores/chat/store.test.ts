@@ -65,6 +65,21 @@ const assistantMsg = (content: string, at: number): ChatMessage => ({ id: `a-${c
 
 bindEngineEvents()
 
+describe('审批调用关联', () => {
+  it('事件携带的 callId 经过挂起与裁决留存，重复摘要不串到先一张卡', async () => {
+    seedMessages(['t1', 't2'].map((id) => ({
+      id, type: 'tool', name: 'powershell', toolKind: 'exec', summary: 'powershell(Get-ComputerInfo)', status: 'running'
+    })))
+    emit({ method: 'approval.request', params: {
+      sessionId: SID, requestId: 'r2', callId: 't2', toolName: 'powershell', kind: 'exec', summary: 'powershell(Get-ComputerInfo)'
+    } })
+    expect(useChatStore.getState().bySession[SID]?.pendingApprovals[0]?.callId).toBe('t2')
+    await useChatStore.getState().respondApproval('r2', true)
+    expect(messages().map((item) => item.id)).toEqual(['t1', 'r2', 't2'])
+    expect(messages()[1]).toMatchObject({ type: 'approval', callId: 't2', status: 'approved' })
+  })
+})
+
 describe('聊天重命名状态', () => {
   it('新聊天创建晚返回时不抢走用户已经打开的会话，提交仍返回实际目标ID', async () => {
     const summary = { id: 'created-late', title: '新会话', createdAt: 1, updatedAt: 1 }

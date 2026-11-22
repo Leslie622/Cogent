@@ -3,7 +3,7 @@
  * 不再额外生成工具栏和边框。语法树只控制折叠，不改写原文。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { bracketMatching, defaultHighlightStyle, foldEffect, foldGutter, syntaxHighlighting, unfoldAll } from '@codemirror/language'
 import { json } from '@codemirror/lang-json'
@@ -42,6 +42,16 @@ export default function InspectCodeViewer({ content, format, label, raw, wrap, r
         extensions: [
           readOnlyCode(label), wrapping.of(EditorView.lineWrapping),
           ...(format === 'json' ? [json(), foldGutter(), bracketMatching(), syntaxHighlighting(defaultHighlightStyle)] : []),
+          EditorState.phrases.of({
+            'Fold line': '折叠此行', 'Unfold line': '展开此行',
+          }),
+          // 控制台按内容长到上限；文件预览仍用共享主题的填满容器语义。
+          Prec.high(EditorView.theme({
+            '&': { height: 'auto', maxHeight: 'min(60cqh, 40rem)' },
+            '.cm-scroller': { minHeight: '0', overflow: 'auto', overscrollBehavior: 'contain' },
+            '.cm-gutterElement': { paddingLeft: '8px' },
+            '.cm-panels': { backgroundColor: 'transparent' },
+          })),
         ],
       }),
     })
@@ -70,7 +80,7 @@ export default function InspectCodeViewer({ content, format, label, raw, wrap, r
     <Button variant="disclosure" size="console" disabled={raw} onClick={() => openSearchPanel(editor.current!)}>搜索</Button>
   </>
   const body = raw
-    ? <pre className={`code-typography p-3 font-mono ${wrap ? 'whitespace-pre-wrap break-words' : 'overflow-x-auto whitespace-pre'}`}>{content}</pre>
+    ? <pre className={`code-typography max-h-[min(60cqh,40rem)] overflow-auto overscroll-contain p-3 font-mono ${wrap ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'}`}>{content}</pre>
     : <div ref={container} className="code-typography" />
   return render(controls, body)
 }

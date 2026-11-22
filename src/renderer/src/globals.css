@@ -571,9 +571,9 @@
    背景不吃 border）→ 可视滑块 5px 且浮在轨道中间，不贴边框；命中区是整条
    13px 好抓。黑低透明软叠同全局配方。
    显隐行为：滑块默认全透明；正在滚动的容器（hooks/use-scrollbar-auto-hide
-   挂 data-scrolling）显形 18%；悬停滑块命中区显形并加深到 30% —— 隐藏态下
-   唯一的显形入口，否则滑块永远抓不到。两条显形规则特异性同为 0,1,1，
-   :hover 在后声明，滚动中悬停取深色。经典条占位不随显隐变化（透明 ≠
+   挂 data-scrolling）显形 18%；悬停滑块命中区显形并加深到 30%，默认隐藏时
+   仍可直接抓取滑块。显形规则特异性同为
+   0,1,1，:hover 在后声明，悬停取深色。经典条占位不随显隐变化（透明 ≠
    overlay），scrollbar-gutter-stable 的防抖语义不受影响。
    Electron = Chromium，webkit 伪元素全应用生效 */
 ::-webkit-scrollbar {
@@ -597,6 +597,12 @@
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* 标准属性让 Chromium 使用原生滚动条，保留系统箭头；不参与滑块自动隐藏。 */
+.scrollbar-native {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.205 0 0 / 0.12) transparent;
 }
 
 /* base-luma 空引用补齐第二批：message-scroller 视口引用，滚动条不占布局跳动 */
@@ -771,13 +777,20 @@
   outline-offset: calc(-1 * var(--focus-width));
 }
 
-/* 对话输入卡保持常态轮廓，普通表单组合框仍参与统一聚焦配方。 */
-[data-slot='input-group'][data-variant='composer'] {
+/* 输入卡、交互卡与聊天滚动视口保持常态轮廓，内部控件各自表达键盘位置。 */
+[data-slot='input-group'][data-variant='composer'],
+[data-slot='interaction-panel'],
+[data-slot='message-scroller-viewport'] {
   outline: none;
 }
 
 /* 自定义输入无焦点框；:where 不抬高特异性，组合件内部的轮廓抑制规则才能继续生效。 */
-:focus-visible:not(:where(input, [data-slot='input-group'][data-variant='composer'])),
+:focus-visible:not(:where(
+  input,
+  [data-slot='input-group'][data-variant='composer'],
+  [data-slot='interaction-panel'],
+  [data-slot='message-scroller-viewport']
+)),
 input[data-slot='input']:not([data-variant='embedded']):focus-visible,
 [data-slot='input-group']:not([data-variant='composer']):has([data-slot='input-group-control']:focus-visible),
 [data-slot='attachment']:has([data-slot='attachment-trigger']:focus-visible),
@@ -835,3 +848,8 @@ input[data-slot='input']:not([data-variant='embedded']):focus-visible,
   --diffs-font-size: var(--app-code-size);
   --diffs-line-height: 1.6;
 }
+
+/* 搜索高亮由 CSS 范围绘制，不插入会破坏 Markdown/复制/选区的节点。 */
+::highlight(cogent-search), .search-mark { background-color: transparent; }
+::highlight(cogent-search) { color: var(--foreground); text-decoration: underline; }
+.search-mark { color: inherit; font-weight: 600; }

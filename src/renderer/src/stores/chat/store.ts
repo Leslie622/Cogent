@@ -121,6 +121,9 @@ export const messageDeltas = createDeltaBatcher((sessionId, deltas) => {
   }))
 })
 
+// 历史读取有独立身份；删除/同会话重读后，迟到快照不能重建旧桶。
+const historyLoads = new Map<string, symbol>()
+
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
@@ -157,7 +160,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 展平：段化消息里的 toolCalls → 独立工具卡行（与流式期事件路径同一形状）；
     // todos 字段 = TodoStrip 种子（运行中增量走 todos.updated 事件）
     if (get().bySession[sessionId] === undefined) {
-      const { messages, todos } = await window.cogent.engineRequest('session.messages', { sessionId })
+      const owner = Symbol(sessionId)
+      historyLoads.set(sessionId, owner)
+      const { messages, todos } = await window.cogent.engineRequest('session.messages', { sessionId }).catch((error: unknown) => {
+        if (historyLoads.get(sessionId) === owner) historyLoads.delete(sessionId)
+        throw error
+      })
+      if (historyLoads.get(sessionId) !== owner) return
+      historyLoads.delete(sessionId)
       messageDeltas.discard(sessionId)
       set((state) => ({
         bySession: {
@@ -264,6 +274,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   deleteSession: async (sessionId) => {
     if (!(await disposeWorkspaceScope(sessionId))) return
     await window.cogent.engineRequest('session.delete', { sessionId })
+    historyLoads.delete(sessionId)
     messageDeltas.discard(sessionId)
     const wasActive = get().activeSessionId === sessionId
     set((state) => {
@@ -499,12 +510,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // spread 字面量不参与上下文类型，直接内联会被展宽成 string
         const status: ApprovalItem['status'] = approved ? 'approved' : 'denied'
         const trace: ApprovalItem = { ...settled, id: requestId, type: 'approval', status }
-        // 挂起中的审批：目标卡必为 running（beforeToolCall 阻塞执行，完成事件
-        // 在 resolve 之后才可能到）；按 名+摘要 配对（与工具卡同源 TOOL_METAS.summarize）
+        // 新事件按调用 ID 精确关联；旧事件只沿用原有的名称与摘要锚位。
         const list = [...target.messages]
         const at = list.findIndex(
           (m) =>
-            m.type === 'tool' && m.status === 'running' && m.name === settled.toolName && m.summary === settled.summary
+            m.type === 'tool' && (settled.callId !== undefined
+              ? m.id === settled.callId
+              : m.status === 'running' && m.name === settled.toolName && m.summary === settled.summary)
         )
         list.splice(at >= 0 ? at : list.length, 0, trace)
         bySession[sessionId] = { ...target, messages: list }

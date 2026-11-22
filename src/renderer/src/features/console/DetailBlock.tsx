@@ -8,7 +8,7 @@ import { DetailSection } from './DetailSection'
 
 const InspectCodeViewer = lazy(() => import('@/components/InspectCodeViewer'))
 
-export function DetailBlock({ block }: { block: InspectEntryDetail['blocks'][number] }) {
+export function DetailBlock({ block, defaultOpen = true }: { block: InspectEntryDetail['blocks'][number]; defaultOpen?: boolean }) {
   const [raw, setRaw] = useState(false)
   const [wrap, setWrap] = useState(true)
   const [copyState, setCopyState] = useState<string | null>(null)
@@ -23,7 +23,7 @@ export function DetailBlock({ block }: { block: InspectEntryDetail['blocks'][num
   const title = block.name.split('（')[0]
   return <Suspense fallback={<p>正在加载{title}…</p>}>
     <InspectCodeViewer content={block.content} format={block.format} label={block.name} raw={raw} wrap={wrap} render={(controls, body) => (
-      <DetailSection title={title} actions={<div className="flex flex-wrap items-center">
+      <DetailSection title={title} defaultOpen={defaultOpen} actions={<div className="flex flex-wrap items-center">
         {controls}
         <Button variant="disclosure" size="console" onClick={() => void copy()}>复制</Button>
         <DropdownMenu>

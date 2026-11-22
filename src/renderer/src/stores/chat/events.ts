@@ -40,6 +40,17 @@ export function bindEngineEvents(): () => void {
         useChatStore.setState((state) => state.bySession[sessionId] === undefined ? state : patchBucket(state, sessionId, (b) => ({ ...b, outputErrors: { ...b.outputErrors, [turnId]: message } })))
         return
       }
+      case 'message.source': {
+        const { sessionId, turnId, role, sourceId } = event.params
+        useChatStore.setState((state) => {
+          const bucket = state.bySession[sessionId]
+          if (bucket === undefined) return state
+          const target = bucket.messages.findLast((item) => item.type === undefined && item.role === role && (role === 'assistant' ? item.placeholder === true : item.turnId === turnId))
+          return patchBucket(state, sessionId, (current) => ({ ...current, messages: current.messages.map((item) =>
+            item === target && item.type === undefined ? { ...item, sources: [{ id: sourceId, start: 0, end: item.content.length }] } : item) }))
+        })
+        return
+      }
       case 'run.started': {
         const { sessionId, turnId } = event.params
         if (turnId === undefined) return
@@ -125,7 +136,7 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'approval.request': {
-        const { sessionId, requestId, toolName, kind, summary, outsideRoots } = event.params
+        const { sessionId, requestId, callId, toolName, kind, summary, outsideRoots } = event.params
         useChatStore.setState((state) =>
           // D1：pending 不进消息流 —— 会话桶的挂起位，确认面板（ApprovalPanel）
           // 是唯一呈现位；数组追加（并行写工具会并发多个请求）
@@ -133,7 +144,7 @@ export function bindEngineEvents(): () => void {
             ...bucket,
             pendingApprovals: [
               ...bucket.pendingApprovals,
-              { requestId, toolName, toolKind: kind, summary, ...(outsideRoots === true && { outsideRoots: true }) }
+              { requestId, callId, toolName, toolKind: kind, summary, ...(outsideRoots === true && { outsideRoots: true }) }
             ]
           }))
         )
@@ -171,7 +182,7 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'session.summaryChanged': {
-        // 摘要广播：重命名、档位/计划开关变化 → 替换列表项与相关显示。
+        // 摘要广播：自动标题、手动重命名、档位/计划开关变化 → 替换列表项与相关显示。
         // RPC 返回值更新是同款形状的另一条路（用户主动路径），两路幂等
         const { summary } = event.params
         useChatStore.setState((state) => ({
@@ -355,7 +366,7 @@ export function bindEngineEvents(): () => void {
                 }
               }
             },
-            // 首条消息后标题已在引擎侧生成；updatedAt 顺带推进（排序口径）
+            // 终态回查补偿最近活动时间；自动标题独立经摘要广播更新，可晚于本轮完成。
             sessions: state.sessions.map((session) =>
               session.id === sessionId ? { ...session, updatedAt: Date.now() } : session
             )
@@ -462,7 +473,7 @@ export function bindEngineEvents(): () => void {
   }
 }
 
-/** run.completed 后回查一次会话列表，让"首条消息生成标题"反映到侧栏 */
+/** 终态回查补偿摘要；在途期间收到的实时摘要优先，迟到列表不能撤回新标题。 */
 async function refreshSessionTitle(): Promise<void> {
   const previous = useChatStore.getState().sessions
   const sessions = await window.cogent.engineRequest('session.list', {})

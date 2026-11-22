@@ -18,6 +18,7 @@ import { useEngineStore, type CloseBehavior, type SendShortcut } from '@/stores/
 import { useAppearanceStore, type OutputVerbosity } from '@/stores/appearance'
 import type { DurationPrecision } from '@/lib/format-duration'
 import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
+import { SessionTitleSettings } from './SessionTitleSettings'
 
 /** 发送组合键三档（keys 供 kbd 键帽渲染；label 是兜底文案） */
 const SEND_SHORTCUTS: Array<{ value: SendShortcut; label: string; keys: string[] }> = [
@@ -61,6 +62,8 @@ function ShortcutKbd({ keys }: { keys: string[] }) {
 export function GeneralSection() {
   const outputVerbosity = useAppearanceStore((s) => s.outputVerbosity)
   const setOutputVerbosity = useAppearanceStore((s) => s.setOutputVerbosity)
+  const showProcessUsage = useAppearanceStore((s) => s.showProcessUsage)
+  const setShowProcessUsage = useAppearanceStore((s) => s.setShowProcessUsage)
   const durationPrecision = useAppearanceStore((s) => s.durationPrecision)
   const setDurationPrecision = useAppearanceStore((s) => s.setDurationPrecision)
   // 「默认权限」：开关两态 = 新会话默认 ask ↔ auto（plan 不进默认 ——
@@ -98,6 +101,7 @@ export function GeneralSection() {
       </SettingsGroup>
 
       <SettingsGroup label="对话">
+        <SessionTitleSettings />
         <SettingsRow
           title="输出详细程度"
           desc="简洁模式隐藏工具和思考详情，以及 token、成本等底部统计信息"
@@ -122,6 +126,16 @@ export function GeneralSection() {
               </SelectGroup>
             </SelectContent>
           </Select>
+        </SettingsRow>
+        <SettingsRow
+          title="显示过程请求详情"
+          desc="在详细模式下显示过程中每次请求的 token、缓存、成本和耗时；不影响最终总体统计"
+        >
+          <Switch
+            checked={showProcessUsage}
+            onCheckedChange={setShowProcessUsage}
+            aria-label="显示过程请求详情"
+          />
         </SettingsRow>
         <SettingsRow
           title="耗时显示格式"
