@@ -8,9 +8,9 @@ const require = createRequire(new URL('../docs/架构地图/package.json', impor
 const { chromium } = require('playwright')
 const output = new URL('../tmp/架构地图验收/', import.meta.url)
 const views = [
-  { name: '总览', id: 'overview', heading: '架构总览', nodes: 17, edges: 16 },
+  { name: '总览', id: 'overview', heading: '架构总览', nodes: 23, edges: 23 },
   { name: '接入', id: 'ingress', heading: '接入链路', nodes: 14, edges: 18 },
-  { name: '执行', id: 'execution', heading: '执行链路', nodes: 6, edges: 5 },
+  { name: '执行', id: 'execution', heading: '执行链路', nodes: 10, edges: 10 },
 ]
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
@@ -117,6 +117,9 @@ try {
   }
 
   await view('总览')
+  for (const id of ['host.services', 'host.capabilities', 'host.runtime', 'host.kernel', 'host.alternative', 'host.bundled', 'host.security']) {
+    assert.equal(await page.locator(`.react-flow__node[data-id="${id}"]`).count(), 1, `${id} 应直接出现在总览中`)
+  }
   assert.equal(await page.getByRole('group', { name: '架构视图', exact: true }).getByRole('button').count(), 3)
   const dependency = page.locator('.architecture-relationship[data-line="dotted"]')
   assert.equal(await dependency.count(), 1, '消费方应直接以点线连接适配层')
@@ -140,12 +143,12 @@ try {
 
   await view('总览')
   await fitDiagram()
-  await page.getByRole('button', { name: '查看Agent 执行', exact: true }).click()
+  await page.getByRole('button', { name: '查看Host 服务层', exact: true }).click()
   await panel.getByRole('button', { name: '展开执行链路', exact: true }).click()
   await panel.getByRole('heading', { name: '执行链路', exact: true }).waitFor()
   await fitDiagram()
-  await page.getByRole('button', { name: '查看pi 内核', exact: true }).click()
-  await panel.getByRole('heading', { name: 'pi 内核', exact: true }).waitFor()
+  await page.getByRole('button', { name: '查看PiSdkKernel', exact: true }).click()
+  await panel.getByRole('heading', { name: 'PiSdkKernel', exact: true }).waitFor()
   await panel.getByRole('tab', { name: '源码', exact: true }).click()
   await panel.getByText('src/host/kernel/pi-session-factory.ts', { exact: true }).waitFor()
   assert.equal(await page.locator('.architecture-node[data-selected="true"]').count(), 1)
@@ -158,7 +161,7 @@ try {
   assert.equal((await page.locator('.architecture-canvas').boundingBox()).width, 1600)
   assert.equal(await panel.count(), 0, '折叠面板应退出可访问树')
   await fold('right', false)
-  await panel.getByRole('heading', { name: 'pi 内核', exact: true }).waitFor()
+  await panel.getByRole('heading', { name: 'PiSdkKernel', exact: true }).waitFor()
   await fold('left', false)
   await reset()
   const beforeZoom = await scale()
@@ -207,9 +210,17 @@ try {
   await fold('right', false)
   await view('执行')
   await fitDiagram()
-  await page.getByRole('button', { name: '查看会话与任务', exact: true }).focus()
+  await page.getByRole('button', { name: '查看Host 服务层', exact: true }).focus()
   await page.keyboard.press('Enter')
-  await panel.getByRole('heading', { name: '会话与任务', exact: true }).waitFor()
+  await panel.getByRole('heading', { name: 'Host 服务层', exact: true }).waitFor()
+
+  await page.setViewportSize({ width: 2800, height: 1440 })
+  await fold('left', true)
+  await fold('right', true)
+  await view('总览')
+  await fitDiagram()
+  await noOverflow()
+  await screenshot('总览-完整架构.png')
 
   // 开发入口单独验证共享源码与字体的 Vite 路径权限，退出时关闭服务。
   const { createServer } = await import(pathToFileURL(require.resolve('vite')).href)

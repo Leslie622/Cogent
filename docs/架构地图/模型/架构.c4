@@ -80,22 +80,39 @@ model {
       description '将获得授权的统一调用分发到会话、任务及能力服务。'
     }
 
-    runtime = system 'Agent 执行' {
-      technology '会话 · pi · 能力'
-      sessions = component '会话与任务' {
-        technology 'SessionManager'
-        description '任务受理、取消、恢复、业务存储与事件投影。'
-      }
-      capabilities = component 'Agent 能力' {
-        technology 'Tools · MCP · Skills'
-        description '工具、技能、钩子、交互与审批通过 pi 扩展形状装配。'
-      }
-      kernel = component 'pi 内核' {
-        technology 'AgentSession · SDK'
-        description 'Agent 循环、工具执行、上下文压缩与转录。'
-      }
-      sessions <-> kernel 'CogentKernel'
-      capabilities -> kernel '工具与扩展'
+    services = component 'Host 服务层' {
+      technology '会话 · 项目 · 凭据 · 观测'
+      description '业务服务负责会话与任务生命周期、项目、凭据桥、观测和能力配置。'
+    }
+
+    capabilities = component '能力总线' {
+      technology '工具 · MCP · 技能 · 钩子'
+      description '按 pi 官方工具和扩展形状装配 Agent 能力；含交互工具，子会话为预留。'
+    }
+
+    runtime = component 'KernelRunner' {
+      technology 'CogentKernel · 内核接口'
+      description 'Host 服务层通过进程内 TypeScript 接口驱动内核；当前由 SessionManager 实现，不是独立进程或额外 RPC。'
+    }
+
+    kernel = component 'PiSdkKernel' {
+      technology 'pi AgentSession · SDK'
+      description '当前唯一内核实现，托管 Agent 循环、工具、上下文压缩和 JSONL 转录。'
+    }
+
+    alternative = component '其他内核' {
+      technology 'PiRpcKernel · 其他实现'
+      description '内核合同的替换扩展位；当前没有第二个内核实现。'
+    }
+
+    bundled = component '自带运行时' {
+      technology 'Node 22 · SHA256'
+      description '自带 Node 承载独立 Host 进程；git 和 Python 使用系统环境。'
+    }
+
+    security = component '安全边界' {
+      technology '权限模式 · 计划 · 审批'
+      description '执行时按权限模式、计划开关与工具风险判定；OS 级沙箱为预留，区别于入口 API 授权。'
     }
 
     provider = component '模型协议适配' {
@@ -108,8 +125,15 @@ model {
     native <-> policy '统一调用'
     adapter <-> policy '统一调用'
     policy <-> api '授权后执行'
-    api <-> runtime.sessions '会话调用'
-    runtime.kernel <-> provider '模型调用与流式返回'
+    api <-> services '业务调用与事件'
+    services -> capabilities '能力配置'
+    services <-> runtime '会话驱动与事件'
+    capabilities -> kernel '工具与扩展'
+    runtime <-> kernel 'SDK 驱动'
+    runtime <-> alternative '内核替换'
+    bundled -> runtime 'Node 运行环境'
+    security -> kernel '工具审批策略'
+    kernel <-> provider '模型请求与流'
   }
 
   users = component '用户系统' {
@@ -132,7 +156,9 @@ model {
     style { line dotted }
     description '表示此调用方消费该适配能力；实际请求仍经网络入口与身份认证。'
   }
-  externalAgent <-> mcp '标准 MCP · stdio'
+  externalAgent <-> mcp 'MCP · stdio' {
+    description '标准 MCP 的 stdio 连接，由独立 MCP Server 适配为 Cogent 原生调用。'
+  }
   mcp <-> access.network.http '方法调用'
   mcp <-> access.network.ws '事件订阅'
   access.network.http <-> host.authentication '携带 token'
@@ -144,10 +170,11 @@ model {
 views {
   view overview {
     title 'Cogent 目标架构'
-    include desktop, nativeClients, customClients, externalAgent, mcp, access.*, host.authentication, host.native, host.adapter, host.policy, host.api, host.runtime, host.provider, models
+    include desktop, nativeClients, customClients, externalAgent, mcp, access.*, host.*, models
     include mcp -> access.network with { title 'Cogent 原生协议' }
     include access.network -> host.authentication with { title '验证凭据' }
-    autoLayout LeftRight 160 96 ortho
+    // 总览行列由 layout 脚本通过 LikeC4 布局提示约束，原生自动布局仍可独立使用。
+    autoLayout LeftRight 112 96 ortho
   }
 
   view ingress of access {
@@ -156,9 +183,9 @@ views {
     autoLayout LeftRight 160 96 ortho
   }
 
-  view execution of host.runtime {
+  view execution of host {
     title '执行、能力与出站适配'
-    include host.api, host.runtime.*, host.provider, models
-    autoLayout LeftRight 160 96 ortho
+    include host.api, host.services, host.capabilities, host.runtime, host.kernel, host.alternative, host.bundled, host.security, host.provider, models
+    autoLayout LeftRight 112 96 ortho
   }
 }

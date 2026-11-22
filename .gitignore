@@ -1,6 +1,8 @@
 node_modules/
 out/
 dist/
+# 架构地图的 LikeC4 布局快照由 layout 脚本生成，构建与测试前自动刷新。
+docs/架构地图/模型/.likec4/
 *.log
 # 文档引用的验收日志需要随源码保留，临时运行日志仍被忽略。
 !docs/测试用例/证据/*.log
