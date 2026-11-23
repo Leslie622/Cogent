@@ -5,15 +5,17 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session, WebContents } from 'electron'
 import type { BrowserEvent } from '../../../../src/shared/browser'
+import { BAIDU_HOT_SEARCH_EXTERNAL_URL, BAIDU_HOT_SEARCH_URL } from './fixtures'
 const mocks = vi.hoisted(() => ({
   sessions: new Map<string, unknown>(), fromPartition: vi.fn<(partition: string) => unknown>(),
   fromId: vi.fn<(id: number) => unknown>(), question: vi.fn<() => Promise<{ response: number }>>(), questionSync: vi.fn<() => number>(),
-  app: { on: vi.fn(), getPath: vi.fn<(key: string) => string>() },
+  openExternal: vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined),
+  app: { on: vi.fn(), getPath: vi.fn<(key: string) => string>(), getApplicationNameForProtocol: vi.fn<(url: string) => string>() },
 }))
 vi.mock('electron', () => ({
   app: mocks.app, session: { fromPartition: mocks.fromPartition }, webContents: { fromId: mocks.fromId },
   BrowserWindow: { fromWebContents: () => ({ id: 1 }) }, dialog: { showMessageBox: mocks.question, showMessageBoxSync: mocks.questionSync },
-  shell: { openExternal: vi.fn(), openPath: vi.fn(), showItemInFolder: vi.fn() }, clipboard: { writeText: vi.fn() },
+  shell: { openExternal: mocks.openExternal, openPath: vi.fn(), showItemInFolder: vi.fn() }, clipboard: { writeText: vi.fn() },
   Menu: { buildFromTemplate: vi.fn() }, protocol: { registerSchemesAsPrivileged: vi.fn() },
 }))
 import { BrowserTabRuntime } from '../../../../src/electron/main/browser/runtime'
@@ -72,6 +74,7 @@ beforeEach(() => {
   vi.clearAllMocks(); mocks.sessions.clear()
   oldRoot = process.env.COGENT_HOME; root = mkdtempSync(join(tmpdir(), 'cogent-browser-test-')); process.env.COGENT_HOME = root
   mocks.app.getPath.mockImplementation(() => root)
+  mocks.app.getApplicationNameForProtocol.mockReturnValue('其他浏览器')
   mocks.question.mockResolvedValue({ response: 0 }); mocks.questionSync.mockReturnValue(0)
   mocks.fromPartition.mockImplementation(partition => { let value = mocks.sessions.get(partition); if (!value) { value = new ProfileSession(); mocks.sessions.set(partition, value) } return value })
 })
@@ -86,6 +89,53 @@ function ready(privateGroupId?: string) {
   return { runtime, ownerCalls: owner.send.mock.calls, owner: owner as unknown as WebContents, guest, reservation, profile: guest.session as unknown as ProfileSession }
 }
 describe('浏览器资源身份与生命周期', () => {
+  it('其他默认浏览器接收完整地址，百度查询的中文编码、加号与所有参数保持原样', async () => {
+    const { runtime, owner, reservation, guest } = ready()
+    const urls = [
+      'https://www.baidu.com/',
+      BAIDU_HOT_SEARCH_URL,
+    ]
+    for (const url of urls) {
+      guest.url = url
+      guest.emit('did-navigate')
+      await runtime.external(owner, reservation.lease)
+    }
+    expect(mocks.openExternal.mock.calls).toEqual(urls.map(url => [url]))
+  })
+  it.runIf(process.platform === 'win32')('默认 Edge 交接已兼容地址，内置网页的地址与历史不变', async () => {
+    const { runtime, owner, reservation, guest } = ready()
+    mocks.app.getApplicationNameForProtocol.mockReturnValue('Microsoft Edge')
+    guest.url = BAIDU_HOT_SEARCH_URL
+    guest.entries = [{ url: BAIDU_HOT_SEARCH_URL, title: '百度热榜搜索', pageState: '' }]
+    guest.emit('did-navigate')
+    await runtime.external(owner, reservation.lease)
+    expect(mocks.openExternal).toHaveBeenCalledWith(BAIDU_HOT_SEARCH_EXTERNAL_URL)
+    expect(runtime.state(owner, reservation.lease).url).toBe(BAIDU_HOT_SEARCH_URL)
+    expect(runtime.history(owner, reservation.lease).entries[0].url).toBe(BAIDU_HOT_SEARCH_URL)
+    expect(mocks.app.getApplicationNameForProtocol).toHaveBeenCalledWith(BAIDU_HOT_SEARCH_URL)
+  })
+  it('普通地址直接交给系统，不查询浏览器关联或改写参数', async () => {
+    const { runtime, owner, reservation, guest } = ready()
+    guest.url = 'https://example.org/s?wd=a+b&tn=baidutop10'
+    guest.emit('did-navigate')
+    await runtime.external(owner, reservation.lease)
+    expect(mocks.app.getApplicationNameForProtocol).not.toHaveBeenCalled()
+    expect(mocks.openExternal).toHaveBeenCalledWith(guest.url)
+  })
+  it('系统浏览器打开失败向调用方报告，受保护端口与本地协议不交给系统', async () => {
+    const { runtime, owner, reservation, guest } = ready()
+    guest.url = 'https://www.baidu.com/'
+    guest.emit('did-navigate')
+    mocks.openExternal.mockRejectedValueOnce(new Error('系统拒绝打开地址'))
+    await expect(runtime.external(owner, reservation.lease)).rejects.toThrow('系统拒绝打开地址')
+    mocks.openExternal.mockClear()
+    for (const url of ['http://localhost:19200/', 'file:///C:/secret.html']) {
+      guest.url = url
+      guest.emit('did-navigate')
+      await expect(runtime.external(owner, reservation.lease)).rejects.toThrow()
+    }
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
   it.each([undefined, 'private-startup'])('同标签两次初始化各持独立lease，旧effect迟到释放不能撤销新webview授权：%s', (privateGroupId) => {
     const runtime = new BrowserTabRuntime({ getProtectedPorts: () => [] })
     const owner = new Contents() as unknown as WebContents

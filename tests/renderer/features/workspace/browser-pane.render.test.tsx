@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BrowserPane } from '@/features/workspace/BrowserPane'
-import type { BrowserEvent, BrowserReservation, BrowserState } from '@shared/browser'
+import type { BrowserEvent, BrowserReservation, BrowserSitePermission, BrowserState } from '@shared/browser'
 
 const previous = window.cogent
 const observers = new Set<(event: BrowserEvent) => void>()
@@ -79,7 +79,7 @@ describe('BrowserPane 的原生资源接线', () => {
     fireEvent.click(screen.getByLabelText('浏览器菜单'))
     expect(await screen.findByText('临时浏览 · 不保留登录与历史')).toBeInTheDocument()
     expect(screen.getByText('页面内查找')).toBeInTheDocument()
-    expect(screen.getByText('下载')).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '下载' })).toBeNull()
     expect(screen.getByText('站点权限')).toBeInTheDocument()
     expect(screen.getByLabelText('网页缩放')).toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('放大网页'))
@@ -90,6 +90,44 @@ describe('BrowserPane 的原生资源接线', () => {
     fireEvent.click(await screen.findByText('第一站'))
     await waitFor(() => expect(request).toHaveBeenCalledWith('goTo', { lease: 'lease', index: 0 }))
     expect(request).toHaveBeenCalledWith('history', { lease: 'lease' })
+  })
+  it('普通网页的系统浏览器入口发送当前lease，系统打开失败明确显示原因', async () => {
+    const user = userEvent.setup(), view = render(<BrowserPane scopeId="draft" tabId="tab" active onState={vi.fn()} />)
+    await attach(view.container)
+    act(() => emit({ type: 'state', scopeId: 'draft', tabId: 'tab', state: { ...state, url: 'https://example.org/' } }))
+    await user.click(screen.getByRole('button', { name: '浏览器菜单' }))
+    await user.click(await screen.findByRole('menuitem', { name: '系统浏览器打开' }))
+    expect(request).toHaveBeenCalledWith('external', { lease: 'lease' })
+    request.mockImplementation(method => method === 'external' ? Promise.reject(new Error('系统浏览器启动失败')) : reply(method))
+    await user.click(screen.getByRole('button', { name: '浏览器菜单' }))
+    await user.click(await screen.findByRole('menuitem', { name: '系统浏览器打开' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('系统浏览器启动失败')
+  })
+  it('站点权限用小号Select，麦克风选择保留独立mediaTypes并重新读取权限', async () => {
+    const user = userEvent.setup()
+    let permissions: BrowserSitePermission[] = [
+      { origin: 'https://example.org', permission: 'media', mediaTypes: ['audio'], decision: 'ask' },
+      { origin: 'https://example.org', permission: 'media', mediaTypes: ['video'], decision: 'ask' },
+    ]
+    request.mockImplementation((method, params) => {
+      if (method === 'permissions') return Promise.resolve(permissions)
+      if (method === 'permission') { permissions = permissions.map(value => value.mediaTypes![0] === 'audio' ? { ...value, decision: (params as BrowserSitePermission).decision } : value); return Promise.resolve() }
+      return reply(method)
+    })
+    const view = render(<BrowserPane scopeId="draft" tabId="tab" active onState={vi.fn()} />)
+    await attach(view.container)
+    await user.click(screen.getByRole('button', { name: '浏览器菜单' }))
+    await user.click(await screen.findByRole('menuitem', { name: '站点权限' }))
+    const microphone = await screen.findByRole('combobox', { name: '麦克风' })
+    expect(microphone).toHaveAttribute('data-size', 'sm')
+    expect(screen.getByRole('combobox', { name: '摄像头' })).toHaveAttribute('data-size', 'sm')
+    expect(microphone).toHaveTextContent('询问')
+    await user.click(microphone)
+    expect((await screen.findByRole('listbox')).closest('[data-slot=select-content]')).toHaveAttribute('data-align-trigger', 'false')
+    await user.click(await screen.findByRole('option', { name: '拒绝' }))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('permission', { lease: 'lease', origin: 'https://example.org', permission: 'media', mediaTypes: ['audio'], decision: 'deny' }))
+    await waitFor(() => expect(microphone).toHaveTextContent('拒绝'))
+    expect(screen.getByRole('combobox', { name: '摄像头' })).toHaveTextContent('询问')
   })
   it('attach前禁用地址栏；draft晋升session不重建webview/lease', async () => {
     const onState = vi.fn()

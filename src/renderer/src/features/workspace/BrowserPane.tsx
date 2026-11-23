@@ -1,12 +1,13 @@
 /** 普通网页仅在初始化重试/休眠恢复时重建；排序/布局变化不会搬动 guest 的父树。 */
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, Copy, Ellipsis, ExternalLink, FolderOpen, Globe, History, Minus, Plus, RotateCw, Search, Shield, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Copy, Ellipsis, ExternalLink, FolderOpen, Globe, History, Minus, Plus, RotateCw, Search, Shield, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Hint } from '@/components/Hint'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import type { BrowserCloseResult, BrowserDownload, BrowserEvent, BrowserHistory, BrowserMethods, BrowserReservation, BrowserSitePermission, BrowserState } from '@shared/browser'
+import type { BrowserCloseResult, BrowserEvent, BrowserHistory, BrowserMethods, BrowserReservation, BrowserSitePermission, BrowserState } from '@shared/browser'
 
 interface BrowserElement extends HTMLElement { getWebContentsId: () => number }
 export interface BrowserPaneProps {
@@ -25,8 +26,7 @@ export interface BrowserPaneProps {
   onReleased?: () => void
 }
 const PERMISSION_NAMES: Record<string, string> = { 'clipboard-read': '读取剪贴板', notifications: '网站通知', media: '摄像头与麦克风', geolocation: '地理位置', fullscreen: '全屏', pointerLock: '锁定指针', keyboardLock: '锁定键盘', 'speaker-selection': '选择音频输出' }
-const DOWNLOAD_NAMES = { progressing: '下载中', completed: '已完成', cancelled: '已取消', interrupted: '已中断' }
-const bytes = (value: number) => value < 1024 ? `${value} B` : value < 1024 ** 2 ? `${(value / 1024).toFixed(1)} KB` : `${(value / 1024 ** 2).toFixed(1)} MB`
+const PERMISSION_DECISIONS = [{ value: 'ask', label: '询问' }, { value: 'allow', label: '允许' }, { value: 'deny', label: '拒绝' }] satisfies Array<{ value: BrowserSitePermission['decision']; label: string }>
 
 export function BrowserPane(props: BrowserPaneProps) {
   const live = useRef(props); live.current = props
@@ -42,8 +42,6 @@ export function BrowserPane(props: BrowserPaneProps) {
   const [findText, setFindText] = useState('')
   const [found, setFound] = useState({ matches: 0, active: 0 })
   const [history, setHistory] = useState<BrowserHistory>({ entries: [], index: -1 })
-  const [downloadsOpen, setDownloadsOpen] = useState(false)
-  const [downloads, setDownloads] = useState<BrowserDownload[]>([])
   const [permissionsOpen, setPermissionsOpen] = useState(false)
   const [permissions, setPermissions] = useState<BrowserSitePermission[]>([])
   const [searchProvider, setSearchProvider] = useState<'bing' | 'google' | 'duckduckgo'>('bing')
@@ -59,7 +57,6 @@ export function BrowserPane(props: BrowserPaneProps) {
   const [promptValue, setPromptValue] = useState('')
   const [authUsername, setAuthUsername] = useState('')
   const [authPassword, setAuthPassword] = useState('')
-  const ui = useRef({ downloadsOpen: false }); ui.current.downloadsOpen = downloadsOpen
   const report = (value: unknown) => setError(value instanceof Error ? value.message : String(value))
   const request = <M extends keyof BrowserMethods>(method: M, params: Omit<BrowserMethods[M]['params'], 'lease'>): Promise<BrowserMethods[M]['result']> => {
     const item = reservationRef.current
@@ -73,7 +70,6 @@ export function BrowserPane(props: BrowserPaneProps) {
     setHistory(value)
     live.current.onHistory?.(value)
   }
-  const refreshDownloads = async () => setDownloads(await request('downloads', {}))
   const replyPrompt = async (value: string | null) => {
     if (!prompt) return
     const current = prompt
@@ -111,7 +107,6 @@ export function BrowserPane(props: BrowserPaneProps) {
     armTimer('浏览器初始化超时，请重试')
     const unsubscribe = window.cogent.onBrowserEvent(event => {
       if (disposed || failed) return
-      if (event.type === 'download') { if (ui.current.downloadsOpen && reservationRef.current) void refreshDownloads().catch(reportCurrent); return }
       if (event.tabId !== initial.tabId) return
       if (event.type === 'state') {
         if (event.state.lease !== reservationRef.current?.lease) return
@@ -229,7 +224,6 @@ export function BrowserPane(props: BrowserPaneProps) {
               {history.entries.map((entry, index) => <DropdownMenuItem key={`${index}:${entry.url}`} onClick={() => void request('goTo', { index }).catch(report)}>{index === history.index && <Check />}<Hint tip={entry.url} side="left"><span className="min-w-0 truncate">{entry.title || entry.url}</span></Hint></DropdownMenuItem>)}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
-          <DropdownMenuItem onClick={() => { setDownloadsOpen(true); void refreshDownloads().catch(report) }}><ArrowDownToLine />下载</DropdownMenuItem>
           <DropdownMenuItem onClick={() => { setPermissionsOpen(true); void request('permissions', {}).then(setPermissions).catch(report) }}><Shield />站点权限</DropdownMenuItem>
           {props.previewLeaseId !== undefined && props.allowPreviewRoot && <DropdownMenuItem onClick={() => void request('preview', { source: { leaseId: props.previewLeaseId! }, pickRoot: true }).catch(report)}><FolderOpen />选择资源目录…</DropdownMenuItem>}
           <DropdownMenuSeparator />
@@ -264,19 +258,19 @@ export function BrowserPane(props: BrowserPaneProps) {
       </div>}
     </div>
 
-    <Dialog open={props.active && downloadsOpen} onOpenChange={open => { if (props.active) setDownloadsOpen(open) }}>
-      <DialogContent className="max-h-[80vh] overflow-y-auto"><DialogHeader><DialogTitle>下载</DialogTitle><DialogDescription>下载在关闭标签后可继续；退出应用会中断未完成任务。</DialogDescription></DialogHeader>
-        {!downloads.length && <p className="text-sm text-muted-foreground">暂无下载</p>}
-        {downloads.map(value => <div key={value.id} className="grid gap-2 border-b py-2"><Hint tip={value.name}><p className="truncate text-sm">{value.name}</p></Hint><p className="text-xs text-muted-foreground">{value.paused ? '已暂停' : DOWNLOAD_NAMES[value.state]} · {bytes(value.received)} / {value.total > 0 ? bytes(value.total) : '未知大小'}</p><div className="flex flex-wrap gap-1">
-          {value.state === 'progressing' && <><Button variant="outline" size="sm" onClick={() => void request('download', { id: value.id, action: value.paused ? 'resume' : 'pause' }).then(refreshDownloads).catch(report)}>{value.paused ? '继续' : '暂停'}</Button><Button variant="outline" size="sm" onClick={() => void request('download', { id: value.id, action: 'cancel' }).then(refreshDownloads).catch(report)}>取消</Button></>}
-          {value.state === 'completed' && <><Button variant="outline" size="sm" onClick={() => void request('download', { id: value.id, action: 'open' }).catch(report)}>打开</Button><Button variant="outline" size="sm" onClick={() => void request('download', { id: value.id, action: 'reveal' }).catch(report)}>在文件夹中显示</Button></>}
-        </div></div>)}
-      </DialogContent>
-    </Dialog>
     <Dialog open={props.active && permissionsOpen} onOpenChange={open => { if (props.active) setPermissionsOpen(open) }}>
       <DialogContent className="max-h-[80vh] overflow-y-auto"><DialogHeader><DialogTitle>站点权限</DialogTitle><DialogDescription>修改权限将重新载入此站点页面，结束旧页面的采集与授权。</DialogDescription></DialogHeader>
         {!permissions.length && <p className="text-sm text-muted-foreground">此页面没有可配置的网站权限。</p>}
-        {permissions.map(value => <div key={`${value.permission}-${value.mediaTypes?.join(',') ?? ''}`} className="flex items-center justify-between gap-2"><label className="text-sm" htmlFor={`${props.tabId}-${value.permission}-${value.mediaTypes?.join(',') ?? ''}`}>{value.permission === 'media' ? value.mediaTypes?.includes('audio') ? '麦克风' : '摄像头' : PERMISSION_NAMES[value.permission] ?? value.permission}</label><select id={`${props.tabId}-${value.permission}-${value.mediaTypes?.join(',') ?? ''}`} className="min-w-0 text-sm" value={value.decision} onChange={event => void changePermission(value, event.target.value as BrowserSitePermission['decision'])}><option value="ask">询问</option><option value="allow">允许</option><option value="deny">拒绝</option></select></div>)}
+        {permissions.map(value => {
+          const id = `${props.tabId}-${value.permission}-${value.mediaTypes?.join(',') ?? ''}`
+          return <div key={id} className="flex items-center justify-between gap-2">
+            <label className="text-sm" htmlFor={id}>{value.permission === 'media' ? value.mediaTypes?.includes('audio') ? '麦克风' : '摄像头' : PERMISSION_NAMES[value.permission] ?? value.permission}</label>
+            <Select value={value.decision} items={PERMISSION_DECISIONS} onValueChange={decision => { if (decision !== null) void changePermission(value, decision) }}>
+              <SelectTrigger id={id} size="sm"><SelectValue /></SelectTrigger>
+              <SelectContent align="end" alignItemWithTrigger={false}>{PERMISSION_DECISIONS.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+        })}
         <p className="text-xs text-muted-foreground">USB、蓝牙、串口与屏幕源选择暂未接通，相关请求会明确拒绝。</p>
       </DialogContent>
     </Dialog>

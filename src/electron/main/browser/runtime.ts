@@ -6,6 +6,7 @@ import { BROWSER_CHANNEL, browserAddress, type BrowserCloseResult, type BrowserD
 import { BrowserSettings } from './settings'
 import { BrowserLocalPreview, type BrowserPreviewSource } from './local-preview'
 import { allowedBrowserUrl, permissionKey, PROMPT_BROWSER_PERMISSIONS } from './policy'
+import { edgeExternalUrl } from './external-url'
 
 interface Profile { id: string; partition: string; session: Session; private: boolean; grants: Set<string>; decisions: Map<string, 'ask' | 'allow' | 'deny'>; certificates: Set<string>; inflight: Map<string, Promise<number>>; lifetime: AbortController }
 interface Tab {
@@ -264,7 +265,10 @@ export class BrowserTabRuntime {
     const url = this.tab(owner, lease).state.url
     if (!/^https?:/i.test(url)) throw new Error('此页面不能通过网络地址交给系统浏览器')
     this.requireUrl(url)
-    await shell.openExternal(url)
+    const compatible = edgeExternalUrl(url)
+    // 只兼容实测会丢弃此地址的 Windows Edge；其他默认浏览器仍收到原 URL，也不为普通地址查询系统关联。
+    const target = process.platform === 'win32' && compatible !== url && app.getApplicationNameForProtocol(url) === 'Microsoft Edge' ? compatible : url
+    await shell.openExternal(target)
   }
 
   private bind(tab: Tab, guest: WebContents): void {

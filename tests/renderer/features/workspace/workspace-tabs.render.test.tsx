@@ -48,6 +48,10 @@ describe('标签条及关闭协商', () => {
     render(<Subject />)
     fireEvent.click(screen.getByRole('button', { name: '标签页列表' }))
     const input = await screen.findByRole('textbox', { name: '搜索标签页' })
+    const row = screen.getByRole('button', { name: 'https://alpha.test' }).closest('[data-slot=item]')!
+    expect(row.querySelector('[data-slot=item-content] button')).toBeNull()
+    expect(row.querySelector('[data-slot=item-actions]')).toHaveTextContent('')
+    expect(row.querySelector('button button')).toBeNull()
     fireEvent.change(input, { target: { value: 'alpha' } })
     expect(screen.queryByRole('button', { name: '在列表中关闭 https://beta.test' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'https://alpha.test' }))

@@ -1,0 +1,3 @@
+/** 可复现 Edge 外部启动忽略导航的热榜地址；预期仅少固定标记，其余字节均保持原样。 */
+export const BAIDU_HOT_SEARCH_URL = 'https://www.baidu.com/s?wd=%E4%B8%89%E4%B8%AA%E6%97%B6%E9%97%B4%E5%9D%90%E6%A0%87+%E8%AF%BB%E6%87%82APEC%E2%80%9C%E4%B8%AD%E5%9B%BD%E5%B9%B4%E2%80%9D&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&tn=baidutop10&fr=top1000&rsv_idx=2&hisfilter=1'
+export const BAIDU_HOT_SEARCH_EXTERNAL_URL = 'https://www.baidu.com/s?wd=%E4%B8%89%E4%B8%AA%E6%97%B6%E9%97%B4%E5%9D%90%E6%A0%87+%E8%AF%BB%E6%87%82APEC%E2%80%9C%E4%B8%AD%E5%9B%BD%E5%B9%B4%E2%80%9D&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&fr=top1000&rsv_idx=2&hisfilter=1'

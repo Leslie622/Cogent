@@ -1,5 +1,5 @@
 /** 工作区只响应手动开合/占满；窗口缩放限制可见宽度，不触发覆盖或改写用户记忆。 */
-export const WORKSPACE_DEFAULT_WIDTH = 480
+export const WORKSPACE_DEFAULT_WIDTH = 350
 export const WORKSPACE_COLLAPSE_WIDTH = 160
 const CHAT_REMAINDER = 160
 

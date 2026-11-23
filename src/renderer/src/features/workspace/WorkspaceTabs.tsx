@@ -94,10 +94,11 @@ export function WorkspaceTabs({ tabs, activeId, expanded = false, onError }: { t
         <InputGroup><InputGroupAddon><Search /></InputGroupAddon><InputGroupInput aria-label="搜索标签页" placeholder="搜索标签页…" value={query} onChange={event => setQuery(event.target.value)} /></InputGroup>
         <p className="text-xs text-muted-foreground">打开的标签页</p>
         <ItemGroup className="max-h-72 overflow-y-auto">
-          {filtered.map(tab => <Item size="xs" variant={tab.id === activeId ? 'muted' : 'default'} key={tab.id}>
-            <ItemMedia variant="icon"><TabIcon tab={tab} /></ItemMedia>
-            <ItemContent className="min-w-0"><Button variant="ghost" className="min-w-0 justify-start" onClick={() => { useWorkspaceStore.getState().activate(tab.id); setListOpen(false) }}><span className="truncate">{tab.title}</span></Button></ItemContent>
-            <ItemActions><span className="text-xs text-muted-foreground">{Math.max(1, Math.floor((Date.now() - tab.createdAt) / 60000))}分</span><Hint tip="关闭标签页"><Button variant="ghost" size="icon-xs" aria-label={'在列表中关闭 ' + tab.title} onClick={() => { void closeWorkspaceTab(tab.id).catch(error => onError(String(error))) }}><X /></Button></Hint></ItemActions>
+          {filtered.map(tab => <Item size="xs" variant={tab.id === activeId ? 'muted' : 'default'} className="relative" key={tab.id}>
+            <Button variant="ghost" className="absolute inset-0 h-full w-full" aria-label={tab.title} aria-current={tab.id === activeId ? 'page' : undefined} onClick={() => { useWorkspaceStore.getState().activate(tab.id); setListOpen(false) }} />
+            <ItemMedia variant="icon" className="pointer-events-none relative"><TabIcon tab={tab} /></ItemMedia>
+            <ItemContent className="pointer-events-none relative min-w-0"><span className="truncate">{tab.title}</span></ItemContent>
+            <ItemActions className="relative"><Hint tip="关闭标签页"><Button variant="ghost" size="icon-xs" aria-label={'在列表中关闭 ' + tab.title} onClick={() => { void closeWorkspaceTab(tab.id).catch(error => onError(String(error))) }}><X /></Button></Hint></ItemActions>
           </Item>)}
           {filtered.length === 0 && <p className="py-3 text-center text-sm text-muted-foreground">没有匹配的标签页</p>}
         </ItemGroup>

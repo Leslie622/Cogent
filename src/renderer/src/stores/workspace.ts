@@ -6,6 +6,7 @@ import type { OutputTarget } from '@shared/outputs'
 import type { FileLinkScope } from '@/features/home/files/FileLink'
 import type { BrowserMethods } from '@shared/browser'
 import { bindFileNavigatorScope } from '@/features/workspace/file-navigator-owner'
+import { WORKSPACE_DEFAULT_WIDTH } from '@/features/workspace/layout'
 type BrowserHistory = BrowserMethods['history']['result']
 
 export interface FileTabSource {
@@ -56,7 +57,7 @@ export interface WorkspaceState {
   reset: () => void
 }
 
-export const EMPTY_WORKSPACE: WorkspaceScope = { tabs: [], activeId: null, collapsed: true, expanded: false, width: 480, grantIds: [] }
+export const EMPTY_WORKSPACE: WorkspaceScope = { tabs: [], activeId: null, collapsed: true, expanded: false, width: WORKSPACE_DEFAULT_WIDTH, grantIds: [] }
 const initialScope = (): WorkspaceScope => ({ ...EMPTY_WORKSPACE, tabs: [], grantIds: [] })
 const titleFor = (target: string) => target.replace(/[?#].*$/, '').split(/[/\\]/).at(-1) || target
 const findTab = (scopes: WorkspaceState['scopes'], id: string) => Object.values(scopes).flatMap(s => s.tabs).find(tab => tab.id === id)
