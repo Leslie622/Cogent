@@ -217,9 +217,12 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   当前项右浮勾、模式图标；完全访问 warning、自主 chrome-accent、确认档 muted。
   `SwitchModeDropdown` 复用它，内容宽至少 min-w-56；触发钮无常态背景，箭头继承文字色。
 - 权限菜单顶部是独立计划开关项，其后分隔线再列三档权限；开启时输入区显示
-  浅灰 PlanToggle chip + h-4 矮竖线，hover 浮现 ×，关闭后整组消失。
+  浅灰 PlanToggle 状态 chip + h-4 矮竖线；主体复用 Button ghost/xs 的 hover 外观与
+  箭头光标，两侧沿用 xs 的对称内距，点击不切换计划；独立 ghost-soft/icon-2xs
+  关闭钮在 hover 或组内键盘聚焦时浮现，悬停关闭钮时叠加独立背景，关闭后整组消失。
 - 输入卡工具行以聊天面板宽度做容器查询：≤640px 时权限仅显示档位图标，
-  上下文显示无数值圆环，模型仅显示厂商图标；计划 chip 也只留图标。
+  上下文显示无数值圆环，模型仅显示厂商图标；计划 chip 隐藏文字，保留计划图标
+  及悬停/聚焦时的独立关闭钮。
   图标按钮保留完整 aria-label 与原菜单/详情入口。宽态模型名称超长省略，
   间距随面板宽度缩小；极窄时工具组换行，不能裁掉发送按钮。
 - FullAccessConfirm 用 alert-dialog + checkbox；权限卡列文件/终端，确认钮为
