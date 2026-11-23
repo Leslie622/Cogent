@@ -185,12 +185,16 @@ export const useAttachmentStore = create<DraftState>((set, get) => ({
   load: async (id) => {
     if (get().drafts[id]?.loaded) return
     const pending = loading.get(id); if (pending !== undefined) return pending
-    const promise = (async () => {
+    const ownsLoad = (): boolean => loading.get(id) === promise
+    // 先登记恢复身份。删除时让整次读取失效，包含迟到的原件校验与回写。
+    const promise = Promise.resolve().then(async () => {
+      if (!ownsLoad()) return
       try {
         const journal = readJournal(id)
         const [draft, media] = await Promise.all([
           window.cogent.engineRequest('attachments.draft', { id }), window.cogent.engineRequest('attachments.media', {})
         ])
+        if (!ownsLoad()) return
         const items: DraftAttachment[] = journal?.items ?? [
           ...draft.attachments.map((ref): DraftAttachment => ({ key: ref.id, name: ref.name, size: ref.size, ref, status: 'ready' })),
           ...(draft.directories ?? []).map((directory): DraftAttachment => ({ key: crypto.randomUUID(), name: directory.name, size: 0, directory, status: 'ready' }))
@@ -207,12 +211,16 @@ export const useAttachmentStore = create<DraftState>((set, get) => ({
           try { await window.cogent.engineRequest('attachments.resolve', { id: item.ref.id }) }
           catch (cause) { item.status = 'error'; item.error = `附件不可用：${unwrapIpcError(cause)}` }
         }))
+        if (!ownsLoad()) return
         patch(id, () => ({ text: journal?.text ?? draft.text, items, loaded: true, error: null, edit: 0 }))
         set({ media })
         if (journal !== undefined) save(id)
-      } catch (error) { patch(id, (d) => ({ ...d, error: `草稿恢复失败：${unwrapIpcError(error)}` })) }
-      finally { loading.delete(id) }
-    })()
+      } catch (error) {
+        if (ownsLoad()) patch(id, (d) => ({ ...d, error: `草稿恢复失败：${unwrapIpcError(error)}` }))
+      } finally {
+        if (ownsLoad()) loading.delete(id)
+      }
+    })
     loading.set(id, promise); return promise
   },
   setText: (id, text) => { patch(id, (d) => ({ ...d, text, edit: d.edit + 1 })); save(id) },
@@ -255,6 +263,7 @@ export const useAttachmentStore = create<DraftState>((set, get) => ({
   startSubmission: (id) => { const token = Symbol('draft-submit'); submissions.set(id, token); return token },
   discardChat: async (sessionId) => {
     const id = chatDraftId(sessionId)
+    loading.delete(id)
     for (const item of get().drafts[id]?.items ?? EMPTY_DRAFT.items) {
       dequeue(item.key); imports.get(item.key)?.abort(); sources.delete(item.key)
     }

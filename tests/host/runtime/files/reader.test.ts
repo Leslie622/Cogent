@@ -1,6 +1,6 @@
 /** 使用真实临时文件验证读取、版本、取消和会话所有权；不靠文件系统桩制造成功。 */
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtemp, writeFile, rm, symlink, unlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, writeFile, rm, symlink, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FileService } from '../../../../src/host/runtime/files/reader'
@@ -55,11 +55,39 @@ describe('当前文件服务', () => {
     const directory = await service.resolve('a', cwd)
     await expect(service.readText({ ...read, fileId: directory.fileId, version: directory.version })).rejects.toThrow('目录')
   })
-  it.runIf(process.platform !== 'win32')('软链接换目标不静默换身份', async () => {
+  it('文件软链接或父目录联接换目标后拒绝旧文件标识', async () => {
     const { cwd, service, read } = await fixture()
-    await writeFile(join(cwd, 'other.txt'), 'other'); await symlink(join(cwd, 'hello.txt'), join(cwd, 'alias.txt'))
-    const descriptor = await service.resolve('a', 'alias.txt')
-    await unlink(join(cwd, 'alias.txt')); await symlink(join(cwd, 'other.txt'), join(cwd, 'alias.txt'))
+    const alias = join(cwd, 'alias')
+    let selectedPath = alias
+    let nextTarget = join(cwd, 'other.txt')
+    let linkType: 'file' | 'junction' = 'file'
+    await writeFile(nextTarget, 'other')
+    try {
+      await symlink(join(cwd, 'hello.txt'), alias, 'file')
+    } catch (error) {
+      const denied = process.platform === 'win32' && error instanceof Error && 'code' in error &&
+        (error.code === 'EPERM' || error.code === 'EACCES')
+      if (!denied) throw error
+
+      // 文件服务复核完整路径，换掉父目录联接也会改变文件的真实位置。
+      const firstDir = join(cwd, 'first')
+      const secondDir = join(cwd, 'second')
+      await mkdir(firstDir)
+      await mkdir(secondDir)
+      await writeFile(join(firstDir, 'data.txt'), 'original')
+      await writeFile(join(secondDir, 'data.txt'), 'other')
+      await symlink(firstDir, alias, 'junction')
+      selectedPath = join(alias, 'data.txt')
+      nextTarget = secondDir
+      linkType = 'junction'
+    }
+    const descriptor = await service.resolve('a', selectedPath)
+    await unlink(alias)
+    await symlink(nextTarget, alias, linkType)
     await expect(service.readText({ ...read, fileId: descriptor.fileId, version: descriptor.version })).rejects.toThrow('目标已变化')
+
+    const refreshed = await service.resolve('a', selectedPath)
+    expect(refreshed.fileId).not.toBe(descriptor.fileId)
+    expect((await service.readText({ ...read, fileId: refreshed.fileId, version: refreshed.version })).text).toBe('other')
   })
 })

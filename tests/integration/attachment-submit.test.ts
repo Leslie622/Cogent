@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import type { AttachmentRef, DirectoryRef } from '../../src/shared/attachments'
-import { chunk, initEngine, makeTempDir, removeDir, sse, startEngine } from './harness'
+import { closeLoopback, chunk, initEngine, makeTempDir, removeDir, sse, startEngine } from './harness'
 
 it('25个普通文件经桌面stdio受理、发送并恢复历史，非法ID仍拒绝', async () => {
   const home = makeTempDir('cogent-attachment-submit-')
@@ -25,7 +25,7 @@ it('25个普通文件经桌面stdio受理、发送并恢复历史，非法ID仍�
   try {
     await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
     const port = (server.address() as AddressInfo).port
-    await initEngine(engine, { client: 'attachment-submit-test', port, providers: [{
+    await initEngine(engine, { client: 'attachment-submit-test', providers: [{
       id: 'custom/mock', name: '附件测试', baseUrl: `http://127.0.0.1:${port}/v1`, models: [],
       modelDefs: [{ id: 'mock', input: ['text'], contextWindow: 128000, maxTokens: 4096 }]
     }] })
@@ -51,7 +51,7 @@ it('25个普通文件经桌面stdio受理、发送并恢复历史，非法ID仍�
     const user = history.result!.messages!.find((message) => message.role === 'user')!
     expect(user.attachments).toEqual(refs)
   } finally {
-    engine.kill(); await new Promise<void>((done) => server.close(() => done())); removeDir(home)
+    await engine.stop(); await closeLoopback(server); removeDir(home)
   }
 })
 
@@ -80,7 +80,7 @@ it('纯目录引用经真实pi调用ls/read，历史恢复，且不创建受管�
   })
   try {
     await new Promise<void>((done) => server.listen(0, '127.0.0.1', done)); const port = (server.address() as AddressInfo).port
-    await initEngine(engine, { client: 'directory-submit-test', port, providers: [{ id: 'custom/mock', name: '目录测试', baseUrl: `http://127.0.0.1:${port}/v1`, models: [],
+    await initEngine(engine, { client: 'directory-submit-test', providers: [{ id: 'custom/mock', name: '目录测试', baseUrl: `http://127.0.0.1:${port}/v1`, models: [],
       modelDefs: [{ id: 'mock', input: ['text'], contextWindow: 128000, maxTokens: 4096 }] }] })
     const created = await engine.send('session.create', { cwd: workspace }); const sessionId = created.result!.id!
     const described = await engine.send<DirectoryRef>('attachments.describe', { path }); const directory = described.result!
@@ -101,6 +101,6 @@ it('纯目录引用经真实pi调用ls/read，历史恢复，且不创建受管�
     expect((await engine.send('session.delete', { sessionId })).error).toBeUndefined()
     expect(existsSync(file)).toBe(true)
   } finally {
-    engine.kill(); await new Promise<void>((done) => server.close(() => done())); removeDir(home)
+    await engine.stop(); await closeLoopback(server); removeDir(home)
   }
 })

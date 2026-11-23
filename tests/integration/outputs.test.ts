@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { TurnOutputs } from '../../src/shared/outputs'
 import type { FileDescriptor } from '../../src/shared/files'
-import { startEngine, initEngine, makeTempDir, removeDir, chunk, sse, type EngineHandle } from './harness'
+import { closeLoopback, startEngine, initEngine, makeTempDir, removeDir, chunk, sse, type EngineHandle } from './harness'
 
 type Action = { tool: string; args: object; id?: string } | { text: string; finish?: 'stop' | 'length' } | { hold: true } | { error: true }
 const home = makeTempDir('cogent-output-home-')
@@ -38,7 +38,7 @@ const server = createServer((request, response) => {
   })
 })
 async function setup() {
-  await initEngine(engine, { client: 'outputs-test', port, providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${port}/v1`, models: [], modelDefs: [{ id: 'mock', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 4096 }] }] })
+  await initEngine(engine, { client: 'outputs-test', providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${port}/v1`, models: [], modelDefs: [{ id: 'mock', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 4096 }] }] })
 }
 async function create() {
   const { result } = await engine.send('session.create', { cwd, permissionMode: 'auto' })
@@ -67,7 +67,7 @@ describe('产物正式交付链', () => {
     writeFileSync(join(cwd, '报告 #%.txt'), '\ufeffA\r\n')
     writeFileSync(join(cwd, 'B.zip'), 'existing zip bytes')
   })
-  afterAll(() => { held?.destroy(); engine.kill(); server.close(); removeDir(home); removeDir(cwd) })
+  afterAll(async () => { held?.destroy(); await engine.stop(); await closeLoopback(server); removeDir(home); removeDir(cwd) })
 
   it('真实write→申报→再次write→终态复核，并在删除源/Host重启后读取相同交付字节', async () => {
     const sid = await create()
@@ -84,7 +84,7 @@ describe('产物正式交付链', () => {
     expect(events.filter((event) => event.method.startsWith('run.') && event.method !== 'run.started')).toHaveLength(1)
     rmSync(join(cwd, '交付.txt'))
     expect(await readDelivery(sid, doc)).toBe('\ufeff最终B\r\n')
-    engine.kill(); engine = startEngine(home); await setup()
+    await engine.stop(); engine = startEngine(home); await setup()
     expect(await readDelivery(sid, (await docs(sid))[0])).toBe('\ufeff最终B\r\n')
   })
   it('申报既有ZIP无须改写；非法申报保留；[]撤回后刷新不补卡', async () => {

@@ -16,6 +16,8 @@ import { writeFileSync } from 'node:fs'
 import type { AttachmentRef } from '../../src/shared/attachments'
 import type { McpListResult } from '../../src/protocol'
 import {
+  closeLoopback,
+  listenLoopback,
   check,
   chunk,
   type EngineHandle,
@@ -26,7 +28,6 @@ import {
   startEngine
 } from './harness'
 
-const PORT = 18_950
 const home = makeTempDir('cogent-mcp-home-')
 const ws = makeTempDir('cogent-mcp-ws-')
 const MOCK_MCP = join(process.cwd(), 'tests', 'integration', 'mock-mcp-server.mjs')
@@ -100,17 +101,16 @@ const submitAndDone = async (sessionId: string, label: string): Promise<void> =>
 
 describe('MCP 座集成（协议方法 + 直连工具 + 审批链 + 禁用生效）', () => {
   beforeAll(async () => {
-    await new Promise<void>((r) => server.listen(PORT, '127.0.0.1', r))
+    const port = await listenLoopback(server)
     await initEngine(engine, {
       client: 'mcp-smoke',
-      port: PORT,
-      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${PORT}/v1`, models: ['mock'] }]
+      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${port}/v1`, models: ['mock'] }]
     })
   }, 60_000)
 
-  afterAll(() => {
-    engine.kill()
-    server.close()
+  afterAll(async () => {
+    await engine.stop()
+    await closeLoopback(server)
     for (const dir of [home, ws]) removeDir(dir)
   })
 

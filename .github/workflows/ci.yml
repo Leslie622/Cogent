@@ -1,10 +1,4 @@
-# CI —— 三关 + 测试全绿（docs/计划/测试体系.md D9）
-#
-# windows-latest 单 job：ps-utf8 集成绑 PowerShell 行为（5.1 尾缀断言在
-# Linux 无从谈起），Electron 构建也是本机开发平台。缓存两件：npm 依赖
-# （package-lock 键）与 Electron 二进制（postinstall 下载 ~100MB，键随
-# lock 走）。integration project 的 global-setup 会自动补 build，无需
-# 单独步骤。
+# Windows 应用、真实 Electron 产品冒烟和独立架构地图。
 name: CI
 on:
   push:
@@ -35,5 +29,14 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      - name: Electron 产品冒烟
+        run: node scripts/check-workspace-close-electron.mjs --smoke
+      - name: 上传 Electron 冒烟报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-electron-smoke
+          path: tmp/product-electron-smoke/
+          if-no-files-found: ignore
       - run: npm --prefix docs/架构地图 test
       - run: npm --prefix docs/架构地图 run build

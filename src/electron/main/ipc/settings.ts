@@ -11,8 +11,10 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, ipcMain } from 'electron'
-import { IPC, type SettingsFile } from '../../../shared/ipc'
+import { z } from 'zod'
+import { IPC, type RendererSettingsPatch, type SettingsFile } from '../../../shared/ipc'
 import { storageRoot, ensureRoot, migrateFromUserData, writeFileAtomic } from '../storage-root'
+import { managedSoundFileName } from '../sound-files'
 
 function filePath(): string {
   return join(storageRoot(), 'settings.json')
@@ -65,10 +67,9 @@ function readAll(): SettingsFile {
         typeof raw.soundPitch === 'number' && raw.soundPitch >= 400 && raw.soundPitch <= 1200
           ? raw.soundPitch
           : undefined,
-      // 声音文件名：播放时 protocol handler 还有 basename 防穿越二道闸，这里只验类型
-      turnDoneSoundFile: typeof raw.turnDoneSoundFile === 'string' ? raw.turnDoneSoundFile : undefined,
-      approvalSoundFile: typeof raw.approvalSoundFile === 'string' ? raw.approvalSoundFile : undefined,
-      questionSoundFile: typeof raw.questionSoundFile === 'string' ? raw.questionSoundFile : undefined,
+      turnDoneSoundFile: managedSoundFileName(raw.turnDoneSoundFile, 'turn-done'),
+      approvalSoundFile: managedSoundFileName(raw.approvalSoundFile, 'approval'),
+      questionSoundFile: managedSoundFileName(raw.questionSoundFile, 'question'),
       // externalMcp 是文件级配置（手编），形状不对按缺省关（持久化读取边界）
       externalMcp:
         raw.externalMcp !== undefined &&
@@ -95,95 +96,37 @@ function writeAll(settings: SettingsFile): void {
   writeFileAtomic(filePath(), JSON.stringify(settings, null, 2))
 }
 
-/**
- * 字段级校验（saveSettings IPC 与 writeSettingsFile 共用的信任边界）：
- * 带了但类型不对 = 越界，直接抛错（约定 §1.1"越界即抛"）
- */
-function assertPatchShape(patch: Partial<Record<keyof SettingsFile, unknown>>): void {
-  if (patch.fileEditor !== undefined && (typeof patch.fileEditor !== 'string' || patch.fileEditor.includes('\0'))) throw new Error('编辑器路径必须是字符串')
-  if (patch.activeModelId !== undefined && typeof patch.activeModelId !== 'string') {
-    throw new Error('settings:save 的 activeModelId 必须是 string')
-  }
-  if (patch.activeProviderId !== undefined && typeof patch.activeProviderId !== 'string') {
-    throw new Error('settings:save 的 activeProviderId 必须是 string')
-  }
-  if (patch.thinkingLevel !== undefined && typeof patch.thinkingLevel !== 'string') {
-    throw new Error('settings:save 的 thinkingLevel 必须是 string')
-  }
-  if (patch.defaultPermissionMode !== undefined && patch.defaultPermissionMode !== 'ask' && patch.defaultPermissionMode !== 'auto') {
-    throw new Error("settings:save 的 defaultPermissionMode 必须是 'ask' | 'auto'")
-  }
-  if (
-    patch.sendShortcut !== undefined &&
-    patch.sendShortcut !== 'enter' &&
-    patch.sendShortcut !== 'shift+enter' &&
-    patch.sendShortcut !== 'ctrl+enter'
-  ) {
-    throw new Error("settings:save 的 sendShortcut 必须是 'enter' | 'shift+enter' | 'ctrl+enter'")
-  }
-  if (
-    patch.closeBehavior !== undefined &&
-    patch.closeBehavior !== 'minimize' &&
-    patch.closeBehavior !== 'quit' &&
-    patch.closeBehavior !== 'ask'
-  ) {
-    throw new Error("settings:save 的 closeBehavior 必须是 'minimize' | 'quit' | 'ask'")
-  }
-  if (patch.hardwareAcceleration !== undefined && typeof patch.hardwareAcceleration !== 'boolean') {
-    throw new Error('settings:save 的 hardwareAcceleration 必须是 boolean')
-  }
-  if (
-    patch.turnDoneNotify !== undefined &&
-    patch.turnDoneNotify !== 'always' &&
-    patch.turnDoneNotify !== 'never' &&
-    patch.turnDoneNotify !== 'unfocused'
-  ) {
-    throw new Error("settings:save 的 turnDoneNotify 必须是 'always' | 'never' | 'unfocused'")
-  }
-  for (const field of ['approvalNotify', 'questionNotify', 'toastEnabled', 'soundEnabled'] as const) {
-    if (patch[field] !== undefined && typeof patch[field] !== 'boolean') {
-      throw new Error(`settings:save 的 ${field} 必须是 boolean`)
-    }
-  }
-  if (patch.soundVolume !== undefined && (typeof patch.soundVolume !== 'number' || patch.soundVolume < 0 || patch.soundVolume > 1)) {
-    throw new Error('settings:save 的 soundVolume 必须是 0–1 的 number')
-  }
-  if (patch.soundPitch !== undefined && (typeof patch.soundPitch !== 'number' || patch.soundPitch < 400 || patch.soundPitch > 1200)) {
-    throw new Error('settings:save 的 soundPitch 必须是 400–1200 的 number')
-  }
-  for (const field of ['turnDoneSoundFile', 'approvalSoundFile', 'questionSoundFile'] as const) {
-    if (patch[field] !== undefined && typeof patch[field] !== 'string') {
-      throw new Error(`settings:save 的 ${field} 必须是 string`)
-    }
-  }
-}
+// 普通设置只写偏好；编辑器和提示音文件由 main 的原生选择与清除入口提交。
+const rendererPatch = z.strictObject({
+  activeModelId: z.string(),
+  activeProviderId: z.string(),
+  thinkingLevel: z.string(),
+  defaultPermissionMode: z.enum(['ask', 'auto']),
+  sendShortcut: z.enum(['enter', 'shift+enter', 'ctrl+enter']),
+  closeBehavior: z.enum(['minimize', 'quit', 'ask']),
+  hardwareAcceleration: z.boolean(),
+  turnDoneNotify: z.enum(['always', 'never', 'unfocused']),
+  approvalNotify: z.boolean(),
+  questionNotify: z.boolean(),
+  toastEnabled: z.boolean(),
+  soundEnabled: z.boolean(),
+  soundVolume: z.number().min(0).max(1),
+  soundPitch: z.number().min(400).max(1200)
+} satisfies Record<keyof RendererSettingsPatch, z.ZodType>).partial()
 
 /**
- * 字段合并写（main 内部复用出口，notifications.ts 的声音文件 pick/clear 用）：
- * patch 里 undefined = **删键**（「恢复默认」语义；JSON.stringify 不会写出
- * undefined 值的键），带值 = 覆盖。返回合并后的完整设置。
+ * main 的单一字段合并写。各入口先校验自己接收的值；undefined 在落盘时删键，
+ * 用于恢复默认音源或清除旧模型偏好。
  */
-export function writeSettingsFile(patch: Partial<SettingsFile>): SettingsFile {
-  assertPatchShape(patch)
-  const settings = readAll()
-  // keyof 交叉赋值 TS 不认（值联合 vs 各键具体类型），经 unknown record 收窄
-  const target = settings as Partial<Record<keyof SettingsFile, unknown>>
-  for (const [key, value] of Object.entries(patch) as Array<[keyof SettingsFile, unknown]>) {
-    if (key === 'version') continue
-    if (value === undefined) delete target[key]
-    else target[key] = value
-  }
-  writeAll(settings)
-  return settings
+export function writeSettingsFile(patch: Partial<Omit<SettingsFile, 'version'>>): void {
+  writeAll({ ...readAll(), ...patch })
 }
 
 export function registerSettingsIpc(): void {
   ipcMain.handle(IPC.settingsGet, () => readAll())
 
   ipcMain.handle(IPC.settingsSave, (_event, raw: unknown) => {
-    // 信任边界收窄进 assertPatchShape（writeSettingsFile 共用）；字段合并语义
-    // 含"undefined=删键"，renderer 的 settings:save 载荷不带 undefined（只设值）
-    writeSettingsFile(raw as Partial<SettingsFile>)
+    writeSettingsFile(rendererPatch.parse(raw))
     return { ok: true as const }
   })
 }

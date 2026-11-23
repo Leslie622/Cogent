@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import type { InspectEntrySummary, SessionSummary } from '../../src/protocol'
 import type { SessionTitleSettings } from '../../src/shared/session-title'
-import { chunk, makeTempDir, removeDir, sse, startEngine, type EngineHandle } from './harness'
+import { closeLoopback, chunk, makeTempDir, removeDir, sse, startEngine, type EngineHandle } from './harness'
 
 let engine: EngineHandle
 let server: Server
@@ -71,10 +71,9 @@ beforeAll(async () => {
   await configureProviders()
 })
 afterAll(async () => {
-  engine.kill()
+  await engine.stop()
   for (const response of pendingMain) response.destroy()
-  server.closeAllConnections()
-  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  await closeLoopback(server)
   removeDir(home)
 })
 
@@ -104,7 +103,7 @@ it('无界面首句即生成并广播，主回复仍挂起；标题与主用量�
   ] })
   // 重启只恢复摘要；标题策略也由 Host 自行恢复，与页面挂载无关。
   expect((await engine.send('session.titleSettings.set', { enabled: false, model: { provider: 'custom/responses', id: 'same' } })).result).toEqual({ enabled: false })
-  engine.kill(); engine = startEngine(home)
+  await engine.stop(); engine = startEngine(home)
   await engine.send('initialize', { client: 'title-restart', protocolVersion: 3 })
   expect((await engine.send<SessionTitleSettings>('session.titleSettings.get')).result).toEqual({ enabled: false })
   expect((await engine.send<SessionSummary[]>('session.list')).result!.find((session) => session.id === id)?.title).toBe('问候交流')

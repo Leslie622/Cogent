@@ -9,7 +9,7 @@
  * 纪律照 Pi-meme scripts/node-runtime.mts：官方 SHASUMS256.txt 抽期望值 →
  * 本地 sha256 比对 → 系统 tar 解压（win10+ 自带 bsdtar 可解 zip）→ 只拷
  * 可执行文件 + LICENSE（引擎不需要 npm/corepack，node_modules 在应用侧）→
- * 落 runtime.json 诊断清单。幂等：目标已存在即跳过，--force 重下。
+ * 最后发布 runtime.json。清单与已安装二进制、许可证校验一致才跳过，--force 重下。
  *
  * 布局契约：可执行文件统一放 <平台>/bin/ 下（win zip 归档根的 node.exe 挪进
  * bin/，全平台同构）—— runtime.ts bundledNodeBin 按此布局解析，runtime.test.ts
@@ -21,8 +21,7 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createReadStream } from 'node:fs'
-import { existsSync } from 'node:fs'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -60,18 +59,40 @@ async function sha256(file) {
 const dir = platformDir(process.platform, process.arch)
 const windows = process.platform === 'win32'
 const destination = path.join(repoRoot, 'resources', 'runtime', dir)
-const executable = path.join(destination, 'bin', windows ? 'node.exe' : 'node')
+const executableName = windows ? 'node.exe' : 'node'
+const executable = path.join(destination, 'bin', executableName)
+const license = path.join(destination, 'LICENSE')
+const manifest = path.join(destination, 'runtime.json')
+const distribution = `node-v${NODE_VERSION}-${windows ? 'win' : 'linux'}-${process.arch}`
+const archiveName = `${distribution}.${windows ? 'zip' : 'tar.gz'}`
+const sha256Pattern = /^[a-f\d]{64}$/
 
-if (existsSync(executable) && !FORCE) {
+async function installationComplete() {
+  try {
+    const installed = JSON.parse(await readFile(manifest, 'utf8'))
+    if (installed === null || installed.nodeVersion !== NODE_VERSION ||
+        installed.platform !== process.platform || installed.arch !== process.arch ||
+        installed.archive !== archiveName || !sha256Pattern.test(installed.sha256)) return false
+    const [exeInfo, licenseInfo] = await Promise.all([stat(executable), stat(license)])
+    if (!exeInfo.isFile() || exeInfo.size === 0 || !licenseInfo.isFile() || licenseInfo.size === 0 ||
+        (!windows && (exeInfo.mode & 0o111) === 0)) return false
+    const [executableHash, licenseHash] = await Promise.all([sha256(executable), sha256(license)])
+    return executableHash === installed.executableSha256 && licenseHash === installed.licenseSha256
+  } catch (error) {
+    // 清单缺失或损坏可重新安装；路径权限等其他错误保留诊断。
+    if (error instanceof SyntaxError || error.code === 'ENOENT' || error.code === 'EISDIR') return false
+    throw error
+  }
+}
+
+if (!FORCE && await installationComplete()) {
   console.log(`自带 Node 已就位，跳过（--force 重下）：${path.relative(repoRoot, executable)}`)
   process.exit(0)
 }
 
-// 临时目录解包，校验通过才写进 resources —— 中断/失败不留半成品在目标位置
+// 下载与解压期间，原安装目录保持可用。逐项替换时先移除旧清单，最后提交新清单。
 const scratch = await mkdtemp(path.join(tmpdir(), 'cogent-runtime-'))
 try {
-  const distribution = `node-v${NODE_VERSION}-${windows ? 'win' : 'linux'}-${process.arch}`
-  const archiveName = `${distribution}.${windows ? 'zip' : 'tar.gz'}`
   const base = `${MIRROR}/v${NODE_VERSION}`
   const archive = path.join(scratch, archiveName)
 
@@ -82,7 +103,7 @@ try {
     .split('\n')
     .map((line) => line.trim().split(/\s+/))
     .find(([, name]) => name === archiveName)?.[0]
-  if (!expected || !/^[a-f\d]{64}$/.test(expected)) {
+  if (!expected || !sha256Pattern.test(expected)) {
     throw new Error(`官方校验清单缺少 ${archiveName} —— 版本号或镜像源有误？`)
   }
   const actual = await sha256(archive)
@@ -96,18 +117,29 @@ try {
   const tarBin =
     process.platform === 'win32' ? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar'
   execFileSync(tarBin, ['-xf', archive, '-C', scratch], { windowsHide: true })
-  await mkdir(path.dirname(executable), { recursive: true })
-  await copyFile(path.join(scratch, distribution, windows ? 'node.exe' : 'bin/node'), executable)
-  if (!windows) await chmod(executable, 0o755)
-  await copyFile(path.join(scratch, distribution, 'LICENSE'), path.join(destination, 'LICENSE'))
-  await writeFile(
-    path.join(destination, 'runtime.json'),
-    JSON.stringify(
-      { nodeVersion: NODE_VERSION, platform: process.platform, arch: process.arch, archive: archiveName, sha256: expected },
-      null,
-      2
-    )
-  )
+  const runtimeParent = path.dirname(destination)
+  await mkdir(runtimeParent, { recursive: true })
+  const staging = await mkdtemp(path.join(runtimeParent, '.node-runtime-'))
+  try {
+    const stagedExecutable = path.join(staging, executableName)
+    const stagedLicense = path.join(staging, 'LICENSE')
+    const stagedManifest = path.join(staging, 'runtime.json')
+    await copyFile(path.join(scratch, distribution, windows ? 'node.exe' : 'bin/node'), stagedExecutable)
+    if (!windows) await chmod(stagedExecutable, 0o755)
+    await copyFile(path.join(scratch, distribution, 'LICENSE'), stagedLicense)
+    const [executableSha256, licenseSha256] = await Promise.all([sha256(stagedExecutable), sha256(stagedLicense)])
+    await writeFile(stagedManifest, JSON.stringify({
+      nodeVersion: NODE_VERSION, platform: process.platform, arch: process.arch,
+      archive: archiveName, sha256: expected, executableSha256, licenseSha256
+    }, null, 2))
+    await mkdir(path.dirname(executable), { recursive: true })
+    await rm(manifest, { force: true })
+    await rename(stagedExecutable, executable)
+    await rename(stagedLicense, license)
+    await rename(stagedManifest, manifest)
+  } finally {
+    await rm(staging, { recursive: true, force: true })
+  }
   console.log(`自带 Node ${NODE_VERSION} 就位：${path.relative(repoRoot, executable)}`)
 } finally {
   await rm(scratch, { recursive: true, force: true })

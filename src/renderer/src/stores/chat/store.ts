@@ -129,6 +129,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeSessionId: null,
   bySession: {},
   loadError: null,
+  creationError: null,
 
   // 初载不自动建会话：归档是回收站语义，"活跃列表空"有两种含义 —— 首装，或
   // 用户归档了全部会话（合法终态）。原"列表空就建一个"在后者每次重启都复活
@@ -307,10 +308,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // projectId 与 permissionMode）；chat 态下 activeSessionId 为 null（空列表
     // 着陆页直发，此前是静默 return 丢消息）才兜底建。
     const home = useHomeStore.getState().session
-    const sessionId =
-      home.kind === 'new'
-        ? await get().createSession(home.projectId !== undefined ? { projectId: home.projectId } : undefined)
-        : (get().activeSessionId ?? (await get().createSession(undefined)))
+    let sessionId = home.kind === 'new' ? null : get().activeSessionId
+    if (sessionId === null) {
+      try {
+        sessionId = await get().createSession(home.kind === 'new' && home.projectId !== undefined ? { projectId: home.projectId } : undefined)
+      } catch (error) {
+        // 会话尚未创建，错误由输入所在的视图交给全局 toast。
+        if (useHomeStore.getState().session === home) set({ creationError: { message: unwrapIpcError(error) } })
+        throw error
+      }
+    }
     messageDeltas.flush(sessionId)
     const runRequestId = Symbol('submit')
     // 乐观上屏用户消息；assistant 回复由引擎事件流驱动

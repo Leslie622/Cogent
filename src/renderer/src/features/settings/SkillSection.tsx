@@ -9,7 +9,7 @@
  * 作用域下拉 = 本机·用户 + 全部项目（useProjectScope，默认跟随活跃会话
  * 归属项目，可任意切换浏览）。搜索 = 本地过滤（名称 / 描述）。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   IconArrowBackUp,
   IconBook,
@@ -20,6 +20,7 @@ import {
   IconTrash
 } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
+import { showErrorToast } from '@/components/ui/sonner'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
@@ -35,7 +36,7 @@ import { SettingsGroup, SettingsPage } from './SettingsParts'
 import { ScopeMenu } from './ScopeMenu'
 import { BADGE, FIELD_GAP, FIELD_LABEL } from './models-recipes'
 import { unwrapIpcError } from '@/lib/ipc'
-import { useProjectScope } from '@/hooks/use-project-scope'
+import { useProjectScope, type ProjectScope } from '@/hooks/use-project-scope'
 import type { SkillSummary } from '@/env.d'
 
 /** 编辑弹窗的回填载荷（skills.read 取回；新增传 null） */
@@ -164,8 +165,15 @@ function SkillDialog({
 const skillsCache = new Map<string, SkillSummary[]>()
 
 export function SkillSection() {
+  const scopeState = useProjectScope()
+  const scopeKey = JSON.stringify([scopeState.selectValue, scopeState.projectCwd])
+  return <SkillScope key={scopeKey} scopeKey={scopeKey} scopeState={scopeState} />
+}
+
+/** 编辑正文与保存同属一个作用域实例，项目换根按新作用域读取。 */
+function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeKey: string }) {
   /** null = 加载中（仅该作用域首次访问、缓存未命中时短暂出现） */
-  const [skills, setSkills] = useState<SkillSummary[] | null>(null)
+  const [skills, setSkills] = useState<SkillSummary[] | null>(() => skillsCache.get(scopeKey) ?? null)
   const [fileErrors, setFileErrors] = useState<string[]>([])
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -175,48 +183,62 @@ export function SkillSection() {
   /** null = 新增；编辑态 = skills.read 取回的回填载荷 */
   const [editing, setEditing] = useState<SkillDraft | null>(null)
   const [query, setQuery] = useState('')
+  const active = useRef(false)
+  const latestRead = useRef<symbol | null>(null)
+  const latestEdit = useRef<symbol | null>(null)
 
   /**
    * 作用域选择：本机·用户 / 任一项目（默认跟随活跃会话归属的项目，
    * 手动挑过即固定）；项目档 cwd = 该项目主根 cwds[0]
    */
-  const scopeState = useProjectScope()
   const { scope, projectCwd } = scopeState
 
-  const scopeKey = scope === 'project' ? `project:${projectCwd}` : 'user'
   const refresh = useCallback(async () => {
-    // 缓存命中先顶上（切分区/切作用域回来不闪加载卡），拿到新值后原位替换
-    const cached = skillsCache.get(scopeKey)
-    if (cached !== undefined) setSkills(cached)
+    if (!active.current) return
+    const read = Symbol(scopeKey)
+    latestRead.current = read
     try {
       const r = await window.cogent.engineRequest('skills.list', scope === 'project' ? { cwd: projectCwd } : {})
+      if (latestRead.current !== read) return
       skillsCache.set(scopeKey, r.skills)
       setSkills(r.skills)
       setFileErrors(r.errors)
     } catch (error) {
-      setActionError(unwrapIpcError(error))
+      if (latestRead.current === read) setActionError(unwrapIpcError(error))
     }
   }, [scope, projectCwd, scopeKey])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    active.current = true
     void refresh()
+    return () => { active.current = false; latestRead.current = null; latestEdit.current = null }
   }, [refresh])
 
-  /** 写动作共用骨架：成功清错重拉，失败原样呈现 */
-  const runAction = async (call: () => Promise<unknown>): Promise<void> => {
+  /** 同一作用域内保留就地错误，离开后仍能看到该次保存的结果。 */
+  const runAction = async (call: () => Promise<unknown>, savingDialog = false): Promise<void> => {
     setBusy(true)
+    if (savingDialog) setSaveError(null)
     try {
       await call()
-      setActionError(null)
-      await refresh()
+      if (scope === 'user') skillsCache.clear()
+      else skillsCache.delete(scopeKey)
+      if (active.current) {
+        if (savingDialog) setDialogOpen(false)
+        setActionError(null)
+        await refresh()
+      }
     } catch (error) {
-      setActionError(unwrapIpcError(error))
+      const message = unwrapIpcError(error)
+      if (!active.current) showErrorToast(`${scopeState.project?.name ?? '本机 · 用户'}的技能设置：${message}`)
+      else if (savingDialog) setSaveError(message)
+      else setActionError(message)
     } finally {
-      setBusy(false)
+      if (active.current) setBusy(false)
     }
   }
 
   const openCreate = (): void => {
+    latestEdit.current = null
     setEditing(null)
     setSaveError(null)
     setDialogOpen(true)
@@ -224,6 +246,8 @@ export function SkillSection() {
 
   /** 编辑：先 skills.read 取正文回填（list 不带 body），失败原地报错不开弹窗 */
   const openEdit = (s: SkillSummary): void => {
+    const edit = Symbol(s.name)
+    latestEdit.current = edit
     void (async () => {
       try {
         const r = await window.cogent.engineRequest('skills.read', {
@@ -231,11 +255,12 @@ export function SkillSection() {
           name: s.name,
           ...(scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
         })
+        if (latestEdit.current !== edit) return
         setEditing({ name: s.name, description: r.description, body: r.body })
         setSaveError(null)
         setDialogOpen(true)
       } catch (error) {
-        setActionError(unwrapIpcError(error))
+        if (latestEdit.current === edit) setActionError(unwrapIpcError(error))
       }
     })()
   }
@@ -246,29 +271,13 @@ export function SkillSection() {
    * 前端镜像规则已拦下可预期非法，这里的失败 = 引擎权威校验的兜底通道。
    */
   const saveFromDialog = (draft: SkillDraft): void => {
-    void (async () => {
-      setBusy(true)
-      setSaveError(null)
-      let ok = true
-      try {
-        await window.cogent.engineRequest('skills.save', {
-          scope,
-          name: draft.name,
-          description: draft.description,
-          body: draft.body,
-          ...(scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
-        })
-      } catch (error) {
-        setSaveError(unwrapIpcError(error))
-        ok = false
-      } finally {
-        setBusy(false)
-      }
-      if (!ok) return
-      setDialogOpen(false)
-      setActionError(null)
-      await refresh()
-    })()
+    void runAction(() => window.cogent.engineRequest('skills.save', {
+      scope,
+      name: draft.name,
+      description: draft.description,
+      body: draft.body,
+      ...(scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
+    }), true)
   }
 
   /** 开关：user 档写禁用名单；project 档写 overrides（对任何行 —— 覆盖按名） */
@@ -436,7 +445,7 @@ export function SkillSection() {
       )}
 
       {actionError !== null && (
-        <div className="mt-4 rounded-lg border border-destructive/30 px-4 py-3 text-sm text-destructive">
+        <div role="alert" className="mt-4 rounded-lg border border-destructive/30 px-4 py-3 text-sm text-destructive">
           {actionError}
         </div>
       )}

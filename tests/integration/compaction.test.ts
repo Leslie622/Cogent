@@ -37,6 +37,8 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import {
+  closeLoopback,
+  listenLoopback,
   check,
   chunk,
   type EngineHandle,
@@ -48,7 +50,7 @@ import {
   startEngine
 } from './harness'
 
-const PORT = 18_941
+let port: number
 const home = makeTempDir('cogent-compaction-home-')
 const ws = makeTempDir('cogent-compaction-ws-')
 
@@ -235,11 +237,11 @@ const newSession = async (params: Record<string, unknown> = {}): Promise<string>
   return r.result.id
 }
 
-const MOCK_PROVIDERS = [
+const mockProviders = (port: number) => [
   {
     id: 'custom/mock',
     name: 'Mock',
-    baseUrl: `http://127.0.0.1:${PORT}/v1`,
+    baseUrl: `http://127.0.0.1:${port}/v1`,
     models: ['mock'],
     // 关键点①：contextWindow 64000（pi 口径推演：触发线 = ctx−reserve =
     // 48000（1.4 小窗自适应把 reserve 收敛为 min(16384, 64000/4)=16000），
@@ -256,13 +258,13 @@ const MOCK_PROVIDERS = [
 
 describe('上下文压缩集成（S1–S16 场景流，30 项断言）', () => {
   beforeAll(async () => {
-    await new Promise<void>((r) => server.listen(PORT, '127.0.0.1', r))
-    await initEngine(engine, { client: 'compaction-smoke', port: PORT, providers: MOCK_PROVIDERS })
+    port = await listenLoopback(server)
+    await initEngine(engine, { client: 'compaction-smoke', providers: mockProviders(port) })
   }, 60_000)
 
-  afterAll(() => {
-    engine.kill()
-    server.close()
+  afterAll(async () => {
+    await engine.stop()
+    await closeLoopback(server)
     for (const dir of [home, ws]) removeDir(dir)
   })
 
@@ -394,10 +396,10 @@ describe('上下文压缩集成（S1–S16 场景流，30 项断言）', () => {
     )
 
     // ———— S3 杀引擎重启：历史回查折叠条复原 ————
-    engine.kill()
+    await engine.stop()
     await sleep(300)
     engine = startEngine(home)
-    await initEngine(engine, { client: 'compaction-smoke', port: PORT, providers: MOCK_PROVIDERS })
+    await initEngine(engine, { client: 'compaction-smoke', providers: mockProviders(port) })
     const history = await engine.send('session.messages', { sessionId: s1 })
     const msgs = history.result?.messages ?? []
     // D9 保留式：历史 = 影子区原文（被摘要的 MILESTONE 全保留）+ 折叠条
@@ -537,10 +539,10 @@ describe('上下文压缩集成（S1–S16 场景流，30 项断言）', () => {
     )
 
     // ———— S10 场景④(pi 版):pi JSONL 落盘,重启复原 ————
-    engine.kill()
+    await engine.stop()
     await sleep(300)
     engine = startEngine(home)
-    await initEngine(engine, { client: 'compaction-smoke', port: PORT, providers: MOCK_PROVIDERS })
+    await initEngine(engine, { client: 'compaction-smoke', providers: mockProviders(port) })
     await engine.send('agent.submit', { sessionId: s6, text: 'post-restart probe', model: 'mock' })
     await engine.waitEvent('run.completed', (p) => p.sessionId === s6)
     const revivedReq = JSON.stringify(requestBodies.at(-1) ?? {})
@@ -620,11 +622,11 @@ describe('上下文压缩集成（S1–S16 场景流，30 项断言）', () => {
     // max_tokens 夹制(128K 窗不触)→ 请求体应带 thinking_token_budget=8192
     await engine.send('providers.custom.sync', {
       providers: [
-        ...MOCK_PROVIDERS,
+        ...mockProviders(port),
         {
           id: 'custom/budget',
           name: 'BudgetMock',
-          baseUrl: `http://127.0.0.1:${PORT}/v1`,
+          baseUrl: `http://127.0.0.1:${port}/v1`,
           models: ['mock-budget'],
           modelDefs: [
             {
@@ -659,7 +661,7 @@ describe('上下文压缩集成（S1–S16 场景流，30 项断言）', () => {
       `body=${JSON.stringify(budgetReq ?? {}).slice(0, 200)}`
     )
     // 卫生收尾:恢复 sync 全量语义(撤 budget provider —— 替换式同步,不传即卸)
-    await engine.send('providers.custom.sync', { providers: MOCK_PROVIDERS, overrides: [] })
+    await engine.send('providers.custom.sync', { providers: mockProviders(port), overrides: [] })
 
     // ———— S14 场景(S2 验收 bug 回归):轮间压缩后同 run 内请求的配对完整性 ————
     // 复现结构 = 验收翻车现场:垫到阈值边缘 → 大工具轮落账过线 → 轮间钩子在

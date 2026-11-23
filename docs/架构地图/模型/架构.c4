@@ -1,5 +1,6 @@
 // 目标架构：结构、接线与视图在此维护；能力完成度与源码依据由模块说明统一维护。
 specification {
+  tag planned
   element system {
     style { color muted; size xs }
   }
@@ -69,7 +70,7 @@ model {
   }
 
   host = system '引擎服务（Host）' {
-    technology '独立 Node 进程 · 接入处理 → HostApi 业务分发 → KernelRunner 执行'
+    technology '独立 Node 进程'
 
     authentication = component '身份认证' {
       technology 'Host token · 用户 token'
@@ -138,9 +139,9 @@ model {
     }
 
     authentication -[call]<-> native 'Cogent 原生协议'
-    authentication -[call]<-> adapter '适配调用方协议'
-    native -[call]<-> policy '统一调用'
-    adapter -[call]<-> policy '统一调用'
+    authentication -[call]<-> adapter '适配调用方协议' { #planned }
+    native -[call]<-> policy '统一调用' { #planned }
+    adapter -[call]<-> policy '统一调用' { #planned }
     policy -[call]<-> api '授权后执行'
     api -[call]<-> services '业务调用与事件'
     services -[configuration]-> runtime.capabilities '配置与治理'
@@ -162,9 +163,10 @@ model {
   desktop -[call]<-> access.stdio 'IPC 转管道'
   nativeClients -[call]<-> access.network.http 'Cogent 原生协议'
   nativeClients -[call]<-> access.network.ws 'Cogent 原生协议'
-  customClients -[call]<-> access.network.http '自定义协议'
-  customClients -[call]<-> access.network.ws '自定义协议'
+  customClients -[call]<-> access.network.http '自定义协议' { #planned }
+  customClients -[call]<-> access.network.ws '自定义协议' { #planned }
   customClients -[dependency]-> host.adapter '协议适配关系' {
+    #planned
     description '表示此调用方消费该适配能力；实际请求仍经网络入口与身份认证。'
   }
   externalAgent -[call]<-> mcp 'MCP · stdio' {
@@ -174,7 +176,7 @@ model {
   mcp -[call]<-> access.network.ws '事件订阅'
   access.network.http -[call]<-> host.authentication '携带 token'
   access.network.ws -[call]<-> host.authentication '握手认证'
-  users -[call]-> host.authentication '用户身份验证'
+  users -[call]-> host.authentication '用户身份验证' { #planned }
   host.provider -[call]<-> models '远端协议'
 }
 

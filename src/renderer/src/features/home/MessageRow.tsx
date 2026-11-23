@@ -14,6 +14,7 @@ import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Markdown } from '@/components/ui/markdown'
 import { Reasoning } from '@/components/ui/reasoning'
 import { formatDuration } from '@/lib/format-duration'
+import { formatCost } from '@/lib/format-cost'
 import { useAppearanceStore } from '@/stores/appearance'
 import { formatTokens } from './ContextIndicator'
 import { CompactionBar } from './CompactionBar'
@@ -46,16 +47,6 @@ export type MessageLike = {
 /** 消息时间戳：HH:MM（气泡下小字） */
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-/**
- * 成本 USD：四位小数去尾零（0.0031 → $0.0031）；不足 $0.0001 标下限而非抹成 $0。
- * 目录估价加 ≈ 前缀（端点不报账单，单价是汇率/分时快照，如 DeepSeek 分时半价未建模）；
- * 下限分支不加 —— "<" 本身已传达"不精确"，再叠 ≈ 是双重标记。
- */
-export function formatCost(usd: number, estimated?: boolean): string {
-  if (usd < 0.0001) return '<$0.0001'
-  return `${estimated ? '≈' : ''}$${parseFloat(usd.toFixed(4))}`
 }
 
 /**

@@ -14,9 +14,8 @@
  */
 import { createServer, type Server } from 'node:http'
 import { afterAll, beforeAll, describe, it } from 'vitest'
-import { check, chunk, type EngineHandle, initEngine, makeTempDir, removeDir, sse, startEngine } from './harness'
+import { closeLoopback, listenLoopback, check, chunk, type EngineHandle, initEngine, makeTempDir, removeDir, sse, startEngine } from './harness'
 
-const PORT = 18_943
 const home = makeTempDir('cogent-think-off-home-')
 const ws = makeTempDir('cogent-think-off-ws-')
 
@@ -46,11 +45,11 @@ const newSession = async (): Promise<string> => {
   return r.result.id
 }
 
-const PROVIDERS = [
+const providers = (port: number) => [
   {
     id: 'custom/mock',
     name: 'Mock',
-    baseUrl: `http://127.0.0.1:${PORT}/v1`,
+    baseUrl: `http://127.0.0.1:${port}/v1`,
     models: ['mock'],
     // 推理模型：声明选档集（map 由引擎构建）——off 走 map 默认规则可用
     modelDefs: [{ id: 'mock-reasoner', reasoning: true, thinkingLevels: ['low', 'high'] }]
@@ -59,13 +58,13 @@ const PROVIDERS = [
 
 describe('agent.submit thinkingLevel 值域（off 放行回归钉）', () => {
   beforeAll(async () => {
-    await new Promise<void>((r) => server.listen(PORT, '127.0.0.1', r))
-    await initEngine(engine, { client: 'thinking-off-smoke', port: PORT, providers: PROVIDERS })
+    const port = await listenLoopback(server)
+    await initEngine(engine, { client: 'thinking-off-smoke', providers: providers(port) })
   }, 60_000)
 
-  afterAll(() => {
-    engine.kill()
-    server.close()
+  afterAll(async () => {
+    await engine.stop()
+    await closeLoopback(server)
     for (const dir of [home, ws]) removeDir(dir)
   })
 

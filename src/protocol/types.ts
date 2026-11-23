@@ -318,7 +318,7 @@ export interface InitializeParams {
   /** 宿主实现的协议版本 */
   protocolVersion: number
   /**
-   * 握手时注入的凭据（宿主持有的持久化凭据灌进引擎内存表）。
+   * stdio 宿主可在握手时注入凭据到引擎内存表。HTTP/WS 握手只读。
    * optional：老宿主/冒烟脚本可以不带；key 只在引擎内存存活，不落引擎侧磁盘。
    */
   credentials?: Record<string, { apiKey: string }>

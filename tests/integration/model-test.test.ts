@@ -2,7 +2,7 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { chunk, makeTempDir, removeDir, sse, startEngine, type EngineHandle } from './harness'
+import { closeLoopback, chunk, makeTempDir, removeDir, sse, startEngine, type EngineHandle } from './harness'
 
 let engine: EngineHandle
 let server: Server
@@ -46,8 +46,8 @@ beforeAll(async () => {
   expect(synced.error).toBeUndefined()
 })
 afterAll(async () => {
-  engine.kill()
-  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  await engine.stop()
+  await closeLoopback(server)
   removeDir(home)
 })
 

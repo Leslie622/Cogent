@@ -12,10 +12,10 @@ try {
   const columns = [
     ['desktop', 'nativeClients', 'customClients', 'mcp'],
     ['access.stdio', 'access.network'],
-    ['host.authentication'],
+    ['host.authentication', 'host.runtime.capabilities'],
     ['host.native', 'host.adapter'],
-    ['host.policy'],
-    ['host.api'],
+    ['host.policy', 'host.runtime.kernel'],
+    ['host.api', 'host.runtime.alternative'],
     ['host.services'],
   ]
   const horizontal = new Set([
@@ -31,12 +31,14 @@ try {
       ranks: columns.map(nodes => ({ rank: 'same', nodes })),
       edgeWeight: Object.fromEntries(view.edges.filter(edge => horizontal.has(`${edge.source}>${edge.target}`)).map(edge => [edge.id, 10000])),
       edgeMinlen: {},
-      // 执行容器内部由显示投影紧凑排列；全局层距不再撑开三张卡。
+      // 能力是执行支路，主链按 HostApi、服务、KernelRunner 顺序相邻展开。
       excludeFromRanking: view.edges.filter(edge => edge.source === 'host.runtime.capabilities' || edge.line === 'dotted').map(edge => edge.id),
       invisibleEdges: [
         ...columns.flatMap((nodes, column) => nodes.slice(1).map((source, index) => column < 2
           ? { source: nodes[index], target: source, weight: 100 }
           : { source, target: nodes[index], weight: 100 })),
+        // 三张执行卡散进各列后，容器内部顺序仍要固定，否则投影前快照里卡片次序随机。
+        { source: 'host.runtime.kernel', target: 'host.runtime.alternative', weight: 10000 },
       ],
       reasoning: '三个阶段沿主线依次展开；API 紧接服务，Runner 内部由局部投影紧凑排卡并与服务层居中连接。',
     },

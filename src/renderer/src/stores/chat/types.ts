@@ -191,6 +191,7 @@ export interface ChatState {
   bySession: Partial<Record<string, SessionBucket>>
   /** 初载失败的原因（引擎不可用等；App 横幅呈现）。null = 正常 */
   loadError: string | null
+  creationError: { message: string } | null
 
   /** 初载：拉会话列表并选中最近会话。空列表（首装/全部已归档）不自动建会话，
       落"新聊天"着陆页、发送时由 submit 按需物化 —— 会话只随用户动作产生 */

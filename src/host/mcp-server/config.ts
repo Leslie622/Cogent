@@ -38,6 +38,7 @@ export function readAccess(): McpAccess | null {
   } catch {
     return null
   }
+  if (raw === null || typeof raw !== 'object') return null
   const candidate = raw as Partial<McpAccess>
   if (
     typeof candidate.port !== 'number' ||

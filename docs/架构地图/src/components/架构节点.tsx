@@ -1,4 +1,5 @@
 /** 节点直接使用共享 shadcn 卡片与按钮，避免 LikeC4 shadow DOM 内的第二套 UI。 */
+import { useEffect, useRef } from 'react'
 import { Handle, Position, type EdgeProps, type NodeProps } from '@xyflow/react'
 import { ArrowUpRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,8 +9,30 @@ import { moduleDetails } from '../模块说明'
 import { ImplementationBadge } from './实现标记'
 import { FeatureList } from './能力明细'
 
+function useReturnFocus(onReturnFocus: (() => void) | undefined) {
+  const button = useRef<HTMLButtonElement>(null)
+  // React Flow 在测量期间隐藏节点，等本节点实际可见再接回焦点。
+  useEffect(() => {
+    const target = button.current
+    const wrapper = target?.closest('.react-flow__node')
+    if (onReturnFocus === undefined || target === null || wrapper == null) return
+    const restore = () => {
+      if (getComputedStyle(target).visibility !== 'visible') return
+      observer.disconnect()
+      target.focus({ preventScroll: true })
+      onReturnFocus()
+    }
+    const observer = new MutationObserver(restore)
+    observer.observe(wrapper, { attributes: true, attributeFilter: ['style', 'class'] })
+    restore()
+    return () => observer.disconnect()
+  }, [onReturnFocus])
+  return button
+}
+
 export function ModuleNode({ id, data, selected }: NodeProps<ArchitectureNode>) {
   const { icon: Icon, features, showStatus, navigateOnClick } = moduleDetails[id]
+  const button = useReturnFocus(data.onReturnFocus)
   return <div className="architecture-node" data-selected={selected} data-status={data.status}>
     <Handle type="target" position={Position.Left} />
     <Card size="sm" className="h-full">
@@ -17,7 +40,7 @@ export function ModuleNode({ id, data, selected }: NodeProps<ArchitectureNode>) 
         <div className="flex items-center gap-2">
           <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <CardTitle>
-            <Button variant="link" size="default" aria-label={`查看${data.title}`}>
+            <Button ref={button} variant="link" size="default" aria-label={`查看${data.title}`}>
               {data.title}{navigateOnClick === true && <ArrowUpRight className="size-3" aria-hidden="true" />}
             </Button>
           </CardTitle>
@@ -34,13 +57,15 @@ export function ModuleNode({ id, data, selected }: NodeProps<ArchitectureNode>) 
 
 export function BoundaryNode({ id, data }: NodeProps<ArchitectureNode>) {
   const { icon: Icon, boundaryNote } = moduleDetails[id]
+  const button = useReturnFocus(data.onReturnFocus)
   return <div className="architecture-boundary">
     <Handle type="target" position={Position.Left} />
     <div className="architecture-boundary-heading">
       <Icon className="size-4" aria-hidden="true" />
-      <Button variant="ghost" size="sm" aria-label={`查看${data.title}`}>{data.title}</Button>
+      <Button ref={button} variant="ghost" size="sm" aria-label={`查看${data.title}`}>{data.title}</Button>
       <span className="text-xs text-muted-foreground">{data.technology}</span>
     </div>
+    {data.stages.map(stage => <span key={stage.label} className="architecture-stage text-xs" style={{ left: stage.x, width: stage.width }}>{stage.label}</span>)}
     {boundaryNote !== undefined && <p className="architecture-boundary-note text-xs text-muted-foreground">{boundaryNote}</p>}
     <Handle type="source" position={Position.Right} />
   </div>

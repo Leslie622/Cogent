@@ -31,6 +31,14 @@ describe('文件视图IPC边界', () => {
     expect(result).toMatchObject({ roots: [{ path: 'C:/trusted' }] })
     expect(mocks.open).not.toHaveBeenCalled()
   })
+  it('取消原生选择返回取消结果，不写授权或登记新上下文', async () => {
+    mocks.open.mockResolvedValue({ canceled: true, filePaths: [] })
+    const add = vi.spyOn(FileViewGrants.prototype, 'add')
+    const result = await mocks.handlers.get('fileViews:request')!(event, { method: 'fileViews.openContext', params: { scopeId: 'draft', pick: 'directory' } })
+    expect(result).toEqual({ canceled: true, selectedPaths: [] })
+    expect(add).not.toHaveBeenCalled()
+    expect(request).not.toHaveBeenCalled()
+  })
   it('重载与崩溃推进代次，新请求等待Host清理ACK，iframe或页内导航不推进', async () => {
     const invoke = mocks.handlers.get('fileViews:request')!
     await invoke(event, { method: 'fileViews.release', params: { leaseId: 'old' } })
@@ -48,6 +56,15 @@ describe('文件视图IPC边界', () => {
     request.mockResolvedValue({ ok: true }); sender.emit('render-process-gone')
     await invoke(event, { method: 'fileViews.release', params: { leaseId: 'recovered' } })
     expect(request).toHaveBeenCalledWith('fileViews.release', { windowId: 11, windowEpoch: 2, leaseId: 'recovered' })
+  })
+  it('Host 已退出时，导航和销毁的清理回调不会同步抛出', async () => {
+    const invoke = mocks.handlers.get('fileViews:request')!
+    const release = { method: 'fileViews.release', params: { leaseId: 'old' } }
+    await invoke(event, release)
+    request.mockImplementation(() => { throw new Error('host not running') })
+    expect(() => sender.emit('render-process-gone')).not.toThrow()
+    await expect(invoke(event, release)).rejects.toThrow('host not running')
+    expect(() => sender.emit('destroyed')).not.toThrow()
   })
   it('重载前项目查询的迟到结果不再登记context', async () => {
     let finish!: (value: unknown) => void

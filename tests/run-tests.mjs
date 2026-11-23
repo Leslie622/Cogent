@@ -4,8 +4,8 @@
  * （实测 nvm4w 22.14 无 zlib zstd，pi 嵌套 undici 8.x 模块初始化即
  * TypeError，套件在 import 期崩）切到自带 runtime node 再跑 vitest。
  *
- * 引擎 Node 定位复用生产三级链（src/electron/main/host/runtime.ts 的语义：
- * COGENT_NODE_BIN → resources/runtime/<平台>/bin/node → 当前进程兜底）。
+ * 显式指定 COGENT_NODE_BIN 时，测试进程与被测 Host 使用同一个 Node。
+ * 未指定时，测试优先使用满足版本要求的当前 Node，旧版才回退到自带运行时。
  * 用法：node tests/run-tests.mjs <vitest 参数…>（如 run / --watch）。
  */
 import { spawnSync } from 'node:child_process'
@@ -36,13 +36,8 @@ if (!existsSync(vitestEntry)) {
   process.exit(1)
 }
 
-// 当前进程的 node 够新（或显式覆盖口存在）→ 直接跑；否则切自带 runtime node。
-// 自带也不存在时不静默降级：明确报错指路（fetch:runtime 或升系统 node）
-const override = process.env.COGENT_NODE_BIN
-const target =
-  nodeNewEnough(process.versions.node) || override !== undefined
-    ? process.execPath
-    : (bundledNodeBin() ?? null)
+const target = process.env.COGENT_NODE_BIN ||
+  (nodeNewEnough(process.versions.node) ? process.execPath : bundledNodeBin())
 if (target === null) {
   console.error(
     `[run-tests] 系统 node ${process.versions.node} 低于 pi 要求（≥22.19），且未找到自带 runtime node。\n` +
@@ -52,4 +47,5 @@ if (target === null) {
 }
 
 const result = spawnSync(target, [vitestEntry, ...process.argv.slice(2)], { stdio: 'inherit', shell: false })
+if (result.error) console.error(`[run-tests] 无法启动测试 Node ${target}: ${result.error.message}`)
 process.exit(result.status ?? 1)

@@ -8,10 +8,12 @@
  * 引擎进程跑**构建产物** out/main/host.js（global-setup 守卫新鲜度）：
  * 测的是打包后的真协议链路，与单测（直读源码）分层互补。
  */
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import type { Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Readable, Writable } from 'node:stream'
 import { expect } from 'vitest'
 import { bundledNodeBin, resolveEngineNodeBin } from '../../src/electron/main/host/runtime'
 import type { FileContext, FileReference } from '../../src/shared/files'
@@ -99,7 +101,7 @@ export interface EngineHandle {
   events: EngineEventFrame[]
   /** stderr 按行收集（诊断透传之外的可查询副本，如 HTTP 门监听行） */
   stderrLines: string[]
-  send<T = SmokeResult>(method: string, params?: unknown): Promise<{ result?: T; error?: { code: number; message: string } }>
+  send<T = SmokeResult>(method: string, params?: unknown, timeoutMs?: number): Promise<RpcResponse<T>>
   /** 等待指定事件（带谓词与水位），到点即返回该帧；超时抛错 */
   waitEvent(
     method: string,
@@ -108,65 +110,105 @@ export interface EngineHandle {
   ): Promise<EngineEventFrame>
   /** 断言窗口内零匹配事件（等满窗口再下结论） */
   assertNoEvent(method: string, predicate?: (params: SmokeEventParams) => boolean, windowMs?: number): Promise<void>
-  kill(): void
+  stop(): Promise<void>
+}
+
+type RpcResponse<T> = { result?: T; error?: { code: number; message: string } }
+
+interface PendingResponse {
+  resolve: (frame: unknown) => void
+  reject: (error: Error) => void
+}
+
+interface EventWaiter {
+  match: () => void
+  reject: (error: Error) => void
 }
 
 /**
  * 拉起引擎子进程（stdio JSON-RPC）。USERPROFILE/HOME 与 COGENT_HOME 同步
- * 覆写：无绑定会话的 os.homedir() 兜底根也隔离进临时目录（tools-smoke
- * 沉淀的手法）。重启 = kill 后再 startEngine（新 handle、新 events、新 id 序）。
+ * 覆写：无绑定会话的 os.homedir() 兜底根也隔离进临时目录。
  * extraEnv：测试专用注入（如 COGENT_HTTP_RPC），置于隔离根覆写之前 ——
  * 隔离根不可被注入覆盖。
  */
 export function startEngine(home: string, extraEnv: Record<string, string> = {}): EngineHandle {
+  return connectEngine(spawn(testEngineNode(), [join(process.cwd(), 'out/main/host.js')], {
+    env: {
+      ...process.env,
+      COGENT_HTTP_RPC: '0',
+      COGENT_HTTP_HOST: '127.0.0.1',
+      COGENT_HTTP_PORT: '0',
+      ...extraEnv,
+      COGENT_HOME: home,
+      USERPROFILE: home,
+      HOME: home,
+      // 集成场景按需共享 pi 下载的 fd/rg，凭据和会话不经过这个目录。
+      PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR ?? join(tmpdir(), 'cogent-test-pi-domain')
+    },
+    stdio: ['pipe', 'pipe', 'pipe']
+  }))
+}
+
+export function testEngineNode(): string {
   // 引擎 Node 对齐生产三级链（electron/main/host/runtime.ts）：COGENT_NODE_BIN →
   // 自带 runtime node（≥22.19，pi engines 门槛）→ process.execPath 兜底。
   // 不能恒用 execPath：开发机系统 node 可能低于 22.19（实测 22.14 无 zlib
   // zstd，pi 嵌套 undici 8.x 模块初始化即 TypeError，引擎起不来）
   const bundled = bundledNodeBin(join(process.cwd(), 'resources'), process.platform, process.arch)
-  const engineNode = resolveEngineNodeBin(
+  return resolveEngineNodeBin(
     process.env,
     bundled !== null && existsSync(bundled) ? bundled : null,
     process.execPath
   )
-  // stdio 三元组字面量 → spawn 推断 ChildProcessByStdio<Writable, Readable, Readable>，
-  // stdin/stdout 恒非空；stderr 收集进 stderrLines 并透传（保住原本 'inherit'
-  // 的排查体验，http-auth 冒烟还能程序化读监听行）
-  const engine = spawn(engineNode, [join(process.cwd(), 'out/main/host.js')], {
-    env: {
-      ...process.env,
-      ...extraEnv,
-      COGENT_HOME: home,
-      USERPROFILE: home,
-      HOME: home,
-      // pi 域（fd/rg 管理目录）指跨运行共享的稳定缓存（Host 侧 ??= 尊重已设值）：
-      // grep/find 首用会按需下载 fd/rg（约 2-5MB，PATH 上没有才下），逐次临时
-      // home 会每轮集成跑都重新下载。该目录只落这两个二进制 —— 凭据/模型
-      // 目录在 Host 内是内存态/显式传参，不经这里
-      PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR ?? join(tmpdir(), 'cogent-test-pi-domain')
-    },
-    stdio: ['pipe', 'pipe', 'pipe']
-  })
+}
+
+/** 标准流以行分帧，独立于 Windows 和 Unix 的子进程退出信号。 */
+export function connectEngine(engine: ChildProcessByStdio<Writable, Readable, Readable>): EngineHandle {
   const events: EngineEventFrame[] = []
   const stderrLines: string[] = []
+  const pendingResponses = new Map<number, PendingResponse>()
+  const eventWaiters = new Set<EventWaiter>()
+  let stopped: Promise<void> | undefined
+  let failure: Error | undefined
+  const fail = (reason: string, cause?: unknown): void => {
+    if (failure !== undefined) return
+    const diagnostics = stderrLines.slice(-8).join('\n')
+    failure = new Error(diagnostics ? `${reason}\n${diagnostics}` : reason, { cause })
+    for (const pending of pendingResponses.values()) pending.reject(failure)
+    for (const waiter of eventWaiters) waiter.reject(failure)
+  }
+  const closed = new Promise<void>((resolve) => {
+    engine.once('close', (code, signal) => {
+      fail(`Host 子进程已关闭（${signal ?? code}）`)
+      resolve()
+    })
+  })
+  engine.on('error', (error) => fail(`Host 子进程错误: ${error.message}`, error))
+  engine.stdin.on('error', (error) => fail(`Host stdin 错误: ${error.message}`, error))
+  engine.stdout.on('error', (error) => fail(`Host stdout 错误: ${error.message}`, error))
+  engine.stderr.on('error', (error) => fail(`Host stderr 错误: ${error.message}`, error))
+
+  const recordStderr = (line: string): void => {
+    if (!line) return
+    stderrLines.push(line)
+    process.stderr.write(`[engine] ${line}\n`)
+  }
   let stderrBuffer = ''
-  engine.stderr.on('data', (data: Buffer) => {
-    stderrBuffer += data.toString()
+  engine.stderr.setEncoding('utf8').on('data', (data: string) => {
+    stderrBuffer += data
     let nl: number
     while ((nl = stderrBuffer.indexOf('\n')) >= 0) {
       const line = stderrBuffer.slice(0, nl).trimEnd()
       stderrBuffer = stderrBuffer.slice(nl + 1)
-      if (line) {
-        stderrLines.push(line)
-        process.stderr.write(`[engine] ${line}\n`)
-      }
+      recordStderr(line)
     }
   })
-  const pendingResponses = new Map<number, { resolve: (frame: unknown) => void }>()
+  engine.stderr.on('end', () => recordStderr(stderrBuffer.trimEnd()))
   let nextId = 1
   let buffer = ''
-  engine.stdout.on('data', (data: Buffer) => {
-    buffer += data.toString()
+  engine.stdout.setEncoding('utf8').on('data', (data: string) => {
+    if (failure !== undefined) return
+    buffer += data
     let nl: number
     while ((nl = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, nl).trim()
@@ -174,59 +216,90 @@ export function startEngine(home: string, extraEnv: Record<string, string> = {})
       if (!line) continue
       // 协议帧来源唯一（本机引擎 stdout 的 JSON），断言一次收窄成线格式：
       // method 有 / id 无 = 事件帧；id 有 = 响应帧（两个判别字段都可能缺席）
-      const frame = JSON.parse(line) as { method?: string; id?: number; params?: SmokeEventParams }
+      let frame: { method?: string; id?: number; params?: SmokeEventParams }
+      try {
+        const parsed: unknown = JSON.parse(line)
+        if (parsed === null || typeof parsed !== 'object') throw new Error('JSON-RPC 帧应为对象')
+        frame = parsed
+      } catch (error) {
+        fail(`Host stdout 帧无效: ${line.slice(0, 200)}`, error)
+        return
+      }
       if (frame.method !== undefined && frame.id === undefined) {
         events.push({ method: frame.method, params: frame.params ?? {} })
+        for (const waiter of eventWaiters) waiter.match()
       } else if (frame.id !== undefined) {
         pendingResponses.get(frame.id)?.resolve(frame)
-        pendingResponses.delete(frame.id)
       }
     }
   })
   return {
     events,
     stderrLines,
-    send: <T = SmokeResult>(method: string, params?: unknown) =>
-      new Promise<{ result?: T; error?: { code: number; message: string } }>((resolve) => {
+    send: <T = SmokeResult>(method: string, params?: unknown, timeoutMs = 30_000) =>
+      new Promise<RpcResponse<T>>((resolve, reject) => {
+        if (failure !== undefined) { reject(failure); return }
+        if (stopped !== undefined) { reject(new Error('Host 正在关闭')); return }
         const id = nextId++
+        const line = JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'
+        const cleanup = (): void => {
+          clearTimeout(timer)
+          pendingResponses.delete(id)
+        }
+        const onError = (error: Error): void => { cleanup(); reject(error) }
+        const timer = setTimeout(() => onError(new Error(`等待 RPC 超时: ${method}（id=${id}）`)), timeoutMs)
         pendingResponses.set(id, {
-          // 响应帧来源唯一（本机引擎 stdout 的 JSON），断言一次收窄
-          resolve: (frame) => resolve(frame as { result?: T; error?: { code: number; message: string } })
+          resolve: (frame) => { cleanup(); resolve(frame as RpcResponse<T>) },
+          reject: onError
         })
-        engine.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n')
+        engine.stdin.write(line, (error) => {
+          if (error) onError(new Error(`发送 RPC 失败: ${method}`, { cause: error }))
+        })
       }),
     waitEvent: (method, predicate = () => true, timeoutMs = 8000) =>
       new Promise((resolve, reject) => {
+        const cleanup = (): void => { clearTimeout(timer); eventWaiters.delete(waiter) }
+        const waiter: EventWaiter = {
+          match: () => {
+            try {
+              const hit = events.find((e) => !e.__consumed && e.method === method && predicate(e.params))
+              if (hit === undefined) return
+              hit.__consumed = true
+              cleanup()
+              resolve(hit)
+            } catch (error) {
+              cleanup()
+              reject(error instanceof Error ? error : new Error('事件匹配失败', { cause: error }))
+            }
+          },
+          reject: (error) => { cleanup(); reject(error) }
+        }
         const timer = setTimeout(() => {
-          const failure = events.filter((e) => e.method === 'run.failed').at(-1)
-          reject(
+          const lastFailure = events.findLast((e) => e.method === 'run.failed')
+          waiter.reject(
             new Error(
               `等待事件超时: ${method}（尾部事件: ${events.slice(-8).map((e) => e.method).join(' → ') || '无'}` +
-                (failure !== undefined ? `；最近 run.failed: ${JSON.stringify(failure.params).slice(0, 160)}` : '') +
+                (lastFailure !== undefined ? `；最近 run.failed: ${JSON.stringify(lastFailure.params).slice(0, 160)}` : '') +
                 '）'
             )
           )
         }, timeoutMs)
-        const poll = (): void => {
-          const hit = events.find((e) => e.method === method && predicate(e.params) && !e.__consumed)
-          if (hit !== undefined) {
-            hit.__consumed = true
-            clearTimeout(timer)
-            resolve(hit)
-            return
-          }
-          setTimeout(poll, 30)
-        }
-        poll()
+        if (failure !== undefined) { waiter.reject(failure); return }
+        eventWaiters.add(waiter)
+        waiter.match()
       }),
     assertNoEvent: async (method, predicate = () => true, windowMs = 1200) => {
       await new Promise((r) => setTimeout(r, windowMs))
       const hit = events.find((e) => e.method === method && predicate(e.params))
       expect(hit, `不应出现的事件到达: ${method} ${JSON.stringify(hit?.params ?? {}).slice(0, 120)}`).toBeUndefined()
     },
-    kill: () => {
-      engine.kill()
-    }
+    stop: () => stopped ??= (async () => {
+      if (engine.exitCode !== null || engine.signalCode !== null) { await closed; return }
+      // 等标准流关闭再删目录或用同一数据根启动下一个 Host。
+      const force = setTimeout(() => engine.kill('SIGKILL'), 3_000)
+      engine.stdin.end()
+      try { await closed } finally { clearTimeout(force) }
+    })()
   }
 }
 
@@ -236,17 +309,43 @@ export function startEngine(home: string, extraEnv: Record<string, string> = {})
  */
 export async function initEngine(
   engine: EngineHandle,
-  opts: { client: string; port: number; providers: unknown[] }
-): Promise<void> {
-  const init = await engine.send<{ service: string }>('initialize', { client: opts.client, protocolVersion: 1 })
+  opts: { client: string; providers: unknown[] }
+): Promise<{ service: string; httpPort?: number }> {
+  const init = await engine.send<{ service: string; httpPort?: number }>('initialize', { client: opts.client, protocolVersion: 1 })
   if (init.result?.service !== 'cogent-agent') throw new Error('握手失败')
   // 场景流只编排主 Agent 请求；独立标题另有专册验证默认开启，不能消耗工具脚本的首帧。
   const titles = await engine.send('session.titleSettings.set', { enabled: false })
   if (titles.error !== undefined) throw new Error(titles.error.message)
-  await engine.send('credentials.set', { providerId: 'custom/mock', apiKey: 'sk-mock' })
-  await engine.send('providers.custom.sync', {
+  const credentials = await engine.send('credentials.set', { providerId: 'custom/mock', apiKey: 'sk-mock' })
+  if (credentials.error !== undefined) throw new Error(credentials.error.message)
+  const providers = await engine.send('providers.custom.sync', {
     providers: opts.providers,
     overrides: []
+  })
+  if (providers.error !== undefined) throw new Error(providers.error.message)
+  return init.result
+}
+
+/** 让系统为实际监听的 socket 分配端口，避免预占后释放的竞争窗口。 */
+export async function listenLoopback(server: Server): Promise<number> {
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject)
+      resolve()
+    })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('测试 HTTP 服务没有 TCP 监听地址')
+  return address.port
+}
+
+/** 测试结束后连同尚未消费完的模拟 SSE/HTTP 连接一起关闭。 */
+export async function closeLoopback(server: Server | undefined): Promise<void> {
+  if (server?.listening !== true) return
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve())
+    server.closeAllConnections()
   })
 }
 

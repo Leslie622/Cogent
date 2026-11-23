@@ -4,7 +4,7 @@
  */
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -19,6 +19,8 @@ import { ProjectRegistry } from '../../../src/host/runtime/project'
 import { SessionManager } from '../../../src/host/runtime/session'
 import { SkillStore } from '../../../src/host/runtime/skill-store'
 import { readPiTranscript } from '../../../src/host/kernel/pi-session-factory'
+
+const imageFixture = resolve('tests/fixtures/附件兼容/一像素.png')
 
 const hooks = vi.hoisted(() => ({
   input: (): Promise<{ action: 'continue' | 'handled' } | undefined> => Promise.resolve(undefined),
@@ -226,7 +228,8 @@ describe('真实 pi 准备期取消与终态内容', () => {
       return Promise.resolve()
     }
     hooks.payload = async (payload) => { await Promise.resolve(); return { ...payload as Record<string,unknown>, user: 'async-original-payload' } }
-    const original = join(root,'budget.png'); writeFileSync(original,readFileSync('reference/pi/packages/ai/test/data/red-circle.png'))
+    const original = join(root, 'budget.png')
+    copyFileSync(imageFixture, original)
     const ref = await manager.attachments.importPath(original)
     manager.submit(sessionId,'第一次',MODEL,'off',PROVIDER,[ref.id]); await waitTerminals(1)
     expect(terminals[0]).toMatchObject({ method: 'run.completed' }); expect(requests).toHaveLength(1)
@@ -271,8 +274,8 @@ describe('真实 pi 准备期取消与终态内容', () => {
   it('图片能力来自模型声明，原生图片真实进入 pi 请求', async () => {
     manager.syncCustomProviders([{ id: PROVIDER, name: '图片测试', baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
       models: [], modelDefs: [{ id: MODEL, reasoning: false, input: ['text', 'image'], contextWindow: 128_000, maxTokens: 4096 }] }], [])
-    const bytes = readFileSync('reference/pi/packages/ai/test/data/red-circle.png')
-    const original = join(root, '一像素.png'); writeFileSync(original, bytes)
+    const original = join(root, '一像素.png')
+    copyFileSync(imageFixture, original)
     const ref = await manager.attachments.importPath(original)
     manager.submit(sessionId, '', MODEL, 'off', PROVIDER, [ref.id])
     await waitTerminals(1)
@@ -286,7 +289,8 @@ describe('真实 pi 准备期取消与终态内容', () => {
     const configure = (input: Array<'text' | 'image'>) => manager.syncCustomProviders([{ id: PROVIDER, name: '能力热更新', baseUrl: endpoint,
       models: [], modelDefs: [{ id: MODEL, reasoning: false, input, contextWindow: 128_000, maxTokens: 4096 }] }], [])
     configure(['text', 'image'])
-    const original = join(root, '图片.png'); writeFileSync(original, readFileSync('reference/pi/packages/ai/test/data/red-circle.png'))
+    const original = join(root, '图片.png')
+    copyFileSync(imageFixture, original)
     const ref = await manager.attachments.importPath(original)
     manager.submit(sessionId, '开启图片', MODEL, 'off', PROVIDER, [ref.id]); await waitTerminals(1)
     expect(requests[0]).toContain('image_url')

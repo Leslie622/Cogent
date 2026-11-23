@@ -6,6 +6,7 @@
 import { create } from 'zustand'
 import type { InspectEntryDetail, InspectEntrySummary, SessionSummary } from '@/env.d'
 import { inspectDetailSource } from '@/lib/inspect-detail'
+import { unwrapIpcError } from '@/lib/ipc'
 
 /** 时间线的四层过滤开关键（解剖层次，见 kinds.ts 的 kind → layer 归并） */
 export type ConsoleLayer = 'api' | 'engine' | 'tool' | 'session'
@@ -29,6 +30,7 @@ interface ConsoleState {
   loading: boolean
   /** 初载失败的原因（引擎不可用等；ConsoleApp 呈现）。null = 正常 */
   loadError: string | null
+  entriesError: string | null
 
   load: () => Promise<void>
   selectSession: (sessionId: string) => Promise<void>
@@ -38,6 +40,8 @@ interface ConsoleState {
   toggleLayer: (layer: ConsoleLayer) => void
   setFollow: (follow: boolean) => void
 }
+
+let entriesRequest: symbol | undefined
 
 export const useConsoleStore = create<ConsoleState>((set, get) => ({
   sessions: [],
@@ -51,6 +55,7 @@ export const useConsoleStore = create<ConsoleState>((set, get) => ({
   runningBySession: {},
   loading: false,
   loadError: null,
+  entriesError: null,
 
   load: async () => {
     // in-flight 去重：事件风暴下"未知会话"分支每条事件触发一次 load，幂等但
@@ -73,17 +78,24 @@ export const useConsoleStore = create<ConsoleState>((set, get) => ({
   },
 
   selectSession: async (sessionId) => {
-    set({ sessionId, entries: [], details: {}, selectedSeq: null, detailError: null })
-    const { entries } = await window.cogent.engineRequest('inspect.entries', { sessionId })
-    // 异步竞态守卫：切换期间用户又选了别的会话，晚到的响应丢弃（真条件，非摆设）
-    if (get().sessionId !== sessionId) return
-    // 初载快照与实时事件赛跑：事件（webContents.send）可能先于响应（invoke 往返）
-    // 到达并已 append —— 不能用较旧的快照整体覆盖，按 seq 单调性归并取并集
-    set((state) => {
-      const merged = new Map(entries.map((entry) => [entry.seq, entry]))
-      for (const entry of state.entries) merged.set(entry.seq, entry)
-      return { entries: [...merged.values()].sort((a, b) => a.seq - b.seq) }
-    })
+    const request = Symbol(sessionId)
+    entriesRequest = request
+    set((state) => ({
+      entriesError: null,
+      ...(state.sessionId !== sessionId && { sessionId, entries: [], details: {}, selectedSeq: null, detailError: null })
+    }))
+    try {
+      const { entries } = await window.cogent.engineRequest('inspect.entries', { sessionId })
+      if (entriesRequest !== request) return
+      // 重试和初载期间仍会收到实时事件，按 seq 合并并优先保留实时条目。
+      set((state) => {
+        const merged = new Map(entries.map((entry) => [entry.seq, entry]))
+        for (const entry of state.entries) merged.set(entry.seq, entry)
+        return { entries: [...merged.values()].sort((a, b) => a.seq - b.seq) }
+      })
+    } catch (error) {
+      if (entriesRequest === request) set({ entriesError: unwrapIpcError(error) })
+    }
   },
 
   applyEntry: (sessionId, entry) => {

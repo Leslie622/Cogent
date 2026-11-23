@@ -63,9 +63,11 @@ Windows 字体渲染边界见[对话内容主题](对话内容主题.md)。
 
 ## 5. 在 Cogent 的落点
 
-- `scripts/fetch-runtime.mjs`：pin `22.23.5`；平台映射 win-x64 / linux-x64 /
-  linux-arm64（与 runtime.ts 目录名一一对应）；幂等（目标在即跳过，--force 重下）；
-  临时目录解包、校验过了才写 `resources/runtime/`（中断不留半成品）。
+- `scripts/fetch-runtime.mjs` 固定下载 `22.23.5`，平台目录与 `runtime.ts` 一致。
+  下载和解包在临时目录完成。归档通过 SHA256 验证后，在目标同卷准备可执行文件和许可证，
+  依次替换两个文件，最后发布 `runtime.json`。清单包含版本、平台、架构、归档摘要及安装文件摘要。
+  完整性检查同时核对这些记录和实际文件。缺件、旧清单或摘要不匹配时重新下载，`--force` 始终重装。
+  回归从隔离目录执行安装脚本，验证单有二进制、修改字节和删除许可证都会重新进入下载。
 - `src/electron/main/host/runtime.ts`：三级链
   `COGENT_NODE_BIN > resources/runtime/<平台>/bin/node > process.execPath`；
   纯函数拆分（env / 存在性注入），electron 只在 `resolveEngineNode` 薄壳出现 ——

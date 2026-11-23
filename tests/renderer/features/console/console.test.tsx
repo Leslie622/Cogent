@@ -117,4 +117,26 @@ describe('控制台阅读与真实状态', () => {
     await load
     expect(useConsoleStore.getState().entries.map((e) => e.seq)).toEqual([1, 2, 3])
   })
+
+  it('会话选择失败可重试，同一会话旧请求晚到不覆盖新时间线', async () => {
+    let failOld!: (error: Error) => void
+    const old = new Promise<never>((_resolve, reject) => { failOld = reject })
+    const request = vi.fn()
+      .mockReturnValueOnce(old)
+      .mockResolvedValueOnce({ entries: [entry(5)] })
+      .mockRejectedValueOnce(new Error('读取失败'))
+      .mockResolvedValueOnce({ entries: [entry(1), entry(2)] })
+    vi.stubGlobal('window', { cogent: { engineRequest: request } })
+    const store = useConsoleStore.getState()
+    const first = store.selectSession('one')
+    await store.selectSession('two')
+    await store.selectSession('one')
+    expect(useConsoleStore.getState().entriesError).toBe('读取失败')
+    store.applyEntry('one', entry(3))
+    await store.selectSession('one')
+    failOld(new Error('已失效的读取'))
+    await first
+    expect(useConsoleStore.getState().entriesError).toBeNull()
+    expect(useConsoleStore.getState().entries.map(item => item.seq)).toEqual([1, 2, 3])
+  })
 })

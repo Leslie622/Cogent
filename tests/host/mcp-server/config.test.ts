@@ -38,6 +38,8 @@ describe('readAccess：凭据文件形状校验', () => {
   it('损坏 JSON / 形状不对 / scope 越界 → null', () => {
     withAccessFile('{oops')
     expect(readAccess()).toBeNull()
+    withAccessFile('null')
+    expect(readAccess()).toBeNull()
     withAccessFile(JSON.stringify({ port: '8123', token: 'x', scope: 'write' }))
     expect(readAccess()).toBeNull()
     withAccessFile(JSON.stringify({ port: 0, token: 'x', scope: 'readonly' }))

@@ -36,15 +36,10 @@ export function resolveFileTarget(
   return { ...target, path: (windows ? win32 : posix).resolve(context.cwd, path) }
 }
 
-/** 只收明确单文件工具的结构参数；成功结果才把目标交给正文词表。 */
-export function toolFileReferences(
-  name: string,
-  args: Record<string, unknown>,
-  context: FileContext
-): FileReference[] {
-  if (!['read', 'write', 'edit'].includes(name) || typeof args.path !== 'string') return []
+/** 文件工具走 pi 的命令行路径约定，审批和产物引用共用这份解析。 */
+export function resolveToolFilePath(raw: string, context: Pick<FileContext, 'cwd' | 'platform'>): string {
   // 对齐 pi 的工具输入习惯，Markdown 目标本身不做这些 CLI 语义转换。
-  let input = args.path.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ').replace(/^@/, '')
+  let input = raw.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ').replace(/^@/, '')
   if (context.platform === 'win32' && !input.includes('\\')) {
     const drive = /^\/(?:mnt\/|cygdrive\/)?([a-z])(?:\/(.*))?$/i.exec(input)
     if (drive !== null) input = `${drive[1].toUpperCase()}:/${drive.at(2) ?? ''}`
@@ -55,7 +50,17 @@ export function toolFileReferences(
   else if (input.startsWith('~/') || (context.platform === 'win32' && input.startsWith('~\\')))
     input = pathApi.join(homedir(), input.slice(2))
   else if (/^file:\/\//.test(input)) input = fileURLToPath(input)
-  let path = pathApi.resolve(context.cwd, input)
+  return pathApi.resolve(context.cwd, input)
+}
+
+/** 只收明确单文件工具的结构参数；成功结果才把目标交给正文词表。 */
+export function toolFileReferences(
+  name: string,
+  args: Record<string, unknown>,
+  context: FileContext
+): FileReference[] {
+  if (!['read', 'write', 'edit'].includes(name) || typeof args.path !== 'string') return []
+  let path = resolveToolFilePath(args.path, context)
   // pi read 对 macOS 截图空格、NFD 与弯引号有明确兼容分支；按同序核对已知候选，不扫描目录。
   if (name === 'read' && !existsSync(path)) {
     const variants = [

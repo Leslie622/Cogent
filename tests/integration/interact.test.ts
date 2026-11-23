@@ -9,6 +9,8 @@ import { createServer, type Server } from 'node:http'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import type { AskQuestionParam, SessionMessagesResult, TodoItem } from '../../src/protocol'
 import {
+  closeLoopback,
+  listenLoopback,
   check,
   chunk,
   type EngineHandle,
@@ -19,7 +21,6 @@ import {
   startEngine
 } from './harness'
 
-const PORT = 18_970
 const home = makeTempDir('cogent-interact-home-')
 const ws = makeTempDir('cogent-interact-ws-')
 
@@ -143,17 +144,16 @@ const engine: EngineHandle = startEngine(home)
 
 describe('交互座集成（customTools 注入 + todo_write 全链）', () => {
   beforeAll(async () => {
-    await new Promise<void>((r) => server.listen(PORT, '127.0.0.1', r))
+    const port = await listenLoopback(server)
     await initEngine(engine, {
       client: 'interact-smoke',
-      port: PORT,
-      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${PORT}/v1`, models: ['mock'] }]
+      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${port}/v1`, models: ['mock'] }]
     })
   }, 60_000)
 
-  afterAll(() => {
-    engine.kill()
-    server.close()
+  afterAll(async () => {
+    await engine.stop()
+    await closeLoopback(server)
     for (const dir of [home, ws]) removeDir(dir)
   })
 

@@ -1,13 +1,13 @@
 /**
  * HTTP 门鉴权集成（阶段 2b 验收）：真 Host 构建产物 + COGENT_HTTP_RPC=1，
  * 走 D3 票据全链 —— stdio 签发（模拟 main 血缘）→ HTTP 兑换长期 token →
- * 档位强制 / 重放拒绝 / 跨代失效。curl 驱动验收的可执行化（global-setup
+ * 档位强制、跨代失效与业务事件分发。匿名、query token、票据重放矩阵由源码层覆盖（global-setup
  * 已守卫 build 产物新鲜度，测的就是打包后的真协议链路）。
  */
 import { createServer, type Server } from 'node:http'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
-import { chunk, initEngine, makeTempDir, removeDir, sleep, sse, startEngine, type EngineHandle } from './harness'
+import { closeLoopback, chunk, initEngine, listenLoopback, makeTempDir, removeDir, sleep, sse, startEngine, type EngineHandle } from './harness'
 
 let home: string
 let engine: EngineHandle
@@ -15,7 +15,7 @@ let base: string
 
 // ———— S11 的 mock LLM（OpenAI chat.completions SSE 形状，compaction.test 同款） ————
 
-const MOCK_PORT = 18_960
+let mockPort: number
 let mockServer: Server
 
 /** 流式回一段文本即收（message.delta 事件源） */
@@ -59,12 +59,12 @@ beforeAll(async () => {
       textResponse(res, 'WS-EVENT-IT-MARK')
     })
   })
-  await new Promise<void>((resolve) => mockServer.listen(MOCK_PORT, '127.0.0.1', resolve))
+  mockPort = await listenLoopback(mockServer)
 })
 
-afterAll(() => {
-  engine.kill()
-  mockServer.close()
+afterAll(async () => {
+  await engine.stop()
+  await closeLoopback(mockServer)
   removeDir(home)
 })
 
@@ -91,7 +91,7 @@ function rpc(token: string, method: string, params: Record<string, unknown> = {}
   })
 }
 
-it('票据全链（S1–S9 场景流一条到底）', async () => {
+it('真实注册表签票、兑换、执行业务；完整重启后旧 token 失效', async () => {
   // S1/S2 readonly 票据兑换
   const readonlyGrant = await grant('readonly')
   expect(readonlyGrant.scope).toBe('readonly')
@@ -106,22 +106,6 @@ it('票据全链（S1–S9 场景流一条到底）', async () => {
   expect((await rpc(readonlyGrant.token, 'session.titleSettings.get')).status).toBe(200)
   expect((await rpc(readonlyGrant.token, 'session.titleSettings.set', { enabled: false })).status).toBe(403)
 
-  // S5 无 token 401；?token= query 双轨等价
-  expect((await fetch(base + '/rpc', { method: 'POST', body: '{}' })).status).toBe(401)
-  const byQuery = await fetch(`${base}/rpc?token=${readonlyGrant.token}`, {
-    method: 'POST',
-    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'project.list', params: {} })
-  })
-  expect(byQuery.status).toBe(200)
-
-  // S6 票据重放拒绝（消费即焚）
-  const issue = await engine.send<{ ticket: string }>('capability.issue', { scope: 'readonly' })
-  const ticket = issue.result?.ticket ?? ''
-  const first = await fetch(base + '/auth/exchange', { method: 'POST', body: JSON.stringify({ ticket }) })
-  const replay = await fetch(base + '/auth/exchange', { method: 'POST', body: JSON.stringify({ ticket }) })
-  expect(first.status).toBe(200)
-  expect(replay.status).toBe(401)
-
   // S7 write 档全链：真创建会话（写进临时隔离根，无害）
   const writeGrant = await grant('write')
   expect((await rpc(writeGrant.token, 'session.titleSettings.set', { enabled: false })).status).toBe(403)
@@ -135,34 +119,37 @@ it('票据全链（S1–S9 场景流一条到底）', async () => {
   const summary = (await created.json()) as { result?: { id?: string } }
   expect(summary.result?.id).toBeTruthy()
 
+  const handshake = { client: 'network-readonly', protocolVersion: 3 }
+  const info = await rpc(readonlyGrant.token, 'initialize', handshake)
+  expect(await info.json()).toMatchObject({ result: { service: 'cogent-agent' } })
+  const credentialsBefore = await engine.send('credentials.list')
+  const injection = await rpc(readonlyGrant.token, 'initialize', {
+    ...handshake, credentials: { openai: { apiKey: 'test-only-not-accepted' } }
+  })
+  expect(await injection.json()).toMatchObject({ error: { code: -32602 } })
+  const credentialsAfter = await engine.send('credentials.list')
+  expect(credentialsAfter.result).toEqual(credentialsBefore.result)
+
   // S8 防自签提权：readonly token 经 HTTP 调 capability.issue → 403
   expect((await rpc(readonlyGrant.token, 'capability.issue', { scope: 'admin' })).status).toBe(403)
 
   // S9 跨代失效：token 生命周期 = Host 进程（重启 → 新 rootSecret → 旧 token 作废）
-  const engine2 = startEngine(home, { COGENT_HTTP_RPC: '1' })
-  try {
-    await engine2.send('initialize', { client: 'http-auth-it-gen2', protocolVersion: 1 })
-    const base2 = await listeningBase(engine2)
-    const stale = await fetch(base2 + '/rpc', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${writeGrant.token}` },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.list', params: {} })
-    })
-    expect(stale.status, 'Host 重启后旧 token 应 401').toBe(401)
-  } finally {
-    engine2.kill()
-  }
+  await engine.stop()
+  engine = startEngine(home, { COGENT_HTTP_RPC: '1' })
+  await engine.send('initialize', { client: 'http-auth-it-gen2', protocolVersion: 1 })
+  base = await listeningBase(engine)
+  const stale = await rpc(writeGrant.token, 'session.list')
+  expect(stale.status, 'Host 重启后旧 token 应 401').toBe(401)
 })
 
 it('WS 门（S10–S11）：请求帧走同一注册表，真事件流端到端推到连接', async () => {
   await initEngine(engine, {
     client: 'http-auth-ws',
-    port: MOCK_PORT,
     providers: [
       {
         id: 'custom/mock',
         name: 'Mock',
-        baseUrl: `http://127.0.0.1:${MOCK_PORT}/v1`,
+        baseUrl: `http://127.0.0.1:${mockPort}/v1`,
         models: ['mock'],
         modelDefs: [{ id: 'mock', contextWindow: 64_000 }]
       }

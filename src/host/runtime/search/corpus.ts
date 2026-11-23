@@ -1,9 +1,8 @@
 /** 派生语料读取：目录身份由 Host 供给，文件指纹只决定重读，不把孤儿转录恢复成会话。 */
 import { statSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { SessionManager as PiSessionManager } from '@earendil-works/pi-coding-agent'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import { legacyMessages, piSessionDir, readPiTranscript } from '../../kernel/transcript'
+import { findPiTranscriptFile, legacyMessages, readPiTranscript } from '../../kernel/transcript'
 import { toChatMessages } from '../message-projection'
 import type { MessageSource, SearchSession } from '../../../shared/session-search'
 
@@ -12,8 +11,7 @@ export interface SearchDocument { id: string; role: 'user' | 'assistant'; text: 
 export interface SearchSource { revision: string; documents: SearchDocument[] }
 
 export function locateSearchSource(root: string, descriptor: SearchDescriptor): { file: string; revision: string; pi: boolean } {
-  const dir = piSessionDir(descriptor.cwd, join(root, 'pi'))
-  const piFile = PiSessionManager.findById(descriptor.cwd, descriptor.summary.id, dir)
+  const piFile = findPiTranscriptFile(descriptor.cwd, root, descriptor.summary.id)
   const file = piFile ?? join(root, 'sessions', `${descriptor.summary.id}.json`)
   const stat = statSync(file)
   return { file, revision: `${file}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`, pi: piFile !== undefined }

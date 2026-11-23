@@ -198,8 +198,7 @@ async function main(): Promise<void> {
   // Host 进程内存态，重启全失效（token 生命周期 = Host 进程生命周期）
   const capabilityStore = createCapabilityStore()
 
-  // HTTP 门实际端口（开门后回填；handleInitialize 闭包读到它时必已赋值 ——
-  // HTTP 启动的 await 在主循环注册前完成，而 initialize 帧只能来自主循环）
+  // HTTP 启动完成后记录实际端口，供 stdio 与网络握手查询。
   let httpPort: number | undefined
   // WS 事件广播器（2c）：开门后回填。事件帧出口从 stdio 单出口变双出口
   //（stdout → main 不变 + WS → 在线消费者），同一帧同一时刻双写
@@ -208,10 +207,10 @@ async function main(): Promise<void> {
   /**
    * 握手：宿主确认链路可用，服务上报运行时信息（宿主据此做 Node 版本守卫）。
    */
-  async function handleInitialize(params: unknown): Promise<InitializeResult> {
-    startup('收到 initialize，校验并同步凭据')
+  async function handleInitialize(params: unknown, transport: 'stdio' | 'network'): Promise<InitializeResult> {
     // 信任边界：params 是外部输入，在此做唯一一次显式校验。
     const p = params as Partial<InitializeParams>
+    if (transport === 'stdio') startup('收到 initialize，校验并同步凭据')
     if (typeof p.client !== 'string' || typeof p.protocolVersion !== 'number') {
       throw new ProtocolError(
         RpcErrorCode.InvalidParams,
@@ -220,16 +219,20 @@ async function main(): Promise<void> {
     }
     // optional 凭据注入：宿主持久化的 key 灌进引擎内存表（老宿主可不带）。
     // 同步 runtime overlay 后再回握手响应 —— 全部 key 已在 pi 运行时生效
-    if (p.credentials) {
+    if (p.credentials !== undefined) {
+      if (transport !== 'stdio') {
+        throw new ProtocolError(RpcErrorCode.InvalidParams, 'initialize 的凭据只接受 stdio 宿主提供')
+      }
       credentials.loadAll(p.credentials)
       await Promise.all(
         Object.entries(p.credentials).map(([providerId, c]) => applyRuntimeKey(providerId, c.apiKey))
       )
     }
-    startup('initialize 完成')
-    // 先让当前响应的 Promise 续段写出握手帧，再启动预热；否则同步模块加载
-    // 会占住同一事件循环，把可选厂商 SDK 的冷加载算进必要的启动等待。
-    setImmediate(prewarmProviderApis)
+    if (transport === 'stdio') {
+      startup('initialize 完成')
+      // 等握手帧发出再预热 SDK，后续网络握手只读服务信息。
+      setImmediate(prewarmProviderApis)
+    }
     return {
       service: 'cogent-agent',
       protocolVersion: PROTOCOL_VERSION,
@@ -804,7 +807,6 @@ async function main(): Promise<void> {
     ...fileViewHandlers(fileViews),
     ...outputHandlers(sessions.outputs, files, (sessionId) => { sessions.fileContext(sessionId) }),
     ...attachmentHandlers(sessions.attachments, new AttachmentConfig(STORAGE_ROOT)),
-    ['initialize', handleInitialize],
     ['session.list', () => sessions.list()],
     ['session.search', handleSessionSearch],
     ['session.search.rebuild', () => sessions.searchService.rebuild()],
@@ -881,7 +883,7 @@ async function main(): Promise<void> {
    * stdio 丢弃 + 已记诊断日志，HTTP 门转 400）。两个传输门共用这一入口，
    * 保证守卫与分发路径唯一（D2 注册表单一）。
    */
-  async function handleFrame(raw: string): Promise<RpcResponse | null> {
+  async function handleFrame(raw: string, transport: 'stdio' | 'network'): Promise<RpcResponse | null> {
     let frame: unknown
     try {
       frame = JSON.parse(raw)
@@ -900,7 +902,9 @@ async function main(): Promise<void> {
       return null
     }
 
-    const handler = handlers.get(frame.method)
+    const handler = frame.method === 'initialize'
+      ? (params: unknown) => handleInitialize(params, transport)
+      : handlers.get(frame.method)
     if (!handler) {
       return {
         jsonrpc: '2.0',
@@ -931,7 +935,7 @@ async function main(): Promise<void> {
     // fail-closed）。恒鉴权仍在 —— 非 loopback 下每一请求都过 token（zcode
     // 对非 loopback 直接 throw 是因为它有匿名档，本项目无匿名档）
     const hostname = process.env.COGENT_HTTP_HOST ?? '127.0.0.1'
-    const http = await startHttpRpc(handleFrame, {
+    const http = await startHttpRpc((raw) => handleFrame(raw, 'network'), {
       port,
       hostname,
       rootSecret: createRootSecret(),
@@ -953,7 +957,7 @@ async function main(): Promise<void> {
   const stdin = createInterface({ input: process.stdin })
   stdin.on('line', (line) => {
     const trimmed = line.trim()
-    if (trimmed) void handleFrame(trimmed).then((response) => {
+    if (trimmed) void handleFrame(trimmed, 'stdio').then((response) => {
       if (response) reply(response)
     })
   })

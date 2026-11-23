@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { Worker } from 'node:worker_threads'
 import { parseInWorker } from '../../src/host/runtime/read-attachment'
 
+const sample = (name: string) => resolve('tests/fixtures/附件兼容', name)
 const roots: string[] = []
 const workers: Worker[] = []
 afterEach(async () => {
@@ -23,7 +24,7 @@ describe('附件 worker 构建产物', () => {
     const previous = process.env.COGENT_ATTACHMENT_WORKER
     process.env.COGENT_ATTACHMENT_WORKER = resolve('out/main/attachment-worker.js')
     const controllers = [new AbortController(), new AbortController(), new AbortController()]
-    const request = { path: resolve('reference/zcode/apps/zcode-cli/packages/office-runtime/fixtures/cjk.pdf'), name: 'a.pdf', cursor: 0 }
+    const request = { path: sample('中文离线映射.pdf'), name: 'a.pdf', cursor: 0 }
     try {
       const jobs = controllers.map((controller) => parseInWorker(request, controller.signal))
       const settled = Promise.allSettled(jobs)
@@ -38,10 +39,10 @@ describe('附件 worker 构建产物', () => {
     }
   })
   it('PDF 中文离线资源与 Office 依赖可从构建目录加载', async () => {
-    const pdf = await parse(resolve('reference/zcode/apps/zcode-cli/packages/office-runtime/fixtures/cjk.pdf'), '中文.pdf')
+    const pdf = await parse(sample('中文离线映射.pdf'), '中文.pdf')
     expect(pdf.error).toBeUndefined(); expect(pdf.result?.text).toContain('宋体')
-    const pptx = await parse(resolve('reference/zcode/apps/zcode-cli/packages/office-runtime/fixtures/launch.pptx'), 'launch.pptx')
-    expect(pptx.error).toBeUndefined(); expect(pptx.result?.text).toContain('幻灯片')
+    const pptx = await parse(sample('通用关系与绝对路径.pptx'), '通用关系.pptx')
+    expect(pptx.error).toBeUndefined(); expect(pptx.result?.text).toContain('幻灯片 1 / 2')
   })
   it('损坏文档结构化报错，不写出假成功', async () => {
     const root = mkdtempSync(join(tmpdir(), 'cogent-worker-test-')); roots.push(root)
@@ -49,9 +50,9 @@ describe('附件 worker 构建产物', () => {
     expect((await parse(path, 'bad.pdf')).error).toBeTruthy()
   })
   it('构建后读取真实命名空间XLSX和通用关系PPTX，保留公式缓存与备注', async () => {
-    const xlsx = await parse(resolve('tests/fixtures/附件兼容/命名空间前缀.xlsx'), '命名空间前缀.xlsx', { sheet: '销售', range: 'A1:C3' })
+    const xlsx = await parse(sample('命名空间前缀.xlsx'), '命名空间前缀.xlsx', { sheet: '销售', range: 'A1:C3' })
     expect(xlsx.error).toBeUndefined(); expect(xlsx.result?.text).toContain('C2: 公式=B2*F2；缓存=42')
-    const pptx = await parse(resolve('tests/fixtures/附件兼容/通用关系与绝对路径.pptx'), '通用关系.pptx', { cursor: 1 })
+    const pptx = await parse(sample('通用关系与绝对路径.pptx'), '通用关系.pptx', { cursor: 1 })
     expect(pptx.error).toBeUndefined(); expect(pptx.result?.text).toContain('NOTE-B28-5927')
   })
 })

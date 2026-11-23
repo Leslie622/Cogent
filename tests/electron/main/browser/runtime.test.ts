@@ -236,6 +236,27 @@ describe('浏览器资源身份与生命周期', () => {
     popupGuest.emit('did-start-navigation', {}, 'https://example.org/new', false, true)
     expect(check(popupGuest as unknown as WebContents, 'media', 'https://example.org', { mediaType: 'audio' })).toBe(false)
   })
+  it('网页进程退出使一次授权和尚未答复的授权同时失效', async () => {
+    const { runtime, owner, reservation, profile, guest } = ready()
+    runtime.visibility(owner, reservation.lease, true)
+    const check = profile.setPermissionCheckHandler.mock.calls[0][0] as (guest: WebContents, permission: string, origin: string, details: object) => boolean
+    const request = profile.setPermissionRequestHandler.mock.calls[0][0] as (guest: WebContents, permission: string, callback: (allowed: boolean) => void, details: { requestingUrl: string }) => void
+    const contents = guest as unknown as WebContents
+    const requestingUrl = 'https://example.org'
+    const geolocation = vi.fn()
+    request(contents, 'geolocation', geolocation, { requestingUrl })
+    await vi.waitFor(() => expect(geolocation).toHaveBeenCalledWith(true))
+    expect(check(contents, 'geolocation', requestingUrl, {})).toBe(true)
+
+    let answer!: (result: { response: number }) => void
+    mocks.question.mockImplementationOnce(() => new Promise(resolve => { answer = resolve }))
+    const notifications = vi.fn()
+    request(contents, 'notifications', notifications, { requestingUrl })
+    guest.emit('render-process-gone', {}, { reason: 'crashed' })
+    expect(check(contents, 'geolocation', requestingUrl, {})).toBe(false)
+    answer({ response: 0 })
+    await vi.waitFor(() => expect(notifications).toHaveBeenCalledWith(false))
+  })
   it('关闭标签后 DownloadHold 仍保留 guest，完成才释放', async () => {
     const { runtime, owner, reservation, profile, guest } = ready()
     const item = new Download()

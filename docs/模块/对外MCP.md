@@ -35,9 +35,10 @@ Host 启动（main/index.ts start 后）
   → Host 重启 main 重写；cogent-mcp 每调用重读（换 token/端口无需通知）
 ```
 
-- `externalMcp` 是 settings.json 文件级配置（手编，无设置页 UI）；
-- 关闭态删除遗留文件：设置改关但 Host 未重启时，旧 write 档 token 不许
-  继续有效。
+- `externalMcp` 在 `settings.json` 中手动编辑。重启桌面应用后读取新的开关和写权限，
+  关闭时删除遗留凭据文件，已签发 token 随上一代 Host 退出而失效。
+- MCP 工具集在入口进程启动时按凭据档位注册。变更档位后重新连接 MCP 入口以刷新工具清单。
+- 凭据缺失、JSON 损坏或顶层形状非法时，入口仍可初始化和列出只读工具，实际调用返回凭据不可用的提示。
 
 ## 工具面（14：只读 6 + 写组 8）
 

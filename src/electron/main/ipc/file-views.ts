@@ -3,7 +3,7 @@ import { dialog, ipcMain, shell } from 'electron'
 import { copyFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { basename, isAbsolute } from 'node:path'
-import { FILE_VIEWS_CHANNEL, FILE_VIEW_FORWARD_METHODS, type FileViewRoot } from '../../../shared/file-views'
+import { FILE_VIEWS_CHANNEL, FILE_VIEW_FORWARD_METHODS, type FileViewOpenResult, type FileViewRoot } from '../../../shared/file-views'
 import { fileViewObject, fileViewString } from '../../../host/runtime/file-views/handlers'
 import { FileViewGrants } from '../file-views/grants'
 import { storageRoot } from '../storage-root'
@@ -23,15 +23,22 @@ export function registerFileViewsIpc(deps: IpcDeps): void {
       document = { epoch: 0, closed: false, ready: Promise.resolve() }
       registeredWindows.set(windowId, document)
       const owner = document
+      const resetHostWindow = async (windowEpoch: number): Promise<void> => {
+        await deps.host.request('fileViews.resetWindow', { windowId, windowEpoch })
+      }
       const reset = () => {
         if (owner.closed) return
-        owner.epoch++
-        owner.ready = deps.host.request('fileViews.resetWindow', { windowId, windowEpoch: owner.epoch }).then(() => {})
+        owner.ready = resetHostWindow(++owner.epoch)
         void owner.ready.catch(() => {}) // 错误由下一次页面调用可见地返回，避免事件回调未处理拒绝。
+      }
+      const release = async (): Promise<void> => {
+        owner.closed = true
+        registeredWindows.delete(windowId)
+        await deps.host.request('fileViews.releaseWindow', { windowId })
       }
       win.webContents.on('render-process-gone', reset)
       win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) reset() })
-      win.webContents.once('destroyed', () => { owner.closed = true; registeredWindows.delete(windowId); void deps.host.request('fileViews.releaseWindow', { windowId }).catch(() => {}) })
+      win.webContents.once('destroyed', () => { void release().catch(() => {}) })
     }
     const windowEpoch = document.epoch
     const assertActive = () => {
@@ -50,17 +57,19 @@ export function registerFileViewsIpc(deps: IpcDeps): void {
         if (project === undefined) throw new Error('项目不存在或已移除')
         roots.push(...project.cwds.map((path, index) => ({ id: `project:${project.id}:${index}`, path, name: basename(path) || path, kind: 'directory' as const })))
       }
-      let selectedPaths: string[] = []; let canceled = false
+      let selectedPaths: string[] = []
       if (params.pick !== undefined) {
         if (params.pick !== 'file' && params.pick !== 'directory') throw new Error('文件选择类型不合法')
         const result = await active(dialog.showOpenDialog(win, { title: params.pick === 'file' ? '选择文件' : '选择目录', properties: [params.pick === 'file' ? 'openFile' : 'openDirectory', 'multiSelections'] }))
-        canceled = result.canceled
-        if (!canceled) { selectedPaths = result.filePaths; for (const path of result.filePaths) grantIds.push(await active(grants.add(path, assertActive))) }
+        // 取消没有获得新授权，不能创建调用方不会登记的 Host 上下文。
+        if (result.canceled) return { canceled: true, selectedPaths: [] } satisfies FileViewOpenResult
+        selectedPaths = result.filePaths
+        for (const path of result.filePaths) grantIds.push(await active(grants.add(path, assertActive)))
       }
       roots.push(...await active(grants.roots(grantIds)))
       const unique = roots.filter((root, index) => roots.findIndex((value) => value.path === root.path) === index)
       const context = await active(deps.host.request('fileViews.registerContext', { windowId, windowEpoch, scopeId, roots: unique }))
-      return { ...context, selectedPaths, canceled }
+      return { ...context, selectedPaths }
     }
     if (method === 'fileViews.action') {
       const leaseId = fileViewString(params, 'leaseId'); const action = fileViewString(params, 'action')

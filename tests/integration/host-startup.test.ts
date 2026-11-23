@@ -1,10 +1,10 @@
 /** 真构建产物的启动诊断走 stderr，凭据只用于初始化，不进入诊断日志。 */
 import { expect, it } from 'vitest'
 import { createServer } from 'node:http'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { chunk, initEngine, makeTempDir, removeDir, sse, startEngine } from './harness'
+import { closeLoopback, chunk, initEngine, makeTempDir, removeDir, sse, startEngine } from './harness'
 import type { AttachmentRef } from '../../src/shared/attachments'
 
 it('Host 启动阶段可定位，握手与后续 RPC 仍正常', async () => {
@@ -27,7 +27,7 @@ it('Host 启动阶段可定位，握手与后续 RPC 仍正常', async () => {
     }
     expect(logs).not.toContain(secret)
   } finally {
-    engine.kill()
+    await engine.stop()
     removeDir(home)
   }
 })
@@ -50,11 +50,11 @@ it('合并 SDK 后真实图片 worker 仍从原包加载并将图片送入请求
   const engine = startEngine(home, { COGENT_IMAGE_WORKER_OUT: observation,
     NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${observer}` })
   try {
-    await initEngine(engine, { client: 'image-resource-test', port: address.port,
+    await initEngine(engine, { client: 'image-resource-test',
       providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${address.port}/v1`, models: [],
         modelDefs: [{ id: 'mock', input: ['text', 'image'], reasoning: false }] }] })
     const original = join(home, '图片.png')
-    writeFileSync(original, readFileSync('reference/pi/packages/ai/test/data/red-circle.png'))
+    copyFileSync('tests/fixtures/附件兼容/一像素.png', original)
     const imported = await engine.send<AttachmentRef>('attachments.importPath', { path: original })
     expect(imported.error).toBeUndefined()
     const created = await engine.send<{ id: string }>('session.create', {})
@@ -67,8 +67,8 @@ it('合并 SDK 后真实图片 worker 仍从原包加载并将图片送入请求
     expect(worker.ok).toBe(true)
     expect(worker.source).toContain('/pi-coding-agent/dist/utils/image-resize-worker.js')
   } finally {
-    engine.kill()
-    await new Promise<void>((done) => server.close(() => done()))
+    await engine.stop()
+    await closeLoopback(server)
     removeDir(home)
   }
 })

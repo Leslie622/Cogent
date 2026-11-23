@@ -13,7 +13,7 @@
  * 新增/编辑弹窗（表单/JSON 双模式）在 McpServerDialog.tsx；纯序列化/解析
  * 在 mcp-import.ts（2026-11-17 会话状态重构 P6 拆出）。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   IconArrowBackUp,
   IconDownload,
@@ -26,6 +26,7 @@ import {
   IconWorld
 } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
+import { showErrorToast } from '@/components/ui/sonner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -41,7 +42,7 @@ import { BADGE, FIELD_LABEL } from './models-recipes'
 import { unwrapIpcError } from '@/lib/ipc'
 import { parseImport } from './mcp-import'
 import { McpServerDialog } from './McpServerDialog'
-import { useProjectScope } from '@/hooks/use-project-scope'
+import { useProjectScope, type ProjectScope } from '@/hooks/use-project-scope'
 import type { McpExposure, McpServerDef, McpServerSummary } from '@/env.d'
 import { MediaBindingsSection } from './MediaBindingsSection'
 
@@ -121,8 +122,15 @@ function ImportDialog({
 const serversCache = new Map<string, McpServerSummary[]>()
 
 export function McpSection() {
+  const scopeState = useProjectScope()
+  const scopeKey = JSON.stringify([scopeState.selectValue, scopeState.projectCwd])
+  return <McpScope key={scopeKey} scopeKey={scopeKey} scopeState={scopeState} />
+}
+
+/** 列表和弹窗跟随作用域实例，写请求仍由发起时的项目处理。 */
+function McpScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeKey: string }) {
   /** null = 加载中（仅该作用域首次访问、缓存未命中时短暂出现） */
-  const [servers, setServers] = useState<McpServerSummary[] | null>(null)
+  const [servers, setServers] = useState<McpServerSummary[] | null>(() => serversCache.get(scopeKey) ?? null)
   const [fileErrors, setFileErrors] = useState<string[]>([])
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -130,46 +138,57 @@ export function McpSection() {
   const [importOpen, setImportOpen] = useState(false)
   const [editing, setEditing] = useState<McpServerDef | null>(null)
   const [query, setQuery] = useState('')
+  const active = useRef(false)
+  const latestRead = useRef<symbol | null>(null)
 
   /**
    * 作用域选择：本机·用户 / 任一项目（useProjectScope，默认跟随活跃
    * 会话归属的项目，手动挑过即固定）；项目档 cwd = 该项目主根 cwds[0]
    */
-  const scopeState = useProjectScope()
   const { scope, projectCwd } = scopeState
 
-  const scopeKey = scope === 'project' ? `project:${projectCwd}` : 'user'
   const refresh = useCallback(async () => {
-    // 缓存命中先顶上（切分区/切作用域回来不闪加载卡），拿到新值后原位替换
-    const cached = serversCache.get(scopeKey)
-    if (cached !== undefined) setServers(cached)
+    if (!active.current) return
+    const read = Symbol(scopeKey)
+    latestRead.current = read
     try {
       const r = await window.cogent.engineRequest('mcp.list', scope === 'project' ? { cwd: projectCwd } : {})
+      if (latestRead.current !== read) return
       serversCache.set(scopeKey, r.servers)
       setServers(r.servers)
       setFileErrors(r.errors)
     } catch (error) {
-      setActionError(messageOf(error))
+      if (latestRead.current === read) setActionError(messageOf(error))
     }
   }, [scope, projectCwd, scopeKey])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    active.current = true
     void refresh()
+    return () => { active.current = false; latestRead.current = null }
   }, [refresh])
 
-  /** 全量同步（替换语义，用户作用域写路径）：成功后重拉；引擎校验失败原样呈现 */
-  const sync = async (next: McpServerDef[]): Promise<void> => {
+  const write = async (operation: () => Promise<unknown>): Promise<void> => {
     setBusy(true)
     try {
-      await window.cogent.engineRequest('mcp.sync', { servers: next })
-      setActionError(null)
-      await refresh()
+      await operation()
+      // 用户定义会影响全部项目视图，项目覆盖只影响自己的缓存。
+      if (scope === 'user') serversCache.clear()
+      else serversCache.delete(scopeKey)
+      if (active.current) {
+        setActionError(null)
+        await refresh()
+      }
     } catch (error) {
-      setActionError(messageOf(error))
+      const message = messageOf(error)
+      if (active.current) setActionError(message)
+      else showErrorToast(`${scopeState.project?.name ?? '本机 · 用户'}的 MCP 设置：${message}`)
     } finally {
-      setBusy(false)
+      if (active.current) setBusy(false)
     }
   }
+
+  const sync = (next: McpServerDef[]) => write(() => window.cogent.engineRequest('mcp.sync', { servers: next }))
 
   /** 项目 override 写入（项目作用域写路径）：全量替换该项 override */
   const applyOverride = async (
@@ -177,16 +196,7 @@ export function McpSection() {
     patch: { enabled?: boolean; exposure?: McpExposure }
   ): Promise<void> => {
     if (projectCwd === undefined) return
-    setBusy(true)
-    try {
-      await window.cogent.engineRequest('mcp.override', { cwd: projectCwd, name, ...patch })
-      setActionError(null)
-      await refresh()
-    } catch (error) {
-      setActionError(messageOf(error))
-    } finally {
-      setBusy(false)
-    }
+    await write(() => window.cogent.engineRequest('mcp.override', { cwd: projectCwd, name, ...patch }))
   }
 
   const saveFromDialog = (def: McpServerDef, originalName: string | null): void => {
@@ -404,7 +414,7 @@ export function McpSection() {
       )}
 
       {actionError !== null && (
-        <div className="mt-4 rounded-lg border border-destructive/30 px-4 py-3 text-sm text-destructive">
+        <div role="alert" className="mt-4 rounded-lg border border-destructive/30 px-4 py-3 text-sm text-destructive">
           {actionError}
         </div>
       )}

@@ -8,8 +8,8 @@
  *    listener 丢失）。不支持系统通知的环境（无通知服务的 Linux）静默跳过。
  *
  * ② 自定义声音文件（sound:pick-file / sound:clear-file）：系统文件选择框
- *    （音频扩展名过滤）→ **拷贝**进 ~/.cogent/sounds/（源文件删除不丢、
- *    跨机器目录不炸），settings.json 只存纯文件名。
+ *    （音频扩展名过滤）→ 拷贝进 ~/.cogent/sounds/ → 提交 settings.json 音源字段。
+ *    main 管文件和字段，renderer 只消费提交结果。
  *
  * ③ cogent-sound:// 特权协议：renderer（dev 下是 http://localhost）不能直读
  *    file://，经本协议由 main 代理读 sounds/ 目录回流。handler 只接受纯
@@ -18,13 +18,15 @@
  * ④ 系统通知设置跳转（shell:open-notification-settings）：平台 URI，
  *    Linux 无统一入口不注册（renderer 按 preload 暴露的 platform 隐藏按钮）。
  */
-import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { constants, copyFileSync, lstatSync, mkdirSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { dialog, ipcMain, net, protocol, shell, Notification, type BrowserWindow } from 'electron'
-import { IPC, type NotifyKind, type NotifyToastPayload } from '../../shared/ipc'
+import { IPC, NOTIFY_SOUND_FILE_FIELDS, type NotifyKind, type NotifyToastPayload } from '../../shared/ipc'
 import { storageRoot } from './storage-root'
-import { readSettingsFile } from './ipc/settings'
+import { readSettingsFile, writeSettingsFile } from './ipc/settings'
+import { managedSoundFileName } from './sound-files'
 
 /** 「正在展示」的 toast 持有表（防 GC；进程退出自然清空） */
 const liveToasts = new Set<Notification>()
@@ -32,13 +34,6 @@ const liveToasts = new Set<Notification>()
 /** 信任边界收窄：unknown → NotifyKind（越界即抛，约定 §1.1） */
 function isNotifyKind(raw: unknown): raw is NotifyKind {
   return raw === 'turn-done' || raw === 'approval' || raw === 'question'
-}
-
-/** 三类事件 → 设置字段里的文件名键（clear 时查盘上旧文件名用） */
-const KIND_FILE_FIELD: Record<NotifyKind, 'turnDoneSoundFile' | 'approvalSoundFile' | 'questionSoundFile'> = {
-  'turn-done': 'turnDoneSoundFile',
-  approval: 'approvalSoundFile',
-  question: 'questionSoundFile'
 }
 
 function soundsDir(): string {
@@ -57,8 +52,21 @@ function resolveSoundPath(url: string): string | null {
   } catch {
     return null // 畸形编码序列
   }
-  if (name === '' || name.includes('..') || basename(name) !== name) return null
-  return join(soundsDir(), name)
+  return managedSoundPath(name) ?? null
+}
+
+function managedSoundPath(value: unknown, kind?: NotifyKind): string | undefined {
+  const name = managedSoundFileName(value, kind)
+  return name === undefined ? undefined : join(soundsDir(), name)
+}
+
+function removeUnusedSound(path: string | undefined): void {
+  if (path === undefined) return
+  try { rmSync(path, { force: true }) }
+  catch (error) {
+    // 字段已提交，清理失败不影响当前音源，也不会误报配置未保存。
+    console.warn('[main] 清理旧提示音文件失败:', error)
+  }
 }
 
 /** 特权协议声明（必须在 app ready 前调，index.ts 顶层） */
@@ -111,11 +119,17 @@ export function registerNotifyIpc(deps: { getWindow: () => BrowserWindow | null 
         : await dialog.showOpenDialog(options)
     if (picked.canceled || picked.filePaths.length === 0) return null // 用户取消是常态不是错误
     const source = picked.filePaths[0]
-    // 拷进 sounds/：文件名带 kind 前缀（三类互不撞名，同类重选同名覆盖）。
-    // 设置字段由 renderer 的 setNotifySetting 统一落（settings:save 单一写路径）
+    const field = NOTIFY_SOUND_FILE_FIELDS[kind]
+    const previous = managedSoundPath(readSettingsFile()[field], kind)
+    // 同名原件也使用不同 ID；保存失败保留旧配置和字节，播放缓存也不会返回旧音频。
+    const name = `${kind}-${randomUUID()}-${basename(source)}`
+    const target = managedSoundPath(name, kind)
+    if (target === undefined) throw new Error('仅支持 MP3、WAV、OGG、FLAC 和 M4A 提示音文件')
     mkdirSync(soundsDir(), { recursive: true })
-    const name = `${kind}-${basename(source)}`
-    copyFileSync(source, join(soundsDir(), name))
+    copyFileSync(source, target, constants.COPYFILE_EXCL)
+    try { writeSettingsFile({ [field]: name }) }
+    catch (error) { removeUnusedSound(target); throw error }
+    removeUnusedSound(previous)
     return name
   })
 
@@ -124,10 +138,10 @@ export function registerNotifyIpc(deps: { getWindow: () => BrowserWindow | null 
       throw new Error("sound:clear-file 载荷必须是 'turn-done' | 'approval' | 'question'")
     }
     const kind = raw
-    // 只删文件；字段清空由 renderer 的 setNotifySetting 落。旧文件名从盘上设置
-    // 查（renderer 的清除可能尚未落盘）；文件缺失不报错 —— 字段才是真相源
-    const previous = readSettingsFile()[KIND_FILE_FIELD[kind]]
-    if (previous !== undefined) rmSync(join(soundsDir(), previous), { force: true })
+    const field = NOTIFY_SOUND_FILE_FIELDS[kind]
+    const previous = managedSoundPath(readSettingsFile()[field], kind)
+    writeSettingsFile({ [field]: undefined })
+    removeUnusedSound(previous)
     return { ok: true as const }
   })
 
@@ -168,6 +182,7 @@ export function registerNotifyIpc(deps: { getWindow: () => BrowserWindow | null 
   protocol.handle('cogent-sound', (request) => {
     const file = resolveSoundPath(request.url)
     if (file === null) return new Response('forbidden', { status: 403 })
+    if (!lstatSync(file, { throwIfNoEntry: false })?.isFile()) return new Response('not found', { status: 404 })
     return net.fetch(pathToFileURL(file).toString())
   })
 }

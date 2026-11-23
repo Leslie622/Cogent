@@ -7,10 +7,11 @@
  * - 切换到带历史错误的会话不弹（只在失败发生那一刻弹）；新会话再失败正常弹。
  */
 import { act, renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { showErrorToast } from '@/components/ui/sonner'
 import { emptyBucket, useChatStore } from '@/stores/chat'
 import { useErrorToast } from '@/hooks/use-error-toast'
+import { useHomeStore } from '@/stores/home'
 
 vi.mock('@/components/ui/sonner', () => ({ showErrorToast: vi.fn() }))
 
@@ -18,6 +19,7 @@ const showToast = vi.mocked(showErrorToast)
 const SID = 's1'
 const OTHER = 's2'
 const initialChat = { ...useChatStore.getState() }
+const initialHome = useHomeStore.getState()
 
 /** 只写一个会话桶的 lastError，其余保持 */
 function setLastError(sid: string, lastError: string | null): void {
@@ -30,7 +32,9 @@ describe('useErrorToast', () => {
   beforeEach(() => {
     showToast.mockClear()
     useChatStore.setState(initialChat, true)
+    useHomeStore.setState(initialHome, true)
   })
+  afterEach(() => vi.unstubAllGlobals())
 
   it('失败发生（null→文案）弹一次，错误详情传给呈现端', () => {
     useChatStore.setState({ activeSessionId: SID })
@@ -63,5 +67,19 @@ describe('useErrorToast', () => {
     expect(showToast).not.toHaveBeenCalled()
     act(() => { setLastError(OTHER, '新失败') })
     expect(showToast).toHaveBeenCalledTimes(1)
+  })
+
+  it('首次提交创建会话失败时弹出错误，无需已有会话桶，仍保留新聊天', async () => {
+    const view = { kind: 'new', draftId: 'pending-draft', projectId: 'project' } as const
+    useHomeStore.setState({ session: view })
+    const request = vi.fn().mockRejectedValue(new Error('摘要无法写入'))
+    vi.stubGlobal('cogent', { engineRequest: request })
+    renderHook(() => useErrorToast())
+
+    await act(async () => { await expect(useChatStore.getState().submit('尚未发送的正文')).rejects.toThrow('摘要无法写入') })
+    expect(showToast).toHaveBeenCalledExactlyOnceWith('摘要无法写入')
+    expect(request).toHaveBeenCalledExactlyOnceWith('session.create', expect.objectContaining({ projectId: 'project' }))
+    expect(useHomeStore.getState().session).toBe(view)
+    expect(useChatStore.getState().sessions).toEqual([])
   })
 })

@@ -10,7 +10,7 @@ beforeAll(async () => {
   engine = startEngine(home)
   await engine.send('initialize', { client: 'rename-test', protocolVersion: 1 })
 })
-afterAll(() => { engine.kill(); removeDir(home) })
+afterAll(async () => { await engine.stop(); removeDir(home) })
 
 it('手动标题落盘并广播，重命名不改活动时间，重启可恢复', async () => {
   const created = await engine.send<SessionSummary>('session.create', {})
@@ -20,7 +20,7 @@ it('手动标题落盘并广播，重命名不改活动时间，重启可恢复'
   expect(renamed.result?.summary).toEqual({ ...session, title: '手动名称', titleManual: true })
   const event = await engine.waitEvent('session.summaryChanged')
   expect(event.params.summary).toEqual(renamed.result?.summary)
-  engine.kill()
+  await engine.stop()
   engine = startEngine(home)
   await engine.send('initialize', { client: 'rename-test', protocolVersion: 1 })
   const restored = await engine.send<SessionSummary[]>('session.list')

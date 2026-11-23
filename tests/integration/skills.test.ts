@@ -15,6 +15,8 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import type { SkillListResult } from '../../src/protocol'
 import {
+  closeLoopback,
+  listenLoopback,
   check,
   chunk,
   type EngineHandle,
@@ -25,7 +27,6 @@ import {
   startEngine
 } from './harness'
 
-const PORT = 18_960
 const home = makeTempDir('cogent-skills-home-')
 const ws = makeTempDir('cogent-skills-ws-')
 const projectSkillPath = join(ws, '.cogent', 'skills', 'commit-check', 'SKILL.md')
@@ -85,17 +86,16 @@ const submitAndDone = async (sessionId: string, text: string): Promise<void> => 
 
 describe('技能座集成（协议方法 + 段注入 + read 闭环 + 回合热刷新 + 活展开）', () => {
   beforeAll(async () => {
-    await new Promise<void>((r) => server.listen(PORT, '127.0.0.1', r))
+    const port = await listenLoopback(server)
     await initEngine(engine, {
       client: 'skills-smoke',
-      port: PORT,
-      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${PORT}/v1`, models: ['mock'] }]
+      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${port}/v1`, models: ['mock'] }]
     })
   }, 60_000)
 
-  afterAll(() => {
-    engine.kill()
-    server.close()
+  afterAll(async () => {
+    await engine.stop()
+    await closeLoopback(server)
     for (const dir of [home, ws]) removeDir(dir)
   })
 

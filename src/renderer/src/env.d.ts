@@ -13,6 +13,7 @@ import type { AttachmentMethods, AttachmentRef, DirectoryRef } from '@shared/att
 import type { FileMethods, FileContext, FileReference, FileActionRequest } from '@shared/files'
 import type { OutputMethods, TurnOutputs } from '@shared/outputs'
 import type { FileViewMethods } from '@shared/file-views'
+import type { RendererSettingsPatch } from '@shared/ipc'
 import type { BrowserMethods, BrowserEvent } from '@shared/browser'
 import type { SessionSearchMethods } from '@shared/session-search'
 type SearchParams = { [K in keyof SessionSearchMethods]: SessionSearchMethods[K]['params'] }
@@ -101,7 +102,7 @@ declare global {
       /** 读会话级偏好（选中模型/思考力度）；形状与 shared/ipc.ts 的 SettingsFile 镜像 */
       getSettings: () => Promise<AppSettingsFile>
       /** 写会话级偏好（字段合并） */
-      saveSettings: (partial: Partial<Omit<AppSettingsFile, 'version'>>) => Promise<{ ok: true }>
+      saveSettings: (partial: RendererSettingsPatch) => Promise<{ ok: true }>
       /** 扫描存储根统计占用（设置页·存储分区）；形状与 shared/ipc.ts 镜像 */
       getStorageUsage: () => Promise<StorageUsageResult>
       /** 窗口控制（自绘 header 专用） */

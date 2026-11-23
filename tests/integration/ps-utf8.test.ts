@@ -4,12 +4,8 @@
  * 包装住在 pi 的 powershell.ts。冒烟钉的是「本机 PowerShell 形态下 pi
  * 工具可用且中文/退出码语义正确」。
  *
- * 双形态同跑：默认解析（pi 的 getPowerShellConfig：pwsh
- * 优先 → 5.1 兜底）/ 强制 5.1（从 PATH 摘掉 pwsh 目录 —— pi 无 env 覆盖口，
- * PATH 是唯一外部开关）。仅 Windows（其余平台 skip）。
- *
- * 本机未装 pwsh 7 时默认解析也落在 powershell.exe 5.1，双 describe 结果一致
- * 属预期而非测试退化 —— 排查别往这引（沿用旧版批注）。
+ * 分别运行 PowerShell 7 与 Windows PowerShell 5.1，在工具内确认版本与可执行文件。
+ * 机器缺少 PowerShell 7 时只执行 5.1，不把同一 shell 算作两份覆盖。
  */
 // 深路径直连而非包根 import：pi-coding-agent@1.5.2 根入口连带其嵌套
 // undici 8.12.3，后者模块初始化里的 createZstdDecompress.bind 在
@@ -18,10 +14,14 @@
 // 本测试这种「vitest 进程内直接 import 包根」踩雷。dist/core/tools 子树
 // 不引 undici；包 exports 未暴露此子路径，用相对路径绕过（版本已锁 1.5.2）
 import { createPowerShellTool } from '../../node_modules/@earendil-works/pi-coding-agent/dist/core/tools/index.js'
+import { getPowerShellConfig } from '../../node_modules/@earendil-works/pi-coding-agent/dist/utils/shell.js'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { basename, join } from 'node:path'
+import { expect, it, vi } from 'vitest'
 
 const IS_WIN = process.platform === 'win32'
+const hasPwsh = IS_WIN && basename(getPowerShellConfig().shell).toLowerCase() === 'pwsh.exe'
 
 /** 执行一条 PowerShell 命令，收整段输出与 error 位（pi 工具结果形状） */
 const run = async (command: string): Promise<{ isError: boolean; output: string }> => {
@@ -33,54 +33,48 @@ const run = async (command: string): Promise<{ isError: boolean; output: string 
   return { isError: result.isError === true, output }
 }
 
-/** 各 shell 形态的断言组（forcePs51 = 从 PATH 摘掉 pwsh 逼解析落 5.1） */
-const assertSuite = (describeName: string, forcePs51: boolean): void => {
-  describe(describeName, { skip: !IS_WIN }, () => {
-    const originalPath = process.env.PATH
-    beforeAll(() => {
-      if (forcePs51) {
-        process.env.PATH = (originalPath ?? '')
-          .split(';')
-          .filter((entry) => !/pwsh/i.test(entry))
-          .join(';')
-      }
-    })
-    afterAll(() => {
-      process.env.PATH = originalPath
-    })
+async function verifyBehavior(identity: RegExp): Promise<void> {
+  const zh = await run("Write-Output ('Shell={0}:{1}' -f (Split-Path -Leaf (Get-Process -Id $PID).Path), $PSVersionTable.PSVersion); Write-Output '中文往返-OK'")
+  expect(zh.isError, `1. 中文往返非 error —— ${JSON.stringify(zh.output.slice(0, 80))}`).toBe(false)
+  expect(zh.output).toMatch(identity)
+  expect(
+    zh.output.includes('中文往返-OK'),
+    `1b. 纯 PowerShell 中文输出不炸码（UTF-8 前置覆盖自身文本输出）—— ${JSON.stringify(zh.output.slice(0, 80))}`
+  ).toBe(true)
 
-    it('中文往返 / 码页 65001 / #8842 / 失败非零', { timeout: 60_000 }, async () => {
-      const zh = await run("Write-Output '中文往返-OK'")
-      expect(zh.isError, `1. 中文往返非 error —— ${JSON.stringify(zh.output.slice(0, 80))}`).toBe(false)
-      expect(
-        zh.output.includes('中文往返-OK'),
-        `1b. 纯 PowerShell 中文输出不炸码（UTF-8 前置覆盖自身文本输出）—— ${JSON.stringify(zh.output.slice(0, 80))}`
-      ).toBe(true)
+  const ping = await run('ping -n 2 127.0.0.1')
+  expect(
+    ping.output.length > 0 && !ping.output.includes('�') && ping.output.includes('127.0.0.1'),
+    `2. 原生控制台程序无 U+FFFD（GBK 中文经码页 65001 出，Node 按 UTF-8 解码不炸）—— ${JSON.stringify(ping.output.slice(0, 120))}`
+  ).toBe(true)
 
-      const ping = await run('ping -n 2 127.0.0.1')
-      expect(
-        ping.output.length > 0 && !ping.output.includes('�') && ping.output.includes('127.0.0.1'),
-        `2. 原生控制台程序无 U+FFFD（GBK 中文经码页 65001 出，Node 按 UTF-8 解码不炸）—— ${JSON.stringify(ping.output.slice(0, 120))}`
-      ).toBe(true)
+  const stderrCase = await run('cmd /c "echo stdout-line & echo stderr-line 1>&2"')
+  expect(
+    !stderrCase.isError && stderrCase.output.includes('stderr-line'),
+    `3. #8842 stderr 噪音不误报（命令成功仅 stderr 有输出 → 0；5.1 靠尾缀修正）—— error=${stderrCase.isError} ${JSON.stringify(stderrCase.output.slice(0, 120))}`
+  ).toBe(true)
 
-      const stderrCase = await run('cmd /c "echo stdout-line & echo stderr-line 1>&2"')
-      expect(
-        !stderrCase.isError && stderrCase.output.includes('stderr-line'),
-        `3. #8842 stderr 噪音不误报（命令成功仅 stderr 有输出 → 0；5.1 靠尾缀修正）—— error=${stderrCase.isError} ${JSON.stringify(stderrCase.output.slice(0, 120))}`
-      ).toBe(true)
-
-      const failCase = await run('cmd /c "exit 3"')
-      expect(
-        failCase.isError && /Command exited with code \d+/.test(failCase.output),
-        `4. 失败语句非零（pi 语义：非零退出码 = error 结果带 code；5.1 的尾缀把真实码压成 1、pwsh 透传 3 —— 只断非零形态，与旧版口径一致）—— ${JSON.stringify(failCase.output.slice(0, 120))}`
-      ).toBe(true)
-
-      // 旧版第 6 项（反引号行尾的包装构造分支）不再保留：该分支只在包装
-      // 构造层可观测（命令本身是 ParserError —— 反引号续行后无内容），
-      // pi 侧由上游单测覆盖，Cogent 冒烟只钉可执行行为
-    })
-  })
+  const failCase = await run('cmd /c "exit 3"')
+  expect(
+    failCase.isError && /Command exited with code \d+/.test(failCase.output),
+    `4. 失败语句非零（pi 语义：非零退出码 = error 结果带 code；5.1 的尾缀把真实码压成 1、pwsh 透传 3 —— 只断非零形态，与旧版口径一致）—— ${JSON.stringify(failCase.output.slice(0, 120))}`
+  ).toBe(true)
 }
 
-assertSuite('pi powershell 工具（默认解析：pwsh 优先）', false)
-assertSuite('pi powershell 工具（强制 Windows PowerShell 5.1：PATH 摘除 pwsh）', true)
+it.skipIf(!hasPwsh)('PowerShell 7：实测身份、中文和原生命令退出语义', { timeout: 60_000 }, async () => {
+  await verifyBehavior(/Shell=pwsh\.exe:7\./i)
+})
+
+it.skipIf(!IS_WIN)('Windows PowerShell 5.1：实测身份、中文和原生命令退出语义', { timeout: 60_000 }, async () => {
+  // pi 同时探测 PATH 和 ProgramFiles 中的默认安装位置。
+  const withoutPwsh = (process.env.PATH ?? '').split(';')
+    .filter((entry) => !existsSync(join(entry.replace(/^"|"$/g, ''), 'pwsh.exe')))
+    .join(';')
+  vi.stubEnv('PATH', withoutPwsh)
+  vi.stubEnv('ProgramFiles', undefined)
+  try {
+    await verifyBehavior(/Shell=powershell\.exe:5\.1\./i)
+  } finally {
+    vi.unstubAllEnvs()
+  }
+})

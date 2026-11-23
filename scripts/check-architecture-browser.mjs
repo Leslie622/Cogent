@@ -48,7 +48,7 @@ try {
     })
   }
   async function reset() {
-    await page.getByRole('button', { name: '恢复总览', exact: true }).click()
+    await page.getByRole('button', { name: '复位画布', exact: true }).click()
     await page.waitForFunction(() => Number.parseInt(document.querySelector('[aria-label="当前缩放"]').textContent) >= 85)
   }
   async function fold(side, closed) {
@@ -86,7 +86,8 @@ try {
   assert.equal(center.height, 1000)
   await neutral('.architecture-sidebar')
   await neutral('.architecture-boundary')
-  assert.doesNotMatch(await page.locator('body').innerText(), /与项目源码一同维护|项目架构文档|阅读指南|快速定位|拖动平移/)
+  assert.doesNotMatch(await page.locator('body').innerText(), /与项目源码一同维护|项目架构文档|阅读指南|快速定位|拖动平移|长虚线|能力总线/)
+  const wrappedTechnologies = () => page.locator('.architecture-boundary-heading span').evaluateAll(elements => elements.filter(element => element.getBoundingClientRect().height > 24).map(element => element.textContent))
 
   for (const current of views) {
     await view(current.name)
@@ -95,6 +96,11 @@ try {
     await panel.getByRole('heading', { name: current.heading, exact: true }).waitFor()
     assert.ok(await scale() >= 85, '默认视口应保持文字可读')
     await noOverflow()
+    // 横向长图在可读缩放下看不全，用小地图定位；全图适应后它应当让位。
+    assert.equal(await page.locator('.react-flow__minimap').count(), 1, `${current.name}在可读缩放下看不全，应显示小地图`)
+    await neutral('.react-flow__minimap')
+    assert.equal(await page.locator('.react-flow__minimap-node').count(), current.nodes, '小地图应画出全部节点')
+    assert.deepEqual(await wrappedTechnologies(), [], '容器标题的技术标识不应折行')
     const partialRows = await page.locator('.architecture-node[data-status="partial"]').evaluateAll(cards => cards.map(card => [...card.querySelectorAll('.architecture-features li')].map(row => ({
       status: row.dataset.status, top: row.getBoundingClientRect().top,
       dotRight: row.querySelector('svg').getBoundingClientRect().right,
@@ -113,10 +119,23 @@ try {
       return text.x < mask.x - 1 || text.x + text.width > mask.x + mask.width + 1 || text.height > mask.height ? [group.textContent] : []
     }))
     assert.deepEqual(clippedLabels, [], '标签遮罩应容纳实际字体')
+    assert.equal(await page.locator('.react-flow__minimap').count(), 0, '全图可见时应收起小地图')
     await screenshot(`横向-${current.id}-全图.png`)
   }
 
   await view('总览')
+  const minimapBox = await page.locator('.react-flow__minimap').boundingBox()
+  const controlsBox = await page.locator('.canvas-controls').boundingBox()
+  assert.ok(minimapBox.y + minimapBox.height <= controlsBox.y || minimapBox.x >= controlsBox.x + controlsBox.width, '小地图不应遮住缩放操作条')
+  const stages = await page.locator('.react-flow__node[data-id="host"] .architecture-stage').evaluateAll(elements => elements.map(element => {
+    const box = element.getBoundingClientRect()
+    return { label: element.textContent, x: box.x, y: box.y, right: box.right, bottom: box.bottom }
+  }))
+  assert.deepEqual(stages.map(stage => stage.label), ['接入与协议', '业务分发', '内核执行', '模型出口'], 'Host 应在标题下标出各阶段')
+  for (const id of ['host.authentication', 'host.native', 'host.adapter', 'host.policy', 'host.api', 'host.services', 'host.runtime', 'host.provider']) {
+    const card = await page.locator(`.react-flow__node[data-id="${id}"]`).boundingBox()
+    for (const stage of stages) assert.ok(stage.bottom <= card.y || stage.right <= card.x || stage.x >= card.x + card.width, `阶段标题「${stage.label}」不应压住 ${id}`)
+  }
   for (const id of ['host.services', 'host.runtime.capabilities', 'host.runtime', 'host.runtime.kernel', 'host.runtime.alternative']) {
     assert.equal(await page.locator(`.react-flow__node[data-id="${id}"]`).count(), 1, `${id} 应直接出现在总览中`)
   }
@@ -140,8 +159,13 @@ try {
   const kernelBox = await page.locator('.react-flow__node[data-id="host.runtime.kernel"]').boundingBox()
   const alternativeBox = await page.locator('.react-flow__node[data-id="host.runtime.alternative"]').boundingBox()
   assert.ok(Math.abs(capabilityBox.y - kernelBox.y) < 1 && Math.abs(kernelBox.y - alternativeBox.y) < 1, '执行能力与两个内核应紧凑同排')
-  assert.equal(capabilityBox.x, serviceBox.x, '能力总线与服务层应在同一列')
-  assert.ok(Math.abs(serviceBox.y - capabilityBox.y) > serviceBox.height, '服务层与能力总线应上下分开显示')
+  const providerBox = await page.locator('.react-flow__node[data-id="host.provider"]').boundingBox()
+  const modelsBox = await page.locator('.react-flow__node[data-id="models"]').boundingBox()
+  assert.ok(Math.abs(serviceBox.y + serviceBox.height / 2 - providerBox.y - providerBox.height / 2) < 1
+    && Math.abs(providerBox.y + providerBox.height / 2 - modelsBox.y - modelsBox.height / 2) < 1, '服务层、KernelRunner、模型适配与远端模型应同一条水平主线')
+  assert.ok(runnerBox.x > serviceBox.x + serviceBox.width, 'KernelRunner 应紧随服务层之后')
+  assert.ok(capabilityBox.x < kernelBox.x && kernelBox.x < alternativeBox.x, '执行能力、PiSdkKernel、其他内核应依次排列')
+  assert.ok(modelsBox.x > hostBox.x + hostBox.width, '远端模型应留在 Host 大框外')
   assert.equal(await page.getByRole('group', { name: '架构视图', exact: true }).getByRole('button').count(), 3)
   await page.getByRole('list', { name: '连线图例', exact: true }).waitFor()
   for (const kind of ['configuration', 'assembly']) {
@@ -159,8 +183,8 @@ try {
   await panel.getByRole('heading', { name: '接入链路', exact: true }).waitFor()
   assert.equal(await page.locator('.react-flow__node[data-id="users"]').count(), 1)
   assert.equal(await page.locator('.architecture-node[data-status="planned"]').count(), 2)
-  assert.equal(await page.locator('.architecture-relationship[data-planned="true"]').count(), 4)
-  assert.equal(await page.locator('.architecture-relationship [aria-label="未实现关系"]').count(), 4, '未实现状态应独立显示为标签橙点')
+  assert.equal(await page.locator('.architecture-relationship[data-planned="true"]').count(), 7)
+  assert.equal(await page.locator('.architecture-relationship [aria-label="未实现关系"]').count(), 7, '未实现状态应独立显示为标签橙点')
   for (const path of await page.locator('.architecture-relationship[data-kind="call"][data-planned="true"] > path').all()) {
     assert.equal(await path.getAttribute('stroke-dasharray'), null, '未实现不能把调用流程变成装配虚线')
     assert.equal(await path.getAttribute('marker-end'), 'url(#architecture-arrow-normal)')
@@ -171,8 +195,8 @@ try {
   await page.getByRole('button', { name: '查看自定义协议适配', exact: true }).click()
   await panel.getByRole('heading', { name: '自定义协议适配', exact: true }).waitFor()
   await panel.getByText('未实现', { exact: true }).waitFor()
-  await panel.getByRole('tab', { name: '源码', exact: true }).click()
-  await panel.getByText('docs/计划/全局架构.md', { exact: true }).waitFor()
+  await panel.getByRole('tab', { name: '来源', exact: true }).click()
+  await panel.getByRole('link', { name: 'docs/计划/全局架构.md', exact: true }).waitFor()
 
   await view('总览')
   await fitDiagram()
@@ -184,6 +208,10 @@ try {
   await screenshot('服务层-详情.png')
   await page.getByRole('button', { name: '查看会话与任务', exact: true }).click()
   await panel.getByRole('heading', { name: '会话与任务', exact: true }).waitFor()
+  assert.equal(await panel.getByRole('tab', { name: '来源', exact: true }).getAttribute('aria-selected'), 'true')
+  for (const group of ['实现', '模块与架构', '验收']) await panel.getByRole('heading', { name: group, exact: true }).waitFor()
+  const reviewLink = panel.getByRole('link', { name: 'docs/测试用例/会话与对话.md', exact: true })
+  assert.match(await reviewLink.getAttribute('href'), /github\.com\/Leslie622\/Cogent\/blob\/main\/docs\//)
   await page.getByRole('button', { name: '返回总览', exact: true }).click()
   await fitDiagram()
   await page.getByRole('button', { name: '查看执行能力', exact: true }).click()
@@ -201,7 +229,7 @@ try {
   await fitDiagram()
   await page.getByRole('button', { name: '查看PiSdkKernel', exact: true }).click()
   await panel.getByRole('heading', { name: 'PiSdkKernel', exact: true }).waitFor()
-  await panel.getByRole('tab', { name: '源码', exact: true }).click()
+  await panel.getByRole('tab', { name: '来源', exact: true }).click()
   await panel.getByText('src/host/kernel/pi-session-factory.ts', { exact: true }).waitFor()
   assert.equal(await page.locator('.architecture-node[data-selected="true"]').count(), 1)
   await screenshot('横向-模块源码.png')
@@ -253,10 +281,24 @@ try {
     await page.setViewportSize({ width, height: 1000 })
     await reset()
     await noOverflow()
+    const minimap = await page.locator('.react-flow__minimap').boundingBox()
+    if (minimap !== null) {
+      const canvas = await page.locator('.architecture-canvas').boundingBox()
+      assert.ok(minimap.x >= canvas.x && minimap.x + minimap.width <= canvas.x + canvas.width, `${width}px 下小地图应留在画布内`)
+    }
     await screenshot(`横向-宽度-${width}.png`)
     await fitDiagram()
     await noOverflow()
   }
+  const mobileNode = page.getByRole('button', { name: '查看PiSdkKernel', exact: true })
+  await mobileNode.click()
+  const mobileHeading = panel.getByRole('heading', { name: 'PiSdkKernel', exact: true })
+  await mobileHeading.waitFor()
+  assert.equal(await mobileHeading.evaluate(node => document.activeElement === node), true)
+  assert.equal((await page.locator('.architecture-canvas').boundingBox()).width, 390, '窄屏说明浮层不压缩画布')
+  await page.keyboard.press('Escape')
+  assert.equal(await panel.count(), 0)
+  assert.equal(await mobileNode.evaluate(node => document.activeElement === node), true)
   await page.setViewportSize({ width: 1600, height: 1000 })
   await fold('left', false)
   await fold('right', false)
@@ -265,7 +307,13 @@ try {
   await page.getByRole('button', { name: '查看Host 服务层', exact: true }).focus()
   await page.keyboard.press('Enter')
   await panel.getByRole('heading', { name: 'Host 服务层详情', exact: true }).waitFor()
-  await page.getByRole('button', { name: '返回总览', exact: true }).click()
+  const detailHeading = page.getByRole('heading', { name: '服务层详情 · 目标架构', exact: true })
+  assert.equal(await detailHeading.evaluate(node => document.activeElement === node), true)
+  await page.getByRole('button', { name: '返回执行', exact: true }).click()
+  const serviceOpener = page.getByRole('button', { name: '查看Host 服务层', exact: true })
+  await serviceOpener.waitFor()
+  await page.waitForFunction(() => document.activeElement?.closest('[data-id="host.services"]') !== null)
+  assert.equal(await serviceOpener.evaluate(node => document.activeElement === node), true)
 
   await page.setViewportSize({ width: 2800, height: 1440 })
   await fold('left', true)
@@ -293,7 +341,7 @@ try {
   assert.equal(await development.getByRole('navigation', { name: '架构导航' }).getByRole('button').count(), 1)
   assert.deepEqual(errors, [])
   assert.deepEqual(requests, [], '离线 HTML 不应请求外部资源')
-  console.log(JSON.stringify({ passed: true, views, widths: [1920, 1440, 1024, 390], checked: ['横向布局', '可读默认缩放', '全图适应', '原生与适配分支', '完成度与虚线', '分组展开', '三栏与独立折叠', '右栏滚动', '节点与标签裁切', '源码说明', '缩放平移复位', '明暗持久化', '键盘', '离线资源', 'Vite 入口'], screenshots: fileURLToPath(output), errors, externalRequests: requests }, null, 2))
+  console.log(JSON.stringify({ passed: true, views, widths: [1920, 1440, 1024, 390], checked: ['横向布局', '可读默认缩放', '全图适应', '原生与适配分支', '完成度与虚线', '小地图定位', '阶段标题行', '分组展开', '三栏与独立折叠', '右栏滚动', '节点与标签裁切', '源码说明', '缩放平移复位', '明暗持久化', '键盘', '离线资源', 'Vite 入口'], screenshots: fileURLToPath(output), errors, externalRequests: requests }, null, 2))
 } finally {
   if (devServer) await devServer.close()
   await browser.close()

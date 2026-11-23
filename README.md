@@ -1,23 +1,17 @@
 # Cogent
 
-基于 **Electron + [pi](https://github.com/earendil-works/pi)** 的桌面 Agent 客户端（React + shadcn/ui）。
+基于 Electron + pi 的本地优先桌面 Agent 客户端。[pi 源码](https://github.com/earendil-works/pi)
 
-架构、目录地图、协作规范与当前路线见 **[AGENTS.md](AGENTS.md)** —— 项目的唯一入口文档。
+参与开发从 [AGENTS.md](AGENTS.md) 开始。查当前进程边界看[架构](docs/架构.md)，
+按任务定位源码和验证看[模块索引](docs/模块/索引.md#按任务追链)，查看后续接线看[交互式目标图](docs/架构地图/README.md)。
 
 ## 快速开始
 
+本地开发建议使用与 CI 一致的 Node 24。
+
 ```bash
-npm install        # 引擎要求系统 Node >= 22.19
-npm run dev        # 开发模式（窗口 + 引擎服务）
-npm run build      # 产出 out/
-npm run typecheck  # 严格类型检查
+npm ci
+npm run dev
 ```
 
-## 技术栈
-
-| 层 | 技术 |
-| --- | --- |
-| 桌面壳 | Electron 40.9.3（ESM；Chromium 144 ≥ Tailwind v4 基线 111） |
-| Agent 引擎 | 独立 Node 进程（自带官方 node22，`resources/runtime/`）+ [`@earendil-works/pi-*`](https://github.com/earendil-works/pi)（stdio JSON-RPC） |
-| 前端 | React 19 + Tailwind CSS v4 + shadcn/ui |
-| 构建 | electron-vite 6 + Vite 8，TypeScript 严格模式 |
+构建产物在 `out/`。运行完整本地检查还需安装架构地图的依赖，步骤见[测试](docs/模块/测试.md)。

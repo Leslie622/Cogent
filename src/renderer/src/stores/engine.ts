@@ -4,6 +4,7 @@
  * key/定义保存后经 refresh 同步（模型下拉随之解锁）。
  */
 import { create } from 'zustand'
+import { NOTIFY_SOUND_FILE_FIELDS, type NotifyKind, type SoundFileField } from '@shared/ipc'
 import type { CustomProviderDef, CustomProvidersPayload, EngineMethodResult, ModelSummary, ProviderOverrideDef, ThinkingLevelWithOff } from '@/env.d'
 
 // 失焦保存先于测试点击发生，但 IPC 回包可能更晚。保留最近保存的 Promise，
@@ -20,13 +21,11 @@ export type SendShortcut = 'enter' | 'shift+enter' | 'ctrl+enter'
 /** 关闭最后一个窗口的行为（main 侧 close 拦截消费；ask 的弹窗在 renderer） */
 export type CloseBehavior = 'minimize' | 'quit' | 'ask'
 
-/** 提醒的三类事件（与 shared/ipc.ts 的 NotifyKind 同域） */
-export type NotifyKind = 'turn-done' | 'approval' | 'question'
+export type { NotifyKind } from '@shared/ipc'
 
 /**
  * 通知与提示音设置的内存形状（触发条件 × 呈现方式正交，见 docs/模块/通知与提醒.md）。
- * 声音文件 null = 用内置提示音（settings.json 的删键语义在
- * setter 里转换，UI 层只说 null）
+ * 声音文件 null = 用内置提示音；主进程的专用声音 IPC 提交声音来源。
  */
 export interface NotifySettings {
   /** 轮次完成的提醒条件（缺省 unfocused：聚焦时不打扰） */
@@ -44,8 +43,7 @@ export interface NotifySettings {
   questionSoundFile: string | null
 }
 
-/** setNotifySetting 的 patch：只带要改的键；声音文件 null = 恢复内置提示音 */
-export type NotifyPatch = Partial<NotifySettings>
+export type NotifyPatch = Partial<Omit<NotifySettings, SoundFileField>>
 
 /** 初始化、滑杆重置与播放器的原音基准共用，避免默认值各自漂移。 */
 export const NOTIFY_SOUND_DEFAULTS = { soundVolume: 0.5, soundPitch: 660 } as const
@@ -123,9 +121,9 @@ interface EngineState {
   setCloseBehavior: (behavior: CloseBehavior) => void
   /** 设置页「Chrome 硬件加速」开关：落盘 + 内存态（main 重启后才生效） */
   setHardwareAcceleration: (enabled: boolean) => void
-  /** 设置页「通知」分区 / 声音文件 pick-clear：patch 式落盘 + 内存态
-   *  （null 文件字段转 undefined 走 settings.json 删键） */
+  /** 通知偏好走普通设置；音源由专用 IPC 确认后更新内存。 */
   setNotifySetting: (patch: NotifyPatch) => void
+  setNotifySoundFile: (kind: NotifyKind, file: string | null) => void
 }
 
 function toKeyMap(status: Array<{ providerId: string; keyConfigured: boolean }>): Record<string, boolean> {
@@ -370,14 +368,10 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   },
   setNotifySetting: (patch) => {
     set((state) => ({ notify: { ...state.notify, ...patch } }))
-    // null 文件字段 → 显式 undefined 值的在场键：main 的 writeSettingsFile
-    // 据此删键（「恢复默认」）；未带的键不动（字段合并语义）
-    const { turnDoneSoundFile, approvalSoundFile, questionSoundFile, ...rest } = patch
-    const file: Partial<AppSettings> = rest
-    if (turnDoneSoundFile !== undefined) file.turnDoneSoundFile = turnDoneSoundFile ?? undefined
-    if (approvalSoundFile !== undefined) file.approvalSoundFile = approvalSoundFile ?? undefined
-    if (questionSoundFile !== undefined) file.questionSoundFile = questionSoundFile ?? undefined
-    void window.cogent.saveSettings(file)
+    void window.cogent.saveSettings(patch)
+  },
+  setNotifySoundFile: (kind, file) => {
+    set((state) => ({ notify: { ...state.notify, [NOTIFY_SOUND_FILE_FIELDS[kind]]: file } }))
   }
 }))
 

@@ -19,11 +19,9 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { bundledNodeBin, resolveEngineNodeBin } from '../../src/electron/main/host/runtime'
-import { check, chunk, type EngineHandle, initEngine, makeTempDir, removeDir, sse, startEngine } from './harness'
+import { closeLoopback, check, chunk, initEngine, listenLoopback, makeTempDir, removeDir, sse, startEngine, testEngineNode } from './harness'
 
-const SSE_PORT = 18_961
-const HTTP_PORT = 18_962
+let httpPort: number
 const home = makeTempDir('cogent-ext-mcp-home-')
 const ws = makeTempDir('cogent-ext-mcp-ws-')
 
@@ -64,30 +62,26 @@ const server: Server = createServer((req, res) => {
 
 // ———— 引擎 + MCP 客户端 ————
 
-const engine: EngineHandle = startEngine(home, { COGENT_HTTP_RPC: '1', COGENT_HTTP_PORT: String(HTTP_PORT) })
-
-const PROVIDERS = [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${SSE_PORT}/v1`, models: ['mock'] }]
+const engine = startEngine(home, { COGENT_HTTP_RPC: '1' })
 
 /** 测试代替 main 铸凭据：stdio 签票 → exchange → 写 access 文件 */
 async function mintAccess(scope: 'readonly' | 'write', file: string): Promise<void> {
   const issued = await engine.send<{ ticket: string }>('capability.issue', { scope })
   if (issued.result?.ticket === undefined) throw new Error('capability.issue 失败')
-  const res = await fetch(`http://127.0.0.1:${HTTP_PORT}/auth/exchange`, {
+  const res = await fetch(`http://127.0.0.1:${httpPort}/auth/exchange`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ticket: issued.result.ticket })
   })
   if (!res.ok) throw new Error(`exchange 失败 HTTP ${res.status}`)
   const exchanged = (await res.json()) as { token: string }
-  writeFileSync(file, JSON.stringify({ port: HTTP_PORT, token: exchanged.token, scope }, null, 2))
+  writeFileSync(file, JSON.stringify({ port: httpPort, token: exchanged.token, scope }, null, 2))
 }
 
 /** 起 MCP 客户端（spawn out/main/mcp.js，凭据文件按 scope 分开） */
 async function mcpClient(accessFile: string): Promise<Client> {
-  const bundled = bundledNodeBin(join(process.cwd(), 'resources'), process.platform, process.arch)
-  const node = resolveEngineNodeBin(process.env, bundled !== null ? bundled : null, process.execPath)
   const transport = new StdioClientTransport({
-    command: node,
+    command: testEngineNode(),
     args: [join(process.cwd(), 'out/main/mcp.js')],
     env: { ...process.env, COGENT_HOME: home, COGENT_MCP_ACCESS_FILE: accessFile }
   })
@@ -109,21 +103,30 @@ const toolNames = async (client: Client): Promise<string[]> => (await client.lis
 describe('对外 MCP 集成（T1–T4）', () => {
   let writeClient: Client
   let readonlyClient: Client
+  const connectedClients: Client[] = []
 
   beforeAll(async () => {
-    await new Promise<void>((r) => server.listen(SSE_PORT, '127.0.0.1', r))
-    await initEngine(engine, { client: 'ext-mcp-smoke', port: SSE_PORT, providers: PROVIDERS })
+    const port = await listenLoopback(server)
+    const init = await initEngine(engine, { client: 'ext-mcp-smoke',
+      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${port}/v1`, models: ['mock'] }]
+    })
+    if (!init.httpPort) throw new Error('Host 未返回 HTTP 端口')
+    httpPort = init.httpPort
     await mintAccess('write', join(home, 'mcp-access-write.json'))
     await mintAccess('readonly', join(home, 'mcp-access-readonly.json'))
     writeClient = await mcpClient(join(home, 'mcp-access-write.json'))
+    connectedClients.push(writeClient)
     readonlyClient = await mcpClient(join(home, 'mcp-access-readonly.json'))
+    connectedClients.push(readonlyClient)
   }, 120_000)
 
-  afterAll(() => {
-    void writeClient.close()
-    void readonlyClient.close()
-    engine.kill()
-    server.close()
+  afterAll(async () => {
+    try {
+      await Promise.all(connectedClients.map((client) => client.close()))
+    } finally {
+      await engine.stop()
+    }
+    await closeLoopback(server)
     for (const dir of [home, ws]) removeDir(dir)
   })
 

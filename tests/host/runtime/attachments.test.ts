@@ -1,6 +1,6 @@
 /** 附件在原件删除、取消和服务器出口上的行为回归。 */
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import type { AttachmentRef } from '../../../src/shared/attachments'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -88,7 +88,8 @@ describe('附件存储', () => {
     config.saveDraft({ id: 'many', text: '', attachmentIds: refs.map((r) => r.id) })
     expect(config.readDraft('many').attachmentIds).toHaveLength(25)
     expect(service.claim(refs.map((r) => r.id), 's')).toHaveLength(25)
-    const original = join(root, 'image.png'); writeFileSync(original, readFileSync('reference/pi/packages/ai/test/data/red-circle.png'))
+    const original = join(root, 'image.png')
+    copyFileSync('tests/fixtures/附件兼容/一像素.png', original)
     const images: AttachmentRef[] = []
     for (let i = 0; i < 21; i++) images.push(await service.importPath(original))
     expect(() => service.claim(images.map((r) => r.id), 's')).toThrow('20')

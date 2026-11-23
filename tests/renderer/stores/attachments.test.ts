@@ -1,6 +1,6 @@
 /** 草稿异步身份与同步恢复日志，覆盖页面卸载之外的存活边界。 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { EMPTY_DRAFT, useAttachmentStore } from '@/stores/attachments'
+import { bindChatDraft, EMPTY_DRAFT, useAttachmentStore } from '@/stores/attachments'
 import { attachmentMime, type AttachmentRef, type DirectoryRef } from '@shared/attachments'
 
 const previous = window.cogent
@@ -95,6 +95,38 @@ describe('附件草稿', () => {
     expect(localStorage.getItem('cogent.attachment-draft.recover')).toContain('未确认正文')
     useAttachmentStore.setState({ drafts: {} }); await store.load('recover')
     expect(draft('recover').text).toBe('未确认正文'); expect(draft('recover').loaded).toBe(true)
+  })
+  it('删除会话后，迟到的原件校验不会恢复已绑定草稿或重新写盘', async () => {
+    const sessionId = 'delete-during-recovery'
+    const id = 'original-new-draft'
+    const journal = `cogent.attachment-draft.${id}`
+    bindChatDraft(sessionId, id)
+    localStorage.setItem(journal, JSON.stringify({ version: 1, text: '已删除正文', items: [{ key: ref.id, name: ref.name, size: ref.size, ref }] }))
+    let signalValidationStarted!: () => void
+    const validationStarted = new Promise<void>((resolve) => { signalValidationStarted = resolve })
+    let finishValidation!: (value: { ref: AttachmentRef; path: string }) => void
+    const validation = new Promise<{ ref: AttachmentRef; path: string }>((resolve) => { finishValidation = resolve })
+    const fallback = request.getMockImplementation()! as (method: string, params: unknown) => Promise<unknown>
+    request.mockImplementation((method: string, params: unknown) => {
+      if (method !== 'attachments.resolve') return fallback(method, params)
+      signalValidationStarted()
+      return validation
+    })
+
+    const store = useAttachmentStore.getState()
+    const recovery = store.load(id)
+    await validationStarted
+    await store.discardChat(sessionId)
+    finishValidation({ ref, path: 'managed-path' })
+    await recovery
+    await vi.runAllTimersAsync()
+
+    expect(draft(id)).toEqual({ ...EMPTY_DRAFT, loaded: true })
+    expect(localStorage.getItem(journal)).toBeNull()
+    expect(localStorage.getItem(`cogent.chat-draft.${sessionId}`)).toBeNull()
+    expect(request.mock.calls.filter(([method]) => method === 'attachments.saveDraft')).toEqual([
+      ['attachments.saveDraft', { id, text: '', attachmentIds: [] }]
+    ])
   })
   it('未完成导入重启后显示错误，既有原件缺失也不能变成 ready', async () => {
     localStorage.setItem('cogent.attachment-draft.interrupted', JSON.stringify({ version: 1, text: '原文', items: [{ key: 'pending', name: '导入中.txt', size: 3 }] }))

@@ -17,6 +17,12 @@ import { selectLastError, useChatStore } from '@/stores/chat'
 export function useErrorToast(): void {
   const activeSessionId = useChatStore((s) => s.activeSessionId)
   const lastError = useChatStore(selectLastError)
+  const creationError = useChatStore((s) => s.creationError)
+  useEffect(() => {
+    if (creationError === null || useChatStore.getState().creationError !== creationError) return
+    useChatStore.setState({ creationError: null })
+    showErrorToast(creationError.message)
+  }, [creationError])
   // 上次快照：sid 换档 = 切会话（历史错误不弹）；同 sid 下 error 变化 = 失败发生
   const seen = useRef<{ sid: string | null; error: string | null }>({ sid: activeSessionId, error: lastError })
   useEffect(() => {

@@ -3,7 +3,7 @@
 // - web   ：渲染层单元 + 组件，jsdom（组件渲染需要 DOM；纯逻辑测试顺带同环境，
 //           免再拆一份配置）；setup-web 挂 jest-dom 匹配器；
 // - integration：mock SSE + 真构建产物 out/main/host.js，
-//           各文件自带子进程与固定端口（18940–18942）→ 串行跑；全流程分钟级，
+//           各文件自带子进程与动态回环端口；当前保留串行运行，避免共享 SDK 缓存争用，
 //           timeout 放宽；global-setup 守卫构建产物新鲜度，缺失或过期先 build。
 // alias 与 tsconfig paths 对齐（@ → renderer，@shared → shared）—— 运行时
 // Vitest 不读 tsconfig paths，需在此声明同款。

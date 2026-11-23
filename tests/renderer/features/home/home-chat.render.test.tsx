@@ -9,6 +9,12 @@ import { useProjectStore } from '@/stores/project'
 import { HomeChat } from '@/features/home/HomeChat'
 import { useAttachmentStore, EMPTY_DRAFT } from '@/stores/attachments'
 
+// 回合用例只验证 store 和视图，声音由通知专项覆盖。
+vi.mock('@/lib/notify', async (load) => ({
+  ...await load<typeof import('@/lib/notify')>(),
+  notifyEvent: vi.fn()
+}))
+
 vi.mock('@/features/home/ChatTheme', () => ({ useChatTheme: () => ({}) }))
 vi.mock('@/features/home/ConversationIndex', () => ({ ConversationIndex: () => null }))
 vi.mock('@/features/home/ContextIndicator', () => ({ ContextIndicator: () => null }))

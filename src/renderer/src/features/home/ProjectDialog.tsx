@@ -35,6 +35,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { showErrorToast } from '@/components/ui/sonner'
+import { unwrapIpcError } from '@/lib/ipc'
 import { useProjectStore } from '@/stores/project'
 import type { ProjectSummary } from '@/env.d'
 
@@ -200,9 +202,9 @@ export function ProjectDialog({
         onCreated?.(summary.id)
       }
       close()
+    } catch (error) {
+      showErrorToast(unwrapIpcError(error))
     } finally {
-      // 引擎报错（磁盘）时 stay：落 submitting 复位，错误经控制台可见
-      // （目录经信任确认时都存在，常态失败路径极少）
       setSubmitting(false)
     }
   }

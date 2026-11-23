@@ -68,6 +68,24 @@ it('试听加载或恢复输出失败时显示原因，不再无响应', async (
   expect(errorToast).toHaveBeenCalledExactlyOnceWith('无法播放提示音', { description: '音频设备不可用' })
 })
 
+it('文件来源按专用 IPC 的结果更新，清除失败仍保留已保存音源', async () => {
+  const user = userEvent.setup()
+  const managedFile = 'turn-done-45c63885-9749-4521-b552-77bdc8fff405-提示.wav'
+  vi.mocked(window.cogent.pickSoundFile).mockResolvedValueOnce(managedFile)
+  vi.mocked(window.cogent.clearSoundFile).mockRejectedValueOnce(new Error('配置文件不可写'))
+  const errorToast = vi.spyOn(toast, 'error').mockReturnValue('sound-error')
+  render(<NotificationsSection />)
+  await user.click(screen.getAllByRole('button', { name: '选择文件' })[0])
+  expect(screen.getByText('提示.wav')).toBeInTheDocument()
+  expect(useEngineStore.getState().notify.turnDoneSoundFile).toBe(managedFile)
+  await user.click(screen.getByRole('button', { name: /^恢复默认$/ }))
+  expect(useEngineStore.getState().notify.turnDoneSoundFile).toBe(managedFile)
+  expect(errorToast).toHaveBeenCalledWith('无法保存提示音设置', { description: '配置文件不可写' })
+  await user.click(screen.getByRole('button', { name: /^恢复默认$/ }))
+  expect(useEngineStore.getState().notify.turnDoneSoundFile).toBeNull()
+  expect(window.cogent.saveSettings).not.toHaveBeenCalled()
+})
+
 it.each([
   { soundVolume: 0, soundPitch: 400 },
   { soundVolume: 1, soundPitch: 1200 }

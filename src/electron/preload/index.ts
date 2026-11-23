@@ -9,6 +9,7 @@ import {
   type CredentialsStatus,
   type NotifyKind,
   type NotifyToastPayload,
+  type RendererSettingsPatch,
   type SettingsFile,
   type StorageUsageResult,
   type WindowCloseAnswer
@@ -120,7 +121,7 @@ const api = {
   /** 读会话级偏好（选中模型/思考力度）；形状见 shared/ipc.ts 的 SettingsFile */
   getSettings: (): Promise<SettingsFile> => ipcRenderer.invoke(IPC.settingsGet),
   /** 写会话级偏好（字段合并） */
-  saveSettings: (partial: Partial<Omit<SettingsFile, 'version'>>): Promise<{ ok: true }> =>
+  saveSettings: (partial: RendererSettingsPatch): Promise<{ ok: true }> =>
     ipcRenderer.invoke(IPC.settingsSave, partial),
   /** 扫描存储根统计占用（设置页·存储分区）；根路径 + 顶层条目字节数 */
   getStorageUsage: (): Promise<StorageUsageResult> => ipcRenderer.invoke(IPC.storageUsage),

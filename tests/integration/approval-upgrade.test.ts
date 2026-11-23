@@ -21,9 +21,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
-import { check, chunk, type EngineHandle, initEngine, makeTempDir, removeDir, sse, sleep, startEngine } from './harness'
+import { closeLoopback, listenLoopback, check, chunk, type EngineHandle, initEngine, makeTempDir, removeDir, sse, sleep, startEngine } from './harness'
 
-const PORT = 18_942
+let port: number
 const home = makeTempDir('cogent-appr-up-home-')
 const ws = makeTempDir('cogent-appr-up-ws-')
 const outside = makeTempDir('cogent-appr-up-outside-')
@@ -99,17 +99,17 @@ const newSession = async (params: Record<string, unknown> = {}): Promise<string>
   return r.result.id
 }
 
-const PROVIDERS = [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${PORT}/v1`, models: ['mock'] }]
+const providers = (port: number) => [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${port}/v1`, models: ['mock'] }]
 
 describe('审批集成（S1–S6 场景流，17 项断言）', () => {
   beforeAll(async () => {
-    await new Promise<void>((r) => server.listen(PORT, '127.0.0.1', r))
-    await initEngine(engine, { client: 'approval-upgrade-smoke', port: PORT, providers: PROVIDERS })
+    port = await listenLoopback(server)
+    await initEngine(engine, { client: 'approval-upgrade-smoke', providers: providers(port) })
   }, 60_000)
 
-  afterAll(() => {
-    engine.kill()
-    server.close()
+  afterAll(async () => {
+    await engine.stop()
+    await closeLoopback(server)
     for (const dir of [home, ws, outside]) removeDir(dir)
   })
 
@@ -157,10 +157,10 @@ describe('审批集成（S1–S6 场景流，17 项断言）', () => {
     await engine.waitEvent('run.completed', (p) => p.sessionId === s2b)
 
     // ———— S3 规则重启复原 ————
-    engine.kill()
+    await engine.stop()
     await sleep(300)
     engine = startEngine(home)
-    await initEngine(engine, { client: 'approval-upgrade-smoke', port: PORT, providers: PROVIDERS })
+    await initEngine(engine, { client: 'approval-upgrade-smoke', providers: providers(port) })
     const s3 = await newSession({ cwd: ws })
     await engine.send('agent.submit', { sessionId: s3, text: '重启后再写 always-3.txt', model: 'mock' })
     await engine.waitEvent('tool.completed', (p) => p.sessionId === s3 && !p.isError)
@@ -240,6 +240,10 @@ describe('审批集成（S1–S6 场景流，17 项断言）', () => {
       req7.params.kind === 'write' && req7.params.outsideRoots === true,
       JSON.stringify(req7.params).slice(0, 120)
     )
+    const persistOutside = await engine.send('approval.respond', {
+      requestId: req7.params.requestId, approved: true, always: 'workspace'
+    })
+    check('17b. 越界写不能保存规则，仍可裁决本次', persistOutside.error?.code === -32602)
     await engine.send('approval.respond', { requestId: req7.params.requestId, approved: true })
     const o1End = await engine.waitEvent('tool.completed', (p) => p.sessionId === s7 && p.callId === 'o1')
     await engine.waitEvent('run.completed', (p) => p.sessionId === s7)

@@ -5,7 +5,7 @@
 @source '../../../src/renderer/src/components/ui';
 
 /* 文档使用中性色；共享外观仍负责明暗与字号，不消费桌面壳的彩色皮肤。 */
-.architecture-app { --content-sidebar: var(--muted); --chrome-accent: var(--foreground); display: flex; height: 100dvh; overflow: hidden; background: var(--background); }
+.architecture-app { --content-sidebar: var(--muted); --chrome-accent: var(--foreground); position: relative; display: flex; height: 100dvh; overflow: hidden; background: var(--background); }
 .architecture-side { flex: none; width: var(--side-width); overflow: hidden; transition: width 180ms ease-out; }
 .architecture-side[data-collapsed='true'] { width: 0; }
 .architecture-left { --side-width: 212px; }
@@ -18,12 +18,18 @@
 .canvas-top-controls { position: absolute; inset: 16px 16px auto; display: flex; justify-content: space-between; gap: 8px; pointer-events: none; }
 .canvas-top-controls > div { pointer-events: auto; background: var(--background); border-radius: var(--radius-lg); }
 .react-flow { --xy-background-color: var(--background); --xy-edge-stroke: var(--muted-foreground); }
+.react-flow__minimap { border: 1px solid var(--border); border-radius: var(--radius-lg); }
+/* 两侧栏展开时中栏可能只有几十像素，小地图放不下也不该盖住图。 */
+@container (max-width: 319px) { .react-flow__minimap { display: none; } }
 .react-flow__node { cursor: pointer; }
 .react-flow__handle { visibility: hidden; }
 .architecture-node { width: 100%; height: 100%; position: relative; }
 .architecture-node[data-selected='true']::after { content: ''; position: absolute; inset: -4px; border: 1px solid var(--chrome-accent); border-radius: calc(var(--radius-xl) + 4px); pointer-events: none; }
 .architecture-boundary { height: 100%; border: 1px dashed var(--muted-foreground); border-radius: var(--radius-xl); background: var(--content-sidebar); }
-.architecture-boundary-heading { position: absolute; left: 16px; right: 16px; top: 16px; display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); }
+/* 右侧留白比左侧窄：传输入口这类窄容器的技术标识才排得进一行，不折出孤字。 */
+.architecture-boundary-heading { position: absolute; left: 16px; right: 8px; top: 16px; display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); }
+/* 阶段标题行在容器标题之下、卡片之上；细线标出每个阶段覆盖的卡片范围，不与卡片或连线相交。 */
+.architecture-stage { position: absolute; top: 44px; padding-bottom: 6px; border-bottom: 1px solid var(--border); color: var(--muted-foreground); pointer-events: none; }
 .architecture-boundary-note { position: absolute; left: 16px; right: 16px; bottom: 12px; }
 .architecture-relationship { color: var(--muted-foreground); pointer-events: none; }
 .architecture-relationship rect { fill: var(--background); }
@@ -40,6 +46,8 @@
 @container (max-width: 200px) { .theme-control { display: none; } }
 
 @media (max-width: 699px) {
-  .architecture-right { --side-width: min(320px, calc(100vw - 64px)); }
+  .architecture-side { position: absolute; inset-block: 0; z-index: 1; }
+  .architecture-left { inset-inline-start: 0; }
+  .architecture-right { inset-inline-end: 0; --side-width: min(320px, 100vw); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; } }

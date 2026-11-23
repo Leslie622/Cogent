@@ -12,7 +12,7 @@
 import { IconArrowRight, IconFileScissorsFilled, IconFolderFilled } from '@tabler/icons-react'
 import { TraceIcon, TraceLine, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger } from '@/components/ui/trace'
 import { formatTokens } from './ContextIndicator'
-import { formatCost } from './MessageRow'
+import { formatCost } from '@/lib/format-cost'
 import type { PrunedItem } from '@/stores/chat'
 import type { ChatMessage } from '@/env.d'
 

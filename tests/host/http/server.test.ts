@@ -4,7 +4,7 @@
  * 假实现钉住两边的契约。鉴权材料用真 auth 工厂（store/token 签验链路在
  * auth.test.ts 已钉，此处只验接线）。
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import { createCapabilityStore, createRootSecret, signToken } from '../../../src/host/http/auth'
 import { startHttpRpc, type FrameHandler, type HttpRpcServer } from '../../../src/host/http/server'
@@ -207,16 +207,28 @@ describe('传输语义（2a 存量）', () => {
       Promise.resolve({
         jsonrpc: '2.0',
         id: 1,
-        error: { code: -32601, message: 'unknown method: nope' }
+        error: { code: -32602, message: 'invalid params' }
       } satisfies RpcResponse)
     )
     const res = await fetch(base + '/rpc', {
       method: 'POST',
       headers: { authorization: `Bearer ${token('readonly')}` },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'nope' })
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.list' })
     })
     expect(res.status).toBe(200)
-    expect(((await res.json()) as RpcResponse).error?.message).toContain('unknown method')
+    expect(((await res.json()) as RpcResponse).error?.message).toBe('invalid params')
+  })
+
+  it('未分类方法连 admin 也不能送入 HTTP 分发', async () => {
+    const handler = vi.fn(() => Promise.resolve(null))
+    const { base, token } = await start(handler)
+    const res = await fetch(base + '/rpc', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token('admin')}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'unclassified.method' })
+    })
+    expect(res.status).toBe(403)
+    expect(handler).not.toHaveBeenCalled()
   })
 
   it('单帧体积超上限回 413（网络信任边界守卫）', async () => {
@@ -228,6 +240,24 @@ describe('传输语义（2a 存量）', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.list', big })
     })
     expect(res.status).toBe(413)
+  })
+
+  it('无 Content-Length 的分块请求仍按实际字节拒绝', async () => {
+    const handler = vi.fn(() => Promise.resolve(null))
+    const { base, token } = await start(handler)
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(500_000))
+        controller.enqueue(new Uint8Array(500_001))
+        controller.close()
+      }
+    })
+    const request: RequestInit = {
+      method: 'POST', headers: { authorization: `Bearer ${token('admin')}` }, body, duplex: 'half'
+    }
+    const res = await fetch(base + '/rpc', request)
+    expect(res.status).toBe(413)
+    expect(handler).not.toHaveBeenCalled()
   })
 
   it('未知路径与非 POST 方法都到不了帧处理（Hono 默认 404，无自动 405）', async () => {
@@ -325,6 +355,16 @@ describe('WS 门（2c）', () => {
     const reply = wsNextMessage(ws)
     ws.send(JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'session.list', params: {} }))
     expect(JSON.parse(await reply)).toEqual({ jsonrpc: '2.0', id: 5, result: { echo: 'session.list' } })
+  })
+
+  it('WS 按字节拒绝过大的单条消息', async () => {
+    const handler = vi.fn(() => Promise.resolve(null))
+    const { base, token } = await start(handler)
+    const ws = await wsOpen(`${base}/ws?token=${token('readonly')}`)
+    const closed = new Promise<number>((resolve) => ws.once('close', resolve))
+    ws.send('中'.repeat(333_334))
+    expect(await closed).toBe(1009)
+    expect(handler).not.toHaveBeenCalled()
   })
 
   it.each(['session.create', 'models.test'])('档位强制与 /rpc 同口径：readonly 经 WS 调 %s 回 -32003 帧（防换门绕过）', async (method) => {

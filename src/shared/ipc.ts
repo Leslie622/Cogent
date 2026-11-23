@@ -112,6 +112,12 @@ export interface NotifyToastPayload {
 
 /** 提醒的三类事件（声音文件选择/清除与设置字段共用的键） */
 export type NotifyKind = 'turn-done' | 'approval' | 'question'
+export const NOTIFY_SOUND_FILE_FIELDS = {
+  'turn-done': 'turnDoneSoundFile',
+  approval: 'approvalSoundFile',
+  question: 'questionSoundFile'
+} as const satisfies Record<NotifyKind, keyof SettingsFile>
+export type SoundFileField = (typeof NOTIFY_SOUND_FILE_FIELDS)[NotifyKind]
 
 /** 「关闭窗口时」询问弹窗的裁决：action = 用户所选动作（cancel 仅复位询问态）；
     remember = 勾了「不再询问」（cancel 时忽略） */
@@ -204,3 +210,6 @@ export interface SettingsFile {
       文件级配置（手编 settings.json），首发不做设置页 UI */
   externalMcp?: { enabled: boolean; allowWrites: boolean }
 }
+
+/** 壳内普通设置可写字段，文件授权和出口配置有各自的所有者。 */
+export type RendererSettingsPatch = Partial<Omit<SettingsFile, 'version' | 'fileEditor' | 'externalMcp' | SoundFileField>>

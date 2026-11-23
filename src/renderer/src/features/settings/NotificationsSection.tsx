@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from 'react'
 import { IconArrowBackUp, IconVolume } from '@tabler/icons-react'
+import { NOTIFY_SOUND_FILE_FIELDS } from '@shared/ipc'
 import { toast } from 'sonner'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
@@ -31,29 +32,29 @@ const TURN_DONE_MODES: Array<{ value: 'always' | 'never' | 'unfocused'; label: s
   { value: 'unfocused', label: '仅在未聚焦时' }
 ]
 
-/** kind（kebab-case）→ 设置字段名（camelCase）—— 拼键必须经此映射，
-    模板直拼会把 'turn-done' 拼成 'turn-doneSoundFile' 落进废键 */
-const KIND_FILE_KEY = {
-  'turn-done': 'turnDoneSoundFile',
-  approval: 'approvalSoundFile',
-  question: 'questionSoundFile'
-} as const
-
 /** 三类声音源行共用（kind 决定读哪个文件字段） */
 function SoundFileRow({ kind, title, desc }: { kind: NotifyKind; title: string; desc: string }) {
-  const file =
-    useEngineStore((s) =>
-      kind === 'turn-done' ? s.notify.turnDoneSoundFile : kind === 'approval' ? s.notify.approvalSoundFile : s.notify.questionSoundFile
-    )
-  const setNotifySetting = useEngineStore((s) => s.setNotifySetting)
+  const file = useEngineStore((s) => s.notify[NOTIFY_SOUND_FILE_FIELDS[kind]])
+  const setNotifySoundFile = useEngineStore((s) => s.setNotifySoundFile)
+  const [saving, setSaving] = useState(false)
+  // 显示原件名称；受管类别和缓存版本 ID 留在存储与播放链路。
+  const name = file?.replace(/^(?:turn-done|approval|question)-(?:[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}-)?/i, '')
 
-  const pick = async (): Promise<void> => {
-    const name = await window.cogent.pickSoundFile(kind)
-    if (name !== null) setNotifySetting({ [KIND_FILE_KEY[kind]]: name })
-  }
-  const reset = (): void => {
-    void window.cogent.clearSoundFile(kind)
-    setNotifySetting({ [KIND_FILE_KEY[kind]]: null })
+  const changeSource = async (clear: boolean): Promise<void> => {
+    setSaving(true)
+    try {
+      if (clear) {
+        await window.cogent.clearSoundFile(kind)
+        setNotifySoundFile(kind, null)
+      } else {
+        const selected = await window.cogent.pickSoundFile(kind)
+        if (selected !== null) setNotifySoundFile(kind, selected)
+      }
+    } catch (error) {
+      toast.error('无法保存提示音设置', { description: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setSaving(false)
+    }
   }
   const preview = (): void => {
     void playNotifySound(useEngineStore.getState().notify, kind).catch((error: unknown) => {
@@ -65,8 +66,8 @@ function SoundFileRow({ kind, title, desc }: { kind: NotifyKind; title: string; 
     <SettingsRow title={title} desc={desc}>
       <div className="flex items-center gap-2">
         {/* 当前声音源：自定义文件名截断显示，缺省使用随应用分发的音频。 */}
-        <span className="max-w-40 truncate text-xs text-muted-foreground">{file ?? '内置提示音'}</span>
-        <Button variant="outline" size="default" onClick={() => void pick()}>
+        <span className="max-w-40 truncate text-xs text-muted-foreground">{name ?? '内置提示音'}</span>
+        <Button variant="outline" size="default" disabled={saving} onClick={() => void changeSource(false)}>
           选择文件
         </Button>
         <Hint tip="试听">
@@ -75,7 +76,7 @@ function SoundFileRow({ kind, title, desc }: { kind: NotifyKind; title: string; 
           </Button>
         </Hint>
         {file !== null && (
-          <Button variant="ghost" size="default" onClick={reset}>
+          <Button variant="ghost" size="default" disabled={saving} onClick={() => void changeSource(true)}>
             恢复默认
           </Button>
         )}

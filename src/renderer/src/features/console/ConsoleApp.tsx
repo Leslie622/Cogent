@@ -36,11 +36,18 @@ export function ConsoleApp() {
   const sessions = useConsoleStore((s) => s.sessions)
   const sessionId = useConsoleStore((s) => s.sessionId)
   const loadError = useConsoleStore((s) => s.loadError)
+  const entriesError = useConsoleStore((s) => s.entriesError)
   const active = sessions.find((s) => s.id === sessionId)
+
+  function retryLoad() {
+    const store = useConsoleStore.getState()
+    if (store.loadError !== null) void store.load()
+    else if (store.sessionId !== null) void store.selectSession(store.sessionId)
+  }
 
   return (
     // select-text：整窗放开文本选中（body 默认 user-select:none 防拖窗蓝选）——
-    // 控制台是学习/排障内容，标题、概览、错误文案都要能随手复制（AGENTS.md 方针 5 的容器级放开）
+    // 控制台是学习与排障内容，整窗文字选择配方见 docs/UI布局.md。
     <div className="flex h-screen select-text flex-col bg-background text-foreground">
       <header
         className="flex h-10 shrink-0 items-center pl-4 text-muted-foreground"
@@ -84,11 +91,10 @@ export function ConsoleApp() {
         </div>
       </header>
 
-      {/* 初载失败横幅（引擎不可用）：控制台是学习/排障窗口，静默空白最不可接受 */}
-      {loadError !== null && (
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/5 px-4 py-2">
-          <p className="text-sm text-destructive">会话列表加载失败：{loadError}</p>
-          <Button variant="outline" size="xs" onClick={() => void useConsoleStore.getState().load()}>
+      {(loadError ?? entriesError) !== null && (
+        <div role="alert" className="flex shrink-0 items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/5 px-4 py-2">
+          <p className="text-sm text-destructive">{loadError !== null ? `会话列表加载失败：${loadError}` : `观测条目加载失败：${entriesError}`}</p>
+          <Button variant="outline" size="xs" onClick={retryLoad}>
             重试
           </Button>
         </div>

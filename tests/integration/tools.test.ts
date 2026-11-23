@@ -30,6 +30,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
+  closeLoopback,
+  listenLoopback,
   check,
   chunk,
   type EngineHandle,
@@ -41,7 +43,7 @@ import {
   startEngine
 } from './harness'
 
-const PORT = 18_940
+let port: number
 const ws = makeTempDir('cogent-tools-ws-')
 const outside = makeTempDir('cogent-tools-outside-')
 const home = makeTempDir('cogent-tools-home-')
@@ -232,17 +234,16 @@ const submitAndDone = async (sessionId: string, label: string): Promise<void> =>
 
 describe('工具循环集成（S1–S11 场景流，断言对象 = pi 内置工具）', () => {
   beforeAll(async () => {
-    await new Promise<void>((r) => server.listen(PORT, '127.0.0.1', r))
+    port = await listenLoopback(server)
     await initEngine(engine, {
       client: 'tools-smoke',
-      port: PORT,
-      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${PORT}/v1`, models: ['mock'] }]
+      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${port}/v1`, models: ['mock'] }]
     })
   }, 60_000)
 
-  afterAll(() => {
-    engine.kill()
-    server.close()
+  afterAll(async () => {
+    await engine.stop()
+    await closeLoopback(server)
     for (const dir of [home, ws, outside]) removeDir(dir)
   })
 
@@ -357,13 +358,12 @@ describe('工具循环集成（S1–S11 场景流，断言对象 = pi 内置工�
     )
 
     // ———— S6 杀引擎重启：历史回查 ————
-    engine.kill()
+    await engine.stop()
     await sleep(300)
     engine = startEngine(home)
     await initEngine(engine, {
       client: 'tools-smoke',
-      port: PORT,
-      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${PORT}/v1`, models: ['mock'] }]
+      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${port}/v1`, models: ['mock'] }]
     })
     const history = await engine.send('session.messages', { sessionId: s1 })
     const toolMsg = (history.result?.messages ?? []).find((m) => (m.toolCalls?.length ?? 0) > 0)
@@ -468,8 +468,9 @@ describe('工具循环集成（S1–S11 场景流，断言对象 = pi 内置工�
     // B3 大输出：pi OutputAccumulator 尾部保留 + 转存 + tool.progress 流式事件
     const s9b = await bashSession()
     await engine.send('agent.submit', { sessionId: s9b, text: 'B3 大输出', model: 'mock' })
-    await engine.waitEvent('tool.progress', (p) => p.sessionId === s9b && p.callId === 'b3' && (p.text ?? '').includes('line'), 15_000)
-    check('22. tool.progress 流式事件到达（快照含输出）', true)
+    await engine.waitEvent('tool.progress', (p) => p.sessionId === s9b && p.callId === 'b3' &&
+      typeof p.text === 'string' && p.text.length > 201 && p.text.length <= 2000 && p.text.includes('\n'), 15_000)
+    check('22. tool.progress 直播快照保留换行，超出完成摘要长度且有界', true)
     const b3End = await engine.waitEvent('tool.completed', (p) => p.sessionId === s9b && p.callId === 'b3', 15_000)
     await engine.waitEvent('run.completed', (p) => p.sessionId === s9b)
     const rB3 = JSON.stringify(requestBodies[31] ?? {})

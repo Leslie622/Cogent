@@ -6,7 +6,7 @@
  *   帧经 broadcastEvent 推送（消费者只保持一条 WS，D2「WS 为主」）。
  *
  * 架构位置：传输层薄壳 —— 方法注册表在 host-main（handlers Map），三个门
- * 共调同一 handleFrame；档位强制（scopeAllows）也是 /rpc 与 /ws 共用一份，
+ * 共调同一 handleFrame；档位强制（scopeDenial）也是 /rpc 与 /ws 共用一份，
  * 保证守卫与分发路径唯一（换门不换规则）。
  *
  * WS 实现：ws 包官方 noServer 模式（server.on('upgrade') + handleUpgrade）。
@@ -25,11 +25,12 @@
  */
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { WebSocket, WebSocketServer, type RawData } from 'ws'
-import type { RpcEvent, RpcResponse, TokenScope } from '../../protocol'
+import { isRpcRequest, type RpcEvent, type RpcRequest, type RpcResponse, type TokenScope } from '../../protocol'
 import { SCOPE_RANK, signToken, verifyToken, type CapabilityStore } from './auth'
 
 /** ws 文本帧的 data 侧（node ws 默认不分片、非 binary，恒为 Buffer） */
@@ -53,7 +54,7 @@ const SCOPE_FORBIDDEN_CODE = -32_003
 
 /**
  * 方法档位表（D3 三档）：调用该方法所需的最低 scope。
- * 查不到的方法名不在此拦截 —— 放行后由 handleFrame 回 MethodNotFound 帧。
+ * 远程入口只接受明确登记的方法；新增本地方法不会自动暴露给网络。
  */
 const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   // 读类
@@ -117,12 +118,21 @@ const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   'capability.issue': 'admin'
 }
 
-/** 档位判定（/rpc 与 /ws 共用）：method 非字符串或不在表内 = 放行交 handleFrame */
-function scopeAllows(scope: TokenScope, method: unknown): boolean {
-  // 桌面路径/分片/预览/草稿只属于壳；admin 也不能从远程取得本机文件入口。
-  if (typeof method === 'string' && (method.startsWith('attachments.') || method.startsWith('files.') || method.startsWith('outputs.') || method.startsWith('fileViews.'))) return false
-  if (typeof method !== 'string' || !(method in METHOD_MIN_SCOPE)) return true
-  return SCOPE_RANK[scope] >= SCOPE_RANK[METHOD_MIN_SCOPE[method]]
+/** 只对合法请求做档位判定，解析失败与意外事件仍按 Host 的协议语义处理。 */
+function readRequest(raw: string): RpcRequest | undefined {
+  try {
+    const frame: unknown = JSON.parse(raw)
+    return isRpcRequest(frame) ? frame : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function scopeDenial(scope: TokenScope, method: string): string | undefined {
+  if (!Object.hasOwn(METHOD_MIN_SCOPE, method)) return `method ${method} is not available over HTTP/WS`
+  const minimum = METHOD_MIN_SCOPE[method]
+  if (SCOPE_RANK[scope] < SCOPE_RANK[minimum]) return `method ${method} requires ${minimum} scope`
+  return undefined
 }
 
 export interface HttpRpcOptions {
@@ -168,7 +178,11 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
     return next()
   })
 
-  app.post('/auth/exchange', async (c) => {
+  const limitFrame = bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: (c) => c.json({ error: `frame exceeds ${MAX_BODY_BYTES} bytes` }, 413)
+  })
+  app.post('/auth/exchange', limitFrame, async (c) => {
     // 信任边界：body 是外部输入，在此做唯一一次形状校验
     const body = await c.req.json<unknown>().catch(() => null)
     const ticket = (body as { ticket?: unknown } | null)?.ticket
@@ -177,20 +191,12 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
     return c.json({ token: signToken(options.rootSecret, scope), scope }, 200)
   })
 
-  app.post('/rpc', async (c) => {
-    const declared = Number(c.req.header('content-length'))
-    if (declared > MAX_BODY_BYTES) {
-      return c.json({ error: `frame exceeds ${MAX_BODY_BYTES} bytes` }, 413)
-    }
+  app.post('/rpc', limitFrame, async (c) => {
     const raw = await c.req.text()
-    let method: unknown
-    try {
-      method = (JSON.parse(raw) as { method?: unknown }).method
-    } catch {
-      method = undefined // 畸形 JSON 放行给 handleFrame，回 ParseError 帧
-    }
-    if (!scopeAllows(c.get('scope'), method)) {
-      return c.json({ error: `method ${String(method)} requires ${METHOD_MIN_SCOPE[String(method)]} scope` }, 403)
+    const request = readRequest(raw)
+    const denial = request === undefined ? undefined : scopeDenial(c.get('scope'), request.method)
+    if (denial !== undefined) {
+      return c.json({ error: denial }, 403)
     }
     const response = await handleFrame(raw)
     // null = 非请求帧：stdio 侧是丢弃，HTTP 必须回话，用 400 区分传输层拒绝
@@ -201,7 +207,7 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
   })
 
   // ———— WS 门：ws 官方 noServer 模式，单端点不走 Hono 路由 ————
-  const wss = new WebSocketServer({ noServer: true })
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_BODY_BYTES })
   const clients = new Set<WebSocket>()
 
   return new Promise((resolve) => {
@@ -248,25 +254,18 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
         clients.add(ws)
         ws.on('message', (data) => {
           const raw = frameText(data)
-          let method: unknown
-          let id: unknown = null
-          try {
-            const parsed = JSON.parse(raw) as { method?: unknown; id?: unknown }
-            method = parsed.method
-            id = parsed.id ?? null
-          } catch {
-            method = undefined // 畸形帧放行给 handleFrame，回 ParseError 帧
-          }
           // 档位强制与 /rpc 同一份判定；WS 无 HTTP 状态码，越档回
           // JSON-RPC server-error 帧（-32003）
-          if (!scopeAllows(scope, method)) {
+          const request = readRequest(raw)
+          const denial = request === undefined ? undefined : scopeDenial(scope, request.method)
+          if (request !== undefined && denial !== undefined) {
             ws.send(
               JSON.stringify({
                 jsonrpc: '2.0',
-                id,
+                id: request.id,
                 error: {
                   code: SCOPE_FORBIDDEN_CODE,
-                  message: `method ${String(method)} requires ${METHOD_MIN_SCOPE[String(method)]} scope`
+                  message: denial
                 }
               })
             )

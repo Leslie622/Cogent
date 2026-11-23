@@ -87,6 +87,12 @@ export function piSessionDir(cwd: string, agentDir: string): string {
 /** Cogent Host 根（COGENT_HOME ?? ~/.cogent）下的 pi 域目录（全局架构 D5：agentDir） */
 export const PI_AGENT_DIR_NAME = 'pi'
 
+/** 历史读取与删除用同一目录锚点定位，避免为查找文件装配 AgentSession。 */
+export function findPiTranscriptFile(cwd: string, hostRoot: string, sessionId: string): string | undefined {
+  const sessionDir = piSessionDir(cwd, join(hostRoot, PI_AGENT_DIR_NAME))
+  return PiSessionManager.findById(cwd, sessionId, sessionDir)
+}
+
 /**
  * 只读回查 pi JSONL（惰性会话的历史投影源，D9 保留式呈现的 pi 版）。
  * pi 的 buildSessionProjection 是**上下文口径**（影子区被摘要吸收后丢弃），
@@ -98,8 +104,7 @@ export const PI_AGENT_DIR_NAME = 'pi'
  * undefined（新会话未跑过、或已删除）。
  */
 export function readPiTranscript(cwd: string, hostRoot: string, sessionId: string): AttachmentMessage[] | undefined {
-  const sessionDir = piSessionDir(cwd, join(hostRoot, PI_AGENT_DIR_NAME))
-  const file = PiSessionManager.findById(cwd, sessionId, sessionDir)
+  const file = findPiTranscriptFile(cwd, hostRoot, sessionId)
   if (file === undefined) return undefined
   const messages: AttachmentMessage[] = []
   const branch = readSessionBranch(file, cwd, sessionId)

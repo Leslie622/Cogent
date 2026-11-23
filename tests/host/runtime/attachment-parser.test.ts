@@ -15,7 +15,6 @@ function fixture(name: string, bytes: Uint8Array | string): string {
 function xmlFixture(name: string, parts: Record<string, string>): string {
   return fixture(name, zipSync(Object.fromEntries(Object.entries(parts).map(([path, xml]) => [path, strToU8(xml)]))))
 }
-const source = (name: string) => resolve('reference/zcode/apps/zcode-cli/packages/office-runtime/fixtures', name)
 const read = (path: string, name: string, extra = {}) => parseAttachment({ path, name, cursor: 0, ...extra })
 const compatibility = (name: string) => resolve('tests/fixtures/附件兼容', name)
 function modifiedPresentation(change: (xml: string) => string, part = 'ppt/_rels/presentation.xml.rels'): string {
@@ -26,7 +25,7 @@ function modifiedPresentation(change: (xml: string) => string, part = 'ppt/_rels
 afterEach(() => { roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })) })
 describe('本地文档读取', () => {
   it('中文 PDF 使用磁盘离线 CMap，保留宋体行', async () => {
-    const result = await read(source('cjk.pdf'), 'cjk.pdf')
+    const result = await read(compatibility('中文离线映射.pdf'), '中文.pdf')
     expect(result.text).toContain('中文排版测试'); expect(result.text).toContain('宋体')
     expect(result.source).toContain('PDF.js')
   })
@@ -34,10 +33,23 @@ describe('本地文档读取', () => {
     await expect(read(fixture('bad.pdf', '%PDF-broken'), 'bad.pdf')).rejects.toThrow()
   })
   it('DOCX 保留标题、段落、表格行与中文', async () => {
-    const path = xmlFixture('a.docx', { 'word/document.xml': '<w:document xmlns:w="w"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>中文标题</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>甲</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>乙</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>' })
+    const word = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    const relationships = 'http://schemas.openxmlformats.org/package/2006/relationships'
+    const office = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    const path = xmlFixture('a.docx', {
+      '[Content_Types].xml': '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>',
+      '_rels/.rels': `<Relationships xmlns="${relationships}"><Relationship Id="document" Type="${office}/officeDocument" Target="word/document.xml"/></Relationships>`,
+      'word/_rels/document.xml.rels': `<Relationships xmlns="${relationships}"><Relationship Id="styles" Type="${office}/styles" Target="styles.xml"/></Relationships>`,
+      'word/styles.xml': `<w:styles xmlns:w="${word}"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>`,
+      'word/document.xml': `<w:document xmlns:w="${word}"><w:body>
+        <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>中文标题</w:t></w:r></w:p>
+        <w:p><w:r><w:t>正文段落</w:t></w:r></w:p>
+        <w:tbl><w:tr><w:tc><w:p><w:r><w:t>甲</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>乙</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+      </w:body></w:document>`
+    })
     const result = await read(path, 'a.docx')
     expect(result.text).toContain('[标题] 中文标题'); expect(result.text).toContain('[表格]'); expect(result.text).toContain('甲\t乙')
-    expect((await read(source('report.docx'), 'report.docx')).text.length).toBeGreaterThan(20)
+    expect(result.text).toContain('正文段落')
   })
   it('XLSX 目录、工作表范围、已缓存及未计算公式', async () => {
     const book = new ExcelJS.Workbook(); const sheet = book.addWorksheet('中文表')
@@ -50,7 +62,7 @@ describe('本地文档读取', () => {
     await expect(read(path, 'a.xlsx', { sheet: '中文表', range: 'A1:Z999' })).rejects.toThrow('5000')
   })
   it('PPTX 按关联顺序读取文字、备注与表格', async () => {
-    const result = await read(source('launch.pptx'), 'launch.pptx')
+    const result = await read(compatibility('通用关系与绝对路径.pptx'), 'a.pptx')
     expect(result.text).toContain('幻灯片 1'); expect(result.text.length).toBeGreaterThan(30)
     expect(result.warnings.join()).toContain('未分析图片')
   })

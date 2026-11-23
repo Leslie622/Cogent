@@ -17,6 +17,12 @@ import { bindEngineEvents } from '@/stores/chat/events'
 import { emptyBucket, patchBucket, projectDefaultMode, useChatStore } from '@/stores/chat/store'
 import type { MessageItem } from '@/stores/chat/types'
 
+// 回合用例只验证 store 和视图，声音由通知专项覆盖。
+vi.mock('@/lib/notify', async (load) => ({
+  ...await load<typeof import('@/lib/notify')>(),
+  notifyEvent: vi.fn()
+}))
+
 // ———— window.cogent 可编程 stub（模块加载前就位，bindEngineEvents 才拿得到） ————
 
 type EventHandler = (event: unknown) => void

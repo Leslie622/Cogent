@@ -30,8 +30,8 @@
  */
 import { SessionSearchService } from './search/service'
 import type { SearchQuery, SearchPage } from '../../shared/session-search'
-import { legacyMessages } from '../kernel/transcript'
-import { toChatMessages, summarizeToolResult, extractResultDiff, projectUsage, sumOptional, accumulateUsage } from './message-projection'
+import { findPiTranscriptFile, legacyMessages } from '../kernel/transcript'
+import { toChatMessages, summarizeToolResult, tailToolResult, extractResultDiff, projectUsage, sumOptional, accumulateUsage } from './message-projection'
 export { toChatMessages } from './message-projection'
 
 import type { Agent, AgentMessage, ThinkingLevel } from '@earendil-works/pi-agent-core'
@@ -102,7 +102,7 @@ import { importLegacyTranscript } from '../kernel/legacy-import'
 import { convertToLlmMessages, piTriggerRatio } from './compaction'
 import type { InspectStore, StorageDriver } from '../storage'
 import { SHELL_TOOL_NAME, toolDeclarations, toolMeta } from './tool-meta'
-import { resolveWithinRoots } from './write-boundary'
+import { matchingWriteRoots } from './write-boundary'
 import { AttachmentService } from './attachments'
 import type { AttachmentRef, DirectoryRef } from '../../shared/attachments'
 import type { FileContext, FileReference } from '../../shared/files'
@@ -499,6 +499,8 @@ export class SessionManager implements CogentKernel {
       sessionId: string
       kind: ToolKind
       toolName: string
+      ruleRoots: string[]
+      withinRoots: boolean
       resolve: (result: { block: boolean; reason?: string }) => void
     }
   >()
@@ -623,6 +625,10 @@ export class SessionManager implements CogentKernel {
     return roots
   }
 
+  private transcriptCwd(session: Session): string {
+    return session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir()
+  }
+
   /**
    * 会话的项目归属（「允许，并切换为」的项目默认落位用）。无归属返回
    * undefined（只切当前会话，不落项目默认）。
@@ -706,8 +712,10 @@ export class SessionManager implements CogentKernel {
       ...(defaultMode !== undefined && { permissionMode: defaultMode }),
       ...(params.planEnabled === true && { planEnabled: true })
     }
-    this.sessions.set(summary.id, { summary, todos: [], ...(summary.titleManual !== true && { autoTitle: 'ready' }) })
-    this.persist(summary.id)
+    const session: Session = { summary, todos: [], ...(summary.titleManual !== true && { autoTitle: 'ready' }) }
+    // 显式创建只有摘要保存后才可被其他调用看见，磁盘失败由 RPC 边界返回。
+    this.writeSession(session)
+    this.sessions.set(summary.id, session)
     return summary
   }
 
@@ -769,8 +777,10 @@ export class SessionManager implements CogentKernel {
     // run 正常走完收尾路径（事件转译要能找到会话，先 settle 后删）
     this.settleApprovals(sessionId, '会话已删除')
     this.settleInteractions(sessionId)
-    // pi 转录真源随删（JSONL 只被本会话引用；惰性未装配的会话没有 pi 文件）
-    const piFile = session.pi?.sessionManager.getSessionFile()
+    // 重启恢复的会话尚无 pi 实例，沿历史读取的目录锚点定位原转录。
+    const piFile = session.pi === undefined
+      ? findPiTranscriptFile(this.transcriptCwd(session), this.hostRoot, sessionId)
+      : session.pi.sessionManager.getSessionFile()
     if (piFile !== undefined) {
       try {
         rmSync(piFile, { force: true })
@@ -800,7 +810,7 @@ export class SessionManager implements CogentKernel {
    */
   async search(query: SearchQuery): Promise<SearchPage> {
     const descriptors = Array.from(this.sessions.values(), (session) => ({
-      summary: { ...session.summary }, cwd: session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir()
+      summary: { ...session.summary }, cwd: this.transcriptCwd(session)
     }))
     const result = await this.searchService.search(query, descriptors)
     // 读取期间的删除与归档不可由迟到 worker 响应复活。
@@ -816,7 +826,7 @@ export class SessionManager implements CogentKernel {
   messages(sessionId: string): ChatMessage[] {
     const session = this.requireSession(sessionId)
     const source: AgentMessage[] =
-      readPiTranscript(session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir(), this.hostRoot, sessionId) ??
+      readPiTranscript(this.transcriptCwd(session), this.hostRoot, sessionId) ??
       (session.legacyTranscript === undefined ? [] : legacyMessages(session.legacyTranscript))
     const projected = toChatMessages(source)
     // 上下文明细按需现算挂"末条带 usage 的消息"（历史回查路径，重启/切换会话
@@ -844,7 +854,7 @@ export class SessionManager implements CogentKernel {
     const session = this.requireSession(sessionId)
     const active = this.streaming.get(sessionId)
     const context = active?.turnId === turnId ? active?.fileContext : undefined
-    const saved = context ?? (turnId === undefined ? undefined : readPiTranscript(session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir(), this.hostRoot, sessionId)?.find((message) => message.fileContext?.turnId === turnId)?.fileContext)
+    const saved = context ?? (turnId === undefined ? undefined : readPiTranscript(this.transcriptCwd(session), this.hostRoot, sessionId)?.find((message) => message.fileContext?.turnId === turnId)?.fileContext)
     if (turnId !== undefined && saved === undefined) throw new Error('文件来源尚未保存或该回合不存在，请稍后重试')
     return saved === undefined ? { context: { cwd: session.pi?.sessionManager.getCwd() ?? this.workspaceRoots(session).at(0) ?? homedir(), roots: this.workspaceRoots(session), platform: process.platform }, saved: false } : { context: saved, saved: true }
   }
@@ -983,7 +993,7 @@ export class SessionManager implements CogentKernel {
     const firstInput = session.autoTitle === 'ready'
     // 恢复的 ready 若已落过真实 user，则只消费资格，不能把下一条错当首条。
     const previousInput = firstInput && (session.legacyTranscript ?? readPiTranscript(
-      session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir(), this.hostRoot, sessionId
+      this.transcriptCwd(session), this.hostRoot, sessionId
     ) ?? []).some((message) => message.role === 'user')
     if (firstInput) session.autoTitle = 'attempted'
     if (firstInput && !previousInput && session.summary.titleManual !== true) {
@@ -1284,7 +1294,7 @@ export class SessionManager implements CogentKernel {
       const pi = await this.ensurePiSession(session)
       if (!this.ownsRun(session, streaming)) return { ok: true }
       // 显示转录保留压缩影子区，不能只用模型上下文裁剪后的旧回答做替换。
-      const source = readPiTranscript(session.piCwd ?? this.workspaceRoots(session).at(0) ?? homedir(), this.hostRoot, sessionId) ?? pi.agent.state.messages
+      const source = readPiTranscript(this.transcriptCwd(session), this.hostRoot, sessionId) ?? pi.agent.state.messages
       const projected = toChatMessages(source)
       const userAt = projected.findLastIndex((message) => message.role === 'user')
       streaming.turnId = projected[userAt]?.turnId
@@ -1407,16 +1417,15 @@ export class SessionManager implements CogentKernel {
       throw new ProtocolError(RpcErrorCode.InvalidParams, `审批请求不存在或已被裁决: ${requestId}`)
     }
     const session = this.requireSession(pending.sessionId)
-    // always 的语义校验在消费 pending 之前：无绑定根会话不落规则（防"全放主
-    // 目录"的过大授权，D3 —— UI 不显示此项但协议直达，引擎侧是最后一道闸）；
-    // 报错时请求未被消费，宿主仍可改发普通 respond
+    // 持久裁决绑定请求时的边界。拒绝后保留 pending，宿主仍能裁决本次。
     if (always === 'workspace') {
       const roots = this.workspaceRoots(session)
-      if (roots.length === 0) {
-        throw new ProtocolError(RpcErrorCode.InvalidParams, '无绑定工作区的会话不支持「始终允许」')
+      if (!pending.withinRoots || pending.ruleRoots.length === 0 ||
+          roots.length !== pending.ruleRoots.length || roots.some((root) => !pending.ruleRoots.includes(root))) {
+        throw new ProtocolError(RpcErrorCode.InvalidParams, '当前审批只能裁决本次，无法保存工作区规则')
       }
       // 允许本次 + 落工作区级规则（同 roots 集合幂等，见 ApprovalRegistry.add）
-      this.approvals.add(roots, pending.kind)
+      this.approvals.add(pending.ruleRoots, pending.kind)
     }
     this.pendingApprovals.delete(requestId)
     // 「允许，并切换为 X」（F6 定稿，zcode 同款）：本次放行 + 会话切模式 +
@@ -1523,21 +1532,20 @@ export class SessionManager implements CogentKernel {
     }
     // 写类根内判定（软边界瘦身为"规则适用域"）：越界与否不再决定放拦，
     // 只决定 ask 是否可吃「始终允许」规则 —— 信任记忆的范围 = 根内写
-    const roots = this.toolRoots(session)
-    const withinRoots =
-      kind !== 'write' && kind !== 'edit'
-        ? true
-        : typeof args.path !== 'string' || resolveWithinRoots(args.path, roots) !== null
+    const roots = this.workspaceRoots(session)
+    const isFileWrite = kind === 'write' || kind === 'edit'
+    const targetRoots = isFileWrite && typeof args.path === 'string'
+      ? matchingWriteRoots(args.path, this.transcriptCwd(session), roots.length > 0 ? roots : [homedir()])
+      : []
+    const withinRoots = !isFileWrite || targetRoots.length > 0
     // 自主模式（D6 定稿）：文件写信任放行（不限根内 —— 越界也放，F6 定稿），
     // exec 等风险类照旧走询问（落到下方 ask 流程）
     if (mode === 'autonomous' && (kind === 'write' || kind === 'edit')) {
       audit.approvalDecided({ toolName, verdict: 'autonomous' })
       return Promise.resolve({ block: false })
     }
-    // ask（含 autonomous 的 exec）：根内（或非写类）先查规则表 —— 会话工作
-    // 区根与某条同类别规则任一根命中即放行；无绑定根天然不命中，无根会话
-    // 不落规则的 UI 语义在引擎侧自洽
-    if (withinRoots && this.approvals.allows(this.workspaceRoots(session), kind)) {
+    // 写类只匹配覆盖本次目标的已授权根，新增根不会沿用旧根的规则。
+    if (roots.length > 0 && withinRoots && this.approvals.allows(isFileWrite ? targetRoots : roots, kind)) {
       audit.approvalDecided({ toolName, verdict: 'always-workspace' })
       return Promise.resolve({ block: false })
     }
@@ -1549,7 +1557,7 @@ export class SessionManager implements CogentKernel {
     return new Promise((resolve) => {
       // 先登记再发事件：respondApproval 走这张表找 resolver，时序上不存在
       // 「事件未到、respond 先行」的窗口（宿主是收到事件才可能裁决）
-      this.pendingApprovals.set(requestId, { sessionId, kind, toolName, resolve })
+      this.pendingApprovals.set(requestId, { sessionId, kind, toolName, ruleRoots: roots, withinRoots, resolve })
       audit.approvalAsked({ requestId, toolName, kind, summary, mode, outsideRoots: !withinRoots })
       this.notify('approval.request', {
         sessionId,
@@ -1744,6 +1752,8 @@ export class SessionManager implements CogentKernel {
       hostRoot: this.hostRoot,
       sessionId,
       onUserEntry: (entryId, cwd) => {
+        // 装配期间导入的是历史条目，当前回合的输入由接管后的 pi 保存。
+        if (session.pi === undefined) return undefined
         const run = this.streaming.get(sessionId)
         if (run === undefined || run.input === null || run.fileContext !== undefined) return undefined
         const fileContext: FileContext = { version: 1, turnId: run.turnId!, userEntryId: entryId, cwd, roots: this.workspaceRoots(session), platform: process.platform }
@@ -1853,6 +1863,7 @@ export class SessionManager implements CogentKernel {
           this.decideApproval(session, toolName, toolCallId, args, signal)
       },
       onMessageCommitted: (message, sourceId) => {
+        if (session.pi === undefined) return
         this.messageSources.set(message, sourceId)
         // 续写指令和纯工具/思考消息没有正文节点，不能覆盖上一条可见消息的来源。
         if (message.role === 'user' && typeof message.content === 'string' && message.content.startsWith(AUTO_CONTINUE_PREFIX)) return
@@ -1891,6 +1902,7 @@ export class SessionManager implements CogentKernel {
         }
         pi.refreshContext()
         if (imported > 0) {
+          session.piCwd = piSessionManager.getCwd()
           process.stderr.write(`[host] 旧转录已导入 pi 会话树（${imported} 条，会话 ${sessionId}）\n`)
         }
       }
@@ -2132,9 +2144,8 @@ export class SessionManager implements CogentKernel {
         // 要看得见量），又比accumulator 全量快照窄（100ms 一帧不搬 50KB）
         const streaming = this.streaming.get(sessionId)
         if (!streaming) return
-        const full = summarizeToolResult(event.partialResult)
-        if (full === '') return
-        const text = full.length > 2000 ? full.slice(-2000) : full
+        const text = tailToolResult(event.partialResult)
+        if (text === '') return
         this.notify('tool.progress', {
           sessionId,
           callId: event.toolCallId,

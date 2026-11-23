@@ -1,6 +1,6 @@
 /** LikeC4 提供布局，React Flow 负责平移缩放；所有交互控件由共享 shadcn 呈现。 */
 import { useEffect, useEffectEvent, useMemo } from 'react'
-import { Background, BackgroundVariant, ReactFlow, useNodesInitialized, useReactFlow, useViewportStore, useViewport, type NodeTypes, type EdgeTypes } from '@xyflow/react'
+import { Background, BackgroundVariant, MiniMap, ReactFlow, useNodesInitialized, useReactFlow, useViewportStore, useViewport, type NodeTypes, type EdgeTypes } from '@xyflow/react'
 import { useLikeC4Model } from 'likec4:single-project'
 import { Minus, Plus, Scan, Undo2 } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
@@ -13,17 +13,30 @@ const nodeTypes: NodeTypes = { module: ModuleNode, boundary: BoundaryNode }
 const edgeTypes: EdgeTypes = { relationship: RelationshipEdge }
 const canvasPadding = { top: 120, bottom: 80, left: 32, right: 32 }
 
-export function ArchitectureCanvas({ viewId, selectedId, onSelect }: { viewId: ViewId; selectedId: string | null; onSelect: (id: string | null) => void }) {
+export function ArchitectureCanvas({ viewId, selectedId, onSelect, returnFocusId, onReturnFocus }: {
+  viewId: ViewId; selectedId: string | null; onSelect: (id: string | null) => void
+  returnFocusId: string | null; onReturnFocus: () => void
+}) {
   const model = useLikeC4Model()
   const layout = model.view(viewId).$layouted
   const graph = useMemo(() => projectLayout(layout), [layout])
-  const nodes = useMemo(() => graph.nodes.map(node => ({ ...node, selected: node.id === selectedId })), [graph.nodes, selectedId])
+  const nodes = useMemo(() => graph.nodes.map(node => ({
+    ...node,
+    selected: node.id === selectedId,
+    ...(node.id === returnFocusId && { data: { ...node.data, onReturnFocus } })
+  })), [graph.nodes, selectedId, returnFocusId, onReturnFocus])
   const flow = useReactFlow<ArchitectureNode, ArchitectureEdge>()
   const { zoom } = useViewport()
   const width = useViewportStore(state => state.width)
   const height = useViewportStore(state => state.height)
   const initialized = useNodesInitialized()
   const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 220
+  // 横向长图在可读缩放下看不全，此时才显示小地图定位；全图已在视口内就让位。
+  const fitsCanvas = graph.bounds.width * zoom <= width && graph.bounds.height * zoom <= height
+  // 小地图的范围是「节点 ∪ 当前视口」。视口比图高时按并集的长宽比定高度，图才不会被上下的视口空白压扁。
+  const extentWidth = Math.max(graph.bounds.width, width / zoom)
+  const extentHeight = Math.max(graph.bounds.height, height / zoom)
+  const minimapWidth = 288
   function fit() {
     void flow.fitBounds(graph.bounds, { padding: canvasPadding, duration })
   }
@@ -78,6 +91,24 @@ export function ArchitectureCanvas({ viewId, selectedId, onSelect }: { viewId: V
         aria-label="Cogent 核心架构，可拖动画布、缩放或点击模块查看说明"
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--border)" />
+        {/* 高度跟随范围的长宽比，横向长图在小地图里是一条铺满的带；底部操作条居中贴底，
+            小地图抬到它上方，窄中栏里两者不重叠。 */}
+        {!fitsCanvas && <MiniMap<ArchitectureNode>
+          ariaLabel="架构缩略图"
+          position="bottom-right"
+          pannable
+          zoomable
+          bgColor="var(--background)"
+          maskColor="color-mix(in srgb, var(--background) 55%, transparent)"
+          maskStrokeColor="var(--muted-foreground)"
+          nodeColor={node => node.type === 'boundary' ? 'var(--border)' : 'var(--muted-foreground)'}
+          nodeBorderRadius={2}
+          style={{
+            width: minimapWidth,
+            height: Math.round(Math.max(56, Math.min(160, minimapWidth * extentHeight / extentWidth))),
+            marginBottom: 64,
+          }}
+        />}
       </ReactFlow>
       <ul className="canvas-legend text-xs text-muted-foreground" aria-label="连线图例">
         {[
@@ -95,7 +126,7 @@ export function ArchitectureCanvas({ viewId, selectedId, onSelect }: { viewId: V
         <IconButton label="放大" onClick={() => { void flow.zoomIn({ duration }) }} disabled={zoom >= 1.6}><Plus /></IconButton>
         <Separator orientation="vertical" className="mx-1 h-4" />
         <IconButton label="适应画布" onClick={fit}><Scan /></IconButton>
-        <IconButton label="恢复总览" onClick={reset}><Undo2 /></IconButton>
+        <IconButton label="复位画布" onClick={reset}><Undo2 /></IconButton>
       </div>
   </section>
 }

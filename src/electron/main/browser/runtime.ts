@@ -8,7 +8,7 @@ import { BrowserLocalPreview, type BrowserPreviewSource } from './local-preview'
 import { allowedBrowserUrl, permissionKey, PROMPT_BROWSER_PERMISSIONS } from './policy'
 import { edgeExternalUrl } from './external-url'
 
-interface Profile { id: string; partition: string; session: Session; private: boolean; grants: Set<string>; decisions: Map<string, 'ask' | 'allow' | 'deny'>; certificates: Set<string>; inflight: Map<string, Promise<number>>; lifetime: AbortController }
+interface Profile { id: string; partition: string; session: Session; private: boolean; grants: Map<number, Set<string>>; decisions: Map<string, 'ask' | 'allow' | 'deny'>; certificates: Set<string>; inflight: Map<string, Promise<number>>; lifetime: AbortController }
 interface Tab {
   owner: WebContents
   profile: Profile
@@ -272,10 +272,15 @@ export class BrowserTabRuntime {
   }
 
   private bind(tab: Tab, guest: WebContents): void {
-    this.documents.set(guest.id, 0)
+    const guestId = guest.id
+    this.documents.set(guestId, 0)
     guest.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
       if (!inPlace) this.cancelPrompts(tab)
-      if (mainFrame && !inPlace) { tab.document++; this.documents.set(guest.id, tab.document); tab.state.error = null; tab.state.favicon = null; this.cancelPrompts(tab) }
+      if (mainFrame && !inPlace) {
+        tab.document = this.advanceDocument(tab.profile, guestId)
+        tab.state.error = null
+        tab.state.favicon = null
+      }
     })
     const update = () => { this.publish(tab) }
     guest.on('did-navigate', () => { this.recordNavigation(tab, false); update() })
@@ -295,9 +300,16 @@ export class BrowserTabRuntime {
       if (leave) event.preventDefault()
       else if (tab.closeAttempt !== undefined) tab.closeAttempt.canceled = true
     })
-    guest.on('render-process-gone', (_event, details) => { tab.state.crashed = true; tab.state.error = `网页进程已停止（${details.reason}）`; tab.state.loading = false; this.cancelPrompts(tab); this.publish(tab) })
+    guest.on('render-process-gone', (_event, details) => {
+      tab.document = this.advanceDocument(tab.profile, guestId)
+      tab.state.crashed = true
+      tab.state.error = `网页进程已停止（${details.reason}）`
+      tab.state.loading = false
+      this.cancelPrompts(tab)
+      this.publish(tab)
+    })
     guest.once('destroyed', () => {
-      this.documents.delete(guest.id)
+      this.forgetDocument(tab.profile, guestId)
       tab.closeResult?.({ closed: true, keepMounted: false })
       this.finish(tab)
     })
@@ -362,13 +374,16 @@ export class BrowserTabRuntime {
     guest.on('did-create-window', popup => {
       tab.popups.add(popup)
       const contents = popup.webContents
-      this.documents.set(contents.id, 0)
-      contents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) { this.documents.set(contents.id, (this.documents.get(contents.id) ?? 0) + 1); this.cancelPrompts(tab) } })
+      const contentsId = contents.id
+      this.documents.set(contentsId, 0)
+      const retireDocument = (): void => { this.advanceDocument(tab.profile, contentsId); this.cancelPrompts(tab) }
+      contents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) retireDocument() })
+      contents.on('render-process-gone', retireDocument)
       contents.on('will-frame-navigate', event => { if (!this.allowed(event.url)) event.preventDefault() })
       contents.on('will-redirect', (event, url) => { if (!this.allowed(url)) event.preventDefault() })
       this.installPopupSafety(tab, contents)
       contents.on('will-attach-webview', event => event.preventDefault())
-      popup.once('closed', () => { this.documents.delete(contents.id); tab.popups.delete(popup) })
+      popup.once('closed', () => { this.forgetDocument(tab.profile, contentsId); tab.popups.delete(popup) })
     })
   }
   private window(tab: Tab): BrowserWindow { const win = BrowserWindow.fromWebContents(tab.owner); if (!win) throw new Error('浏览器所属窗口已关闭'); return win }
@@ -403,7 +418,7 @@ export class BrowserTabRuntime {
     const existing = this.profiles.get(id)
     if (existing) return existing
     const partition = id === 'normal' ? 'persist:cogent-workspace-browser-v1' : `cogent-browser-${randomUUID()}`
-    const profile: Profile = { id, partition, session: session.fromPartition(partition), private: id !== 'normal', grants: new Set(), decisions: new Map(), certificates: new Set(), inflight: new Map(), lifetime: new AbortController() }
+    const profile: Profile = { id, partition, session: session.fromPartition(partition), private: id !== 'normal', grants: new Map(), decisions: new Map(), certificates: new Set(), inflight: new Map(), lifetime: new AbortController() }
     this.profiles.set(id, profile)
     this.preview.install(profile.session)
     profile.session.webRequest.onBeforeRequest((details, callback) => {
@@ -420,20 +435,26 @@ export class BrowserTabRuntime {
       const mediaDecision = permission === 'media' && mediaTypes.length ? mediaTypes.map(type => profile.decisions.get(`${origin}|media|${type}`) ?? 'ask') : [profile.decisions.get(`${origin}|${permission}`) ?? 'ask']
       const saved = profile.private ? mediaDecision.includes('deny') ? 'deny' : mediaDecision.every(value => value === 'allow') ? 'allow' : 'ask' : this.browserSettings().get(origin, permission, mediaTypes)
       if (saved !== 'ask') { callback(saved === 'allow'); return }
-      const document = this.documents.get(guest.id) ?? 0
-      const grantKey = `${key}|${guest.id}|${document}`
-      if (profile.grants.has(grantKey)) { callback(true); return }
+      const guestId = guest.id
+      const document = this.documents.get(guestId)
+      if (document === undefined) { callback(false); return }
+      const grantKey = `${key}|${guestId}|${document}`
+      if (profile.grants.get(guestId)?.has(key)) { callback(true); return }
       let flight = profile.inflight.get(grantKey)
       if (!flight) {
         flight = dialog.showMessageBox(this.window(tab), { type: 'question', title: '网站权限', message: `${origin}\n请求${this.permissionLabel(permission)}${mediaTypes.length ? `（${mediaTypes.join('、')}）` : ''}`, buttons: profile.private ? ['本次允许', '拒绝'] : ['本次允许', '始终允许', '拒绝'], defaultId: profile.private ? 1 : 2, cancelId: profile.private ? 1 : 2 }).then(result => result.response).finally(() => profile.inflight.delete(grantKey))
         profile.inflight.set(grantKey, flight)
       }
       void flight.then(choice => {
-        if (!this.tabs.has(tab.state.lease) || this.documents.get(guest.id) !== document || guest.isDestroyed() || !tab.state.active) { callback(false); return }
-        const allowed = choice === 0 || (!profile.private && choice === 1)
-        if (allowed) profile.grants.add(grantKey)
-        if (!profile.private && choice === 1) this.browserSettings().set(origin, permission, 'allow', mediaTypes)
-        callback(allowed)
+        if (!this.tabs.has(tab.state.lease) || this.documents.get(guestId) !== document || guest.isDestroyed() || !tab.state.active) { callback(false); return }
+        const always = !profile.private && choice === 1
+        if (always) this.browserSettings().set(origin, permission, 'allow', mediaTypes)
+        if (choice === 0) {
+          const grants = profile.grants.get(guestId) ?? new Set<string>()
+          grants.add(key)
+          profile.grants.set(guestId, grants)
+        }
+        callback(always || choice === 0)
       }).catch(() => callback(false))
     })
     profile.session.setPermissionCheckHandler((guest, permission, requestingOrigin, details) => {
@@ -443,7 +464,8 @@ export class BrowserTabRuntime {
       const mediaTypes = permission === 'media' && (details.mediaType === 'audio' || details.mediaType === 'video') ? [details.mediaType] : []
       if (permission === 'media' && !mediaTypes.length) return false
       const persistent = profile.private ? profile.decisions.get(permission === 'media' ? `${origin}|media|${mediaTypes[0]}` : `${origin}|${permission}`) === 'allow' : this.browserSettings().get(origin, permission, mediaTypes) === 'allow'
-      return persistent || [...profile.grants].some(key => key.startsWith(`${origin}|${permission}|`) && key.endsWith(`|${guest.id}|${this.documents.get(guest.id) ?? 0}`) && (permission !== 'media' || key.split('|')[2].split(',').includes(mediaTypes[0])))
+      const grants = profile.grants.get(guest.id)
+      return persistent || (grants !== undefined && [...grants].some(key => key.startsWith(`${origin}|${permission}|`) && (permission !== 'media' || key.split('|')[2].split(',').includes(mediaTypes[0]))))
     })
     profile.session.setDevicePermissionHandler(() => false)
     profile.session.setDisplayMediaRequestHandler((_request, callback) => callback({}))
@@ -465,7 +487,10 @@ export class BrowserTabRuntime {
     if (!tab.profile.private) this.browserSettings().set(value.origin, value.permission, value.decision, value.mediaTypes)
     else if (value.permission === 'media') for (const type of value.mediaTypes!) tab.profile.decisions.set(`${value.origin}|media|${type}`, value.decision)
     else tab.profile.decisions.set(`${value.origin}|${value.permission}`, value.decision)
-    for (const key of tab.profile.grants) if (key.startsWith(`${value.origin}|${value.permission}|`)) tab.profile.grants.delete(key)
+    for (const [guestId, grants] of tab.profile.grants) {
+      for (const key of grants) if (key.startsWith(`${value.origin}|${value.permission}|`)) grants.delete(key)
+      if (!grants.size) tab.profile.grants.delete(guestId)
+    }
     // 重新加载使已开启的采集与旧文档一起结束；不是只修改未来请求的回调。
     for (const peer of this.tabs.values()) if (peer.profile === tab.profile && this.origin(peer.state.url) === value.origin && peer.guest && !peer.guest.isDestroyed()) peer.guest.reload()
     for (const peer of this.tabs.values()) if (peer.profile === tab.profile) for (const popup of peer.popups) if (!popup.isDestroyed() && this.origin(popup.webContents.getURL()) === value.origin) popup.reload()
@@ -589,12 +614,21 @@ export class BrowserTabRuntime {
     if (tab.guest && !tab.guest.isDestroyed()) tab.guest.close({ waitForBeforeUnload: false })
     this.finish(tab)
   }
+  /** WebContents 可以重用，临时授权和未答复的请求只属于旧文档。 */
+  private advanceDocument(profile: Profile, guestId: number): number {
+    profile.grants.delete(guestId)
+    const revision = (this.documents.get(guestId) ?? 0) + 1
+    this.documents.set(guestId, revision)
+    return revision
+  }
+  private forgetDocument(profile: Profile, guestId: number): void {
+    profile.grants.delete(guestId)
+    this.documents.delete(guestId)
+  }
   private finish(tab: Tab): void {
     if (!this.tabs.delete(tab.state.lease)) return
     this.cancelPrompts(tab)
-    if (tab.guest) this.documents.delete(tab.guest.id)
-    const ids = new Set([tab.guest?.id, ...[...tab.popups].map(popup => popup.isDestroyed() ? undefined : popup.webContents.id)])
-    for (const key of tab.profile.grants) if (ids.has(Number(key.split('|').at(-2)))) tab.profile.grants.delete(key)
+    if (tab.guest && !tab.guest.isDestroyed()) this.forgetDocument(tab.profile, tab.guest.id)
     for (const popup of tab.popups) if (!popup.isDestroyed()) popup.destroy()
     this.preview.revoke(tab.state.lease)
     for (const release of tab.cleanup) release()

@@ -29,7 +29,7 @@
 | M1 | enabled=true、allowWrites=false后启动 | 生成mcp-access.json；客户端readonly工具组可用，无写工具 |
 | M2 | allowWrites=true后重启并重连server | 凭据scope=write，写工具可见；tools/list按注册快照切换 |
 | M3 | enabled=false后重启 | 遗留凭据删除，外部不能沿用文件继续访问 |
-| M4/5 | 客户端连接并调用cogent_status | stdio连接成功，返回service/协议/scope，诊断无敏感材料 |
+| M4/5 | 客户端连接并调用 `cogent_status` | stdio 连接成功，返回服务名、协议版本、Node 版本和可选 HTTP 端口。档位由 M1/M2 的工具清单验证 |
 | M6 | 列项目/会话，与GUI对比 | 两边是同一Host的数据，无第二个独立引擎 |
 | M7 | 建会话，不传permissionMode | GUI出现会话且计划开关开启；权限档与计划状态分开核对 |
 | M8 | waitMs提交能回答的任务 | 窗口内完成返回finalText；超时返回timeout只代表尚未等到，不判任务失败 |

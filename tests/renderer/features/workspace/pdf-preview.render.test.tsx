@@ -49,7 +49,7 @@ function tab() {
 }
 
 describe('PDF查看器合同', () => {
-  it('同一标签换文件后，旧Document迟到的页数夹取不能写入新文件', async () => {
+  it('同一标签换文件后隔离旧页数，继续保存新文件的翻页与缩放', async () => {
     const id = tab()
     const source: Preview = { tabId: id, leaseId: null, scope: { sessionId: 'pdf-view', refs: [] }, rawTarget: 'old.pdf', operationId: 'old-op', generation: 1, descriptor: null, loading: false, error: null, text: null, encoding: null, url: 'blob:old-owner', document: null, bytes: 0, touchedAt: 0, evicted: false }
     useFilePreviewStore.setState({ byTab: { [id]: source } })
@@ -61,10 +61,14 @@ describe('PDF查看器合同', () => {
       useFilePreviewStore.getState().setView(id, { page: 2 })
     })
     view.rerender(<PdfPreview url="blob:new-owner" tabId={id} active />)
-    await loaded('blob:new-owner', 5)
+    await loaded('blob:new-owner', 3)
     act(() => { stale({ numPages: 1, getPage: pdf.getPage }) })
     expect(useFilePreviewStore.getState().views[id].page).toBe(2)
     expect(screen.getByRole('spinbutton', { name: 'PDF页码' })).toHaveValue(2)
+    expect(screen.getByText('/ 3')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }))
+    fireEvent.click(screen.getByRole('button', { name: '放大' }))
+    expect(useFilePreviewStore.getState().views[id]).toMatchObject({ page: 3, zoom: 1.25 })
   })
   it('隐藏不挂Page，激活恢复页码/文字层，隐藏由库卸载释放活动页面', async () => {
     const id = tab(); useFilePreviewStore.getState().setView(id, { page: 3, zoom: 1.5 })
@@ -78,18 +82,6 @@ describe('PDF查看器合同', () => {
     expect(screen.queryByLabelText('PDF 第 3 页')).toBeNull()
     expect(pdf.dispose).toHaveBeenCalledTimes(1)
     expect(useFilePreviewStore.getState().views[id]).toMatchObject({ page: 3, zoom: 1.5 })
-  })
-  it('换文件隔离迟到Document，页码与缩放仍由当前标签持有', async () => {
-    const id = tab()
-    const view = render(<PdfPreview url="blob:old" tabId={id} active />)
-    const stale = pdf.success.get('blob:old')!
-    view.rerender(<PdfPreview url="blob:new" tabId={id} active />)
-    await loaded('blob:new', 2)
-    act(() => { stale({ numPages: 99, getPage: pdf.getPage }) })
-    expect(screen.getByText('/ 2')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '下一页' }))
-    fireEvent.click(screen.getByRole('button', { name: '放大' }))
-    expect(useFilePreviewStore.getState().views[id]).toMatchObject({ page: 2, zoom: 1.25 })
   })
 
   it('紧凑页码输入、图标翻页和键盘翻页共用当前页且拒绝越界输入', async () => {

@@ -96,8 +96,9 @@ export class ProjectRegistry {
       cwds: [...cwds],
       createdAt: Date.now()
     }
+    // 创建返回即承诺可恢复，保存失败前不发布内存项目。
+    this.writeProject(summary)
     this.projects.set(summary.id, summary)
-    this.persist(summary.id)
     return { ...summary }
   }
 
@@ -157,9 +158,13 @@ export class ProjectRegistry {
     const summary = this.projects.get(projectId)
     if (!summary) return
     try {
-      this.storage.put(PROJECT_COLLECTION, projectId, { version: PROJECT_FILE_VERSION, summary })
+      this.writeProject(summary)
     } catch (error) {
       process.stderr.write(`[host] 项目落盘失败（${projectId}，下回合重试）: ${(error as Error).message}\n`)
     }
+  }
+
+  private writeProject(summary: ProjectSummary): void {
+    this.storage.put(PROJECT_COLLECTION, summary.id, { version: PROJECT_FILE_VERSION, summary })
   }
 }

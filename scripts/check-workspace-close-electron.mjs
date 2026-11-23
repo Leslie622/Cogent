@@ -1,4 +1,4 @@
-/** 标签不落盘；真实主renderer崩溃后仍可正常退出，不等待保存ACK或显示未保存提示。 */
+/** 从真实产品启动到 Host 握手及关窗。默认另外覆盖主 renderer 崩溃后的退出。 */
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -7,7 +7,8 @@ import { spawn, spawnSync } from 'node:child_process'
 import electron from 'electron'
 
 const root = mkdtempSync(join(tmpdir(), 'cogent-workspace-close-'))
-const home = join(root, 'home'), evidence = resolve('tmp/workspace-close-electron')
+const smoke = process.argv.includes('--smoke')
+const home = join(root, 'home'), evidence = resolve(smoke ? 'tmp/product-electron-smoke' : 'tmp/workspace-close-electron')
 mkdirSync(home); mkdirSync(evidence, { recursive: true })
 writeFileSync(join(home, 'settings.json'), JSON.stringify({ version: 1, closeBehavior: 'quit', soundEnabled: false, toastEnabled: false }))
 
@@ -38,13 +39,17 @@ async function driver(config) {
     const created = new Promise(done => app.once('browser-window-created', (_event, window) => done(window)))
     await import(config.main)
     win = await created
-    await wait(() => win.webContents.executeJavaScript('!!document.querySelector("[data-home-split]")'), '实际main/preload/renderer启动')
+    await wait(() => win.webContents.executeJavaScript('!!document.querySelector("[data-home-split]")'), '实际 main/preload/renderer 启动')
+    const sessions = await win.webContents.executeJavaScript('window.cogent.engineRequest("session.list", {})')
+    if (!Array.isArray(sessions) || sessions.length !== 0) throw new Error('隔离 Host 未返回空会话清单')
+    report.checks.push('preload 经生产 IPC 读取隔离 Host 的会话清单')
     for (const metric of app.getAppMetrics()) children.add(metric.pid)
-    const crashed = new Promise(done => win.webContents.once('render-process-gone', (_event, details) => { report.crash = details.reason; done() }))
-    win.webContents.forcefullyCrashRenderer()
-    await crashed
-    report.checks.push('真实主renderer崩溃，main与Host仍存活')
-    report.checks.push('工作区不保存，崩溃后的关闭不需要renderer保存确认')
+    if (!config.smoke) {
+      const crashed = new Promise(done => win.webContents.once('render-process-gone', (_event, details) => { report.crash = details.reason; done() }))
+      win.webContents.forcefullyCrashRenderer()
+      await crashed
+      report.checks.push('主 renderer 崩溃后进入原生关窗')
+    }
     report.passed = true
     save()
     win.close()
@@ -53,15 +58,22 @@ async function driver(config) {
 }
 
 const resultFile = join(evidence, 'result.json'), driverFile = join(root, 'driver.mjs')
-const config = { profile: join(root, 'profile'), main: pathToFileURL(resolve('out/main/index.js')).href, result: resultFile }
+const config = { smoke, profile: join(root, 'profile'), main: pathToFileURL(resolve('out/main/index.js')).href, result: resultFile }
+rmSync(resultFile, { force: true })
 writeFileSync(driverFile, '(' + driver.toString() + ')(' + JSON.stringify(config) + ');')
-const env = { ...process.env, COGENT_HOME: home, USERPROFILE: home, HOME: home }
+const env = { ...process.env, COGENT_HOME: home, USERPROFILE: home, HOME: home, NODE_ENV: 'production' }
+if (smoke && process.env.CI) env.COGENT_NODE_BIN ??= process.execPath
 delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_RENDERER_URL
 let child
 try {
   child = spawn(electron, [driverFile], { env, stdio: 'inherit', windowsHide: true })
   const timeout = setTimeout(() => spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }), 25000)
-  const code = await new Promise((done, reject) => { child.once('error', reject); child.once('exit', done) }); clearTimeout(timeout)
+  let code
+  try {
+    code = await new Promise((done, reject) => { child.once('error', reject); child.once('close', done) })
+  } finally {
+    clearTimeout(timeout)
+  }
   const report = existsSync(resultFile) ? JSON.parse(readFileSync(resultFile, 'utf8')) : { passed: false, errors: ['没有结果文件'], ownedPids: [] }
   const alive = pid => { try { process.kill(pid, 0); return true } catch { return false } }
   const end = Date.now() + 5000
@@ -72,7 +84,7 @@ try {
   console.log(JSON.stringify(report, null, 2))
   if (!report.passed) process.exitCode = 1
 } finally {
-  if (child && child.exitCode === null) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
+  if (child?.pid && child.exitCode === null && child.signalCode === null) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
   if (!root.startsWith(join(tmpdir(), 'cogent-workspace-close-'))) throw new Error('临时目录边界错误')
   rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 }

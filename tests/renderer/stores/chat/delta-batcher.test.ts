@@ -5,6 +5,12 @@ import { bindEngineEvents } from '@/stores/chat/events'
 import { emptyBucket, messageDeltas, useChatStore } from '@/stores/chat/store'
 import { useHomeStore } from '@/stores/home'
 
+// 回合用例只验证 store 和视图，声音由通知专项覆盖。
+vi.mock('@/lib/notify', async (load) => ({
+  ...await load<typeof import('@/lib/notify')>(),
+  notifyEvent: vi.fn()
+}))
+
 const initial = useChatStore.getState()
 const handlers = new Set<(event: EngineEvent) => void>()
 const request = vi.fn().mockResolvedValue([])

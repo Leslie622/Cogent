@@ -18,8 +18,23 @@ beforeAll(async () => {
 afterAll(async () => { await instance.dispose() })
 
 describe('目标架构的语义与完成度', () => {
+  it('关系进度独立于端点，折叠网络入口后仍保留目标标记', () => {
+    for (const viewId of ['overview', 'ingress'] as const) {
+      const { edges } = projectLayout(views[viewId])
+      const planned = (source: string, target: string) => edges.find(edge => edge.source === source && edge.target === target)!.data!.planned
+      expect(moduleDetails['host.native'].status).toBe('implemented')
+      expect(moduleDetails['host.policy'].status).toBe('partial')
+      expect(planned('host.native', 'host.policy')).toBe(true)
+      expect(planned('host.policy', 'host.api')).toBe(false)
+      const destination = viewId === 'overview' ? 'access.network' : 'access.network.http'
+      expect(planned('customClients', destination)).toBe(true)
+      expect(planned('nativeClients', destination)).toBe(false)
+    }
+  })
+
   it('传输入口纵向展开，桌面、stdio 与原生入口直连，网络接线保持水平', () => {
-    const find = (id: string) => views.overview.nodes.find(node => node.id === id)!
+    const { nodeBounds } = projectLayout(views.overview)
+    const find = (id: string) => nodeBounds.get(id)!
     expect(find('desktop').y).toBe(find('access.stdio').y)
     expect(find('access.stdio').y).toBe(find('host.native').y)
     expect(find('customClients').y).toBe(find('access.network').y)
@@ -29,6 +44,36 @@ describe('目标架构的语义与完成度', () => {
       const route = edges.find(edge => edge.source === source && edge.target === target)!.data!.route
       expect(route.every(point => point.y === route[0].y), `${source} → ${target} 应直接水平连接`).toBe(true)
     }
+    // 回归钉死：行对齐曾把三张场景卡挤到只剩 2~12px 间隙；原生调用放回两行正中，间隙相等且留得出来。
+    const [desktop, native, custom] = ['desktop', 'nativeClients', 'customClients'].map(find)
+    const gaps = [native.y - desktop.y - desktop.height, custom.y - native.y - native.height]
+    expect(gaps[1]).toBe(gaps[0])
+    expect(gaps[0]).toBeGreaterThanOrEqual(40)
+  })
+
+  it('点线从两个容器底边以下绕行，MCP 行贴着通道下方', () => {
+    const { edges, nodeBounds } = projectLayout(views.overview)
+    const bottom = (id: string) => { const box = nodeBounds.get(id)!; return box.y + box.height }
+    const dotted = edges.find(edge => edge.data!.line === 'dotted')!
+    const channel = dotted.data!.route[1].y
+    // 回归钉死：通道曾落在两个容器底边之间，点线看着像插进区块；线与底边之间还要放得下标签。
+    for (const id of ['access', 'host']) expect(channel - bottom(id), `${id} 底边到点线应留出净空`).toBeGreaterThanOrEqual(40)
+    expect(bottom('host')).toBe(bottom('access'))
+    expect(nodeBounds.get('mcp')!.y).toBeGreaterThan(channel)
+    expect(nodeBounds.get('externalAgent')!.y).toBe(nodeBounds.get('mcp')!.y)
+  })
+
+  it('Host 用阶段标题标出各阶段的卡片范围', () => {
+    const graph = projectLayout(views.overview)
+    const host = graph.nodes.find(node => node.id === 'host')!
+    expect(host.data.stages.map(stage => stage.label)).toEqual(['接入与协议', '业务分发', '内核执行', '模型出口'])
+    const frame = graph.nodeBounds.get('host')!
+    for (const [index, stage] of host.data.stages.entries()) {
+      const members = moduleDetails.host.stages![index].nodes.map(id => graph.nodeBounds.get(id)!)
+      expect(stage.x).toBe(Math.min(...members.map(member => member.x)) - frame.x)
+      expect(stage.x + stage.width).toBe(Math.max(...members.map(member => member.x + member.width)) - frame.x)
+    }
+    expect(graph.nodes.filter(node => node.data.stages.length > 0).map(node => node.id)).toEqual(['host'])
   })
 
   it('总览聚合网络接线，外部 Agent 经过 MCP 转换，细图保留 HTTP 与 WS', () => {
@@ -117,7 +162,6 @@ describe('目标架构的语义与完成度', () => {
     expect(find('host.runtime').parent).toBe('host')
     expect(find('host.runtime').children).toEqual(['host.runtime.kernel', 'host.runtime.alternative', 'host.runtime.capabilities'])
     for (const id of ['host.runtime.kernel', 'host.runtime.alternative', 'host.runtime.capabilities']) expect(find(id).parent).toBe('host.runtime')
-    expect(find('host').width).toBeLessThanOrEqual(3000)
     for (const id of ['host.services', 'host.runtime.capabilities']) {
       expect(find(id).parent).toBe(id === 'host.services' ? 'host' : 'host.runtime')
       expect(find(id).children).toEqual([])
@@ -139,6 +183,9 @@ describe('目标架构的语义与完成度', () => {
     const services = graph.nodeBounds.get('host.services')!
     expect(runner.width).toBe(636)
     expect(runner.height).toBe(196)
+    // 回归钉死：x 必须随服务层重定位，否则紧凑后的 Runner 滞留引擎给的左秩，主链折返横穿全图。
+    expect(runner.x).toBe(services.x + services.width + 160)
+    expect(graph.nodeBounds.get('host')!.width).toBeLessThanOrEqual(3000)
     expect(runner.y + runner.height / 2).toBe(services.y + services.height / 2)
     const cards = ['host.runtime.capabilities', 'host.runtime.kernel', 'host.runtime.alternative'].map(id => graph.nodeBounds.get(id)!)
     expect(new Set(cards.map(card => card.y)).size).toBe(1)
@@ -151,9 +198,15 @@ describe('目标架构的语义与完成度', () => {
       const route = projected.find(edge => edge.source === source && edge.target === target)!.data!.route
       expect(route.every(point => point.y === route[0].y), `${source} → ${target} 应直接水平连接`).toBe(true)
     }
-    expect(find('host.services').x).toBeGreaterThan(find('host.api').x)
-    expect(find('host.runtime').x).toBeGreaterThan(find('host.services').x + find('host.services').width)
-    for (const segment of segments(business.data!.route)) expect(hitsBox(segment, find('host.runtime'), 16), 'API 与服务直接相邻，连线不应经过执行容器').toBe(false)
+    const api = graph.nodeBounds.get('host.api')!
+    const provider = graph.nodeBounds.get('host.provider')!
+    const models = graph.nodeBounds.get('models')!
+    const host = graph.nodeBounds.get('host')!
+    expect(services.x).toBeGreaterThan(api.x)
+    expect(provider.x).toBe(runner.x + runner.width + 160)
+    expect(models.x).toBe(provider.x + provider.width + 160)
+    expect(models.x).toBeGreaterThanOrEqual(host.x + host.width)
+    for (const segment of segments(business.data!.route)) expect(hitsBox(segment, runner, 16), 'API 与服务直接相邻，连线不应经过执行容器').toBe(false)
     expect(moduleDetails['host.runtime'].kind).toContain('CogentKernel')
     expect(moduleDetails['host.runtime.alternative'].status).toBe('planned')
     expect(moduleDetails['host.runtime.capabilities'].features!.find(feature => feature.label === '子会话')!.status).toBe('planned')
@@ -202,6 +255,19 @@ describe.each(viewIds)('%s 视图的布局适配', id => {
           expect(hitsBox(segment, box, 6), `${id}: ${original.label} 应与 ${edge.id} 的连线保持间距`).toBe(false)
         }
       }
+      // 标签有底色，骑在容器边框上会遮掉一段虚线；边框只在自身长度范围内才算被压到。
+      const crosses = (at: number, from: number, to: number) => at > from && at < to
+      for (const boundary of view.nodes.filter(item => item.children.length > 0)) {
+        const frame = nodeBounds.get(boundary.id)!
+        const spansHeight = frame.y < box.y + box.height && frame.y + frame.height > box.y
+        const spansWidth = frame.x < box.x + box.width && frame.x + frame.width > box.x
+        for (const x of [frame.x, frame.x + frame.width]) {
+          expect(spansHeight && crosses(x, box.x, box.x + box.width), `${id}: ${original.label} 不应压住 ${boundary.title} 的纵向边框`).toBe(false)
+        }
+        for (const y of [frame.y, frame.y + frame.height]) {
+          expect(spansWidth && crosses(y, box.y, box.y + box.height), `${id}: ${original.label} 不应压住 ${boundary.title} 的横向边框`).toBe(false)
+        }
+      }
     }
   })
 
@@ -215,12 +281,18 @@ describe.each(viewIds)('%s 视图的布局适配', id => {
       const target = { ...nodeBounds.get(edge.target)!, id: edge.target, title: moduleDetails[edge.target].name }
       if (edge.data!.kind === 'call') expect(target.x, `${id}: ${edge.id} 调用流程应朝右或向同列模块流动`).toBeGreaterThanOrEqual(source.x)
       const route = edge.data!.route
-      for (const [node, point] of [[source, route[0]], [target, route[route.length - 1]]] as const) {
+      for (const [node, point, next] of [[source, route[0], route[1]], [target, route[route.length - 1], route[route.length - 2]]] as const) {
         const horizontalPort = point.x === node.x || point.x === node.x + node.width
         const verticalPort = point.y === node.y || point.y === node.y + node.height
         expect(horizontalPort || verticalPort, `${node.title} 的箭头应贴边`).toBe(true)
         if (horizontalPort) expect(Math.min(point.y - node.y, node.y + node.height - point.y)).toBeGreaterThanOrEqual(12)
         else expect(Math.min(point.x - node.x, node.x + node.width - point.x)).toBeGreaterThanOrEqual(12)
+        // 回归钉死：端点对齐后曾被钳到卡片的另一侧，线从卡片内部穿出；箭头只能从所贴那条边的外侧进入。
+        const fromOutside = point.x === node.x ? next.x <= point.x
+          : point.x === node.x + node.width ? next.x >= point.x
+          : point.y === node.y ? next.y <= point.y
+          : next.y >= point.y
+        expect(fromOutside, `${id}: ${edge.id} 的箭头应从 ${node.title} 外侧进入，不能穿卡`).toBe(true)
         const previous = ports.get(node.id) ?? []
         for (const other of previous) expect(Math.hypot(point.x - other.x, point.y - other.y), `${node.title} 的端口不应叠在一起`).toBeGreaterThanOrEqual(12)
         ports.set(node.id, [...previous, point])

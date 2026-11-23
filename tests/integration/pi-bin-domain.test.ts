@@ -19,6 +19,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import {
+  closeLoopback,
+  listenLoopback,
   check,
   chunk,
   type EngineHandle,
@@ -29,7 +31,6 @@ import {
   startEngine
 } from './harness'
 
-const PORT = 18_943
 const ws = makeTempDir('cogent-pibin-ws-')
 const home = makeTempDir('cogent-pibin-home-')
 // 共享缓存（harness 各测试经 PI_CODING_AGENT_DIR 指向的下载位）
@@ -107,17 +108,16 @@ describe('PI 域 env 归位（入口 wrapper 加载顺序回归钉）', () => {
         res.end()
       })
     })
-    await new Promise<void>((r) => server!.listen(PORT, '127.0.0.1', r))
+    const port = await listenLoopback(server)
     await initEngine(engine, {
       client: 'pibin-smoke',
-      port: PORT,
-      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${PORT}/v1`, models: ['mock'] }]
+      providers: [{ id: 'custom/mock', name: 'Mock', baseUrl: `http://127.0.0.1:${port}/v1`, models: ['mock'] }]
     })
   }, 120_000)
 
-  afterAll(() => {
-    engine?.kill()
-    server?.close()
+  afterAll(async () => {
+    await engine?.stop()
+    await closeLoopback(server)
     for (const dir of [home, ws]) removeDir(dir)
   })
 

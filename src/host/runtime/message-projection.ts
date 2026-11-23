@@ -5,21 +5,32 @@ import type { AttachmentMessage, CompactionBarSource } from '../kernel/transcrip
 import { toolMeta } from './tool-meta'
 const AUTO_CONTINUE_PREFIX = '[cogent:continue]'
 
+function toolResultText(result: unknown, separator: string): string {
+  if (typeof result !== 'object' || result === null) return ''
+  const content = (result as { content?: Array<{ type: string; text?: string }> }).content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((block) => (block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
+    .join(separator)
+}
+
 /**
  * 工具结果 → 一行摘要（tool.completed 事件与 ToolCallRecord.resultSummary 共用）。
  * 取 result.content 的文本块拼接（模型 facing 的结果即用户可读的结果），截 200
  * 字符 —— 摘要服务"一眼看懂发生了什么"，全文模型已在循环里消费过。
  */
 export function summarizeToolResult(result: unknown): string {
-  if (typeof result !== 'object' || result === null) return ''
-  const content = (result as { content?: Array<{ type: string; text?: string }> }).content
-  if (!Array.isArray(content)) return ''
-  const text = content
-    .map((block) => (block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+  const text = toolResultText(result, ' ').replace(/\s+/g, ' ').trim()
   return text.length > 200 ? `${text.slice(0, 200)}…` : text
+}
+
+/** 进度窗口逐帧替换，保留换行与最新输出，不经过历史摘要的首部裁剪。 */
+export function tailToolResult(result: unknown): string {
+  const text = toolResultText(result, '\n').trimEnd()
+  const start = text.length - 2000
+  if (start <= 0) return text
+  // 预算按 UTF-16 码元计算，截断点落在代理对中间时从下一个字符开始。
+  return text.slice(text.codePointAt(start - 1)! > 0xffff ? start + 1 : start)
 }
 
 /**
