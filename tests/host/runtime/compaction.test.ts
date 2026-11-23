@@ -104,7 +104,7 @@ describe('adaptCompactionToWindow（1.4 小窗自适应）', () => {
   })
 })
 
-// ———— D9 保留式投影 ————
+// ———— 保留式投影 ————
 
 describe('convertToLlmMessages', () => {
   it('无压缩条：原引用直通（热路径零拷贝）', () => {

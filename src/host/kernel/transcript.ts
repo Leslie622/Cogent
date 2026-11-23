@@ -84,7 +84,7 @@ export function piSessionDir(cwd: string, agentDir: string): string {
   return join(resolve(agentDir), 'sessions', safePath)
 }
 
-/** Cogent Host 根（COGENT_HOME ?? ~/.cogent）下的 pi 域目录（全局架构 D5：agentDir） */
+/** Cogent Host 根（COGENT_HOME ?? ~/.cogent）下的 pi 域目录（即 pi 的 agentDir） */
 export const PI_AGENT_DIR_NAME = 'pi'
 
 /** 历史读取与删除用同一目录锚点定位，避免为查找文件装配 AgentSession。 */
@@ -94,9 +94,9 @@ export function findPiTranscriptFile(cwd: string, hostRoot: string, sessionId: s
 }
 
 /**
- * 只读回查 pi JSONL（惰性会话的历史投影源，D9 保留式呈现的 pi 版）。
+ * 只读回查 pi JSONL（惰性会话的历史投影源，保留式呈现的 pi 版）。
  * pi 的 buildSessionProjection 是**上下文口径**（影子区被摘要吸收后丢弃），
- * 而 Cogent 的历史回查是**呈现口径**（保留式：被摘要区原文照旧可滚，D9
+ * 而 Cogent 的历史回查是**呈现口径**（保留式：被摘要区原文照旧可滚，
  * 验收定稿）—— 故此处不走它，改遍历 getBranch() 全量条目自投影：message
  * 条目原样收，compaction 条目转 compactionSummary（pi 投影同款形状，
  * session-manager sessionEntryToContextMessages 对照，另补挂 usage 见

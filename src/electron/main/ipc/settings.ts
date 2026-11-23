@@ -1,6 +1,6 @@
 /**
  * settings 域 IPC：会话级偏好（选中模型/思考力度）的宿主持久化。
- * 文件：<storageRoot>/settings.json（~/.cogent，壳配置归 main 写，计划 D2）。
+ * 文件：<storageRoot>/settings.json（~/.cogent，壳配置归 main 写）。
  *
  * 写语义 = **字段合并**：saveSettings 载荷是部分字段，与盘上文件浅合并后
  * 整文档写回（两个 setter 各带一个字段，不能整文档覆盖否则互相抹掉）。

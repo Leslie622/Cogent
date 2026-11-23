@@ -136,7 +136,7 @@ export const moduleDetails: Record<string, ModuleDetail> = {
     summary: '为自有协议 UI 和远程服务保留接口约定，例如 /xxx/chat，由 Cogent 转换成统一调用。',
     responsibilities: ['调用方：已有自己协议的 UI 或远程服务；通过网络传输并完成身份认证后，直接进入本适配层。', '请求方向：解析调用方的路由、字段、会话标识与取消语义，映射成统一方法调用。', '返回方向：把调用结果、错误和流式事件编码为调用方约定的 JSON、SSE 或 WS 消息。', '转换后的调用进入同一权限检查和 HostApi。MCP Server 已在入口外转换为 Cogent 原生协议，走 Cogent 原生分支。'],
     boundary: '未实现。图定义适配职责，具体字段、流式事件和错误合同在接入实际旧协议时确定。',
-    sources: [{ path: 'docs/计划/全局架构.md', symbol: 'D15 HTTP chat 门面' }, { path: 'docs/计划/架构地图目标架构.md', symbol: 'Cogent 原生 · 适配双分支' }],
+    sources: [{ path: 'docs/决定.md', symbol: 'HTTP chat 门面' }, { path: 'docs/计划/架构地图目标架构.md', symbol: 'Cogent 原生 · 适配双分支' }],
   },
   'host.policy': {
     name: '权限检查', kind: '统一方法与资源策略', icon: ShieldCheck, status: 'partial',
@@ -188,7 +188,7 @@ export const moduleDetails: Record<string, ModuleDetail> = {
     summary: '为将来替换内核保留统一接口，目前没有可切换的第二实现。',
     responsibilities: ['PiRpcKernel 预留给独立进程、崩溃隔离或独立版本的执行方式。', '其他内核接入前须验证 CogentKernel 的操作与事件语义。'],
     boundary: '接口预留不等于已有内核切换功能；当前只维护 pi SDK。',
-    sources: [{ path: 'docs/计划/全局架构.md', symbol: 'D5' }, { path: 'src/host/kernel/contract.ts', symbol: 'CogentKernel' }],
+    sources: [{ path: 'docs/决定.md', symbol: '只维护 PiSdkKernel' }, { path: 'src/host/kernel/contract.ts', symbol: 'CogentKernel' }],
   },
 
   'host.provider': {

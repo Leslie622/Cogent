@@ -50,7 +50,7 @@ describe('groupTurns 基础分组', () => {
   })
 })
 
-describe('groupTurns 压缩条分组（D9 + D1 两轮修订）', () => {
+describe('groupTurns 压缩条分组（保留式，两轮修订）', () => {
   it('直播压缩在后续工作尚未到达时就属于原回合，停止后归属不变', () => {
     const items = [userMsg('u'), assistantMsg('a'), { ...compactionBar('bar'), compactionInRun: true }]
     expect(groupTurns(items)).toHaveLength(1)

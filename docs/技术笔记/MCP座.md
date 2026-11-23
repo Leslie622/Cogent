@@ -15,7 +15,7 @@ src/extensions/mcp/index.ts:280`）把全部应用差异留成覆盖点：`loadC
 （配置装载）、`updateConfig`（设置写回）、`credentials`（OAuth 存储）、
 `logPath`、`startupWaitMs`。关键承诺（index.ts:20-21）：**"Every call runs
 through pi's tool pipeline"** —— MCP 工具与内置工具同待遇地过 `tool_call`
-钩子与 permission 扩展，Cogent 的链式 beforeToolCall 审批（D8）零新增链路
+钩子与 permission 扩展，Cogent 的链式 beforeToolCall 审批（决定 28）零新增链路
 自动覆盖。配置形状用 pi-mcp 的 `mcpServers` 通用形状（stdio: command/args/
 env/cwd；Streamable HTTP: url/headers/oauth），"configurations can be copied
 between them" —— 存盘即生态互拷。
@@ -32,7 +32,7 @@ pi 路径以 `reference/pi/packages/coding-agent/src/` 为根；zcode 的 core �
 | 配置格式 | `mcpServers` 通用形状：stdio（command/args/env/cwd）+ Streamable HTTP（url/headers/oauth），"configurations can be copied between them" —— `node_modules/@earendil-works/pi-mcp/dist/config.d.ts:1-96` | 双来源（`.zcode/config.json` 键 `mcp.servers` + `.agents/mcp.json`）—— `mcpSyncService.ts:40-56` | profile YAML + Settings 热编辑 + 插件自注册 | **直接用 pi-mcp 形状存 `~/.cogent/mcp.json`**（与生态互拷；校验用现成 `validateMcpServerConfig`） |
 | 作用域/覆盖 | global（agent dir mcp.json）+ project（受信项目 mcp.json）；项目条目无 command/url/type = 只覆盖 `enabled/exposure/toolExposure`（`isMcpServerOverride`，`config.d.ts:111-115`；`OVERRIDE_KEYS`，pi `mcp/config.ts:71`） | user + workspace 双文件 | 六级 rank 目录（技能侧）；MCP 走 profile/插件 | **user 级定义 server；项目级只允许 override**（pi 现成语义 = 天然信任门：低信文件开不了新进程） |
 | 工具进 agent | `mcp__<server>__<tool>`；exposure 四档（direct 直接声明 / deferred 经 tool_search / codemode / hidden）—— `mcp/index.ts:8-16,118-122` | 同款命名 + 默认延迟暴露（`tool_search` 目录）—— `mcp/name.ts:3-24` | 同款 + 有损归一化追加 12 位哈希防碰撞 —— `tools.ts:89-105` | **direct 起步**（GUI agent，模型直接用；命名冲突极小概率，pi 已压非法字符） |
-| 审批/安全 | **MCP 工具走 pi tool pipeline，permission 扩展与内置工具同待遇** —— `mcp/index.ts:20-21`；stdio env 为叠加式注入（配置显式给才加） | 全部默认 `needsApproval`，按 annotations 分级（readOnly→low/destructive→high）—— `core/src/mcp/index.ts:129-148`；工作区信任门 sha256 —— `workspace-mcp-trust/index.ts:23-36` | stdio 环境清洗（剔 KEY/PASSWORD/SECRET/TOKEN）—— `mcp-client/transport.ts:22-40`；`${credential:REF}` 模板 + 脱敏 | **D8 审批链天然覆盖（pi pipeline）**；MCP 工具 ToolKind 投影默认 ask 档（beforeToolCall 取不到 annotations，原因见下文）；env 沿 pi 配置语义，不增加另一套变量模板或清洗层 |
+| 审批/安全 | **MCP 工具走 pi tool pipeline，permission 扩展与内置工具同待遇** —— `mcp/index.ts:20-21`；stdio env 为叠加式注入（配置显式给才加） | 全部默认 `needsApproval`，按 annotations 分级（readOnly→low/destructive→high）—— `core/src/mcp/index.ts:129-148`；工作区信任门 sha256 —— `workspace-mcp-trust/index.ts:23-36` | stdio 环境清洗（剔 KEY/PASSWORD/SECRET/TOKEN）—— `mcp-client/transport.ts:22-40`；`${credential:REF}` 模板 + 脱敏 | **决定 28 审批链天然覆盖（pi pipeline）**；MCP 工具 ToolKind 投影默认 ask 档（beforeToolCall 取不到 annotations，原因见下文）；env 沿 pi 配置语义，不增加另一套变量模板或清洗层 |
 | 刷新语义 | 连接后台跑，direct 工具的 server 首请求等 `startupWaitMs`（默认 10s）—— `mcp/index.ts:6-8,94` | 回合边界按 `tools/list_changed` 增量刷新 —— `methods/mcp.ts:218-262` | 整代原子交换（失败保旧集）—— mcp-manager README:147 | **首发：配置变更新会话生效**；回合级热刷新列后续 |
 
 ### 3.1 SDK 消费者必须自己调 `bindExtensions` —— session_start 不会自己来

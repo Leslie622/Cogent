@@ -1,14 +1,14 @@
 /**
  * 工具名策略 + 静态元数据表（Cogent 侧投影）。
  *
- * pi 的 AgentTool 不带"风险类别"（内置 8 工具均未设 annotations，D8 勘误：
+ * pi 的 AgentTool 不带"风险类别"（内置 8 工具均未设 annotations，决定 28 勘误：
  * ToolAnnotations 作审批分级输入的上游前提不成立）——ToolKind 是 Cogent 的
  * 产品语义 + 协议兼容投影（tool.* 事件与 ToolCallRecord 都带 kind），本表是
  * 唯一 kind 源。静态表而非活工具实例的原因：历史回查投影（toChatMessages）
  * 在未装配内核的惰性会话上也要用（那时没有工具实例可查）。
  *
  * 命名映射：v1 旧转录的 glob → pi find；bash 在 Windows 由
- * powershell 替代（D6：无 Git Bash 的 win 机不再依赖系统 bash）。
+ * powershell 替代（无 Git Bash 的 win 机不再依赖系统 bash）。
  * glob 名保留为历史条目 —— v1 旧转录里有它的 toolCall 块。
  */
 import { platform } from 'node:os'
@@ -102,7 +102,7 @@ const TOOL_METAS: Record<string, { kind: ToolKind; summarize: (args: unknown) =>
 
 /** 工具名 → 元数据；未知名字（盘上旧转录的历史名）返回 undefined，调用方按只读兜底。
     MCP 工具（mcp__<server>__<tool>，阶段 4a）不在静态表 —— 名字运行时才知道，
-    前缀判别后投影 exec 档（D8 审批链：默认 ask，autonomous 下仍逐次询问 ——
+    前缀判别后投影 exec 档（决定 28 审批链：默认 ask，autonomous 下仍逐次询问 ——
     未经用户配置的第三方工具保守起步，见 docs/模块/MCP座.md）。
     annotations 分级（readOnlyHint→低风险，zcode 手法）实施时验证结果：pi 的
     beforeToolCall 载荷（pi-agent-core types.ts BeforeToolCallContext）只有

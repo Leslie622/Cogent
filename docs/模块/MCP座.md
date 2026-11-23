@@ -1,9 +1,9 @@
 # MCP 座
 
 > Host 侧管理 **MCP 客户端**配置与授权，pi `createMcpExtension` 官方工厂
-> 装配进会话（D7：不造轮子）—— 外部 MCP server 的工具直接进 Agent 循环。
-> 不含对外 MCP Server（那是 D9，未立项）。原理与四家对比看
-> [../技术笔记/MCP座.md](../技术笔记/MCP座.md)。
+> 装配进会话（决定 27：不造轮子）—— 外部 MCP server 的工具直接进 Agent 循环。
+> 不含对外 MCP Server（Cogent 作为服务端，方向相反，见[对外MCP](对外MCP.md)）。
+> 原理与四家对比看[../技术笔记/MCP座.md](../技术笔记/MCP座.md)。
 
 ## 是什么 / 在哪
 

@@ -1,7 +1,7 @@
 /**
  * Host —— 独立 Node 进程入口，Cogent 的"引擎"。
  *
- * 为什么是独立进程（全局架构 D1，决策见 docs/架构.md）：
+ * 为什么是独立进程（决定 21，见 docs/架构.md）：
  * - pi 要求 Node >= 22.19，Host 优先使用自带官方 Node 22（resources/runtime），
  *   引擎运行时与 Electron 发版周期分离；
  * - 工具执行（shell / 文件写入）需要崩溃隔离：Host 挂了不拖垮壳；
@@ -14,7 +14,7 @@
  *
  * 防御边界（本项目防御政策的示范位）：不可信输入 = stdin 帧 + HTTP 门
  * 请求体（阶段 2a 起），校验只发生在 handleFrame 入口（JSON 解析 +
- * isRpcRequest + 参数显式收窄），两个传输门共用同一守卫与注册表（D2：
+ * isRpcRequest + 参数显式收窄），两个传输门共用同一守卫与注册表（决定 22：
  * 注册表单一，门只管帧进帧出）；handler 内部信任协议类型，不做二次防御。
  *
  * 启动期（async main）：ModelRuntime.create 是异步（目录装载），pi AgentSession
@@ -90,7 +90,7 @@ import { fileHandlers } from './runtime/files/handlers'
 import { prepareDirectoryReferences } from './runtime/directory-references'
 
 /**
- * 存储根：第一方数据唯一根（决策 D1，docs/模块/工作区与项目.md）。
+ * 存储根：第一方数据唯一根（见 docs/模块/工作区与项目.md）。
  * COGENT_HOME 覆盖口供冒烟测试指临时目录（同 COGENT_NODE_BIN 手法）；
  * 第 2 步把 main 侧凭据 store 也迁到同根（引擎是纯 Node，自算 home 零 Electron）。
  * PI_CODING_AGENT_DIR 的归位不在这 —— 那行赋值在 pi 加载之后才执行、对
@@ -194,7 +194,7 @@ async function main(): Promise<void> {
     process.stdout.write(JSON.stringify(response) + '\n')
   }
 
-  // HTTP 门票据 store（D3）：一次性短 TTL，消费即焚 —— 与 rootSecret 同属
+  // HTTP 门票据 store（决定 23）：一次性短 TTL，消费即焚 —— 与 rootSecret 同属
   // Host 进程内存态，重启全失效（token 生命周期 = Host 进程生命周期）
   const capabilityStore = createCapabilityStore()
 
@@ -519,7 +519,7 @@ async function main(): Promise<void> {
     return { summary: sessions.setPlanMode(p.sessionId, p.enabled) }
   }
 
-  /** session.compact 入口校验：sessionId 非空 string（手动压缩，D7）。
+  /** session.compact 入口校验：sessionId 非空 string（手动压缩）。
       异步 handler —— dispatch 对 handler 结果 await，Promise 拒绝转错误帧 */
   function handleSessionCompact(params: unknown) {
     const p = params as Partial<SessionCompactParams>
@@ -835,7 +835,7 @@ async function main(): Promise<void> {
     ['project.setPinned', handleProjectSetPinned],
     ['agent.submit', handleAgentSubmit],
     ['agent.abort', (params) => ({ aborted: sessions.abort((params as { sessionId: string }).sessionId) })],
-    // 宿主侧裁决通道：不经 renderer 通用代理（D3），main 的 approval:respond 专属
+    // 宿主侧裁决通道：不经 renderer 通用代理，main 的 approval:respond 专属
     // IPC 直抵这里 —— 但协议上是普通 method（任何宿主都能驱动，无传输层特权）
     ['approval.respond', handleApprovalRespond],
     ['question.respond', handleQuestionRespond],
@@ -860,7 +860,7 @@ async function main(): Promise<void> {
     ['skills.setEnabled', handleSkillsSetEnabled],
     ['inspect.entries', handleInspectEntries],
     ['inspect.entry', handleInspectEntry],
-    // 票据签发（D3）：main 经 stdio 发起（血缘全权）；HTTP 门侧由档位表
+    // 票据签发（决定 23）：main 经 stdio 发起（血缘全权）；HTTP 门侧由档位表
     // 限 admin（server.ts METHOD_MIN_SCOPE），防低档 token 自签提权
     [
       'capability.issue',
@@ -881,7 +881,7 @@ async function main(): Promise<void> {
   /**
    * 单帧处理：请求 → 响应帧；事件/畸形帧返回 null（由调用方决定丢弃方式：
    * stdio 丢弃 + 已记诊断日志，HTTP 门转 400）。两个传输门共用这一入口，
-   * 保证守卫与分发路径唯一（D2 注册表单一）。
+   * 保证守卫与分发路径唯一（决定 22 注册表单一）。
    */
   async function handleFrame(raw: string, transport: 'stdio' | 'network'): Promise<RpcResponse | null> {
     let frame: unknown
@@ -921,7 +921,7 @@ async function main(): Promise<void> {
   }
 
   // ———— HTTP 门（2a 骨架 + 2b 鉴权 + 2c WS/远程模式）：同一注册表 ————
-  // 默认不开（D2：loopback 且按需），开门即要 token。rootSecret 启动新生成、
+  // 默认不开（决定 22：loopback 且按需），开门即要 token。rootSecret 启动新生成、
   // 不出进程。实际监听地址打到 stderr（冒烟脚本与 main 双通道之一）。
   if (process.env.COGENT_HTTP_RPC === '1') {
     startup('启动 HTTP 监听')

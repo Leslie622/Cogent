@@ -1,5 +1,5 @@
 /**
- * 对外 MCP Server 集成测试（阶段 5a，D9）—— 走真链路：
+ * 对外 MCP Server 集成测试（阶段 5a，决定 29）—— 走真链路：
  * 构建产物 out/main/mcp.js（stdio MCP）× out/main/host.js（HTTP 门）×
  * 真实 SDK Client（StdioClientTransport）。场景：
  *

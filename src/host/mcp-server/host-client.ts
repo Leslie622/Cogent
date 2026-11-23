@@ -1,8 +1,8 @@
 /**
  * 对外 MCP Server 的 Host 客户端：把 MCP 工具调用翻译成 HostApi /rpc 帧
  * （+ waitMs 场景的 /ws 事件等待）。Cogent 方言全部圈死在这一层 —— 工具层
- * （tools.ts）只见业务形状，外部 agent 只见 MCP 标准（docs/模块/对外MCP.md
- * §3.1 拓扑：本进程是翻译官，不是透传层）。
+ * （tools.ts）只见业务形状，外部 agent 只见 MCP 标准（docs/模块/对外MCP.md：
+ * 本进程是翻译官，不是透传层）。
  *
  * 错误投影（Pi-meme hosts.ts:207-268 同款纪律，本地版）：网络/超时/越档
  * 各归一词、token 永不进错误消息 —— 外部 agent 拿到的是可行动的词，不是
@@ -73,7 +73,7 @@ export interface RunOutcome {
 }
 
 /**
- * 订阅 run 终态（submit 的 waitMs 用）。事件顺序设计（§3.6）：**先等 WS
+ * 订阅 run 终态（submit 的 waitMs 用）。事件顺序设计：**先等 WS
  * 就绪、后发 submit** —— 事件不重放（WS 是推送不是回放），先提交再订阅的
  * 话快任务可能在订阅前就 completed，等待挂到超时。两段式生命周期：
  *
@@ -84,7 +84,7 @@ export interface RunOutcome {
  *   // （未等终态要放弃时调 sub.close()）
  *
  * 超时/中断/断连都返回 state:'timeout' 而不抛 —— 受理已发生，超时不是
- * 错误（计划文档 §3.4「不判失败：受理是真的」）。
+ * 错误（「不判失败：受理是真的」）。
  */
 export interface RunSubscription {
   ready(): Promise<void>

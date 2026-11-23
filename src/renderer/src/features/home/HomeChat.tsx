@@ -210,7 +210,7 @@ function ChatMessages() {
   const stopping = useChatStore(selectStopping)
   const lastRunOutcome = useChatStore(selectLastRunOutcome)
   const truncated = useChatStore(selectTruncated)
-  // 压缩进行中（完备化 D8）：started→completed 窗口，消息流内状态条
+  // 压缩进行中：started→completed 窗口，消息流内状态条
   const compacting = useChatStore(selectCompacting)
   const outputHistoryError = useChatStore((state) => activeSessionId === null ? undefined : state.bySession[activeSessionId]?.outputErrors.history)
 
@@ -247,7 +247,7 @@ function ChatMessages() {
           className="chat-column gap-6 py-6 select-text"
         >
           {turns.map((turn) => (
-            // key：user 有则用 user；无 user 头组取首项 id（D9 保留式下压缩条
+            // key：user 有则用 user；无 user 头组取首项 id（保留式下压缩条
             // 原位成组、可多条并存，静态 'head' 会撞 key；无 user 的组结构上
             // 必有首项 —— 压缩条组带 bar、尾部兜底组先 push 再填 items）
             <div key={turn.user?.id ?? turn.items[0].id} className="flex min-w-0 flex-col gap-3">
@@ -263,7 +263,7 @@ function ChatMessages() {
               />
             </div>
           ))}
-          {/* 压缩中状态条（完备化 D8，Codex 两态的前态）：started→completed 窗口
+          {/* 压缩中状态条（Codex 两态的前态）：started→completed 窗口
               常驻行；摘要是一次秒级 LLM 调用，期间本条与流式占位/工具卡并存 */}
           {compacting && (
             <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">

@@ -179,7 +179,7 @@ describe('toChatMessages 相邻段合并（R6③ 续写的历史投影形态）'
   })
 })
 
-describe('toChatMessages 压缩条时间序落位（D9 呈现位回归钉）', () => {
+describe('toChatMessages 压缩条时间序落位（呈现位回归钉）', () => {
   it('转录里 bar 插在切点（保留区之前），投影延迟到首条更新消息之前 —— 呈现位 = 压缩发生的地方', () => {
     // 时间线：t1..t4 早于 bar(t100)（保留区被压缩前刚发生），t150/t160 晚于（压缩后新回合）
     const messages: AgentMessage[] = [

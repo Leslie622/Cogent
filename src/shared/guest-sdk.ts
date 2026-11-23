@@ -1,10 +1,10 @@
 /**
- * webview guest 的 HostApi 小 SDK（D10）：preload（isolated world）内运行，
+ * webview guest 的 HostApi 小 SDK（决定 30）：preload（isolated world）内运行，
  * 页面只摸到 contextBridge 暴露的 request/onEvent 两个函数 —— 票据与
  * token 全程留在 preload 内存，不进页面全局（im2.0 window.native 泄漏
  * 进程级权限的反面教训）。
  *
- * 链路（D3 票据生命周期在页面侧的一半）：
+ * 链路（决定 23 票据生命周期在页面侧的一半）：
  * ① 启动即经白名单 IPC 向 main 要一次性票据（30s，main 发起、Host 存证）
  * ② POST /auth/exchange 换长期 token（票据即焚）
  * ③ 之后 request 走 POST /rpc Bearer；事件走 WS ?token=（浏览器 WebSocket
@@ -58,7 +58,7 @@ export function createGuestSdk(deps: GuestSdkDeps): GuestSdk {
     if (!exchange.ok) throw new Error(`票据兑换失败（HTTP ${exchange.status}）`)
     const granted = (await exchange.json()) as { token: string; scope: string }
     token = granted.token
-    // 事件流：浏览器 WS 不能自定义 Authorization 头，token 走 query（D2 双轨）
+    // 事件流：浏览器 WS 不能自定义 Authorization 头，token 走 query（双轨）
     const ws = new deps.WebSocketImpl(`ws://127.0.0.1:${httpPort}/ws?token=${token}`)
     ws.onmessage = (message) => {
       // 下行两种帧：事件（method 无 id）分发；响应（id 有）不经过这里，忽略

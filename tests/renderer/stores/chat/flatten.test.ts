@@ -1,6 +1,6 @@
 /**
  * chat store 纯逻辑单元测试（docs/模块/测试.md）：段展平 / 终态替换并回
- * （审批锚回 + 压缩条时间序合并，D9 —— run.completed 整段替换吞 pruned/bar
+ * （审批锚回 + 压缩条时间序合并 —— run.completed 整段替换吞 pruned/bar
  * = 「已裁剪」行消失的回归钉）。事件驱动的 store 行为（伪事件序列经
  * bindEngineEvents）与 projectDefaultMode 见 store.test.ts；IPC 剥壳见
  * lib/ipc.test.ts。
@@ -102,7 +102,7 @@ describe('flatWithApprovals（终态替换的审批锚回）', () => {
   })
 })
 
-describe('flatWithCompaction（终态替换的压缩条/副行并回，D9 回归钉）', () => {
+describe('flatWithCompaction（终态替换的压缩条/副行并回，回归钉）', () => {
   const bar = (id: string, at: number): ChatMessage => ({
     id,
     role: 'compaction',

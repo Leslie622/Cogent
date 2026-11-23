@@ -1,5 +1,5 @@
 /**
- * 对外 MCP 凭据写入（阶段 5a，D9）：Host 每次启动后，若设置开了
+ * 对外 MCP 凭据写入（阶段 5a，决定 29）：Host 每次启动后，若设置开了
  * externalMcp.enabled，main 经现有签票链（stdio capability.issue，血缘
  * 全权）→ /auth/exchange 换长期 token → 原子写 <storageRoot>/mcp-access.json
  * （{port, token, scope}）。cogent-mcp 进程每次工具调用重读此文件 ——

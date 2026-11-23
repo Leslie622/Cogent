@@ -171,7 +171,7 @@ export interface SettingsFile {
   /** 选中模型的 provider（同名模型跨 provider 消歧，与 activeModelId 成对；旧文件缺省 = 单键语义） */
   activeProviderId?: string
   thinkingLevel?: string
-  /** 新会话默认权限（审批交互升级 D6：开关两态 —— 开 = auto、关/缺省 = ask；
+  /** 新会话默认权限（开关两态 —— 开 = auto、关/缺省 = ask；
       plan 不进默认，plan 是临时切入的工作方式而非开局常态，2026-11-11 拍板） */
   defaultPermissionMode?: 'ask' | 'auto'
   /** 聊天输入框的发送组合键（其余 Enter 组合换行）；缺省 = 'enter'（首发行为） */

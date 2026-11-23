@@ -1,5 +1,5 @@
 /**
- * 极小 stdio MCP server（集成测试专用，MCP座实现.md §5 验收）——
+ * 极小 stdio MCP server（集成测试专用，验收见 docs/模块/MCP座.md）——
  * 一行一帧 JSON-RPC over stdio：initialize / tools/list / tools/call。
  * 唯一工具 echo(text) → "echo: <text>"。不带 id 的通知（initialized）静默。
  * 协议版本回显客户端请求值（握手必成，测试不关心版本协商本身）。

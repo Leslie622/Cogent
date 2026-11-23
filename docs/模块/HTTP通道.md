@@ -22,7 +22,7 @@
 
 ## 怎么工作
 
-**鉴权（D3，开门即要 token）**：
+**鉴权（决定 23，开门即要 token）**：
 
 ```
 stdio: main ──capability.issue {scope}──▶ Host 票据 store（32B · 30s · 消费即焚）

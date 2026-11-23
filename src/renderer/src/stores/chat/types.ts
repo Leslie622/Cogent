@@ -42,7 +42,7 @@ export interface ToolItem {
 }
 
 /**
- * 审批痕迹行（审批交互升级 D1：pending 态改走会话桶的 pendingApprovals，
+ * 审批痕迹行（pending 态改走会话桶的 pendingApprovals，
  * 联合里的 approval 类型**只承载终态痕迹** —— 裁决完成时落行，随裁决历史留存；
  * pending 态不再进消息流，呈现迁至对话底部确认面板 ApprovalPanel）。
  * 模型转录里无对应物（引擎侧只是工具结果），run 终态替换时保留。
@@ -63,7 +63,7 @@ export interface ApprovalItem {
 }
 
 /**
- * 会话级挂起审批（面板数据源，D1）：approval.request 建、裁决/中止收尾。
+ * 会话级挂起审批（面板数据源）：approval.request 建、裁决/中止收尾。
  * 数组形态 —— pi 并行执行同批工具（多个 write 同轮并发），每个 beforeToolCall
  * 挂起各发一个 approval.request，面板逐条呈现逐条裁决。
  */
@@ -221,7 +221,7 @@ export interface ChatState {
   abort: () => Promise<void>
   /** 审批裁决（专属 IPC 通道）：先收面板/落痕迹行（乐观），引擎侧竞态失败不回滚；
       options.message = 拒绝附言（「告诉模型接下来怎么做」），options.always =
-      'workspace' 落工作区级始终允许规则（审批交互升级 D2），options.switchMode
+      'workspace' 落工作区级始终允许规则，options.switchMode
       = 「允许，并切换为」（切会话模式 + 记项目默认，F6 定稿；result.summary
       回写会话列表的模式标记） */
   respondApproval: (

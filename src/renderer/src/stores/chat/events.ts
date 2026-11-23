@@ -138,7 +138,7 @@ export function bindEngineEvents(): () => void {
       case 'approval.request': {
         const { sessionId, requestId, callId, toolName, kind, summary, outsideRoots } = event.params
         useChatStore.setState((state) =>
-          // D1：pending 不进消息流 —— 会话桶的挂起位，确认面板（ApprovalPanel）
+          // pending 不进消息流 —— 会话桶的挂起位，确认面板（ApprovalPanel）
           // 是唯一呈现位；数组追加（并行写工具会并发多个请求）
           patchBucket(state, sessionId, (bucket) => ({
             ...bucket,
@@ -191,7 +191,7 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'compaction.started': {
-        // 压缩进行中（完备化 D8）：置状态条判别位，completed 分支回落。
+        // 压缩进行中：置状态条判别位，completed 分支回落。
         // 自动路发生在 run 事件间隙（submit 前 / 工具轮间），状态条与流式占位并存
         const { sessionId } = event.params
         useChatStore.setState((state) =>
@@ -225,7 +225,7 @@ export function bindEngineEvents(): () => void {
       }
       case 'compaction.completed': {
         // 压缩完成：在压缩发生位置（被摘要区末条之后）**原位插入**折叠条，
-        // 旧消息不删（D9 保留式呈现，Codex 形态 —— 历史不因压缩消失，标记
+        // 旧消息不删（保留式呈现，Codex 形态 —— 历史不因压缩消失，标记
         // 行停在自己发生的地方）。引擎转录同形（影子区保留 + 标记条原位），
         // 历史回查投影天然一致；事件载荷已含折叠条全部数据（summary/前后
         // token/锚点/摘要用量），手术零往返，无"重拉历史"竞态
@@ -267,7 +267,7 @@ export function bindEngineEvents(): () => void {
               break // 只看末条 pruned
             }
           }
-          // D9 呈现位 = 时间序：插在「压缩时刻之前已存在的最后一条内容」之后
+          // 呈现位 = 时间序：插在「压缩时刻之前已存在的最后一条内容」之后
           // —— 即「正在压缩上下文…」状态条当时所在的位置（Codex 形态：标记
           // 行嵌在压缩打断流的地方），而非引擎转录的切点（切点是影子区/活区
           // 语义边界，落在那里 = 标记行跑到保留区 20K 之前的旧消息堆里，验收

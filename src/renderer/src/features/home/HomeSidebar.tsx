@@ -153,7 +153,7 @@ const ChatRow = memo(function ChatRow({
   onArchive: (chatId: string) => void
   onRename: (chatId: string) => void
   actions?: ReactNode
-  /** 等待确认 tag（审批交互升级 D7；2026-11-11 用户定调形态）：会话有挂起
+  /** 等待确认 tag（2026-11-11 用户定调形态）：会话有挂起
       *  审批即显，**占行尾动作钮簇的位置**（此时置顶/归档钮不渲染 —— 待审批
       *  是行当前的唯一状态，常显不随 hover 隐藏） */
   waitingApproval?: boolean
@@ -297,7 +297,7 @@ const ProjectRow = memo(function ProjectRow({
   onRenameChat: (chatId: string) => void
   /** 项目置顶/取消（菜单项接线） */
   onTogglePin: (projectId: string) => void
-  /** 会话是否有挂起审批（等待确认 tag，D7；下传给子 ChatRow） */
+  /** 会话是否有挂起审批（等待确认 tag；下传给子 ChatRow） */
   isWaitingApproval: (chatId: string) => boolean
   pinned: boolean
 }) {
@@ -458,7 +458,7 @@ export function HomeSidebar() {
   // 会话/项目都是引擎真数据：chat store（session.list）+ project store（project.list）
   const sessions = useChatStore((s) => s.sessions)
   const renamingChat = sessions.find((chat) => chat.id === renameChatId)
-  // 等待确认 tag 的派生源（D7）：会话桶的 pendingApprovals 非空即显。函数签名
+  // 等待确认 tag 的派生源：会话桶的 pendingApprovals 非空即显。函数签名
   // 下传（useCallback 稳定引用保 ProjectRow/ChatRow memo；pending 变化只让
   // 涉事行因 waitingApproval 布尔翻转而重渲染）
   const waitingIds = useChatStore(useShallow((s) =>

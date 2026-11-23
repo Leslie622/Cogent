@@ -204,7 +204,7 @@ export interface ToolCallRecord {
    *  消息 timestamp —— 转录持久化的单一来源，重启回查数字不漂移） */
   endedAt?: number
   /** edit 工具的展示 diff（带行号的 +-/ 上下文 diff，引擎从工具 details 提取；
-   *  D4 定稿进协议 —— 工具卡 diff 呈现的数据源。缺省 = 非
+   *  定稿进协议 —— 工具卡 diff 呈现的数据源。缺省 = 非
    *  edit 工具或旧转录，UI 自然不渲染 diff 块） */
   diff?: string
 }
@@ -302,7 +302,7 @@ export type ToolKind = 'read' | 'write' | 'edit' | 'exec' | 'network'
 
 /**
  * 会话级权限模式：auto=全自动；ask=写类操作需确认；
- * autonomous=自主模式（D6 定稿：文件写
+ * autonomous=自主模式（已定稿：文件写
  * write/edit 信任放行，exec/network 风险类逐次询问 —— 之前无 exec/network
  * 工具时它只能是 ask 同义词，故一直置灰占位）。
  * 只读计划是正交开关（SessionSummary.planEnabled），不占档位 —— v3 起删
@@ -365,12 +365,12 @@ export interface ApprovalRespondParams {
   requestId: string
   approved: boolean
   /**
-   * 拒绝附言（「告诉模型接下来怎么做」，审批交互升级 D2）：进 block reason →
+   * 拒绝附言（「告诉模型接下来怎么做」）：进 block reason →
    * 工具错误结果给模型，自我纠正依据。仅在 approved=false 时有意义。
    */
   message?: string
   /**
-   * 'workspace' = 允许本次 + 落工作区级「始终允许」规则（D3；隐含 approved=true，
+   * 'workspace' = 允许本次 + 落工作区级「始终允许」规则（隐含 approved=true，
    * 与 approved=false 同发是矛盾载荷，入口校验拒绝）。规则存引擎侧全局
    * approvals.json，只记 roots 不记命令/内容（无泄漏面，对照 Claude Code
    * settings.local.json 事故，调研见 技术笔记/工具系统与审批.md）。
@@ -528,7 +528,7 @@ export interface SessionSetPlanModeResult {
 }
 
 /**
- * 手动压缩（D7；未来 /compact 命令的引擎通道）：
+ * 手动压缩（未来 /compact 命令的引擎通道）：
  * 无论阈值直接压缩。会话回复中拒绝（上游手动路会先 abort 再压，我们选择
  * 拒绝 —— 显式让用户等，比静默打断正在生成的回复更可预期）。无可压缩
  * （刚压过/过短）返回错误而非空成功 —— 手动动作要明确反馈。
@@ -557,7 +557,7 @@ export interface SessionContinueResult {
 }
 
 /**
- * 项目摘要（= 目录绑定，计划 D3）：会话经 projectId 归属项目并继承其全部目录。
+ * 项目摘要（= 目录绑定）：会话经 projectId 归属项目并继承其全部目录。
  * cwds 多根（2026-11-09 二次决策收编）：跨仓库任务（前端+后端两仓库一个项目）
  * 是主流 Agent（VS Code workspace / Claude Code --add-dir）的既定能力；
  * 首个目录 = 主根（标题/信息区展示取它）。
@@ -1020,12 +1020,12 @@ export interface InspectEntryDetail {
 }
 
 /**
- * HTTP 门 scope 档位（D3，阶段 2b）：readonly ⊂ write ⊂ admin 逐级包含；
+ * HTTP 门 scope 档位（决定 23，阶段 2b）：readonly ⊂ write ⊂ admin 逐级包含；
  * session 绑定档（页面级只碰单会话）留给阶段 3 webview 消费者再落。
  */
 export type TokenScope = 'readonly' | 'write' | 'admin'
 
-/** capability.issue（D3 票据签发入口；stdio 血缘 = main 专用语义，HTTP 门需 admin） */
+/** capability.issue（决定 23 票据签发入口；stdio 血缘 = main 专用语义，HTTP 门需 admin） */
 export interface CapabilityIssueParams {
   scope: TokenScope
 }
@@ -1093,7 +1093,7 @@ export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInt
   'inspect.entries': { params: InspectEntriesParams; result: InspectEntriesResult }
   /** 控制台：按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词…） */
   'inspect.entry': { params: InspectEntryParams; result: InspectEntryDetail }
-  /** HTTP 门票据签发（D3）：main 经 stdio 发起（血缘全权），Host 存证 */
+  /** HTTP 门票据签发（决定 23）：main 经 stdio 发起（血缘全权），Host 存证 */
   'capability.issue': { params: CapabilityIssueParams; result: CapabilityIssueResult }
 }
 
@@ -1171,7 +1171,7 @@ export interface ProtocolEvents {
    */
   'tool.completed': { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string; fileRefs?: FileReference[] }
   /**
-   * 工具执行中的流式进度（D5 定稿，additive）：长时工具
+   * 工具执行中的流式进度（已定稿，additive）：长时工具
    *（当前 = bash）的尾部输出快照，引擎侧 100ms 节流。text = 滚动快照全文
    *（非增量 delta —— 快照语义让 UI 无需自己累积/截断，直接整段替换渲染）。
    * 宿主按 callId 配对到 tool.started 建的工具卡。
@@ -1225,7 +1225,7 @@ export interface ProtocolEvents {
    */
   'inspect.event': { sessionId: string; entry: InspectEntrySummary }
   /**
-   * 上下文压缩开始（D7；pi 内核接管）：reason =
+   * 上下文压缩开始（pi 内核接管）：reason =
    * threshold（引擎自动阈值）/ manual（session.compact）/ overflow（引擎溢出
    * 恢复路压缩，发生在 run 生命周期内）。摘要生成是一次 LLM 调用（秒级），
    * 宿主可借此呈现压缩中状态。
@@ -1247,7 +1247,7 @@ export interface ProtocolEvents {
     tokensAfter?: number
     summary?: string
     summarizedUntil?: number
-    /** 摘要请求的用量（D9 验收后增补）：摘要是一次独立 LLM 调用，其 token/
+    /** 摘要请求的用量（验收后增补）：摘要是一次独立 LLM 调用，其 token/
      *  成本不进 run 分段账 —— 经此显式带给宿主呈现（折叠条小字），端点
      *  未报 usage 时缺省 */
     summaryUsage?: MessageUsage

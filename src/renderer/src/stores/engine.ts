@@ -87,7 +87,7 @@ interface EngineState {
   activeProviderId: string | null
   /** 推理力度（pi ThinkingLevel；随 agent.submit 下发） */
   thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-  /** 新会话默认权限（审批交互升级 D6：设置页「默认权限」开关两态，开 = auto /
+  /** 新会话默认权限（设置页「默认权限」开关两态，开 = auto /
    *  关/缺省 = ask；chat store createSession 在显式选择缺席时消费） */
   defaultPermissionMode: 'ask' | 'auto'
   /** 聊天输入框发送组合键（设置页「发送快捷键」；HomeChat keydown 消费，
@@ -144,7 +144,7 @@ function toOverrideMap(payload: CustomProvidersPayload): Record<string, Provider
 
 /**
  * 会话级偏好（选中模型/思考力度）的宿主侧持久化：落 ~/.cogent/settings.json
- * （main 写，计划 D2 单写者分工——壳配置归 main）。引擎重启/应用重启都从这里
+ * （main 写，单写者分工——壳配置归 main）。引擎重启/应用重启都从这里
  * 回填；无文件/损坏由 main 归一为默认值返回，这里不再包 catch —— 真实故障
  * （IPC 未注册等）应炸给 load → engineError 横幅（约定.md 1.2-1 吞错反模式）。
  */

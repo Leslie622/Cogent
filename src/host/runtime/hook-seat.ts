@@ -13,7 +13,7 @@
  * - **厂商标量观测**：AgentOptions 三回调（onPayload/onResponse/
  *   onProviderStreamEvent，session.attachInspector 挂装）—— 载荷带 model
  *   上下文而扩展事件版没有（before_provider_request 仅 payload），不等价
- *   故不迁（实现文档 §3.3）；它籍挂本座但物理上留在 inspector。
+ *   故不迁；它籍挂本座但物理上留在 inspector。
  * - **请求取消**：链式包裹公开 agent.prepareRequest，原钩子前后检查signal，
  *   接住Host保存并在pi启动时重放的停止意图；不覆盖原钩子或宣称强制打断任意await。
  *
@@ -76,7 +76,7 @@ export function createCogentHooks(opts: CogentHooksOptions): InlineExtension {
 }
 
 /**
- * 审批链包裹器（D8）：裁决放行时委托原链 —— 任何挂 tool_call 的扩展不失联；
+ * 审批链包裹器（决定 28）：裁决放行时委托原链 —— 任何挂 tool_call 的扩展不失联；
  * 阻止时返回 block（reason 进模型可见的工具错误结果）。判定/挂起/北向请求
  * 全部住在 session.ts 的 ApprovalBridge 实现（decideApproval），本函数只做
  * 链式包裹这一件事。

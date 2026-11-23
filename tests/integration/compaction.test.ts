@@ -11,7 +11,7 @@
  *  S2 压缩后请求投影（被摘要原文消失 + 摘要投影 + 保留区 + 新问）
  *  S4 手动无可压缩（小会话）→ InvalidRequest
  *  S5 手动成功 + 迭代合并 + 7b 二次连点拒绝
- *  S3 杀引擎重启：历史回查保留式复原（D9）+ 5b 请求投影
+ *  S3 杀引擎重启：历史回查保留式复原 + 5b 请求投影
  *  S6 场景⑨：20000 窗 reserve 线触发（18% 附近而非 90%）
  *  S7 场景②：工具轮间压缩（run 不中断、下一请求换轨）
  *  S8 场景⑤：length 停因 toolCall 全 fail → 自愈重发
@@ -110,7 +110,7 @@ const textResponse = (res: { write: (s: string) => void; end: () => void }, text
   res.write('data: [DONE]\n\n')
   res.end()
 }
-/** 摘要响应（带 usage，D9 验收后增补）：账经 completed.summaryUsage 显式下发 */
+/** 摘要响应（带 usage，验收后增补）：账经 completed.summaryUsage 显式下发 */
 const summaryResponse = (res: { write: (s: string) => void; end: () => void }, text: string): void => {
   res.write(sse(chunk({ content: text })))
   res.write(sse(chunk({}, 'stop', { usage: { prompt_tokens: 21000, completion_tokens: 120, total_tokens: 21120 } })))
@@ -402,7 +402,7 @@ describe('上下文压缩集成（S1–S16 场景流，30 项断言）', () => {
     await initEngine(engine, { client: 'compaction-smoke', providers: mockProviders(port) })
     const history = await engine.send('session.messages', { sessionId: s1 })
     const msgs = history.result?.messages ?? []
-    // D9 保留式：历史 = 影子区原文（被摘要的 MILESTONE 全保留）+ 折叠条
+    // 保留式：历史 = 影子区原文（被摘要的 MILESTONE 全保留）+ 折叠条
     // + 保留区。旧销毁式断言（被摘要区消失）整体翻转
     const bars = msgs.filter((m) => m.role === 'compaction')
     const userTexts = msgs.filter((m) => m.role === 'user').map((m) => m.content).join('\n')

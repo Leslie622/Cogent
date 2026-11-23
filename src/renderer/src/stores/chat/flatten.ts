@@ -66,7 +66,7 @@ function itemTime(item: MessageItem): number | undefined {
 }
 
 /**
- * 终态替换并回：压缩条/裁剪副行按时间序并回替换区（D9 —— 压缩发生在 run
+ * 终态替换并回：压缩条/裁剪副行按时间序并回替换区（压缩发生在 run
  * 边界/轮间，completed/pruned 事件插进替换区，run.completed 整段替换不得吞掉；
  * run.completed 内联逻辑提出，2026-11-12，行为不变 —— 单测直测）。
  */
@@ -91,7 +91,7 @@ export function flatWithCompaction(flat: MessageItem[], kept: Array<ChatMessage 
  * run 终态整段替换（run.completed / run.failed(messages) 共用）：
  * 定位本次 run 的边界（列表里最后一条用户消息），其后的流式占位/封段/工具卡
  * 全部换成引擎分段终态 —— 审批痕迹行锚回各自工具卡之前（用户裁决痕迹，
- * 转录里无对应物），压缩条/裁剪副行按时间序并回（D9：不是 run 的产物，
+ * 转录里无对应物），压缩条/裁剪副行按时间序并回（不是 run 的产物，
  * 替换不得吞掉；审批锚回在其后组合，卡匹配不受影响）。
  */
 export function replaceRunTerminal(list: MessageItem[], segments: ChatMessage[]): MessageItem[] {

@@ -102,7 +102,7 @@ export class HostManager {
   }
 
   /**
-   * HTTP 门票据签发（D3）：main 是血缘全权的签发起点（消费者正当性由 main
+   * HTTP 门票据签发（决定 23）：main 是血缘全权的签发起点（消费者正当性由 main
    * 判定），票据交给消费者去 /auth/exchange 兑换 scoped token —— token 不经
    * main 中转，main 也不持有 rootSecret（Host 进程内闭环）。
    */

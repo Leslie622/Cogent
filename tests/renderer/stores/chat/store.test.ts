@@ -1,7 +1,7 @@
 /**
  * chat store 事件驱动行为测试（docs/模块/测试.md）：window.cogent
  * 可编程 stub + bindEngineEvents 驱动**真实接线**（不测复制品）—— 事件 →
- * 会话桶手术的全链路。重点钉 D9 保留式呈现的 store 侧手术：
+ * 会话桶手术的全链路。重点钉保留式呈现的 store 侧手术：
  * - compaction.pruned standalone 行立即落尾；
  * - compaction.completed 时间序落点 + 同检查点 standalone 撤销 + 副行随条配对；
  * - run.completed 终态替换不吞压缩条/副行（keptCompaction 并回）；
@@ -145,7 +145,7 @@ describe('归档与恢复', () => {
   })
 })
 
-describe('compaction 事件序列（D9 保留式 store 手术）', () => {
+describe('compaction 事件序列（保留式 store 手术）', () => {
   it('started → completed：折叠条落在压缩时刻已存在的内容之后（=「正在压缩」状态条的位置），旧消息一条不删', () => {
     // fake 钟把 bar.timestamp 钉在 10000：q2(300) 是压缩前刚发的 —— bar 应落它
     // 之后（压缩打断在 q2 与其回复之间），压缩后新消息（timestamp > 10000）才会排到 bar 后面
@@ -196,7 +196,7 @@ describe('compaction 事件序列（D9 保留式 store 手术）', () => {
   })
 })
 
-describe('run.completed 终态替换（D9 不吞压缩条/副行）', () => {
+describe('run.completed 终态替换（不吞压缩条/副行）', () => {
   it('替换区内已落的 bar 按时间序并回替换结果（终态段晚于 bar → bar 在回复之前），旧消息不丢', () => {
     // 场景：q2 回合流式中触发轮间压缩（bar 已插进替换区尾部），随后 run.completed
     // 带分段终态整段替换 —— keptCompaction 按时间序并回，bar 停在 q2 与其回复之间

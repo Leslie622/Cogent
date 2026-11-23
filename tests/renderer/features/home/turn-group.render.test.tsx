@@ -1,7 +1,7 @@
 /**
  * TurnGroup 组件测试（docs/模块/测试.md，RTL + jsdom）—— 聚焦
  * 「分组 → 渲染」的边界分支，文案即验收口径：
- * - 压缩条独立行（D9：不套「用时」头条，压缩不是 run）；
+ * - 压缩条独立行（不套「用时」头条，压缩不是 run）；
  * - 零内容 done 组只渲染用户泡（第七轮验收"双用时"回归）；
  * - live 零内容组仍含流内 WorkingLine（等待首片时也保留活动信号）；
  * - 「用时 X.XX 秒」带秒数（第八轮验收 startedAt 继承回归）。
@@ -45,7 +45,7 @@ const compactionBar = (id: string, at = 3_000): ChatMessage => ({
   timestamp: at
 })
 
-describe('TurnGroup 压缩条两形（D9 保留式 + D1 两轮修订）', () => {
+describe('TurnGroup 压缩条两形（保留式，两轮修订）', () => {
   it('轮间自动压缩：整个回合一个收起的工作头，展开后bar仍在原回合内', () => {
     const turn: ChatTurn = {
       user: userMsg('u1', 1_000),

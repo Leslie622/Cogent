@@ -172,7 +172,7 @@ if (!app.requestSingleInstanceLock()) {
   // 通知域（toast 展示 / 声音文件管理 / cogent-sound 协议 handle）
   registerNotifyIpc({ getWindow: () => mainWindow })
 
-    // webview 附加硬化（D10）：在任何窗口创建前挂上（will-attach-webview 按事件
+    // webview 附加硬化（决定 30）：在任何窗口创建前挂上（will-attach-webview 按事件
     // 拦截，createWindow 之后才挂就有绕过窗口期）
     hardenWebviewAttachment()
 

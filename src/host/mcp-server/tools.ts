@@ -1,12 +1,12 @@
 /**
- * 对外 MCP 工具面（§3.3）：显式 typed 工具，不透传任意 RPC —— 每个工具
+ * 对外 MCP 工具面：显式 typed 工具，不透传任意 RPC —— 每个工具
  * 手写 schema/description/annotations，是审校过的 HostApi 子集（Pi-meme
  * tools.ts 同款纪律）。写组注册按启动时的凭据 scope 过滤（快照语义：
  * allowWrites 变更后重启 MCP server 生效，配置即快照 —— Pi-meme README:118
  * 同款）；凭据缺失也保留只读组 —— tools/list 可用、业务调用返回引导
  * 开启的错误（cogent_status 是自查入口）。
  *
- * annotations 是三层审批的第一层（§3.5）：运行时审批的主位在 MCP 客户端
+ * annotations 是三层审批的第一层：运行时审批的主位在 MCP 客户端
  * 侧 —— 写组标 destructiveHint，远端的人在他们自己的 agent UI 里批。
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -24,7 +24,7 @@ export function createSessionParams(input: {
   permissionMode?: 'ask' | 'auto' | 'autonomous'
   planEnabled?: boolean
 }): { title?: string; projectId?: string; cwd?: string; permissionMode?: 'ask' | 'auto' | 'autonomous'; planEnabled?: boolean } {
-  // 安全默认 + 放开显式（§3.5 第三层）：什么档都不传 = 计划模式（只读零
+  // 安全默认 + 放开显式（第三层）：什么档都不传 = 计划模式（只读零
   // 挂起，chat/读类开箱即用）；显式传 permissionMode = 调用方声明了交互
   // 策略，planEnabled 不再兜 true
   return {

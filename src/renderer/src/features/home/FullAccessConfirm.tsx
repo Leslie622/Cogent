@@ -7,7 +7,7 @@
  * 权限项只列**已落地**的能力（文件写 / 终端命令）；network 工具落地（远期）
  * 后在此补第三行「网络和应用」，菜单占位文案同批去掉 exec only。
  * 确认钮 destructive 红：这是危险动作的确认闸门语义（与权限菜单触发钮的
- * warning 琥珀强调 = 两个语境，后者是常态警示，D5 定调不变）。
+ * warning 琥珀强调 = 两个语境，后者是常态警示，定调不变）。
  */
 import { useEffect, useState } from 'react'
 import { IconAlertTriangle, IconFolder, IconTerminal2 } from '@tabler/icons-react'

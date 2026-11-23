@@ -64,7 +64,7 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.engineEvent, listener)
   },
 
-  /** 审批裁决（专属通道，不经 engineRequest 通用代理 —— 安全边界独立成路，D3）：
+  /** 审批裁决（专属通道，不经 engineRequest 通用代理 —— 安全边界独立成路）：
       允许/拒绝引擎挂起中的写类工具调用；options.message = 拒绝附言（「告诉模型
       接下来怎么做」），options.always = 'workspace' 落工作区级始终允许规则，
       options.switchMode = 「允许，并切换为」（切会话模式 + 记项目默认，

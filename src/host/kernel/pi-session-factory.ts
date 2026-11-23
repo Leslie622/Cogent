@@ -1,5 +1,5 @@
 /**
- * PiSdkKernel 装配工厂（全局架构 D5）—— 把 pi coding-agent 的
+ * PiSdkKernel 装配工厂（决定 25）—— 把 pi coding-agent 的
  * createAgentSession 装配为 Cogent 会话内核（南缝唯一实现）。
  *
  * 装配纪律（对照 tmp 探针实证 + reference/pi 行号）：
@@ -185,7 +185,7 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     // 权限模式通告：每轮按活 mode 设 cogent_permission section
     // （四档全设正向文案）。pi 对 sections 的 diff 保证树内只留净变更史
     extensionFactories: [
-      // MCP 座（4a）：pi 官方工厂 + Host 配置注入（D7 不造轮子）。loadConfig
+      // MCP 座（4a）：pi 官方工厂 + Host 配置注入（决定 27 不造轮子）。loadConfig
       // 返回装配期快照（Pi-meme 快照语义）；MCP 工具经 pi 工具管线注册
       // （"Every call runs through pi's tool pipeline" —— mcp/index.ts:20-21），
       // 因此下方链式包裹的 beforeToolCall 审批对 mcp__* 同样生效，零新增链路。

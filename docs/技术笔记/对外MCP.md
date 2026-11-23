@@ -38,13 +38,13 @@ Bearer + Host/Origin 白名单 + 2MiB/64 并发闸（http-server.ts:76-98）。
 自身**不是** MCP server —— server 代码全在插件包（android-emulator-
 plugin/src/mcp/server.ts:46-116：McpServer + registerTool + stdio，即
 「MCP server 作为插件的工具出口」用法）。作为 MCP 客户端按 stdio/HTTP
-配置消费外部 server = D9 的真实消费者；工具名进消费者带前缀
+配置消费外部 server = 决定 29 的真实消费者；工具名进消费者带前缀
 （`mcp__dsh_cua__cua_run_code`，cua-mcp/server.ts:45-46）。
 
 ### pi 内核
 
 无 server 侧 MCP：radius-mcp.ts 是 mcp.json 客户端配置规划；pi-mcp 包零
-SDK 依赖。D9 全部 Host 侧自建，Cogent 新增 `@modelcontextprotocol/sdk`
+SDK 依赖。决定 29 全部 Host 侧自建，Cogent 新增 `@modelcontextprotocol/sdk`
 1.32.2（Pi-meme 同款 registerTool API）+ zod。
 
 ## 3. 关键分歧与取舍

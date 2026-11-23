@@ -1,12 +1,12 @@
 /**
  * CogentKernel —— 南缝窄合同：Host 服务层与内核实现之间的唯一界面
- *（全局架构 D4）。
+ *（决定 24）。
  *
- * 为什么要有这份合同（D4 复杂度账）：它早已隐式存在于 runtime/session.ts
+ * 为什么要有这份合同（决定 24 复杂度账）：它早已隐式存在于 runtime/session.ts
  *（把 pi Agent 包成协议方法的那段），本文件只是把它写下来。形状 =
  * pi AgentSession 方法面的可序列化子集（agent-session.ts：prompt/steer/
  * followUp/abort/setModel/compact…）+ 事件出口。真正的 N 倍复杂度只在写
- * 第二个内核时出现（D5 明确不写）—— 它是纯期权：若最终只跑 pi，
+ * 第二个内核时出现（决定 25 明确不写）—— 它是纯期权：若最终只跑 pi，
  * 收益 ≈ 0，费用也 ≈ 0。
  *
  * 南缝纪律（写内核相关代码前必读）：

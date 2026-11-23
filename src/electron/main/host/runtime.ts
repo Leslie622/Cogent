@@ -1,7 +1,7 @@
 /**
  * 引擎 Node 二进制定位 —— spawn 决策的唯一入口（manager 只消费结果，不查环境不摸文件）。
  *
- * 三级链（优先级从高到低，全局架构 D1/D11）：
+ * 三级链（优先级从高到低，决定 21/31）：
  * 1. COGENT_NODE_BIN：显式覆盖口（开发调试 / 旧宿主复用引擎时指向任意 Node ≥ 22.19）；
  * 2. resources/runtime/<平台>/bin/node(.exe)：构建期 scripts/fetch-runtime.mjs 放入的
  *    官方 Node 22，让引擎运行时独立于 Electron 的版本周期；

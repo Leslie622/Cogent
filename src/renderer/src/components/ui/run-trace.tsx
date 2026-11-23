@@ -4,7 +4,7 @@
  * RunTrace = 头条 + Trace 家族折叠体。头条是**终态**形态（用时 X 秒 /
  * 已停止 / 出错了）；live 期间不渲染本件（顶部头条只在收尾出现），
  * 底部由 WorkingLine 常驻「工作中」（光环动效图标 WorkingSpinner + 标题扫光 + 码表）。
- * 无过程体（D8 修订：纯文本回合也恒挂头条）时退化为单行头条、不可展开 ——
+ * 无过程体（纯文本回合也恒挂头条）时退化为单行头条、不可展开 ——
  * 空折叠体挂个开合箭头是噪音。
  * 底层 = ui/trace（与 Reasoning/ToolCard 同家族，视觉一套）；终态头条
  * 不带图标（2026-11-18 用户定调：状态词自足，failed 红字兜底异常性）。
@@ -61,7 +61,7 @@ function useElapsed(startTs: number): string {
 
 /** 回合过程轨迹：终态头条 + 折叠体（children = 过程项，间距在此统一 ——
  *  Trace 家族内容区已平级无导线，只带纵向内边距；头条下常驻分割线在此挂）。
- *  children 为空（无过程回合）= 单行头条不可展开（D8 修订） */
+ *  children 为空（无过程回合）= 单行头条不可展开 */
 export function RunTrace({
   phase,
   durationMs,
@@ -73,7 +73,7 @@ export function RunTrace({
   durationMs?: number
   children?: React.ReactNode
 }) {
-  // undefined = 未被用户动过，交出控制权跟随默认（D4）
+  // undefined = 未被用户动过，交出控制权跟随默认
   const [open, setOpen] = useState<boolean | undefined>(undefined)
   // 一次搜索意图只展开一次；随后仍尊重用户手动收起。
   useEffect(() => { if (revealKey !== undefined) setOpen(true) }, [revealKey])

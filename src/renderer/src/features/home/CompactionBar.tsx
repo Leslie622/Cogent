@@ -18,7 +18,7 @@ import type { ChatMessage } from '@/env.d'
 
 export function CompactionBar({ message }: { message: ChatMessage }) {
   const { tokensBefore, tokensAfter, summaryUsage } = message.compaction ?? {}
-  // 摘要成本（D9 验收后增补）：摘要调用不走 run 分段、账不进回合统计 ——
+  // 摘要成本（验收后增补）：摘要调用不走 run 分段、账不进回合统计 ——
   // 折叠条小字显式记这一笔；未报 usage / 无定价（cost 0）不显示
   const summaryCost = summaryUsage?.totalCost
   return (

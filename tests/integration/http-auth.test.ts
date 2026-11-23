@@ -1,6 +1,6 @@
 /**
  * HTTP 门鉴权集成（阶段 2b 验收）：真 Host 构建产物 + COGENT_HTTP_RPC=1，
- * 走 D3 票据全链 —— stdio 签发（模拟 main 血缘）→ HTTP 兑换长期 token →
+ * 走决定 23 票据全链 —— stdio 签发（模拟 main 血缘）→ HTTP 兑换长期 token →
  * 档位强制、跨代失效与业务事件分发。匿名、query token、票据重放矩阵由源码层覆盖（global-setup
  * 已守卫 build 产物新鲜度，测的就是打包后的真协议链路）。
  */

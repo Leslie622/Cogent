@@ -23,7 +23,7 @@
  * 都在首次使用（submit/compact/inspect 读取）时才建。
  *
  * 边界纪律：
- * - 本类实现 kernel/contract.ts 的 CogentKernel（南缝合同，全局架构 D4），
+ * - 本类实现 kernel/contract.ts 的 CogentKernel（南缝合同，决定 24），
  *   经 kernel/pi-session-factory 装配 pi AgentSession；
  * - 只依赖 pi-* 与 protocol 与 ../storage，零 Electron import（目录即边界）；
  * - handler 内信任协议类型，不做二次防御（约定.md §1.3，边界校验在 dispatch 入口）。
@@ -219,10 +219,10 @@ const AGENTS_MD_MAX_CHARS = 16_000
 
 /**
  * 系统提示词装配（工作区上下文注入 + 多根化 2026-11-09；工具段 2026-11-10，
- * D2 修订后恒有工具）：基础人设 + 工作区声明（多目录，首个为主根；无绑定时无
+ * 修订后恒有工具）：基础人设 + 工作区声明（多目录，首个为主根；无绑定时无
  * 此段）+ 环境块（每根一行含 git 分支）+ 各根 AGENTS.md + 工具使用段。
  * 这是"工作区对模型生效"的第①通道（文字声明）—— 模型没有 cwd 概念，相对路径
- * 指哪全靠这里讲清（四通道模型见计划 §0）。
+ * 指哪全靠这里讲清。
  */
 function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
   let prompt = 'You are Cogent, a helpful desktop agent.'
@@ -262,7 +262,7 @@ function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
     }
   }
 
-  // 工具段（D2 修订：任何会话都有只读工具，无绑定会话以主目录为基）。讲清
+  // 工具段（任何会话都有只读工具，无绑定会话以主目录为基）。讲清
   // 有什么、路径规则（读相对基根/绝对不限；写限工作区根内 + 先审批 —— 边界
   // 在审批层 enforce，越界写得到带可写根提示的错误结果）。不解释参数（工具
   // schema 自描述，模型读 description 比提示词转述更准）
@@ -351,7 +351,7 @@ function readGitBranch(cwd: string): string | null {
 }
 
 /**
- * 会话内 run 的流式累积状态（工具循环段化，计划 D6）。
+ * 会话内 run 的流式累积状态（工具循环段化）。
  * 一个 run 在 pi 里是多轮循环：assistant(text/toolCall) → toolResult →
  * assistant(text)…。段化模型：**轮内缓冲**（delta 累积 + 本轮工具记录）在
  * turn_end 封存成一段 ChatMessage；`segments` 按发生序收集全部段 ——
@@ -458,7 +458,7 @@ const SESSION_FILE_VERSION = 2
 const SESSION_COLLECTION = 'sessions'
 /** 首条消息截断为会话标题的长度上限 */
 const TITLE_MAX_CHARS = 24
-/** 拒绝附言截断上限（D2：防长附言打爆工具结果，与 D8 截断纪律同源） */
+/** 拒绝附言截断上限（防长附言打爆工具结果，与截断纪律同源） */
 const APPROVAL_MESSAGE_MAX_CHARS = 2_000
 const DEFAULT_MODEL = 'claude-sonnet-4-5'
 const DEFAULT_PROVIDER = 'anthropic'
@@ -487,10 +487,10 @@ export class SessionManager implements CogentKernel {
    */
   private continuationBudget = new Map<string, number>()
   /**
-   * 挂起中的审批（D4/D5）：approval.request 发出 → 链式 beforeToolCall 的
+   * 挂起中的审批：approval.request 发出 → 链式 beforeToolCall 的
    * Promise 悬着等 approval.respond。value 存 sessionId（会话删除/退出时按会话
    * 批量收尾 —— 不 resolve 则 pi 的 await 永悬、该 run 永不结束）+ 工具类别
-   * （respond 的 always='workspace' 落规则时要知道落哪类，审批交互升级 D3）
+   * （respond 的 always='workspace' 落规则时要知道落哪类）
    * + 工具名（approval.decided 审计条目的主文案，钩子座 4d）。
    */
   private pendingApprovals = new Map<
@@ -531,7 +531,7 @@ export class SessionManager implements CogentKernel {
   private customProviders: CustomProviderRegistry
   /** 项目注册表（构造注入；submit/buildPiSession 时解析 projectId → 项目多根目录） */
   private projects: ProjectRegistry
-  /** 审批规则表（构造注入；审批 ask 判定前查「始终允许此工作区」，D3） */
+  /** 审批规则表（构造注入；审批 ask 判定前查「始终允许此工作区」） */
   private approvals: ApprovalRegistry
   /** MCP 客户端配置 store（构造注入；pi 会话装配时取快照，阶段 4a） */
   private mcpConfig: McpConfigStore
@@ -659,7 +659,7 @@ export class SessionManager implements CogentKernel {
   }
 
   /**
-   * 工具的基根（D2 修订）：绑定根，无绑定时兜底用户主目录 —— 桌面应用语境下
+   * 工具的基根：绑定根，无绑定时兜底用户主目录 —— 桌面应用语境下
    * "launch cwd" 的等价物。保证**任何会话都有只读工具**（主流共识：读几乎
    * 不设限，Claude Code 的 Read/Glob/Grep 默认全盘允许；无绑定会话零工具
    * 比所有主流产品都严，2026-11-10 用户驳回）。写类工具的**限界根**沿用
@@ -803,7 +803,7 @@ export class SessionManager implements CogentKernel {
   /**
    * 会话消息转录（session.messages 响应）：pi 消息[] → ChatMessage[]。
    * 呈现口径恒走 pi JSONL 全量回查（factory readPiTranscript：影子区/多代
-   * 压缩条全保留，D9 保留式；pi 的 agent.state.messages 是**上下文口径**的
+   * 压缩条全保留，采用保留式；pi 的 agent.state.messages 是**上下文口径**的
    * 裁剪投影，压缩后影子区消失，不能作历史呈现源）。pi JSONL 不存在时回落
  * v1 旧转录（未导入的历史会话）。运行中的半截流式消息不在 JSONL
  * （message_end 才落盘）—— 流式期宿主以事件流增量呈现为主，不受影响。
@@ -1401,7 +1401,7 @@ export class SessionManager implements CogentKernel {
   // ———— 审批（docs/模块/审批与权限.mdD5）————
 
   /**
-   * 宿主裁决回流：resolve 挂起中的审批 Promise（审批交互升级 D2 扩
+   * 宿主裁决回流：resolve 挂起中的审批 Promise（扩
    * message/always）。唔配对 requestId（已裁决过 / abort 已收尾 / 不存在）→
    * InvalidParams —— 双击允许钮、裁决与中止竞态都属于此类，显式报错而非静默成功。
    */
@@ -1441,8 +1441,8 @@ export class SessionManager implements CogentKernel {
       const projectId = this.projectIdOf(session)
       if (projectId !== undefined) this.projects.setDefaultPermissionMode(projectId, switchMode)
     }
-    // 拒绝附言（D2「告诉模型接下来怎么做」）：进 block reason → pi 工具错误结果
-    // 给模型。截断上限防打爆工具结果（与 D8 截断纪律同源）；加前缀让模型明确
+    // 拒绝附言（「告诉模型接下来怎么做」）：进 block reason → pi 工具错误结果
+    // 给模型。截断上限防打爆工具结果（与截断纪律同源）；加前缀让模型明确
     // 这是拒绝后的用户指示而非工具输出
     const denyReason =
       !approved && message !== undefined && message.trim() !== ''
@@ -1464,7 +1464,7 @@ export class SessionManager implements CogentKernel {
    * 会话级权限切换（权限模式菜单）：summary 记账 + 落盘；审批判定读活值
    * （decideApproval 每次现读 summary.permissionMode），运行中切换即生效。
    * 提示词层通告由 factory 的 before_agent_start 扩展每轮现读活 mode 设
-   * cogent_permission 节（D6）—— 本方法只管记账，不碰提示词。
+   * cogent_permission 节 —— 本方法只管记账，不碰提示词。
    */
   setPermission(sessionId: string, mode: PermissionMode): SessionSummary {
     const session = this.requireSession(sessionId)
@@ -1491,7 +1491,7 @@ export class SessionManager implements CogentKernel {
   }
 
   /**
-   * 工具调用裁决（链式 beforeToolCall 的桥端，D4 判定矩阵：ToolKind ×
+   * 工具调用裁决（链式 beforeToolCall 的桥端，判定矩阵：ToolKind ×
    * permissionMode；zcode 对齐）。边界语义：
    * - **auto / autonomous 完全放行**（含工作区外写 —— 主流的"完全访问/
    *   自主"名副其实：Claude Code bypassPermissions / Codex danger-full-access
@@ -1538,7 +1538,7 @@ export class SessionManager implements CogentKernel {
       ? matchingWriteRoots(args.path, this.transcriptCwd(session), roots.length > 0 ? roots : [homedir()])
       : []
     const withinRoots = !isFileWrite || targetRoots.length > 0
-    // 自主模式（D6 定稿）：文件写信任放行（不限根内 —— 越界也放，F6 定稿），
+    // 自主模式（已定稿）：文件写信任放行（不限根内 —— 越界也放，F6 定稿），
     // exec 等风险类照旧走询问（落到下方 ask 流程）
     if (mode === 'autonomous' && (kind === 'write' || kind === 'edit')) {
       audit.approvalDecided({ toolName, verdict: 'autonomous' })
@@ -1549,7 +1549,7 @@ export class SessionManager implements CogentKernel {
       audit.approvalDecided({ toolName, verdict: 'always-workspace' })
       return Promise.resolve({ block: false })
     }
-    // 弹审批面板并挂起（D5：无超时 —— 用户不点就一直等，宿主输入框变停止
+    // 弹审批面板并挂起（无超时 —— 用户不点就一直等，宿主输入框变停止
     // 钮可 abort；signal abort 兜底 resolve）
     const requestId = `appr-${crypto.randomUUID()}`
     const sessionId = session.summary.id
@@ -1578,7 +1578,7 @@ export class SessionManager implements CogentKernel {
     })
   }
 
-  /** 某会话的全部挂起审批以 block 收尾（删除/退出兜底；abort 走 signal listener，D5） */
+  /** 某会话的全部挂起审批以 block 收尾（删除/退出兜底；abort 走 signal listener） */
   private settleApprovals(sessionId: string, reason: string): void {
     for (const [requestId, pending] of this.pendingApprovals) {
       if (pending.sessionId !== sessionId) continue
@@ -2066,7 +2066,7 @@ export class SessionManager implements CogentKernel {
             streaming.usage = accumulateUsage(streaming.usage, projectUsage(event.message.usage))
             streaming.durationMs = sumOptional(streaming.durationMs, event.message.durationMs)
             streaming.model = event.message.model
-            // 段封存（计划 D6）：本轮 text/thinking + 本轮工具调用 → 一段
+            // 段封存：本轮 text/thinking + 本轮工具调用 → 一段
             // ChatMessage（段内 usage 是本轮自己的，非全 run 累计 —— 分段后
             // 每段的统计行各自成立）。三缓冲全空的轮不落段（pi 每轮至少有
             // text 或 toolCall 之一，此分支实际只挡极端 provider 怪癖）。
@@ -2226,7 +2226,7 @@ export class SessionManager implements CogentKernel {
           ...(result.estimatedTokensAfter !== undefined && { tokensAfter: result.estimatedTokensAfter }),
           summary: result.summary,
           ...(summarizedUntil !== undefined && { summarizedUntil }),
-          // 摘要请求自身的账（D9）：不走 run 分段、不进回合统计 —— 宿主折叠
+          // 摘要请求自身的账：不走 run 分段、不进回合统计 —— 宿主折叠
           // 条小字呈现；端点未报 usage 时缺省
           ...(result.usage !== undefined && { summaryUsage: projectUsage(result.usage) })
         })

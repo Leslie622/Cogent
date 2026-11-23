@@ -512,7 +512,7 @@ describe('工具循环集成（S1–S11 场景流，断言对象 = pi 内置工�
     const beat2 = beatLines()
     check('26. abort 杀树无孤儿（心跳文件停止增长）', beat1 === beat2 && beat1 >= 3, `beat1=${beat1} beat2=${beat2}`)
 
-    // ———— S10 自主模式（D6：写信任 / exec 询问） ————
+    // ———— S10 自主模式（写信任 / exec 询问） ————
     const s10 = await newSession({ cwd: ws })
     await engine.send('session.setPermission', { sessionId: s10, mode: 'autonomous' })
     await engine.send('agent.submit', { sessionId: s10, text: 'S10a 写文件', model: 'mock' })

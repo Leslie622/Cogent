@@ -1,5 +1,5 @@
 /**
- * 对外 MCP Server 入口（阶段 5a，D9）：独立 Node 进程，由外部 MCP 客户端
+ * 对外 MCP Server 入口（阶段 5a，决定 29）：独立 Node 进程，由外部 MCP 客户端
  * （zcode / Codex / Claude Code 等）stdio spawn —— stdout 只承载 MCP 协议，
  * 一切诊断写 stderr（stdio transport 的铁律，Pi-meme main.ts 同款）。
  *

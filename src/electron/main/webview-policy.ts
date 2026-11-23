@@ -1,5 +1,5 @@
 /**
- * webview 附加硬化（D10，借鉴 zcode pluginSandbox/guestPolicy.ts:24-58）：
+ * webview 附加硬化（决定 30，借鉴 zcode pluginSandbox/guestPolicy.ts:24-58）：
  * renderer 传来的 webPreferences 与 params 一律视为不可信输入 —— 在
  * will-attach-webview 钩子里推倒重建：强制沙箱/contextIsolation/webSecurity、
  * 删除全部 Node 口子、preload 只认 Cogent 的 guest preload、src 只认

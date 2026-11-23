@@ -7,7 +7,7 @@
  *   见 docs/模块/消息呈现.md）+ 流内 WorkingLine；
  *   终态：过程收进 RunTrace 头条（用时 X 秒/已停止/出错了），末条有正文段 =
  *   终答常驻头条之下，用量聚合一行（过程各段的请求明细按显示偏好呈现）。
- * 无过程回合（单段纯文本）也恒挂头条（D8 修订 2026-11-11，ZCode 对齐：
+ * 无过程回合（单段纯文本）也恒挂头条（2026-11-11 修订，ZCode 对齐：
  * 慢本身是信号），只是过程体为空不可展开。
  * 切分/聚合全是纯函数；TurnGroup memo 按项引用比较 —— 流式 delta 只重渲染
  * 活动回合，历史回合零重渲染。
@@ -95,7 +95,7 @@ export function groupTurns(items: MessageItem[]): ChatTurn[] {
 export type TurnPhase = 'live' | 'done' | 'stopped' | 'failed'
 
 /**
- * 过程 vs 终答切分（D2，仅终态相位使用 —— live 全项平铺，见 live 分支）：
+ * 过程 vs 终答切分（仅终态相位使用 —— live 全项平铺，见 live 分支）：
  * 末条有正文的段 = 终答；answer 剥 thinking（归过程伪段）与 usage/durationMs
  * （回合聚合行与头条已表达，不双记）；answerOriginal 保留原文给**无过程直出
  * 分支** —— 该分支没有聚合行，自带用量/耗时不能丢。终答之后若还有工具项
@@ -108,7 +108,7 @@ function splitTurn(
   let answerIndex = -1
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i]
-    // 压缩条有 content（摘要）但不是回答 —— 行内条进过程流（D1 修订）
+    // 压缩条有 content（摘要）但不是回答 —— 行内条进过程流
     if (item.type === undefined && item.role !== 'compaction' && item.content !== '') {
       answerRaw = item
       answerIndex = i
@@ -134,12 +134,12 @@ function splitTurn(
 }
 
 /**
- * 回合墙钟时长（D5）：提问 timestamp → 回合收尾时刻。
+ * 回合墙钟时长：提问 timestamp → 回合收尾时刻。
  * 段 timestamp 是**请求开口径**（与历史回查对齐、重启不漂移），
  * 不再天然包含末段自身的模型耗时 —— 收尾 = 末段 timestamp + 该段
  * durationMs（无 durationMs 的旧数据退化为开口径）；末条是纯工具段时取
  * 工具卡 endedAt（执行收尾打点）。各段 durationMs 求和不含工具执行与
- * 轮间隙，会虚低，不用。无 user 头组（D9 压缩条截断的续组）用继承的
+ * 轮间隙，会虚低，不用。无 user 头组（压缩条截断的续组）用继承的
  * startedAt 起点 —— 墙钟口径不变："用户等了多久"
  */
 function turnDurationMs(turn: ChatTurn): number | undefined {
@@ -162,7 +162,7 @@ function turnDurationMs(turn: ChatTurn): number | undefined {
 }
 
 /**
- * 回合用量聚合（D7）：各段求和（工具卡行无 usage 跳过）；成本只在全部段
+ * 回合用量聚合：各段求和（工具卡行无 usage 跳过）；成本只在全部段
  * 端点实报时才标实报（任一估价 → 聚合也估价 ≈）
  */
 function sumUsage(items: MessageItem[]): MessageUsage | undefined {
@@ -205,7 +205,7 @@ function sumUsage(items: MessageItem[]): MessageUsage | undefined {
 }
 
 /**
- * 回合接口时长聚合（D7 修订 2026-11-11）：各段 durationMs 求和（工具卡行无此
+ * 回合接口时长聚合（2026-11-11 修订）：各段 durationMs 求和（工具卡行无此
  * 字段跳过；undefined 段不计 —— 与头条墙钟双口径并存，见终态分支注释）
  */
 function sumDurationMs(items: MessageItem[]): number | undefined {
@@ -315,8 +315,8 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
       </div>
     )
   }
-  // 零内容组的 done 相位不渲染过程件（D9 截断的副产物：压缩条把回合拆成
-  // [user|空组] + [续组]，空组只剩用户泡 —— D8"纯文本恒挂头条"落在它头上
+  // 零内容组的 done 相位不渲染过程件（截断的副产物：压缩条把回合拆成
+  // [user|空组] + [续组]，空组只剩用户泡 ——"纯文本恒挂头条"落在它头上
   // 就是凭空的「用时」空壳，验收实测双头条）。live 例外：乐观消息刚上屏
   // 的工作中行还得有；stopped/failed 不走此路 —— 零产出的中止/失败头条
   // 是有效信息，保留
@@ -384,7 +384,7 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
   }
   const { process, answer, answerOriginal } = splitTurn(items)
   if (phase === 'done' && process.length === 0) {
-    // 无过程回合（D8 修订 2026-11-11）：纯文本也恒挂「用时」头条（ZCode
+    // 无过程回合（2026-11-11 修订）：纯文本也恒挂「用时」头条（ZCode
     // 实测对齐：无思考无工具的问候也显示耗时 —— 慢本身是信号，
     // 原"直出不挂条"让用户看着计时器数到 5s 后整行消失）；空过程体在
     // RunTrace 内退化为不可展开单行。统计行渲染**原文**（自带 usage/接口
@@ -412,7 +412,7 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
       </>
     )
   }
-  // 终态（D2/D6）：过程收进头条折叠体，终答常驻，用量聚合一行。时长双口径
+  // 终态：过程收进头条折叠体，终答常驻，用量聚合一行。时长双口径
   // 并存（2026-11-11 用户定调）：头条墙钟 = 用户等了多久；统计行接口时长
   // = 模型净耗时（不含排队/引擎处理），两个数不冲突
   return (

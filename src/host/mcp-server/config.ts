@@ -1,5 +1,5 @@
 /**
- * 对外 MCP Server 的配置域（阶段 5a，D9 出口座）：
+ * 对外 MCP Server 的配置域（阶段 5a，决定 29 出口座）：
  * 凭据文件解析 + 常量。独立入口进程（cogent-mcp）唯一的本地状态来源是
  * main 写的 mcp-access.json —— Host 每次（重）启动后 main 经 stdio 签票
  * → /auth/exchange 换 token → 原子写（见 electron/main/host/mcp-access.ts）。

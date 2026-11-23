@@ -37,7 +37,7 @@ export function selectTruncated(state: ChatState): boolean {
   return state.bySession[state.activeSessionId ?? '']?.runtime.truncated === true
 }
 
-/** 活动会话压缩进行中（完备化 D8：started→completed 窗口的状态条判别位） */
+/** 活动会话压缩进行中（started→completed 窗口的状态条判别位） */
 export function selectCompacting(state: ChatState): boolean {
   return state.bySession[state.activeSessionId ?? '']?.runtime.compacting === true
 }

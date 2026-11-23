@@ -1,5 +1,5 @@
 /**
- * webview guest preload（D10）：第三方页面与 HostApi 之间的唯一桥。
+ * webview guest preload（决定 30）：第三方页面与 HostApi 之间的唯一桥。
  *
  * 运行环境：沙箱（webview-policy 在 will-attach-webview 强制），CJS 产物
  * （沙箱 preload 不支持 ESM）—— 本文件不用顶层 await / 动态 import。

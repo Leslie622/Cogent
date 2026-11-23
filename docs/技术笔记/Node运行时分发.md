@@ -1,6 +1,6 @@
 # 自带 Node 运行时分发
 
-> 全局架构 D11。落点：`scripts/fetch-runtime.mjs`（构建期下载）、
+> 决定 31。落点：`scripts/fetch-runtime.mjs`（构建期下载）、
 > `src/electron/main/host/runtime.ts`（三级链定位）、`manager.ts`（经 options 消费）。
 
 ## 1. 问题：引擎进程要一个"确定的 Node"，谁来给

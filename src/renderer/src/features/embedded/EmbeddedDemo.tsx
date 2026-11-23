@@ -2,7 +2,7 @@
  * 内嵌页面 demo 窗口根组件（阶段 3a 验收载体，ipc/embedded.ts 的 '#embedded'
  * 分流）：纯容器 —— 放一个 <webview> 加载 demo.html。
  *
- * 边界（D10）：真正的页面安全边界不在本组件（宿主），在 guest 侧 ——
+ * 边界（决定 30）：真正的页面安全边界不在本组件（宿主），在 guest 侧 ——
  * webview-policy.ts 的 will-attach-webview 钩子会强制 sandbox/contextIsolation
  * 并指定 guest preload，renderer 这里写什么都不算数。
  */

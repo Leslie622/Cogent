@@ -1,7 +1,7 @@
 /**
  * MCP 座集成测试（阶段 4a-1，docs/模块/MCP座.md）—— 断言对象 =
  * Host 侧接线：mcp.list/sync 协议方法、createMcpExtension 装配（direct
- * 工具声明给模型）、D8 审批链对 mcp__* 生效（exec 档 ask）、echo 结果回灌
+ * 工具声明给模型）、决定 28 审批链对 mcp__* 生效（exec 档 ask）、echo 结果回灌
  * 循环闭合、禁用后新会话工具消失（新会话生效语义）。
  * MCP 客户端本身（连接管理/命名/超时）是 pi-mcp 的，不在此重复断言。
  *
@@ -138,7 +138,7 @@ describe('MCP 座集成（协议方法 + 直连工具 + 审批链 + 禁用生效
     // ———— S2 直连工具 + 审批链 + 回灌 ————
     const s2 = await newSession()
     await engine.send('agent.submit', { sessionId: s2, text: 'S2 调 echo', model: 'mock' })
-    // 审批挂起 = ask 默认档对 mcp__* 生效（D8 链路零新增）；MCP 首连 + LLM
+    // 审批挂起 = ask 默认档对 mcp__* 生效（决定 28 链路零新增）；MCP 首连 + LLM
     // 首轮在前面，放宽到 30s
     const appr = await engine.waitEvent('approval.request', (p) => p.sessionId === s2, 30_000)
     check(

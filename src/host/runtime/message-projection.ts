@@ -34,7 +34,7 @@ export function tailToolResult(result: unknown): string {
 }
 
 /**
- * 工具结果 details → 展示 diff（edit 工具专用，D4 定稿进协议）。流式路径从
+ * 工具结果 details → 展示 diff（edit 工具专用，定稿进协议）。流式路径从
  * tool_execution_end 的 result 取，历史回查从 toolResult 消息的 details 取
  * （pi 转录持久化 details）—— 两条路径同源同形。非 edit / 无 diff 自然
  * 返回 undefined（协议 optional，UI 不渲染）。
@@ -99,7 +99,7 @@ export function accumulateUsage(current: MessageUsage | undefined, add: MessageU
  * 两源同为 AgentMessage[]，投影规则不变。
  *
  * 2026-11-12 提为模块级导出函数（原 session 类私有方法，无实例状态）：
- * 单测直测（tests：D9 时间序落点/延迟 flush 的引擎侧回归钉），session
+ * 单测直测（tests：时间序落点/延迟 flush 的引擎侧回归钉），session
  * 内调用点不变。
  */
 export function toChatMessages(messages: Array<AttachmentMessage | CompactionBarSource>): ChatMessage[] {
@@ -124,7 +124,7 @@ export function toChatMessages(messages: Array<AttachmentMessage | CompactionBar
   }
 
   const result: ChatMessage[] = []
-  // D9 保留式呈现位 = 时间序（压缩时刻），非转录切点：压缩条在转录里插在
+  // 保留式呈现位 = 时间序（压缩时刻），非转录切点：压缩条在转录里插在
   // 切点（影子区/活区的语义边界，保留区 20K 之前），但 UI 上应落在压缩
   // **发生**的地方（Codex 标记行形态，与渲染层 completed 手术同规则）——
   // 先暂存，遇到 timestamp 晚于它的首条消息前再落；转录其余部分本就

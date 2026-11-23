@@ -3,7 +3,7 @@
  * - POST /rpc：JSON-RPC 帧文本进、响应帧出（curl/脚本）；
  * - POST /auth/exchange：一次性票据换长期 token；
  * - GET /ws（upgrade）：双向帧 —— 上行请求帧走同一 handleFrame，下行事件
- *   帧经 broadcastEvent 推送（消费者只保持一条 WS，D2「WS 为主」）。
+ *   帧经 broadcastEvent 推送（消费者只保持一条 WS，决定 22「WS 为主」）。
  *
  * 架构位置：传输层薄壳 —— 方法注册表在 host-main（handlers Map），三个门
  * 共调同一 handleFrame；档位强制（scopeDenial）也是 /rpc 与 /ws 共用一份，
@@ -53,7 +53,7 @@ const WS_DRAIN_MS = 250
 const SCOPE_FORBIDDEN_CODE = -32_003
 
 /**
- * 方法档位表（D3 三档）：调用该方法所需的最低 scope。
+ * 方法档位表（决定 23 三档）：调用该方法所需的最低 scope。
  * 远程入口只接受明确登记的方法；新增本地方法不会自动暴露给网络。
  */
 const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
@@ -242,7 +242,7 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
         socket.destroy()
         return
       }
-      // 鉴权同口径（D2）：与 HTTP 中间件同一 verifyToken；query token 是
+      // 鉴权同口径：与 HTTP 中间件同一 verifyToken；query token 是
       // 浏览器 WS 的标准传递位（MDN：WebSocket 构造器无自定义头能力）
       const scope = verifyToken(options.rootSecret, url.searchParams.get('token')?.trim())
       if (!scope) {

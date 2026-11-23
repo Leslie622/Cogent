@@ -1,6 +1,6 @@
 /**
  * 上下文压缩域的两个消费面 —— 压缩内核 = pi AgentSession 内置
- * （全局架构 D6：reserve/keep 窗口、溢出恢复、摘要请求全在 prompt()
+ * （决定 26：reserve/keep 窗口、溢出恢复、摘要请求全在 prompt()
  * 生命周期内自管），Cogent 侧不再有压缩驱动。本文件只剩：
  *
  * - convertToLlmMessages：上下文明细估算的转录整形（session.ts estimateContext
@@ -15,7 +15,7 @@ import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { Api, Message } from '@earendil-works/pi-ai'
 import type { CompactionParamsOverride } from '../../protocol'
 
-// ———— 转录整形（D9 保留式投影） ————
+// ———— 转录整形（保留式投影） ————
 
 /**
  * 压缩条投影前导语（dsh CHECKPOINT_PREAMBLE 同款措辞）：把摘要

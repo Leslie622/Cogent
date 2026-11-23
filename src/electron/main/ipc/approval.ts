@@ -1,7 +1,7 @@
 /**
  * approval 域 IPC：审批裁决的宿主专属通道（docs/模块/审批与权限.md）。
  *
- * 为什么不走 engine:request 通用代理：架构.md §2 既定意图「宿主侧裁决不经
+ * 为什么不走 engine:request 通用代理：架构.md「关键数据旅程」既定意图「宿主侧裁决不经
  * renderer 通用代理」—— 审批是安全边界，通道显式独立（一条通道一个 method，
  * 白名单天然收窄到 approval.respond 本身）；引擎侧它仍是普通协议 method，
  * 其他宿主（冒烟脚本）照常直驱。

@@ -80,8 +80,8 @@ function DiffBlock({ diff }: { diff: string }) {
   )
 }
 
-/** bash 运行中的直播尾行：定高两行槽（不足补空 —— 行数翻动不推挤下方，
- *  流稳定化 §3.4），上方挂 indeterminate 扫光细条（活着」的信号替 spinner） */
+/** bash 运行中的直播尾行：定高两行槽（不足补空 —— 行数翻动不推挤下方），
+ *  上方挂 indeterminate 扫光细条（活着」的信号替 spinner） */
 function ProgressTail({ progress }: { progress: string }) {
   const lines = progress.split('\n').filter((l) => l.trim() !== '')
   const tail = lines.slice(-2)

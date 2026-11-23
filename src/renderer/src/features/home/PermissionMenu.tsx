@@ -194,7 +194,7 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
         <PlanItem active={planOn} onToggle={togglePlan} />
         <DropdownMenuSeparator />
         <ModeItem mode="ask" current={current} onSelect={select} />
-        {/* 自主模式（D6 定稿）：文件写信任放行、exec 类逐次询问 */}
+        {/* 自主模式（已定稿）：文件写信任放行、exec 类逐次询问 */}
         <ModeItem mode="autonomous" current={current} onSelect={select} />
         {/* 完全访问 warning 琥珀（颜色警示与分割线分家） */}
         <ModeItem mode="auto" current={current} onSelect={select} />

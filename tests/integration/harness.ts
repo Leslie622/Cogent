@@ -2,7 +2,7 @@
  * 集成测试共享 harness（docs/模块/测试.md）：四冒烟脚本
  * （tools / compaction / approval-upgrade / ps-utf8）的公共底盘 ——
  * mock SSE 帧助手 + 引擎子进程驱动（stdio JSON-RPC）+ check 断言壳。
- * 各场景流与 mock 分流逻辑留在各 test 文件（脚本本就自包含，D6：断言
+ * 各场景流与 mock 分流逻辑留在各 test 文件（脚本本就自包含，断言
  * 原样、载体换 Vitest，逻辑不动）。
  *
  * 引擎进程跑**构建产物** out/main/host.js（global-setup 守卫新鲜度）：

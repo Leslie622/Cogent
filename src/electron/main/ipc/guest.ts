@@ -1,11 +1,11 @@
 /**
- * guest 域 IPC：webview guest preload 的凭证入口（D3 票据生命周期的 main 侧）。
+ * guest 域 IPC：webview guest preload 的凭证入口（决定 23 票据生命周期的 main 侧）。
  *
  * 语义：guest preload 启动即来要票据（一次性 30s），main 是血缘全权的
  * 签发起点 —— 校验 sender 必须是 webview 型 guest（webview-policy 已在
  * will-attach-webview 硬化过它的配置），再经 HostManager 签发。
  * scope 定档：3a demo 页 = write（列会话 + 发起对话 + 收事件流）。
- * 页面级细档（session 绑定）= D10 后续批次。
+ * 页面级细档（session 绑定）= 决定 30 的后续批次。
  */
 import { ipcMain } from 'electron'
 import { IPC, type GuestCredentialsResult } from '../../../shared/ipc'

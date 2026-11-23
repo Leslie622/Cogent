@@ -2,7 +2,7 @@
  * integration project 的 globalSetup（docs/模块/测试.md）：
  * 集成入口或 worker 缺失、或早于源码与构建输入时自动
  * `npm run build`。效果：`npm test` 一条命令即全绿，无需记得先 build；
- * 集成测试恒跑最新打包产物（单测直读源码，两层口径分工见计划 D5）。
+ * 集成测试恒跑最新打包产物（单测直读源码）。
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, statSync } from 'node:fs'

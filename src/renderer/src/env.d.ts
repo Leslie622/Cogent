@@ -183,7 +183,7 @@ export interface AppSettingsFile {
   activeModelId?: string
   activeProviderId?: string
   thinkingLevel?: string
-  /** 新会话默认权限（开关两态 ask↔auto；计划是独立开关不进默认，见 D6 拍板） */
+  /** 新会话默认权限（开关两态 ask↔auto；计划是独立开关不进默认） */
   defaultPermissionMode?: 'ask' | 'auto'
   /** 聊天输入框的发送组合键；缺省 = 'enter' */
   sendShortcut?: 'enter' | 'shift+enter' | 'ctrl+enter'
