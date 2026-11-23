@@ -167,6 +167,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 | --- | --- |
 | 列表行 | h-8、relative/group；会话行使用 `content-visibility:auto` 与 `contain-intrinsic-size:auto 2rem`，屏外保留固定高度占位；主按钮撑满行高与宽度，内边距及项目缩进放在按钮内；常态 pr-4，动作显现时 pr-14；右侧绝对钮簇独立操作，等待确认 tag 放在主按钮内 |
 | 列表菜单 | ContextMenuTrigger 的 `render` 承载整行；动作数据同时供右键和“更多”菜单消费 |
+| 会话工作状态 | 复用 shadcn Spinner，`absolute right-4` 固定在行尾，标题预留空间；悬停、键盘聚焦或菜单打开时原位隐藏，由绝对定位动作簇覆盖，不挤压或移动 spinner；等待确认 tag 优先 |
 | 聊天重命名 | 聊天右键菜单“重命名”打开 Dialog + Input；预填并聚焦全选；原生取消/保存按钮，Enter 保存、Esc 关闭；错误留在弹窗 |
 | 项目移除 | “更多”与右键菜单共用 AlertDialog；描述含项目名与保留范围，原生取消钮和 destructive 确认钮；在途显示“移除中…”并禁用按钮，错误留在弹窗；成功反馈用 sonner 短语通知 |
 | 侧栏折叠 | `CollapsibleContent variant="navigation"`，200ms ease-out，仅过渡 grid 轨道；裁剪层与自然高度列表分开，间距固定，不整块淡出；起步样式只在恢复显示时生效；keepMounted，收起 inert，结束后 hidden |

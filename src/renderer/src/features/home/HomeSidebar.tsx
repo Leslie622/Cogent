@@ -38,6 +38,7 @@ import { SearchIcon } from 'lucide-react'
 import { cn } from 'cn'
 import { toast } from 'sonner'
 import { Hint } from '@/components/Hint'
+import { Spinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -157,6 +158,12 @@ const ChatRow = memo(function ChatRow({
       *  是行当前的唯一状态，常显不随 hover 隐藏） */
   waitingApproval?: boolean
 }) {
+  // 按行订阅运行位，后台会话也能更新；消息增量不触发整份列表重渲染。
+  const working = useChatStore((s) => {
+    const runtime = s.bySession[chat.id]?.runtime
+    return runtime !== undefined && (runtime.running || runtime.compacting)
+  })
+
   return (
     // 行 div 即右键菜单 trigger（render 注入保留原元素与类）：右键行内任意处
     // （含标题钮/hover 钮）都在指针处弹出；菜单开着 trigger 挂 data-popup-open，
@@ -182,12 +189,19 @@ const ChatRow = memo(function ChatRow({
             'flex h-full min-w-0 flex-1 items-center gap-1.5 pr-4 text-sm text-foreground transition-[padding,outline-color] duration-100',
             indent ? 'pl-8' : 'pl-2',
             'group-hover:pr-14 group-focus-within:pr-14 group-data-popup-open:pr-14 group-has-[[data-popup-open]]:pr-14',
+            working && 'pr-10',
             waitingApproval && 'pr-2!'
           )}
           aria-current={active ? 'true' : undefined}
           onClick={() => onSelect(chat.id)}
         >
           <span className="truncate">{chat.title}</span>
+          {working && !waitingApproval && (
+            <Spinner
+              className="absolute right-4 pointer-events-none group-hover:opacity-0 group-focus-within:opacity-0 group-data-popup-open:opacity-0 group-has-[[data-popup-open]]:opacity-0"
+              aria-label="工作中"
+            />
+          )}
           {waitingApproval && (
             // 浅绿底 + 实色深绿字（文字色纪律：透明度只许用在背景）+ 呼吸点
             // （控制台 timeline 同款 pulse 语言，「进行中」感）

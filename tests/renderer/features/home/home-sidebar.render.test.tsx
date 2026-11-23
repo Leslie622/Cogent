@@ -104,6 +104,66 @@ describe('侧栏新聊天入口', () => {
   })
 })
 
+describe('会话行工作状态', () => {
+  it.each(['最近', '置顶', '项目'])('%s会话独立显示后台运行、停止收尾及压缩状态', async (kind) => {
+    const chat = {
+      ...oldSession,
+      ...(kind === '置顶' && { pinnedAt: 1 }),
+      ...(kind === '项目' && { projectId: 'project' })
+    }
+    useChatStore.setState({ sessions: [chat], bySession: { [chat.id]: emptyBucket() } })
+    if (kind === '项目') {
+      engineRequest.mockResolvedValue([{ id: 'project', name: '项目一', cwds: ['C:/project'], createdAt: 1, updatedAt: 1 }])
+    }
+    render(<HomeSidebar />)
+    const button = await screen.findByRole('button', { name: '已有聊天' })
+    expect(within(button).queryByRole('status')).toBeNull()
+
+    for (const runtime of [
+      { running: true, stopping: false, compacting: false },
+      { running: true, stopping: true, compacting: false },
+      { running: false, stopping: false, compacting: true },
+      { running: false, stopping: false, compacting: false }
+    ]) {
+      act(() => {
+        useChatStore.setState((state) => ({
+          activeSessionId: 'another-chat',
+          bySession: {
+            [chat.id]: { ...emptyBucket(), runtime: { ...state.bySession[chat.id]!.runtime, ...runtime } }
+          }
+        }))
+      })
+      if (runtime.running || runtime.compacting) {
+        const spinner = within(button).getByRole('status', { name: '工作中' })
+        expect(spinner).toHaveAttribute('data-slot', 'spinner')
+        // jsdom 不做布局；固定到行尾且原位隐藏，不能随标题内边距被挤走。
+        expect(spinner).toHaveClass('absolute', 'right-4', 'group-hover:opacity-0', 'group-focus-within:opacity-0')
+      } else {
+        expect(within(button).queryByRole('status')).toBeNull()
+      }
+    }
+    await waitFor(() => expect(useProjectStore.getState().loaded).toBe(true))
+  })
+
+  it('运行中等待审批优先显示等待确认，审批解除后恢复 spinner', async () => {
+    const bucket = emptyBucket()
+    bucket.runtime.running = true
+    bucket.pendingApprovals = [{ requestId: 'approval', toolName: 'write', toolKind: 'write', summary: '写文件' }]
+    useChatStore.setState({ sessions: [oldSession], bySession: { [oldSession.id]: bucket } })
+    render(<HomeSidebar />)
+    expect(screen.getByText('等待确认')).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: '工作中' })).toBeNull()
+    act(() => {
+      useChatStore.setState({ bySession: { [oldSession.id]: { ...bucket, pendingApprovals: [] } } })
+    })
+    expect(screen.queryByText('等待确认')).toBeNull()
+    expect(screen.getByRole('status', { name: '工作中' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '置顶聊天' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '归档聊天' })).toBeInTheDocument()
+    await waitFor(() => expect(useProjectStore.getState().loaded).toBe(true))
+  })
+})
+
 describe('会话行点击区域', () => {
   it.each(['最近', '置顶', '项目', '等待确认'])('%s会话的空白和缩进属于主按钮热区', async (kind) => {
     const chat = {
