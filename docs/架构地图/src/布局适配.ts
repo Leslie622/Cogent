@@ -59,7 +59,22 @@ export function projectLayout(view: LayoutedView): { nodes: ArchitectureNode[]; 
 
   // 保留 LikeC4 算好的正交通道；重新按两端路由会丢失分支的避让关系。
   const routes = view.edges.map(edge => {
-    const points = splineToPolyline(edge.points)
+    let points = splineToPolyline(edge.points)
+    // Graphviz 会把 compound 内的空隙当作通道；业务回接需沿整个执行容器外侧走，避开标题与安全说明。
+    if (view.id === 'overview' && edge.source === 'host.api' && edge.target === 'host.services') {
+      const source = originals.get(edge.source)!
+      const target = originals.get(edge.target)!
+      const runtime = originals.get('host.runtime')!
+      const laneX = runtime.x - 32
+      const laneY = runtime.y - 32
+      points = [
+        { x: source.x + source.width / 2, y: source.y + source.height },
+        { x: source.x + source.width / 2, y: laneY },
+        { x: laneX, y: laneY },
+        { x: laneX, y: target.y + target.height / 2 },
+        { x: target.x + target.width, y: target.y + target.height / 2 },
+      ]
+    }
     attachToBorder(points, 0, originals.get(edge.source)!)
     attachToBorder(points, points.length - 1, originals.get(edge.target)!)
     return { id: edge.id, points, segments: polylineToSegments(points), labelBBox: edge.labelBBox == null ? null : {

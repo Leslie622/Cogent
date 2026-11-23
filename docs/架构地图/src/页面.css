@@ -23,7 +23,8 @@
 .architecture-node { width: 100%; height: 100%; position: relative; }
 .architecture-node[data-selected='true']::after { content: ''; position: absolute; inset: -4px; border: 1px solid var(--chrome-accent); border-radius: calc(var(--radius-xl) + 4px); pointer-events: none; }
 .architecture-boundary { height: 100%; border: 1px dashed var(--muted-foreground); border-radius: var(--radius-xl); background: var(--content-sidebar); }
-.architecture-boundary-heading { position: absolute; left: 16px; top: 16px; display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); }
+.architecture-boundary-heading { position: absolute; left: 16px; right: 16px; top: 16px; display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); }
+.architecture-boundary-note { position: absolute; left: 16px; right: 16px; bottom: 12px; }
 .architecture-relationship { color: var(--muted-foreground); pointer-events: none; }
 .architecture-relationship rect { fill: var(--background); }
 .architecture-relationship text { fill: var(--muted-foreground); }

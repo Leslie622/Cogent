@@ -80,39 +80,40 @@ model {
       description '将获得授权的统一调用分发到会话、任务及能力服务。'
     }
 
-    services = component 'Host 服务层' {
+    services = system 'Host 服务层' {
       technology '会话 · 项目 · 凭据 · 观测'
       description '业务服务负责会话与任务生命周期、项目、凭据桥、观测和能力配置。'
+      sessions = component '会话与任务' { technology '受理 · 取消 · 恢复' }
+      projects = component '项目管理' { technology '工作区 · 会话归属' }
+      credentials = component '凭据桥' { technology '宿主密钥注入' }
+      observability = component '执行观测' { technology '事件 · 运行记录' }
+      configuration = component '能力配置' { technology '工具 · MCP · 技能 · 钩子' }
     }
 
-    capabilities = component '能力总线' {
+    capabilities = system '能力总线' {
       technology '工具 · MCP · 技能 · 钩子'
       description '按 pi 官方工具和扩展形状装配 Agent 能力；含交互工具，子会话为预留。'
+      tools = component '内置工具' { technology '文件 · 搜索 · 执行' }
+      mcp = component 'MCP 工具' { technology '外部工具连接与装配' }
+      skills = component '技能' { technology '知识与提示段加载' }
+      hooks = component '钩子' { technology '生命周期干预' }
+      interaction = component '交互工具' { technology '提问 · 方案 · 任务清单' }
+      subagents = component '子会话' { technology '多 Agent 调度预留' }
     }
 
-    runtime = component 'KernelRunner' {
-      technology 'CogentKernel · 内核接口'
-      description 'Host 服务层通过进程内 TypeScript 接口驱动内核；当前由 SessionManager 实现，不是独立进程或额外 RPC。'
-    }
+    runtime = system 'KernelRunner' {
+      technology '自带 Node 22 · SHA256'
+      description 'CogentKernel 内核合同；运行基础与安全策略随执行容器展示，当前由 SessionManager 实现。'
 
-    kernel = component 'PiSdkKernel' {
-      technology 'pi AgentSession · SDK'
-      description '当前唯一内核实现，托管 Agent 循环、工具、上下文压缩和 JSONL 转录。'
-    }
+      kernel = component 'PiSdkKernel' {
+        technology 'pi AgentSession · SDK'
+        description '当前唯一内核实现，托管 Agent 循环、工具、上下文压缩和 JSONL 转录。'
+      }
 
-    alternative = component '其他内核' {
-      technology 'PiRpcKernel · 其他实现'
-      description '内核合同的替换扩展位；当前没有第二个内核实现。'
-    }
-
-    bundled = component '自带运行时' {
-      technology 'Node 22 · SHA256'
-      description '自带 Node 承载独立 Host 进程；git 和 Python 使用系统环境。'
-    }
-
-    security = component '安全边界' {
-      technology '权限模式 · 计划 · 审批'
-      description '执行时按权限模式、计划开关与工具风险判定；OS 级沙箱为预留，区别于入口 API 授权。'
+      alternative = component '其他内核' {
+        technology 'PiRpcKernel · 其他实现'
+        description '内核合同的替换扩展位；当前没有第二个内核实现。'
+      }
     }
 
     provider = component '模型协议适配' {
@@ -128,12 +129,8 @@ model {
     api <-> services '业务调用与事件'
     services -> capabilities '能力配置'
     services <-> runtime '会话驱动与事件'
-    capabilities -> kernel '工具与扩展'
-    runtime <-> kernel 'SDK 驱动'
-    runtime <-> alternative '内核替换'
-    bundled -> runtime 'Node 运行环境'
-    security -> kernel '工具审批策略'
-    kernel <-> provider '模型请求与流'
+    capabilities -> runtime '工具与扩展'
+    runtime <-> provider '模型请求与流'
   }
 
   users = component '用户系统' {
@@ -170,11 +167,13 @@ model {
 views {
   view overview {
     title 'Cogent 目标架构'
-    include desktop, nativeClients, customClients, externalAgent, mcp, access.*, host.*, models
+    include desktop, nativeClients, customClients, externalAgent, mcp, access.*, host.*, host.runtime.*, models
     include mcp -> access.network with { title 'Cogent 原生协议' }
     include access.network -> host.authentication with { title '验证凭据' }
+    include host.authentication -> host.native with { title '原生处理' }
+    include host.authentication -> host.adapter with { title '协议转换' }
     // 总览行列由 layout 脚本通过 LikeC4 布局提示约束，原生自动布局仍可独立使用。
-    autoLayout LeftRight 112 96 ortho
+    autoLayout LeftRight 200 112 ortho
   }
 
   view ingress of access {
@@ -185,7 +184,19 @@ views {
 
   view execution of host {
     title '执行、能力与出站适配'
-    include host.api, host.services, host.capabilities, host.runtime, host.kernel, host.alternative, host.bundled, host.security, host.provider, models
-    autoLayout LeftRight 112 96 ortho
+    include host.api, host.services, host.capabilities, host.runtime, host.runtime.*, host.provider, models
+    autoLayout LeftRight 160 112 ortho
+  }
+
+  view services {
+    title 'Host 服务层详情'
+    include host.api, host.services, host.services.*, host.runtime, host.capabilities
+    autoLayout LeftRight 160 112 ortho
+  }
+
+  view capabilities {
+    title '能力总线详情'
+    include host.services, host.capabilities, host.capabilities.*, host.runtime
+    autoLayout LeftRight 160 112 ortho
   }
 }

@@ -20,6 +20,8 @@ export interface ModuleDetail {
   boundary: string
   sources: { path: string; symbol: string }[]
   navigateTo?: ViewId
+  navigateOnClick?: boolean
+  boundaryNote?: string
 }
 
 export const moduleDetails: Record<string, ModuleDetail> = {
@@ -94,12 +96,13 @@ export const moduleDetails: Record<string, ModuleDetail> = {
     sources: [{ path: 'src/host/http/server.ts', symbol: '/ws · upgrade' }, { path: 'src/host/mcp-server/host-client.ts', symbol: 'subscribeRun' }],
   },
   host: {
-    name: '引擎服务（Host）', kind: '独立 Node 进程 · 目标分层', icon: Server, status: 'partial', showStatus: false,
-    summary: '在同一张图中呈现独立 Host 进程的接入、服务、能力、内核与运行基础。',
-    responsibilities: ['上方接入链经身份、协议与权限检查进入 HostApi，再沿折返线交给下方服务层。', 'Host 服务层通过 KernelRunner（当前 CogentKernel 接口）驱动 pi SDK；能力总线装配工具、MCP、技能、钩子与交互工具。', '自带 Node 承载运行，执行时的权限模式、计划开关和工具审批构成另一道安全边界。'],
-    boundary: 'Host、Cogent 原生调用与 pi 已运行；图中的认证抽象、统一资源权限和旧协议适配属于待完成目标。',
+    name: '引擎服务（Host）', kind: '独立 Node 进程 · 主体分组', icon: Server, status: 'partial', showStatus: false,
+    summary: 'Host 大框包含接入处理、Host 服务层、能力总线与 KernelRunner 执行容器。',
+    responsibilities: ['接入链经身份、协议与权限检查进入 HostApi，再交给 Host 服务层。', '服务层与能力总线在总览保留摘要块，点击进入各自的详细视图。', 'KernelRunner 包含 pi SDK 和其他内核预留；自带运行时、安全策略作为容器说明呈现。'],
+    boundary: '这些职责在同一 Host 进程内；KernelRunner 是 CogentKernel 合同的架构称呼，不增加进程或 RPC。认证抽象、统一资源权限和旧协议适配属于待完成目标。',
     sources: [{ path: 'src/host/host-main.ts', symbol: 'main · handlers · handleFrame' }, { path: 'docs/计划/架构地图目标架构.md', symbol: '目标接线与完成度' }],
   },
+
   'host.authentication': {
     name: '身份认证', kind: '可替换的凭据验证 · 调用身份', icon: Fingerprint, status: 'partial',
     features: [{ label: 'Host token 校验', status: 'implemented' }, { label: '用户认证与统一身份', status: 'planned' }],
@@ -138,14 +141,14 @@ export const moduleDetails: Record<string, ModuleDetail> = {
     sources: [{ path: 'src/host/host-main.ts', symbol: 'handlers · handleFrame' }, { path: 'src/protocol/types.ts', symbol: 'ProtocolMethods' }],
   },
   'host.services': {
-    name: 'Host 服务层', kind: '会话 · 项目 · 凭据桥 · 观测 · 能力治理', icon: Layers3, status: 'implemented', showStatus: false, navigateTo: 'execution',
+    name: 'Host 服务层', kind: '会话 · 项目 · 凭据桥 · 观测 · 能力治理', icon: Layers3, status: 'implemented', showStatus: false, navigateTo: 'services', navigateOnClick: true,
     summary: '接收 HostApi 业务调用，管理会话、任务与项目，并协调凭据和能力配置。',
     responsibilities: ['SessionManager 管理任务受理、取消、恢复与业务摘要，项目服务维护工作区归属。', '凭据桥接收宿主注入的密钥，观测服务记录执行过程；能力配置交给对应装配模块。', '通过 CogentKernel 驱动内核，执行进度投影为 Host 事件，并经 HostApi 与原传输返回。'],
     boundary: '这些是 Host 内的服务职责，不是新进程。SessionManager 当前同时承担业务编排和内核合同实现，图按目标职责表达。',
     sources: [{ path: 'src/host/host-main.ts', symbol: 'handlers' }, { path: 'src/host/runtime/session.ts', symbol: 'SessionManager' }, { path: 'src/host/runtime/project.ts', symbol: '项目服务' }, { path: 'src/host/runtime/credentials.ts', symbol: 'CredentialRegistry' }, { path: 'src/host/runtime/inspector.ts', symbol: '观测服务' }],
   },
   'host.capabilities': {
-    name: '能力总线', kind: '工具 · MCP · 技能 · 钩子 · 交互 · 子会话', icon: Blocks, status: 'partial',
+    name: '能力总线', kind: '工具 · MCP · 技能 · 钩子 · 交互 · 子会话', icon: Blocks, status: 'partial', navigateTo: 'capabilities', navigateOnClick: true,
     features: [{ label: '工具 · MCP · 技能 · 钩子', status: 'implemented' }, { label: '子会话', status: 'planned' }],
     summary: '统一装配 Agent 能力，将 Host 的配置接入 pi 的工具、扩展与提示段。',
     responsibilities: ['内置工具与 MCP 进入 pi 工具管线，Skills 和 Hooks 提供知识加载与生命周期干预。', 'customTools 装配提问、方案确认、任务清单等交互工具。', '子会话预留给后续多 Agent 协作，当前未实现子会话调度。'],
@@ -153,41 +156,28 @@ export const moduleDetails: Record<string, ModuleDetail> = {
     sources: [{ path: 'src/host/kernel/pi-session-factory.ts', symbol: 'customTools · extensionFactories · createMcpExtension' }, { path: 'src/host/runtime/skill-prompt.ts', symbol: '技能提示段' }, { path: 'src/host/runtime/hook-seat.ts', symbol: 'createCogentHooks' }, { path: 'docs/计划/全局架构.md', symbol: '能力装配与子会话预留' }],
   },
   'host.runtime': {
-    name: 'KernelRunner', kind: 'CogentKernel · 进程内 TypeScript 接口', icon: Plug, status: 'implemented',
-    summary: 'Host 驱动内核的统一接口，当前代码名称是 CogentKernel。',
-    responsibilities: ['定义提交、取消、续写、压缩、转录读取和审批回填等内核操作。', '让 Host 服务层依赖稳定接口；当前接入 pi SDK，其他内核须满足相同接口。', '内核通过事件出口报告执行进度，不绑定 UI 或网络传输。'],
-    boundary: 'KernelRunner 沿用原架构图的职责名称；当前没有同名类。CogentKernel 由 SessionManager 实现，不是额外 RPC，也不是另一个运行时进程。',
-    sources: [{ path: 'src/host/kernel/contract.ts', symbol: 'CogentKernel · KernelNotifier' }, { path: 'src/host/runtime/session.ts', symbol: 'SessionManager implements CogentKernel' }, { path: 'docs/计划/全局架构.md', symbol: 'D4 · D5' }],
+    name: 'KernelRunner', kind: 'CogentKernel · 执行容器与运行基础', icon: Plug, status: 'implemented', showStatus: false,
+    boundaryNote: '安全边界：权限模式 · 计划 · 审批；OS 沙箱预留',
+    summary: '统一内核合同的执行容器，包含 PiSdkKernel 和其他内核预留；运行时与安全策略随容器展示。',
+    responsibilities: ['定义提交、取消、续写、压缩、转录读取和审批回填等操作；当前合同名称为 CogentKernel。', '自带 Node 22 按官方 SHA256 校验后分发，为整个 Host 进程提供运行环境；git 和 Python 使用系统环境。', '执行时按权限模式、计划开关和工具风险决定放行、阻止或人工审批；OS 级沙箱仍为预留。', 'Host 服务层依赖统一合同；当前只有 pi SDK 实现，其他内核须满足相同操作和事件语义。'],
+    boundary: 'KernelRunner 是架构容器，没有同名类；CogentKernel 由 SessionManager 实现。运行时说明不代表 Node 只承载内核，应用层审批也不等于 OS 沙箱。',
+    sources: [{ path: 'src/host/kernel/contract.ts', symbol: 'CogentKernel · KernelNotifier' }, { path: 'src/host/runtime/session.ts', symbol: 'SessionManager · decideApproval' }, { path: 'src/electron/main/host/runtime.ts', symbol: 'resolveEngineNodeBin' }, { path: 'scripts/fetch-runtime.mjs', symbol: 'NODE_VERSION · SHA256' }, { path: 'src/host/runtime/approvals.ts', symbol: 'ApprovalRegistry' }],
   },
-  'host.kernel': {
+  'host.runtime.kernel': {
     name: 'PiSdkKernel', kind: 'pi AgentSession · 当前内核实现', icon: Cpu, status: 'implemented',
     summary: '通过 pi SDK 运行 Agent 循环，处理模型、工具、上下文压缩和转录。',
-    responsibilities: ['createPiSession 装配 pi AgentSession，执行模型与工具调用循环。', '消费能力总线装配的工具和扩展，执行前调用安全边界中的审批策略。', 'pi JSONL 保存会话转录，Host 保存会话业务摘要。'],
+    responsibilities: ['createPiSession 装配 pi AgentSession，执行模型与工具调用循环。', '作为 KernelRunner 内部实现消费工具、扩展与模型调用；图上的外部关系统一连接执行容器。', 'pi JSONL 保存会话转录，Host 保存会话业务摘要。'],
     boundary: 'PiSdkKernel 是架构角色，装配入口是 pi-session-factory.ts；通过 SDK 在 Host 进程内运行，当前没有第二套内核。',
     sources: [{ path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession · createAgentSession' }, { path: 'src/host/kernel/transcript.ts', symbol: 'readPiTranscript' }],
   },
-  'host.alternative': {
+  'host.runtime.alternative': {
     name: '其他内核', kind: 'PiRpcKernel · 其他实现预留', icon: Cpu, status: 'planned',
     summary: '为将来替换内核保留统一接口，目前没有可切换的第二实现。',
     responsibilities: ['PiRpcKernel 预留给独立进程、崩溃隔离或独立版本的执行方式。', '其他内核接入前须验证 CogentKernel 的操作与事件语义。'],
     boundary: '接口预留不等于已有内核切换功能；当前只维护 pi SDK。',
     sources: [{ path: 'docs/计划/全局架构.md', symbol: 'D5' }, { path: 'src/host/kernel/contract.ts', symbol: 'CogentKernel' }],
   },
-  'host.bundled': {
-    name: '自带运行时', kind: 'Node 22 · 官方 SHA256 校验', icon: Terminal, status: 'implemented',
-    summary: '随应用分发 Node，让独立 Host 进程与 Electron 使用各自的版本周期。',
-    responsibilities: ['构建时下载官方 Node 22，按官方 SHASUMS256.txt 校验后打包。', '启动优先级为 COGENT_NODE_BIN 显式覆盖、自带 Node、Electron Node 回退；握手校验最低 Node 版本。', 'Node 承载整个 Host 进程；git 和 Python 由系统环境提供。'],
-    boundary: '图中的连线表示运行环境依赖，不是请求调用。自带 Node 不等于 OS 沙箱，也不保证目标机器已完成实机验收。',
-    sources: [{ path: 'src/electron/main/host/runtime.ts', symbol: 'resolveEngineNodeBin' }, { path: 'scripts/fetch-runtime.mjs', symbol: 'NODE_VERSION · SHA256' }, { path: 'src/electron/main/host/manager.ts', symbol: 'spawn · Node 版本守卫' }],
-  },
-  'host.security': {
-    name: '安全边界', kind: '执行权限 · 计划开关 · 工具审批', icon: ShieldCheck, status: 'partial',
-    features: [{ label: '权限模式 · 计划 · 审批', status: 'implemented' }, { label: 'OS 级沙箱', status: 'planned' }],
-    summary: '在实际工具执行前应用权限模式、计划只读约束和审批策略。',
-    responsibilities: ['读取 ask、auto、autonomous 三档权限；计划开关独立限制写入与执行。', '结合工具类别、工作区根和已存规则决定放行、阻止或请求人工审批；取消和退出清理挂起裁决。', '审批通过后工具才能继续；这道检查与入口的方法 scope、用户和资源授权分别负责不同阶段。'],
-    boundary: '当前是应用层策略和审批，不提供 OS 级隔离；OS 沙箱为预留，尚未实施。',
-    sources: [{ path: 'src/host/runtime/session.ts', symbol: 'decideApproval' }, { path: 'src/host/runtime/approvals.ts', symbol: 'ApprovalRegistry' }, { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'wrapApprovalChain' }, { path: 'docs/计划/全局架构.md', symbol: 'D12' }],
-  },
+
   'host.provider': {
     name: '模型协议适配', kind: 'Provider · 出站协议', icon: Route, status: 'partial',
     features: [{ label: 'OpenAI · Anthropic', status: 'implemented' }, { label: '自定义模型接口', status: 'planned' }],
@@ -195,6 +185,72 @@ export const moduleDetails: Record<string, ModuleDetail> = {
     responsibilities: ['现有 OpenAI Completions、Responses 与 Anthropic 方言负责请求和流式响应转换。', '若远端固定为自定义 /xxx/chat 契约，在此扩展出站适配，保留远端字段、错误与取消语义。', '将远端响应还原为内核可消费的模型事件。'],
     boundary: '已有三种模型方言；任意自定义旧契约的适配尚未实现。这里是 Cogent 调用远端，区别于外部调用 Cogent 的入站协议适配。',
     sources: [{ path: 'src/host/runtime/custom-providers.ts', symbol: 'API_BY_FORMAT · buildCustomProvider' }, { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'modelRuntime' }],
+  },
+  'host.services.sessions': {
+    name: '会话与任务', kind: '受理 · 取消 · 恢复', icon: Layers3, status: 'implemented',
+    summary: '管理会话、任务生命周期与业务摘要，通过 CogentKernel 驱动内核。', responsibilities: ['管理会话、任务生命周期与业务摘要，通过 CogentKernel 驱动内核。'],
+    boundary: '这是 Host 进程内的职责，不增加独立服务或 RPC。',
+    sources: [{ path: 'src/host/runtime/session.ts', symbol: 'SessionManager' }],
+  },
+  'host.services.projects': {
+    name: '项目管理', kind: '工作区 · 会话归属', icon: Layers3, status: 'implemented',
+    summary: '维护项目、工作区与会话的对应关系。', responsibilities: ['维护项目、工作区与会话的对应关系。'],
+    boundary: '这是 Host 进程内的职责，不增加独立服务或 RPC。',
+    sources: [{ path: 'src/host/runtime/project.ts', symbol: '项目服务' }],
+  },
+  'host.services.credentials': {
+    name: '凭据桥', kind: '宿主密钥注入', icon: Layers3, status: 'implemented',
+    summary: '接收宿主提供的凭据，供 Host 的模型与能力调用使用。', responsibilities: ['接收宿主提供的凭据，供 Host 的模型与能力调用使用。'],
+    boundary: '这是 Host 进程内的职责，不增加独立服务或 RPC。',
+    sources: [{ path: 'src/host/runtime/credentials.ts', symbol: 'CredentialRegistry' }],
+  },
+  'host.services.observability': {
+    name: '执行观测', kind: '事件 · 运行记录', icon: Layers3, status: 'implemented',
+    summary: '记录运行过程并向客户端提供执行观测。', responsibilities: ['记录运行过程并向客户端提供执行观测。'],
+    boundary: '这是 Host 进程内的职责，不增加独立服务或 RPC。',
+    sources: [{ path: 'src/host/runtime/inspector.ts', symbol: '观测服务' }],
+  },
+  'host.services.configuration': {
+    name: '能力配置', kind: '工具 · MCP · 技能 · 钩子', icon: Layers3, status: 'implemented',
+    summary: '把 Host 管理的能力配置交给工具与扩展装配入口。', responsibilities: ['把 Host 管理的能力配置交给工具与扩展装配入口。'],
+    boundary: '这是 Host 进程内的职责，不增加独立服务或 RPC。',
+    sources: [{ path: 'src/host/kernel/pi-session-factory.ts', symbol: 'customTools · extensionFactories' }],
+  },
+  'host.capabilities.tools': {
+    name: '内置工具', kind: '文件 · 搜索 · 执行', icon: Blocks, status: 'implemented',
+    summary: '将内置文件、搜索和执行工具装配到 pi 工具管线。', responsibilities: ['将内置文件、搜索和执行工具装配到 pi 工具管线。'],
+    boundary: '这是 Host 进程内的职责，不增加独立服务或 RPC。',
+    sources: [{ path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' }],
+  },
+  'host.capabilities.mcp': {
+    name: 'MCP 工具', kind: '外部工具连接与装配', icon: Blocks, status: 'implemented',
+    summary: '把 Agent 消费的 MCP 工具装配进内核，区别于对外 MCP Server。', responsibilities: ['把 Agent 消费的 MCP 工具装配进内核，区别于对外 MCP Server。'],
+    boundary: '这是 Host 进程内的职责，不增加独立服务或 RPC。',
+    sources: [{ path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createMcpExtension' }],
+  },
+  'host.capabilities.skills': {
+    name: '技能', kind: '知识与提示段加载', icon: Blocks, status: 'implemented',
+    summary: '加载技能知识和提示段，供会话按需使用。', responsibilities: ['加载技能知识和提示段，供会话按需使用。'],
+    boundary: '这是 Host 进程内的职责，不增加独立服务或 RPC。',
+    sources: [{ path: 'src/host/runtime/skill-prompt.ts', symbol: '技能提示段' }],
+  },
+  'host.capabilities.hooks': {
+    name: '钩子', kind: '生命周期干预', icon: Blocks, status: 'implemented',
+    summary: '在 Agent 生命周期中执行 Cogent 钩子逻辑。', responsibilities: ['在 Agent 生命周期中执行 Cogent 钩子逻辑。'],
+    boundary: '这是 Host 进程内的职责，不增加独立服务或 RPC。',
+    sources: [{ path: 'src/host/runtime/hook-seat.ts', symbol: 'createCogentHooks' }],
+  },
+  'host.capabilities.interaction': {
+    name: '交互工具', kind: '提问 · 方案 · 任务清单', icon: Blocks, status: 'implemented',
+    summary: '装配提问、方案确认和任务清单工具，并与客户端交互。', responsibilities: ['装配提问、方案确认和任务清单工具，并与客户端交互。'],
+    boundary: '这是 Host 进程内的职责，不增加独立服务或 RPC。',
+    sources: [{ path: 'src/host/kernel/pi-session-factory.ts', symbol: 'customTools' }],
+  },
+  'host.capabilities.subagents': {
+    name: '子会话', kind: '多 Agent 调度预留', icon: Blocks, status: 'planned',
+    summary: '为多 Agent 协作预留子会话调度能力，当前尚未实现。', responsibilities: ['为多 Agent 协作预留子会话调度能力，当前尚未实现。'],
+    boundary: '仅为目标扩展位，当前没有子会话调度器。',
+    sources: [{ path: 'docs/计划/全局架构.md', symbol: '子会话预留' }],
   },
   users: {
     name: '用户系统', kind: '目标外部身份来源', icon: Users, status: 'planned',
@@ -215,12 +271,14 @@ export const moduleDetails: Record<string, ModuleDetail> = {
 export const overviewDetail: ModuleDetail = {
   name: '架构总览', kind: '目标架构 · 按能力标注完成度', icon: Layers3, status: 'partial', showStatus: false,
   summary: 'Cogent 原生协议直接接入，自定义协议双向适配；二者经统一权限检查进入同一个 HostApi。',
-  responsibilities: ['接入链在上方从左向右，经 HostApi 折返到下方 Host 服务层；服务、能力总线、KernelRunner 与内核在同一视图展开。', '自带运行时与工具安全边界提供运行基础；点线表示协议适配关系，长虚线表示待实现连接，交叉处留白表示跨过连线。', '节点完成度描述已有能力，部分逻辑尚未按目标职责物理拆分；内核替换、子会话和 OS 沙箱明确保留待完成状态。'],
+  responsibilities: ['Host 大框内包含接入处理、服务层、能力总线和 KernelRunner；KernelRunner 内部包含 PiSdkKernel 与其他内核预留。', '服务层与能力总线在总览显示摘要，点击进入详细视图；运行时与安全策略合并为 KernelRunner 容器说明。', '点线表示协议适配关系，长虚线表示待实现连接，交叉留白表示跨线。内核替换、子会话和 OS 沙箱保留待完成状态。'],
   boundary: '本图用于指导后续实现。本批没有实现用户系统、资源权限或自定义协议接口。',
   sources: [{ path: 'docs/计划/架构地图目标架构.md', symbol: '目标接线、状态与依据' }, { path: 'docs/架构.md', symbol: '当前进程与依赖边界' }],
 }
 
 export const viewDetails: Record<ViewId, ModuleDetail> = {
+  services: { ...moduleDetails['host.services'], navigateTo: undefined, name: 'Host 服务层详情' },
+  capabilities: { ...moduleDetails['host.capabilities'], navigateTo: undefined, name: '能力总线详情' },
   overview: overviewDetail,
   ingress: {
     ...overviewDetail,

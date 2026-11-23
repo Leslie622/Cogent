@@ -1,7 +1,7 @@
 /** 三栏阅读界面；侧栏使用共享折叠原语，画布与说明各自占满可用空间。 */
 import { useEffect, useState } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
-import { Layers3, Moon, PanelLeftClose, PanelLeftOpen, PanelRightOpen, Sun } from 'lucide-react'
+import { ArrowLeft, Layers3, Moon, PanelLeftClose, PanelLeftOpen, PanelRightOpen, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -11,7 +11,7 @@ import { ArchitectureCanvas } from './components/架构画布'
 import { IconButton } from './components/图标按钮'
 import { ModulePanel } from './components/模块面板'
 import { moduleDetails, viewDetails } from './模块说明'
-import { viewIds, viewNames, type ViewId } from './视图'
+import { primaryViewIds, viewNames, type ViewId } from './视图'
 
 export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -26,6 +26,17 @@ export function App() {
   function openView(id: ViewId) {
     setSelectedId(null)
     setViewId(id)
+  }
+
+  function selectModule(id: string | null) {
+    if (id !== null) {
+      const detail = moduleDetails[id]
+      if (detail.navigateOnClick === true && detail.navigateTo !== viewId) {
+        openView(detail.navigateTo!)
+        return
+      }
+    }
+    setSelectedId(id)
   }
 
   // 进入窄窗口时先让出画布；用户仍可从同一组开关展开所需侧栏。
@@ -60,13 +71,16 @@ export function App() {
       </Collapsible>
       <main id="main-content" className="architecture-main" aria-label="架构画布">
         <h1 className="sr-only">架构总览</h1>
-        <ReactFlowProvider key={viewId}><ArchitectureCanvas viewId={viewId} selectedId={selectedId} onSelect={setSelectedId} /></ReactFlowProvider>
+        <ReactFlowProvider key={viewId}><ArchitectureCanvas viewId={viewId} selectedId={selectedId} onSelect={selectModule} /></ReactFlowProvider>
         <div className="canvas-top-controls">
           <div className="flex gap-1">
             {!leftOpen && <IconButton label="展开左侧栏" aria-expanded={leftOpen} aria-controls="architecture-navigation" onClick={openLeft}><PanelLeftOpen /></IconButton>}
           </div>
           <div className="architecture-view-controls flex gap-1" role="group" aria-label="架构视图">
-            {viewIds.map(id => <Button key={id} variant={viewId === id ? 'secondary' : 'ghost'} size="sm" aria-pressed={viewId === id} onClick={() => openView(id)}>{viewNames[id]}</Button>)}
+            {viewId === 'services' || viewId === 'capabilities' ? <>
+              <Button variant="ghost" size="sm" onClick={() => openView('overview')}><ArrowLeft />返回总览</Button>
+              <span className="flex items-center px-2 text-xs text-muted-foreground">{viewNames[viewId]}</span>
+            </> : primaryViewIds.map(id => <Button key={id} variant={viewId === id ? 'secondary' : 'ghost'} size="sm" aria-pressed={viewId === id} onClick={() => openView(id)}>{viewNames[id]}</Button>)}
           </div>
           <div className="flex gap-1">
             <span className="theme-control"><IconButton label={dark ? '切换浅色' : '切换深色'} onClick={() => useAppearanceStore.getState().setColorMode(dark ? 'light' : 'dark')}>{dark ? <Sun /> : <Moon />}</IconButton></span>

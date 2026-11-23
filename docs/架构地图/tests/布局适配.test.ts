@@ -13,11 +13,24 @@ let views: Record<ViewId, LayoutedView>
 beforeAll(async () => {
   instance = await LikeC4.fromWorkspace(fileURLToPath(new URL('../模型/', import.meta.url)), { logger: false, throwIfInvalid: true })
   const model = await instance.layoutedModel()
-  views = { overview: model.view('overview').$layouted, ingress: model.view('ingress').$layouted, execution: model.view('execution').$layouted }
+  views = Object.fromEntries(viewIds.map(id => [id, model.view(id).$layouted])) as Record<ViewId, LayoutedView>
 })
 afterAll(async () => { await instance.dispose() })
 
 describe('目标架构的语义与完成度', () => {
+  it('传输入口纵向展开，桌面、stdio 与原生入口直连，网络接线保持水平', () => {
+    const find = (id: string) => views.overview.nodes.find(node => node.id === id)!
+    expect(find('desktop').y).toBe(find('access.stdio').y)
+    expect(find('access.stdio').y).toBe(find('host.native').y)
+    expect(find('customClients').y).toBe(find('access.network').y)
+    expect(find('access.network').y).toBe(find('host.authentication').y)
+    const { edges } = projectLayout(views.overview)
+    for (const [source, target] of [['desktop', 'access.stdio'], ['access.stdio', 'host.native'], ['customClients', 'access.network'], ['access.network', 'host.authentication']]) {
+      const route = edges.find(edge => edge.source === source && edge.target === target)!.data!.route
+      expect(route.every(point => point.y === route[0].y), `${source} → ${target} 应直接水平连接`).toBe(true)
+    }
+  })
+
   it('总览聚合网络接线，外部 Agent 经过 MCP 转换，细图保留 HTTP 与 WS', () => {
     const overview = views.overview
     for (const source of ['nativeClients', 'customClients', 'mcp']) {
@@ -31,7 +44,7 @@ describe('目标架构的语义与完成度', () => {
     expect(overview.nodes.map(node => node.id)).not.toContain('scripts')
     expect(overview.nodes.map(node => node.id)).not.toContain('host.custom')
     expect(overview.edges.filter(edge => edge.source === 'externalAgent').map(edge => edge.target)).toEqual(['mcp'])
-    expect(viewIds).toEqual(['overview', 'ingress', 'execution'])
+    expect(viewIds).toEqual(['overview', 'ingress', 'execution', 'services', 'capabilities'])
     const projected = projectLayout(overview).edges
     expect(projected.find(edge => edge.source === 'desktop' && edge.target === 'access.stdio')!.data!.line).toBe('solid')
     expect(projected.find(edge => edge.source === 'host.authentication' && edge.target === 'host.adapter')!.data!.line).toBe('dashed')
@@ -77,28 +90,48 @@ describe('目标架构的语义与完成度', () => {
     const shown = [...new Set(viewIds.flatMap(id => views[id].nodes.map(node => node.id)))].sort()
     expect(shown).toEqual(Object.keys(moduleDetails).sort())
     expect(moduleDetails.access.navigateTo).toBe('ingress')
-    expect(moduleDetails['host.services'].navigateTo).toBe('execution')
-    const core = ['host.services', 'host.capabilities', 'host.runtime', 'host.kernel', 'host.alternative', 'host.bundled', 'host.security']
+    expect(moduleDetails['host.services'].navigateTo).toBe('services')
+    expect(moduleDetails['host.capabilities'].navigateTo).toBe('capabilities')
+    const core = ['host.services', 'host.capabilities', 'host.runtime', 'host.runtime.kernel', 'host.runtime.alternative']
     for (const id of core) {
       expect(views.overview.nodes.map(node => node.id)).toContain(id)
       expect(views.execution.nodes.map(node => node.id)).toContain(id)
     }
   })
 
-  it('总览收紧 Host，接入在上、执行在下，运行与安全依赖明确', () => {
+  it('KernelRunner 包含两个内核，运行与安全为说明，服务和能力在 Host 内按需展开', () => {
     const { nodes, edges } = views.overview
     const find = (id: string) => nodes.find(node => node.id === id)!
-    expect(find('host').width).toBeLessThanOrEqual(1500)
-    expect(find('host.services').y).toBeGreaterThan(find('host.api').y + find('host.api').height)
-    for (const id of ['host.runtime', 'host.kernel', 'host.provider']) expect(find(id).y).toBe(find('host.services').y)
-    for (const id of ['host.security', 'host.bundled']) expect(find(id).y).toBeGreaterThan(find('host.services').y)
+    expect(find('host.runtime').parent).toBe('host')
+    expect(find('host.runtime').children).toEqual(['host.runtime.kernel', 'host.runtime.alternative'])
+    for (const id of ['host.runtime.kernel', 'host.runtime.alternative']) expect(find(id).parent).toBe('host.runtime')
+    expect(find('host').width).toBeLessThanOrEqual(1800)
+    for (const id of ['host.services', 'host.capabilities']) {
+      expect(find(id).parent).toBe('host')
+      expect(find(id).children).toEqual([])
+      expect(moduleDetails[id].navigateOnClick).toBe(true)
+    }
+    expect(nodes.map(node => node.id)).not.toContain('host.bundled')
+    expect(nodes.map(node => node.id)).not.toContain('host.security')
+    expect(find('host.runtime').technology).toContain('自带 Node 22')
+    expect(moduleDetails['host.runtime'].boundaryNote).toContain('OS 沙箱预留')
+    expect(views.services.nodes.filter(node => node.parent === 'host.services')).toHaveLength(5)
+    expect(views.capabilities.nodes.filter(node => node.parent === 'host.capabilities')).toHaveLength(6)
     expect(edges.find(edge => edge.source === 'host.api' && edge.target === 'host.services')).toBeDefined()
-    expect(edges.find(edge => edge.source === 'host.security' && edge.target === 'host.kernel')).toBeDefined()
-    expect(edges.find(edge => edge.source === 'host.bundled' && edge.target === 'host.runtime')).toBeDefined()
+    expect(edges.find(edge => edge.source === 'host.services' && edge.target === 'host.runtime')).toBeDefined()
+    expect(edges.find(edge => edge.source === 'host.services' && edge.target === 'host.capabilities')).toBeDefined()
+    expect(edges.find(edge => edge.source === 'host.capabilities' && edge.target === 'host.runtime')).toBeDefined()
+    expect(edges.find(edge => edge.source === 'host.runtime' && edge.target === 'host.provider')).toBeDefined()
+    expect(edges.some(edge => edge.source.startsWith('host.runtime.') || edge.target.startsWith('host.runtime.'))).toBe(false)
+    expect(find('host.runtime').y).toBeGreaterThan(find('host.api').y + find('host.api').height)
+    expect(find('host.services').x).toBe(find('host.capabilities').x)
+    expect(Math.abs(find('host.capabilities').y - find('host.services').y)).toBeGreaterThan(find('host.services').height)
+    const business = projectLayout(views.overview).edges.find(edge => edge.source === 'host.api' && edge.target === 'host.services')!
+    for (const segment of segments(business.data!.route)) expect(hitsBox(segment, find('host.runtime'), 16), '业务回接线应绕过整个 KernelRunner，不能穿过标题、内部空隙或安全说明').toBe(false)
     expect(moduleDetails['host.runtime'].kind).toContain('CogentKernel')
-    expect(moduleDetails['host.alternative'].status).toBe('planned')
+    expect(moduleDetails['host.runtime.alternative'].status).toBe('planned')
     expect(moduleDetails['host.capabilities'].features!.find(feature => feature.label === '子会话')!.status).toBe('planned')
-    expect(moduleDetails['host.security'].features!.find(feature => feature.label === 'OS 级沙箱')!.status).toBe('planned')
+    expect(moduleDetails['host.capabilities.subagents'].status).toBe('planned')
   })
 })
 
@@ -151,8 +184,8 @@ describe.each(viewIds)('%s 视图的布局适配', id => {
       const source = view.nodes.find(node => node.id === edge.source)!
       const target = view.nodes.find(node => node.id === edge.target)!
       if (id === 'overview' && edge.source === 'host.api' && edge.target === 'host.services') {
-        expect(target.x, 'HostApi 折返到下方服务层').toBeLessThan(source.x)
-      } else expect(target.x, `${id}: ${edge.id} 应朝右流动`).toBeGreaterThanOrEqual(source.x)
+        expect(target.x, `${id}: ${edge.id} 应折返到 Host 服务层`).toBeLessThan(source.x)
+      } else expect(target.x, `${id}: ${edge.id} 应朝右或向同列辅助层流动`).toBeGreaterThanOrEqual(source.x)
       const route = edge.data!.route
       for (const [node, point] of [[source, route[0]], [target, route[route.length - 1]]] as const) {
         const horizontalPort = point.x === node.x || point.x === node.x + node.width

@@ -22,7 +22,7 @@ export function ModulePanel({ detail, onClose, onNavigate }: { detail: ModuleDet
         <p className="text-xs text-muted-foreground">{detail.kind}</p>
       </div>
       <p className="mt-4 leading-relaxed">{detail.summary}</p>
-      {detail.navigateTo !== undefined && <Button variant="outline" size="sm" className="mt-4" onClick={() => onNavigate(detail.navigateTo!)}><ArrowDownRight />展开{viewNames[detail.navigateTo]}链路</Button>}
+      {detail.navigateTo !== undefined && <Button variant="outline" size="sm" className="mt-4" onClick={() => onNavigate(detail.navigateTo!)}><ArrowDownRight />展开{viewNames[detail.navigateTo]}{detail.navigateTo === 'ingress' || detail.navigateTo === 'execution' ? '链路' : ''}</Button>}
       <Tabs defaultValue="responsibilities" className="mt-6">
         <TabsList variant="line">
           <TabsTrigger value="responsibilities"><ListChecks />职责</TabsTrigger>

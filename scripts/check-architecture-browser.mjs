@@ -8,12 +8,12 @@ const require = createRequire(new URL('../docs/架构地图/package.json', impor
 const { chromium } = require('playwright')
 const output = new URL('../tmp/架构地图验收/', import.meta.url)
 const views = [
-  { name: '总览', id: 'overview', heading: '架构总览', nodes: 23, edges: 23 },
+  { name: '总览', id: 'overview', heading: '架构总览', nodes: 21, edges: 19 },
   { name: '接入', id: 'ingress', heading: '接入链路', nodes: 14, edges: 18 },
-  { name: '执行', id: 'execution', heading: '执行链路', nodes: 10, edges: 10 },
+  { name: '执行', id: 'execution', heading: '执行链路', nodes: 8, edges: 6 },
 ]
 await mkdir(output, { recursive: true })
-const browser = await chromium.launch({ channel: 'chrome', headless: true })
+const browser = await chromium.launch({ channel: process.env.COGENT_BROWSER_CHANNEL ?? 'chrome', headless: true })
 let devServer
 try {
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, colorScheme: 'light', reducedMotion: 'reduce' })
@@ -117,9 +117,27 @@ try {
   }
 
   await view('总览')
-  for (const id of ['host.services', 'host.capabilities', 'host.runtime', 'host.kernel', 'host.alternative', 'host.bundled', 'host.security']) {
+  for (const id of ['host.services', 'host.capabilities', 'host.runtime', 'host.runtime.kernel', 'host.runtime.alternative']) {
     assert.equal(await page.locator(`.react-flow__node[data-id="${id}"]`).count(), 1, `${id} 应直接出现在总览中`)
   }
+  const hostBox = await page.locator('.react-flow__node[data-id="host"]').boundingBox()
+  const runnerBox = await page.locator('.react-flow__node[data-id="host.runtime"]').boundingBox()
+  assert.ok(runnerBox.x > hostBox.x && runnerBox.x + runnerBox.width < hostBox.x + hostBox.width, 'KernelRunner 应位于 Host 大框内')
+  for (const id of ['host.runtime.kernel', 'host.runtime.alternative']) {
+    const box = await page.locator(`.react-flow__node[data-id="${id}"]`).boundingBox()
+    assert.ok(box.x > runnerBox.x && box.x + box.width < runnerBox.x + runnerBox.width && box.y > runnerBox.y && box.y + box.height < runnerBox.y + runnerBox.height, `${id} 应位于 KernelRunner 内`)
+  }
+  assert.equal(await page.locator('.react-flow__node[data-id="host.bundled"], .react-flow__node[data-id="host.security"]').count(), 0)
+  assert.match(await page.locator('.react-flow__node[data-id="host.runtime"]').innerText(), /自带 Node 22/)
+  assert.match(await page.locator('.architecture-boundary-note').innerText(), /权限模式.*OS 沙箱预留/)
+  for (const id of ['host.services', 'host.capabilities']) {
+    const box = await page.locator(`.react-flow__node[data-id="${id}"]`).boundingBox()
+    assert.ok(box.x > hostBox.x && box.x + box.width < hostBox.x + hostBox.width && box.y > hostBox.y && box.y + box.height < hostBox.y + hostBox.height, `${id} 应留在 Host 大框内`)
+  }
+  const serviceBox = await page.locator('.react-flow__node[data-id="host.services"]').boundingBox()
+  const capabilityBox = await page.locator('.react-flow__node[data-id="host.capabilities"]').boundingBox()
+  assert.equal(capabilityBox.x, serviceBox.x, '能力总线与服务层应在同一列')
+  assert.ok(Math.abs(serviceBox.y - capabilityBox.y) > serviceBox.height, '服务层与能力总线应上下分开显示')
   assert.equal(await page.getByRole('group', { name: '架构视图', exact: true }).getByRole('button').count(), 3)
   const dependency = page.locator('.architecture-relationship[data-line="dotted"]')
   assert.equal(await dependency.count(), 1, '消费方应直接以点线连接适配层')
@@ -144,8 +162,26 @@ try {
   await view('总览')
   await fitDiagram()
   await page.getByRole('button', { name: '查看Host 服务层', exact: true }).click()
-  await panel.getByRole('button', { name: '展开执行链路', exact: true }).click()
-  await panel.getByRole('heading', { name: '执行链路', exact: true }).waitFor()
+  await panel.getByRole('heading', { name: 'Host 服务层详情', exact: true }).waitFor()
+  assert.equal(await page.locator('.react-flow__node').count(), 9)
+  await fitDiagram()
+  await noOverflow()
+  await screenshot('服务层-详情.png')
+  await page.getByRole('button', { name: '查看会话与任务', exact: true }).click()
+  await panel.getByRole('heading', { name: '会话与任务', exact: true }).waitFor()
+  await page.getByRole('button', { name: '返回总览', exact: true }).click()
+  await fitDiagram()
+  await page.getByRole('button', { name: '查看能力总线', exact: true }).click()
+  await panel.getByRole('heading', { name: '能力总线详情', exact: true }).waitFor()
+  assert.equal(await page.locator('.react-flow__node').count(), 9)
+  await fitDiagram()
+  await noOverflow()
+  await screenshot('能力总线-详情.png')
+  await page.getByRole('button', { name: '查看子会话', exact: true }).click()
+  await panel.getByRole('heading', { name: '子会话', exact: true }).waitFor()
+  await panel.getByText('未实现', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '返回总览', exact: true }).click()
+  await view('执行')
   await fitDiagram()
   await page.getByRole('button', { name: '查看PiSdkKernel', exact: true }).click()
   await panel.getByRole('heading', { name: 'PiSdkKernel', exact: true }).waitFor()
@@ -212,7 +248,8 @@ try {
   await fitDiagram()
   await page.getByRole('button', { name: '查看Host 服务层', exact: true }).focus()
   await page.keyboard.press('Enter')
-  await panel.getByRole('heading', { name: 'Host 服务层', exact: true }).waitFor()
+  await panel.getByRole('heading', { name: 'Host 服务层详情', exact: true }).waitFor()
+  await page.getByRole('button', { name: '返回总览', exact: true }).click()
 
   await page.setViewportSize({ width: 2800, height: 1440 })
   await fold('left', true)

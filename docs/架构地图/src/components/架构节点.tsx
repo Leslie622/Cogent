@@ -1,5 +1,6 @@
 /** 节点直接使用共享 shadcn 卡片与按钮，避免 LikeC4 shadow DOM 内的第二套 UI。 */
 import { Handle, Position, type EdgeProps, type NodeProps } from '@xyflow/react'
+import { ArrowUpRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import type { ArchitectureEdge, ArchitectureNode } from '../布局适配'
@@ -8,7 +9,7 @@ import { ImplementationBadge } from './实现标记'
 import { FeatureList } from './能力明细'
 
 export function ModuleNode({ id, data, selected }: NodeProps<ArchitectureNode>) {
-  const { icon: Icon, features, showStatus } = moduleDetails[id]
+  const { icon: Icon, features, showStatus, navigateOnClick } = moduleDetails[id]
   return <div className="architecture-node" data-selected={selected} data-status={data.status}>
     <Handle type="target" position={Position.Left} />
     <Card size="sm" className="h-full">
@@ -17,7 +18,7 @@ export function ModuleNode({ id, data, selected }: NodeProps<ArchitectureNode>) 
           <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <CardTitle>
             <Button variant="link" size="default" aria-label={`查看${data.title}`}>
-              {data.title}
+              {data.title}{navigateOnClick === true && <ArrowUpRight className="size-3" aria-hidden="true" />}
             </Button>
           </CardTitle>
         </div>
@@ -32,13 +33,16 @@ export function ModuleNode({ id, data, selected }: NodeProps<ArchitectureNode>) 
 }
 
 export function BoundaryNode({ id, data }: NodeProps<ArchitectureNode>) {
-  const { icon: Icon } = moduleDetails[id]
+  const { icon: Icon, boundaryNote } = moduleDetails[id]
   return <div className="architecture-boundary">
+    <Handle type="target" position={Position.Left} />
     <div className="architecture-boundary-heading">
       <Icon className="size-4" aria-hidden="true" />
       <Button variant="ghost" size="sm" aria-label={`查看${data.title}`}>{data.title}</Button>
       <span className="text-xs text-muted-foreground">{data.technology}</span>
     </div>
+    {boundaryNote !== undefined && <p className="architecture-boundary-note text-xs text-muted-foreground">{boundaryNote}</p>}
+    <Handle type="source" position={Position.Right} />
   </div>
 }
 
