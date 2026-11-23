@@ -31,7 +31,8 @@ export class SessionTitleConfig {
         throw new Error('版本或形状不合法')
       }
       validateTitleSettings(raw.settings)
-      this.value = structuredClone(raw.settings)
+      // 旧文件仍可读，但独立模型选择不进入生效配置；读取不承担迁移写盘。
+      this.value = { enabled: raw.settings.enabled }
     } catch (error) {
       throw new Error(`自动标题配置读取失败（${this.path}）：${error instanceof Error ? error.message : String(error)}`, { cause: error })
     }
@@ -40,7 +41,7 @@ export class SessionTitleConfig {
   get(): SessionTitleSettings { return structuredClone(this.value) }
 
   set(settings: SessionTitleSettings): SessionTitleSettings {
-    const next = structuredClone(settings)
+    const next = { enabled: settings.enabled }
     mkdirSync(this.root, { recursive: true })
     const temporary = `${this.path}.${randomUUID()}.tmp`
     writeFileSync(temporary, JSON.stringify({ version: 1, settings: next }, null, 2), 'utf8')

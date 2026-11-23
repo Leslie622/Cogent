@@ -149,9 +149,8 @@ it('首句本身是“新会话”也只生成一次；第二轮期间迟到用�
   expect(manager.list()[0].title).toBe('首句主题')
 })
 
-it('A/B 独立；受理时冻结的策略和 provider/id 双键不受设置变更影响', async () => {
-  manager.titleSettings.set({ enabled: true, model: { provider: 'custom/b', id: 'same' } })
-  manager.submit(sid, 'A 的首句')
+it('A/B 独立；受理时冻结的开关不受后续变更影响，标题跟随首条实际模型', async () => {
+  manager.submit(sid, 'A 的首句', 'same', undefined, 'custom/b')
   manager.titleSettings.set({ enabled: false })
   const second = manager.create({ cwd: root }).id
   manager.submit(second, 'B 的首句'); await tick()
@@ -221,13 +220,13 @@ it.each(['file', 'directory'] as const)('只有 %s 无正文时用显示名称�
   expect(input).not.toContain('不应进入标题调用的文件内容')
 })
 
-it('不存在的标题模型不回落到其他供应商，也不影响主对话', async () => {
-  manager.titleSettings.set({ enabled: true, model: { provider: 'missing', id: 'same' } })
-  manager.submit(sid, '你好'); await tick()
-  expect(requests).toEqual([])
-  expect(manager.list()[0].title).toBe('你好')
-  expect(manager.inspectEntries(sid).find((entry) => entry.kind === 'title.finished')?.overview)
-    .toContainEqual({ label: '原因', value: '标题模型不可用：missing / same' })
+it.each(['custom/b', 'missing'])('旧独立模型选择 %s 不生效，标题始终跟随首条实际模型', async (provider) => {
+  manager.titleSettings.set({ enabled: true, model: { provider, id: 'same' } })
+  manager.submit(sid, '你好', 'same', undefined, 'custom/a'); await tick()
+  expect(requests).toHaveLength(1)
+  expect(requests[0].model).toMatchObject({ provider: 'custom/a', id: 'same' })
+  requests[0].result.resolve(answer()); await tick()
+  expect(manager.list()[0].title).toBe('问候交流')
   main.get(sid)!.resolve(); await tick()
   expect(terminals[0].method).toBe('run.completed')
 })

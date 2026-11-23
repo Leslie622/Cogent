@@ -85,7 +85,6 @@ import { testModelConnectivity } from './model-connectivity'
 import { SessionInspector, type TitleTrace } from './inspector'
 import { SessionTitleConfig } from './session-title-config'
 import { generateSessionTitle } from '../kernel/session-title'
-import type { SessionTitleSettings } from '../../shared/session-title'
 import { McpConfigStore } from './mcp-config'
 import { formatSkillsSection } from './skill-prompt'
 import { SkillStore } from './skill-store'
@@ -363,7 +362,7 @@ function readGitBranch(cwd: string): string | null {
  * 续写链的全窗口，也是 submit 忙判定的单一账本（见 submit）。
  */
 interface StreamingState {
-  titleInput?: { text: string; settings: SessionTitleSettings }
+  titleInput?: { text: string }
   finalization?: Promise<void>
   turnId?: string
   fileContext?: FileContext
@@ -1017,7 +1016,7 @@ export class SessionManager implements CogentKernel {
     }
     const titlePolicy = this.titleSettings.get()
     if (firstInput && !previousInput && titleSaved && titlePolicy.enabled && session.summary.titleManual !== true) {
-      streaming.titleInput = { text: Array.from([text, ...attachments.map((item) => item.name), ...directories.map((item) => item.name)].join('\n')).slice(0, 4_000).join(''), settings: titlePolicy }
+      streaming.titleInput = { text: Array.from([text, ...attachments.map((item) => item.name), ...directories.map((item) => item.name)].join('\n')).slice(0, 4_000).join('') }
     }
     if (attachments.length > 0 || directories.length > 0) streaming.attachmentInput = { inputId, text, attachments,
       ...(directories.length > 0 && { directories }), bound: false }
@@ -1655,20 +1654,18 @@ export class SessionManager implements CogentKernel {
     streaming.titleInput = undefined
     if (input === undefined || streaming.stopRequested || session.summary.titleManual === true) return
     const sessionId = session.summary.id
-    const selected = input.settings.model ?? session.pi!.model
-    if (selected === undefined) {
+    const model = session.pi!.model as Model<Api> | undefined
+    if (model === undefined) {
       process.stderr.write(`[host] 自动标题未启动（${sessionId}）：首条输入没有有效模型\n`)
       return
     }
-    const model = input.settings.model === undefined ? session.pi!.model as Model<Api> | undefined : this.models.getModel(selected.provider, selected.id)
     const inspector = this.ensureInspector(session)
-    const trace = inspector.titleStarted({ provider: selected.provider, id: selected.id }, input.text,
-      model !== undefined && [model.cost.input, model.cost.output, model.cost.cacheRead, model.cost.cacheWrite].some((price) => price > 0))
+    const trace = inspector.titleStarted({ provider: model.provider, id: model.id }, input.text,
+      [model.cost.input, model.cost.output, model.cost.cacheRead, model.cost.cacheWrite].some((price) => price > 0))
     const task = { controller: new AbortController(), trace, inspector, owner: streaming, response: undefined as AssistantMessage | undefined }
     this.titleTasks.set(sessionId, task)
     // 从这里开始是模型 API/磁盘的辅助任务边界，失败只记录诊断，不翻译为主回合失败。
     void (async () => {
-      if (model === undefined) throw new Error(`标题模型不可用：${selected.provider} / ${selected.id}`)
       const title = await generateSessionTitle(this.modelRuntime, structuredClone(model), input.text,
         task.controller.signal, (message) => { task.response = message })
       if (this.titleTasks.get(sessionId) !== task || this.sessions.get(sessionId) !== session || session.summary.titleManual === true) return

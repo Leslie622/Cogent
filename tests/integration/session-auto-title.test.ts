@@ -103,19 +103,19 @@ it('无界面首句即生成并广播，主回复仍挂起；标题与主用量�
     { role: 'user', content: '{"input":"你好"}' }
   ] })
   // 重启只恢复摘要；标题策略也由 Host 自行恢复，与页面挂载无关。
-  await engine.send('session.titleSettings.set', { enabled: false, model: { provider: 'custom/responses', id: 'same' } })
+  expect((await engine.send('session.titleSettings.set', { enabled: false, model: { provider: 'custom/responses', id: 'same' } })).result).toEqual({ enabled: false })
   engine.kill(); engine = startEngine(home)
   await engine.send('initialize', { client: 'title-restart', protocolVersion: 3 })
-  expect((await engine.send<SessionTitleSettings>('session.titleSettings.get')).result).toEqual({ enabled: false, model: { provider: 'custom/responses', id: 'same' } })
+  expect((await engine.send<SessionTitleSettings>('session.titleSettings.get')).result).toEqual({ enabled: false })
   expect((await engine.send<SessionSummary[]>('session.list')).result!.find((session) => session.id === id)?.title).toBe('问候交流')
   await configureProviders()
 })
 
-it.each(['responses', 'anthropic'] as const)('标题模型 %s 复用已配置端点与凭据，同名模型双键不串用', async (dialect) => {
-  await engine.send('session.titleSettings.set', { enabled: true, model: { provider: `custom/${dialect}`, id: 'same' } })
+it.each(['responses', 'anthropic'] as const)('标题跟随首条 %s 对话模型的端点与凭据，旧独立选择不生效', async (dialect) => {
+  expect((await engine.send('session.titleSettings.set', { enabled: true, model: { provider: 'custom/chat', id: 'same' } })).result).toEqual({ enabled: true })
   const session = (await engine.send<SessionSummary>('session.create', { cwd: home })).result!
   const count = requests.length
-  await engine.send('agent.submit', { sessionId: session.id, text: '你好', model: 'same', provider: 'custom/chat' })
+  await engine.send('agent.submit', { sessionId: session.id, text: '你好', model: 'same', provider: `custom/${dialect}` })
   await engine.waitEvent('session.summaryChanged', (params) => summaryOf(params).id === session.id && summaryOf(params).title === '问候交流')
   await engine.waitEvent('run.completed', (params) => params.sessionId === session.id)
   const request = requests.slice(count).find((entry) => entry.title)!
