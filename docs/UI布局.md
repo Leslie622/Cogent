@@ -31,6 +31,10 @@
 
 主窗口由 Electron 限制最小尺寸为 400×600px；初始尺寸为 1120×730px。
 
+启动时以 `StartupOverlay` 的全窗不透明 `bg-background` 遮罩覆盖外壳，居中放原生 shadcn `Spinner`，
+不显示额外文案；遮罩层级为 100，适配当前明暗主题。退出使用 300ms ease-out 的透明度过渡。
+等待与交互恢复的机制见[应用启动](模块/应用启动.md)。
+
 ```text
 shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗口控制
        └─ body

@@ -1,14 +1,12 @@
 /**
- * 应用入口（UI 重写期）：引擎接线（事件流 + 初始数据）+ 三块骨架。
- * 界面按 AGENTS.md「UI 设计方针」逐件重写，旧界面在 legacy/renderer 借鉴。
- *
- * 引擎失败可见性（2026-11-10，架构审查修复）：load 失败落各自 store 的
- * error 字段（engineError / loadError），此处横幅呈现 + 手动重试 —— 此前
- * 全是 void 裸调，引擎起不来时 UI 是一片无解释的空白。
+ * 主窗口入口：引擎事件与初始数据接线、全局启动遮罩和应用外壳。
+ * load 失败由各自 store 记录，此处保留错误横幅与重试出口，避免遮罩无限等待。
+ * 启动交接与呈现边界见 docs/模块/应用启动.md。
  */
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
+import { StartupOverlay } from '@/components/StartupOverlay'
 import { useErrorToast } from '@/hooks/use-error-toast'
 import { useScrollbarAutoHide } from '@/hooks/use-scrollbar-auto-hide'
 import { useEngineStore } from '@/stores/engine'
@@ -58,6 +56,7 @@ function EngineFailureBanner() {
 }
 
 export default function App() {
+  const [startupPending, setStartupPending] = useState(true)
   // 滚动条「不滚动即隐藏」的全局行为，挂载一次（样式侧见 globals.css）
   useScrollbarAutoHide()
   // 会话错误 toast（对话区错误条退役，2026-11-20）：监听活动会话 lastError
@@ -66,13 +65,23 @@ export default function App() {
     // 事件订阅先行（避免 load 期间漏事件），再拉初始数据
     // （load 内部已把失败落 error 状态，void 不产生 unhandled rejection）
     const unbind = bindEngineEvents()
-    void useEngineStore.getState().load()
-    void useChatStore.getState().load()
-    return unbind
+    let active = true
+    // 等待完整 load（含自定义模型同步与首个会话历史），不把中途 loaded 标志当作完成。
+    void Promise.all([
+      useEngineStore.getState().load(),
+      useChatStore.getState().load()
+    ]).then(() => {
+      if (active) setStartupPending(false)
+    })
+    return () => {
+      // StrictMode 的上一轮初始化完成后，不能提前撤掉本轮的遮罩。
+      active = false
+      unbind()
+    }
   }, [])
 
   return (
-    <>
+    <StartupOverlay loading={startupPending}>
       <AppShell />
       <EngineFailureBanner />
       {/* 「关闭窗口时」询问（ask 档）：main close 拦截器点火，全局挂一份 */}
@@ -80,6 +89,6 @@ export default function App() {
       {/* 全局 toast 出口（sonner）：错误通知等，任意页面可见；
           顶部居中（2026-11-20 用户定调，跟 shadcn 文档 demo） */}
       <Toaster position="top-center" />
-    </>
+    </StartupOverlay>
   )
 }
