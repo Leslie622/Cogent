@@ -136,7 +136,7 @@ export function McpSection() {
    * 会话归属的项目，手动挑过即固定）；项目档 cwd = 该项目主根 cwds[0]
    */
   const scopeState = useProjectScope()
-  const { scope, project, projectCwd } = scopeState
+  const { scope, projectCwd } = scopeState
 
   const scopeKey = scope === 'project' ? `project:${projectCwd}` : 'user'
   const refresh = useCallback(async () => {
@@ -238,21 +238,6 @@ export function McpSection() {
   return (
     <SettingsPage
       title="MCP 服务器"
-      desc={
-        userScope ? (
-          <>
-            外部工具经 Model Context Protocol 直接进入 Agent 循环（工具调用仍走审批）。
-            配置存储于用户级 ~/.cogent/mcp.json，变更<strong>新会话生效</strong>（进行中的会话不受影响）；
-            项目可在项目作用域按 server 覆盖启停与暴露档。
-          </>
-        ) : (
-          <>
-            项目「{project?.name}」作用域 = 主根 <span className="font-mono">{projectCwd}</span> 下的 .cogent/mcp.json：
-            开关只影响本项目的会话（覆盖用户级），「重置」清除覆盖回落用户级；
-            server 的定义与增删改在「本机 · 用户」作用域操作。
-          </>
-        )
-      }
       toolbar={
         <>
           <ScopeMenu state={scopeState} />

@@ -181,7 +181,7 @@ export function SkillSection() {
    * 手动挑过即固定）；项目档 cwd = 该项目主根 cwds[0]
    */
   const scopeState = useProjectScope()
-  const { scope, project, projectCwd } = scopeState
+  const { scope, projectCwd } = scopeState
 
   const scopeKey = scope === 'project' ? `project:${projectCwd}` : 'user'
   const refresh = useCallback(async () => {
@@ -308,23 +308,6 @@ export function SkillSection() {
   return (
     <SettingsPage
       title="技能"
-      desc={
-        userScope ? (
-          <>
-            技能 = SKILL.md 指令包：清单进系统提示、正文由模型按需自取（渐进加载）。
-            存储于用户级 ~/.cogent/skills，变更<strong>下一回合生效</strong>（无需新会话，
-            手放的文件同样会被发现）；~/.agents/skills 生态目录（zcode 等工具装的）
-            只读发现 + 按名启停，同名时自有目录优先；项目可在自己的 .cogent/skills
-            放同名技能覆盖或按名启停。
-          </>
-        ) : (
-          <>
-            项目「{project?.name}」作用域 = 主根 <span className="font-mono">{projectCwd}</span> 下的
-            .cogent/skills：同名技能覆盖用户级（近者胜），也可在本页直接新建项目技能；
-            开关写项目覆盖（可禁用 / 重启用用户级技能），「重置」清除覆盖回落。
-          </>
-        )
-      }
       toolbar={
         <>
           <ScopeMenu state={scopeState} />
