@@ -47,13 +47,14 @@ export function BoundaryNode({ id, data }: NodeProps<ArchitectureNode>) {
 }
 
 export function RelationshipEdge({ id, data, label }: EdgeProps<ArchitectureEdge>) {
-  const { path, labelBox, crossings, bidirectional, planned, line } = data!
-  return <g className="architecture-relationship" data-planned={planned} data-bidirectional={bidirectional} data-line={line}>
+  const { path, labelBox, crossings, bidirectional, planned, line, kind, head, tail } = data!
+  return <g className="architecture-relationship" data-planned={planned} data-bidirectional={bidirectional} data-line={line} data-kind={kind}>
     {crossings.map(point => <circle key={`${point.x},${point.y}`} cx={point.x} cy={point.y} r={4} fill="var(--background)" data-crossing="true" />)}
-    <path id={id} d={path} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray={line === 'dotted' ? '1 5' : line === 'dashed' ? '5 4' : undefined} strokeLinecap={line === 'dotted' ? 'round' : undefined} markerEnd="url(#architecture-arrow)" markerStart={bidirectional ? 'url(#architecture-arrow)' : undefined} />
+    <path id={id} d={path} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray={line === 'dotted' ? '1 5' : line === 'dashed' ? '5 4' : undefined} strokeLinecap={line === 'dotted' ? 'round' : undefined} markerEnd={head === 'none' ? undefined : `url(#architecture-arrow-${head ?? 'normal'})`} markerStart={tail === undefined || tail === 'none' ? undefined : `url(#architecture-arrow-${tail})`} />
     {labelBox !== null && label && <g transform={`translate(${labelBox.x + labelBox.width / 2}, ${labelBox.y + labelBox.height / 2})`}>
       <rect x={-labelBox.width / 2} y={-labelBox.height / 2} width={labelBox.width} height={labelBox.height} rx={4} />
-      <text textAnchor="middle" dominantBaseline="central" className="text-xs">{label}</text>
+      {planned && <g role="img" aria-label="未实现关系" className="text-orange-600 dark:text-orange-400"><circle cx={-labelBox.width / 2 + 7} cy={0} r={2.5} fill="currentColor" /></g>}
+      <text x={planned ? 8 : 0} textAnchor="middle" dominantBaseline="central" className="text-xs">{label}</text>
     </g>}
   </g>
 }

@@ -11,7 +11,7 @@ import type { ViewId } from '../视图'
 
 const nodeTypes: NodeTypes = { module: ModuleNode, boundary: BoundaryNode }
 const edgeTypes: EdgeTypes = { relationship: RelationshipEdge }
-const canvasPadding = { top: 64, bottom: 80, left: 32, right: 32 }
+const canvasPadding = { top: 120, bottom: 80, left: 32, right: 32 }
 
 export function ArchitectureCanvas({ viewId, selectedId, onSelect }: { viewId: ViewId; selectedId: string | null; onSelect: (id: string | null) => void }) {
   const model = useLikeC4Model()
@@ -25,10 +25,10 @@ export function ArchitectureCanvas({ viewId, selectedId, onSelect }: { viewId: V
   const initialized = useNodesInitialized()
   const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 220
   function fit() {
-    void flow.fitBounds(layout.bounds, { padding: canvasPadding, duration })
+    void flow.fitBounds(graph.bounds, { padding: canvasPadding, duration })
   }
   function read() {
-    const bounds = layout.bounds
+    const bounds = graph.bounds
     const availableWidth = width - canvasPadding.left - canvasPadding.right
     const availableHeight = height - canvasPadding.top - canvasPadding.bottom
     // 横向全图很宽；默认保持文字可读，从左侧入口开始，适应按钮再用于查看全貌。
@@ -43,12 +43,12 @@ export function ArchitectureCanvas({ viewId, selectedId, onSelect }: { viewId: V
   // React Flow 实例对象会随渲染更新；只让选择、布局和尺寸变化触发定位，避免用户缩放被复位。
   const position = useEffectEvent(() => {
     if (selectedId !== null) {
-      void flow.fitBounds(layout.nodes.find(node => node.id === selectedId)!, { padding: canvasPadding, duration })
+      void flow.fitBounds(graph.nodeBounds.get(selectedId)!, { padding: canvasPadding, duration })
     } else read()
   })
   useEffect(() => {
     if (initialized) position()
-  }, [selectedId, initialized, layout, width, height])
+  }, [selectedId, initialized, graph, width, height])
 
   function reset() {
     onSelect(null)
@@ -57,7 +57,8 @@ export function ArchitectureCanvas({ viewId, selectedId, onSelect }: { viewId: V
 
   return <section className="architecture-canvas" aria-label="核心架构图" data-testid="architecture-canvas">
       <svg className="absolute size-0" aria-hidden="true"><defs>
-        <marker id="architecture-arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted-foreground)" /></marker>
+        <marker id="architecture-arrow-normal" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted-foreground)" /></marker>
+        <marker id="architecture-arrow-open" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10" fill="none" stroke="var(--muted-foreground)" strokeWidth="1.5" /></marker>
       </defs></svg>
       <ReactFlow<ArchitectureNode, ArchitectureEdge>
         nodes={nodes}
@@ -78,6 +79,16 @@ export function ArchitectureCanvas({ viewId, selectedId, onSelect }: { viewId: V
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--border)" />
       </ReactFlow>
+      <ul className="canvas-legend text-xs text-muted-foreground" aria-label="连线图例">
+        {[
+          ['调用流程', undefined, 'normal'],
+          ['适配依赖', '1 5', 'open'],
+        ].map(([name, dash, head]) => <li key={name}>
+          <svg viewBox="0 0 40 12" className="h-3 w-10 shrink-0" aria-hidden="true"><path d="M 0 6 H 38" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray={dash} strokeLinecap={dash === '1 5' ? 'round' : undefined} markerEnd={`url(#architecture-arrow-${head})`} /></svg>
+          <span>{name}</span>
+        </li>)}
+        <li><span className="size-2 rounded-full bg-orange-600 dark:bg-orange-400" aria-hidden="true" /><span>未实现关系</span></li>
+      </ul>
       <div className="canvas-controls" role="group" aria-label="画布操作">
         <IconButton label="缩小" onClick={() => { void flow.zoomOut({ duration }) }} disabled={zoom <= 0.05}><Minus /></IconButton>
         <span className="min-w-12 text-center text-xs tabular-nums text-muted-foreground" aria-label="当前缩放">{Math.round(zoom * 100)}%</span>

@@ -12,17 +12,18 @@ try {
   const columns = [
     ['desktop', 'nativeClients', 'customClients', 'mcp'],
     ['access.stdio', 'access.network'],
-    ['host.authentication', 'host.capabilities', 'host.services'],
+    ['host.authentication'],
     ['host.native', 'host.adapter'],
-    ['host.policy', 'host.runtime.kernel'],
-    ['host.api', 'host.runtime.alternative'],
+    ['host.policy'],
+    ['host.api'],
+    ['host.services'],
   ]
   const horizontal = new Set([
     'desktop>access.stdio',
     'customClients>access.network', 'access.stdio>host.native', 'access.network>host.authentication',
     'host.native>host.policy', 'host.policy>host.api',
-    'host.services>host.runtime',
-    'host.capabilities>host.runtime', 'host.runtime>host.provider', 'host.provider>models',
+    'host.api>host.services', 'host.services>host.runtime',
+    'host.runtime>host.provider', 'host.provider>models',
   ])
   const result = await instance.viewsService.layoutView({
     viewId: 'overview',
@@ -30,15 +31,14 @@ try {
       ranks: columns.map(nodes => ({ rank: 'same', nodes })),
       edgeWeight: Object.fromEntries(view.edges.filter(edge => horizontal.has(`${edge.source}>${edge.target}`)).map(edge => [edge.id, 10000])),
       edgeMinlen: {},
-      // 服务与能力供给不参与主链排序；包含关系代替执行入口到具体内核的额外接线。
-      excludeFromRanking: view.edges.filter(edge => edge.target === 'host.services' || edge.line === 'dotted').map(edge => edge.id),
+      // 执行容器内部由显示投影紧凑排列；全局层距不再撑开三张卡。
+      excludeFromRanking: view.edges.filter(edge => edge.source === 'host.runtime.capabilities' || edge.line === 'dotted').map(edge => edge.id),
       invisibleEdges: [
         ...columns.flatMap((nodes, column) => nodes.slice(1).map((source, index) => column < 2
           ? { source: nodes[index], target: source, weight: 100 }
           : { source, target: nodes[index], weight: 100 })),
-        { source: 'host.runtime.kernel', target: 'host.runtime.alternative', weight: 10000 },
       ],
-      reasoning: '传输入口拉开纵向空间，桌面、stdio 与原生入口直连，网络入口与认证直连；执行链在下，外部箭头只连接 KernelRunner 容器。',
+      reasoning: '三个阶段沿主线依次展开；API 紧接服务，Runner 内部由局部投影紧凑排卡并与服务层居中连接。',
     },
   })
   const saved = await instance.languageServices.editor.applyChange({
@@ -50,7 +50,7 @@ try {
   // 详情与总览共用模型，只展开当前模块；无形连接让职责卡片排成两列。
   for (const [viewId, columns] of [
     ['services', [['host.services.sessions', 'host.services.projects', 'host.services.credentials'], ['host.services.observability', 'host.services.configuration']]],
-    ['capabilities', [['host.capabilities.tools', 'host.capabilities.mcp', 'host.capabilities.skills'], ['host.capabilities.hooks', 'host.capabilities.interaction', 'host.capabilities.subagents']]],
+    ['capabilities', [['host.runtime.capabilities.tools', 'host.runtime.capabilities.mcp', 'host.runtime.capabilities.skills'], ['host.runtime.capabilities.hooks', 'host.runtime.capabilities.interaction', 'host.runtime.capabilities.subagents']]],
   ]) {
     const layout = await instance.viewsService.layoutView({ viewId, layoutHints: {
       ranks: columns.map(nodes => ({ rank: 'same', nodes })), edgeWeight: {}, edgeMinlen: {},

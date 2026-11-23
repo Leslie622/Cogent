@@ -1,4 +1,4 @@
-/** 只转换 LikeC4 的布局坐标；不在页面里再维护一套节点位置或依赖关系。 */
+/** 读取 LikeC4 布局，仅对展开的执行区做紧凑投影；依赖关系与其余通道仍由模型提供。 */
 import { placeLabelsAlongRoutes, polylineToSegments, splineToPolyline, type BBox, type XYPoint } from '@likec4/core/geometry'
 import type { Edge, Node } from '@xyflow/react'
 import type { LayoutedView } from 'likec4/model'
@@ -21,14 +21,18 @@ export type ArchitectureEdge = Edge<{
   bidirectional: boolean
   planned: boolean
   line: 'solid' | 'dashed' | 'dotted'
+  kind: LayoutedView['edges'][number]['kind']
+  head: LayoutedView['edges'][number]['head']
+  tail: LayoutedView['edges'][number]['tail']
 }, 'relationship'>
 
-export function projectLayout(view: LayoutedView): { nodes: ArchitectureNode[]; edges: ArchitectureEdge[] } {
-  const originals = new Map(view.nodes.map(node => [node.id, node]))
+export function projectLayout(view: LayoutedView): { nodes: ArchitectureNode[]; edges: ArchitectureEdge[]; bounds: BBox; nodeBounds: Map<string, BBox> } {
+  const layoutNodes = compactExecutionArea(view)
+  const originals = new Map(layoutNodes.map(node => [node.id, node]))
   // 父节点先于子节点，React Flow 才能正确计算嵌套坐标与视口边界。
-  const ordered: typeof view.nodes[number][] = []
+  const ordered: typeof layoutNodes = []
   function append(parent: string | null) {
-    for (const node of view.nodes.filter(item => item.parent === parent)) {
+    for (const node of layoutNodes.filter(item => item.parent === parent)) {
       ordered.push(node)
       append(node.id)
     }
@@ -60,29 +64,28 @@ export function projectLayout(view: LayoutedView): { nodes: ArchitectureNode[]; 
   // 保留 LikeC4 算好的正交通道；重新按两端路由会丢失分支的避让关系。
   const routes = view.edges.map(edge => {
     let points = splineToPolyline(edge.points)
-    // Graphviz 会把 compound 内的空隙当作通道；业务回接需沿整个执行容器外侧走，避开标题与安全说明。
-    if (view.id === 'overview' && edge.source === 'host.api' && edge.target === 'host.services') {
+    // 内部三卡只表达包含关系；收紧执行区后，外部主链统一连接整个容器的左右中点。
+    if ((view.id === 'overview' || view.id === 'execution') && (
+      edge.source === 'host.services' && edge.target === 'host.runtime'
+      || edge.source === 'host.runtime' && edge.target === 'host.provider'
+      || edge.source === 'host.provider' && edge.target === 'models'
+    )) {
       const source = originals.get(edge.source)!
       const target = originals.get(edge.target)!
-      const runtime = originals.get('host.runtime')!
-      const laneX = runtime.x - 32
-      const laneY = runtime.y - 32
       points = [
-        { x: source.x + source.width / 2, y: source.y + source.height },
-        { x: source.x + source.width / 2, y: laneY },
-        { x: laneX, y: laneY },
-        { x: laneX, y: target.y + target.height / 2 },
-        { x: target.x + target.width, y: target.y + target.height / 2 },
+        { x: source.x + source.width, y: source.y + source.height / 2 },
+        { x: target.x, y: target.y + target.height / 2 },
       ]
     }
     attachToBorder(points, 0, originals.get(edge.source)!)
     attachToBorder(points, points.length - 1, originals.get(edge.target)!)
+    const planned = moduleDetails[edge.source].status === 'planned' || moduleDetails[edge.target].status === 'planned'
     return { id: edge.id, points, segments: polylineToSegments(points), labelBBox: edge.labelBBox == null ? null : {
-      ...edge.labelBBox, width: edge.labelBBox.width + 12, height: 32,
+      ...edge.labelBBox, width: edge.labelBBox.width + 12 + (planned ? 16 : 0), height: 32,
     } }
   })
   // 用最终路径共同放置标签，预留 6px 外围间距，不能只检查文字之间的碰撞。
-  const labels = placeLabelsAlongRoutes(routes, view.nodes.filter(node => node.children.length === 0))
+  const labels = placeLabelsAlongRoutes(routes, layoutNodes.filter(node => node.children.length === 0))
   const edges: ArchitectureEdge[] = view.edges.map((edge, index) => {
     const route = routes[index].points
     const box = labels.get(edge.id)
@@ -100,14 +103,69 @@ export function projectLayout(view: LayoutedView): { nodes: ArchitectureNode[]; 
         crossings: crossingPoints(routes[index].segments, routes.slice(0, index).flatMap(item => item.segments)),
         bidirectional: edge.tail === 'normal',
         planned,
-        line: edge.line === 'dotted' ? 'dotted' : planned ? 'dashed' : 'solid',
+        // 关系语义由 DSL 决定；完成度只影响状态标记，不再覆盖线型或箭头。
+        line: edge.line, kind: edge.kind, head: edge.head, tail: edge.tail,
       },
       focusable: false,
       selectable: false,
     }
   })
 
-  return { nodes, edges }
+  const nodeBounds = new Map<string, BBox>(layoutNodes.map(node => [node.id, { x: node.x, y: node.y, width: node.width, height: node.height }]))
+  const geometry: BBox[] = [
+    ...nodeBounds.values(),
+    ...routes.flatMap(route => route.points.map(point => ({ ...point, width: 0, height: 0 }))),
+    ...edges.flatMap(edge => edge.data!.labelBox === null ? [] : [edge.data!.labelBox]),
+  ]
+  return { nodes, edges, bounds: enclosingBounds(geometry), nodeBounds }
+}
+
+/** 无连线的能力卡不参与全局流程排版；仅在执行区把三张原卡紧凑并排，避免全局层距变成内部留白。 */
+function compactExecutionArea(view: LayoutedView) {
+  const nodes = view.nodes.map(node => ({ ...node }))
+  if (view.id !== 'overview' && view.id !== 'execution') return nodes
+
+  const runtime = nodes.find(node => node.id === 'host.runtime')!
+  const services = nodes.find(node => node.id === 'host.services')!
+  const provider = nodes.find(node => node.id === 'host.provider')!
+  const models = nodes.find(node => node.id === 'models')!
+  const cards = ['host.runtime.capabilities', 'host.runtime.kernel', 'host.runtime.alternative'].map(id => nodes.find(node => node.id === id)!)
+  const contentHeight = Math.max(...cards.map(node => node.height))
+  const centerY = services.y + services.height / 2
+  runtime.width = 48 + cards.reduce((width, node) => width + node.width, 0) + 24 * (cards.length - 1)
+  runtime.height = 56 + contentHeight + 40
+  runtime.y = centerY - runtime.height / 2
+  let nextX = runtime.x + 24
+  for (const card of cards) {
+    card.x = nextX
+    card.y = runtime.y + 56 + (contentHeight - card.height) / 2
+    nextX += card.width + 24
+  }
+  provider.x = runtime.x + runtime.width + 160
+  provider.y = centerY - provider.height / 2
+  models.x = provider.x + provider.width + 160
+  models.y = centerY - models.height / 2
+
+  // Host 的外框由当前内容决定，不能保留自动布局为旧卡片位置留出的空区。
+  const host = nodes.find(node => node.id === 'host')
+  if (host !== undefined) {
+    const content = enclosingBounds(nodes.filter(node => node.parent === 'host'))
+    host.x = content.x - 24
+    host.y = content.y - 56
+    host.width = content.width + 48
+    host.height = content.height + 80
+  }
+  return nodes
+}
+
+function enclosingBounds(boxes: readonly BBox[]): BBox {
+  const x = Math.min(...boxes.map(box => box.x))
+  const y = Math.min(...boxes.map(box => box.y))
+  return {
+    x, y,
+    width: Math.max(...boxes.map(box => box.x + box.width)) - x,
+    height: Math.max(...boxes.map(box => box.y + box.height)) - y,
+  }
 }
 
 /** 布局引擎保留多对多关系的交叉；只记录后绘制线的跨越点，不重新路由或合并通道。 */

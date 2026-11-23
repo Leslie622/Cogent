@@ -9,6 +9,22 @@ specification {
       size xs
     }
   }
+  relationship call {
+    line solid
+    head normal
+  }
+  relationship configuration {
+    line dashed
+    head none
+  }
+  relationship assembly {
+    line dashed
+    head none
+  }
+  relationship dependency {
+    line dotted
+    head open
+  }
 }
 
 model {
@@ -53,7 +69,7 @@ model {
   }
 
   host = system '引擎服务（Host）' {
-    technology '独立 Node 进程'
+    technology '独立 Node 进程 · 接入处理 → HostApi 业务分发 → KernelRunner 执行'
 
     authentication = component '身份认证' {
       technology 'Host token · 用户 token'
@@ -90,17 +106,6 @@ model {
       configuration = component '能力配置' { technology '工具 · MCP · 技能 · 钩子' }
     }
 
-    capabilities = system '能力总线' {
-      technology '工具 · MCP · 技能 · 钩子'
-      description '按 pi 官方工具和扩展形状装配 Agent 能力；含交互工具，子会话为预留。'
-      tools = component '内置工具' { technology '文件 · 搜索 · 执行' }
-      mcp = component 'MCP 工具' { technology '外部工具连接与装配' }
-      skills = component '技能' { technology '知识与提示段加载' }
-      hooks = component '钩子' { technology '生命周期干预' }
-      interaction = component '交互工具' { technology '提问 · 方案 · 任务清单' }
-      subagents = component '子会话' { technology '多 Agent 调度预留' }
-    }
-
     runtime = system 'KernelRunner' {
       technology '自带 Node 22 · SHA256'
       description 'CogentKernel 内核合同；运行基础与安全策略随执行容器展示，当前由 SessionManager 实现。'
@@ -114,6 +119,17 @@ model {
         technology 'PiRpcKernel · 其他实现'
         description '内核合同的替换扩展位；当前没有第二个内核实现。'
       }
+
+      capabilities = system '执行能力' {
+        technology '工具 · MCP · 技能 · 钩子'
+        description '按 pi 官方工具和扩展形状装配 Agent 能力；含交互工具，子会话为预留。'
+        tools = component '内置工具' { technology '文件 · 搜索 · 执行' }
+        mcp = component 'MCP 工具' { technology '外部工具连接与装配' }
+        skills = component '技能' { technology '知识与提示段加载' }
+        hooks = component '钩子' { technology '生命周期干预' }
+        interaction = component '交互工具' { technology '提问 · 方案 · 任务清单' }
+        subagents = component '子会话' { technology '多 Agent 调度预留' }
+      }
     }
 
     provider = component '模型协议适配' {
@@ -121,16 +137,15 @@ model {
       description '将 pi 的模型调用转换成远端 API，并还原响应与流；保留自定义旧契约扩展位。'
     }
 
-    authentication <-> native 'Cogent 原生协议'
-    authentication <-> adapter '适配调用方协议'
-    native <-> policy '统一调用'
-    adapter <-> policy '统一调用'
-    policy <-> api '授权后执行'
-    api <-> services '业务调用与事件'
-    services -> capabilities '能力配置'
-    services <-> runtime '会话驱动与事件'
-    capabilities -> runtime '工具与扩展'
-    runtime <-> provider '模型请求与流'
+    authentication -[call]<-> native 'Cogent 原生协议'
+    authentication -[call]<-> adapter '适配调用方协议'
+    native -[call]<-> policy '统一调用'
+    adapter -[call]<-> policy '统一调用'
+    policy -[call]<-> api '授权后执行'
+    api -[call]<-> services '业务调用与事件'
+    services -[configuration]-> runtime.capabilities '配置与治理'
+    services -[call]<-> runtime '会话驱动与事件'
+    runtime -[call]<-> provider '模型请求与流'
   }
 
   users = component '用户系统' {
@@ -143,25 +158,24 @@ model {
     description '既有模型 API 或需要保留契约的远端 /xxx/chat 服务。'
   }
 
-  access.stdio <-> host.native '本机调用身份'
-  desktop <-> access.stdio 'IPC 转管道'
-  nativeClients <-> access.network.http 'Cogent 原生协议'
-  nativeClients <-> access.network.ws 'Cogent 原生协议'
-  customClients <-> access.network.http '自定义协议'
-  customClients <-> access.network.ws '自定义协议'
-  customClients -> host.adapter '协议适配关系' {
-    style { line dotted }
+  access.stdio -[call]<-> host.native '本机调用身份'
+  desktop -[call]<-> access.stdio 'IPC 转管道'
+  nativeClients -[call]<-> access.network.http 'Cogent 原生协议'
+  nativeClients -[call]<-> access.network.ws 'Cogent 原生协议'
+  customClients -[call]<-> access.network.http '自定义协议'
+  customClients -[call]<-> access.network.ws '自定义协议'
+  customClients -[dependency]-> host.adapter '协议适配关系' {
     description '表示此调用方消费该适配能力；实际请求仍经网络入口与身份认证。'
   }
-  externalAgent <-> mcp 'MCP · stdio' {
+  externalAgent -[call]<-> mcp 'MCP · stdio' {
     description '标准 MCP 的 stdio 连接，由独立 MCP Server 适配为 Cogent 原生调用。'
   }
-  mcp <-> access.network.http '方法调用'
-  mcp <-> access.network.ws '事件订阅'
-  access.network.http <-> host.authentication '携带 token'
-  access.network.ws <-> host.authentication '握手认证'
-  users -> host.authentication '用户身份验证'
-  host.provider <-> models '远端协议'
+  mcp -[call]<-> access.network.http '方法调用'
+  mcp -[call]<-> access.network.ws '事件订阅'
+  access.network.http -[call]<-> host.authentication '携带 token'
+  access.network.ws -[call]<-> host.authentication '握手认证'
+  users -[call]-> host.authentication '用户身份验证'
+  host.provider -[call]<-> models '远端协议'
 }
 
 views {
@@ -172,8 +186,9 @@ views {
     include access.network -> host.authentication with { title '验证凭据' }
     include host.authentication -> host.native with { title '原生处理' }
     include host.authentication -> host.adapter with { title '协议转换' }
+    exclude host.services -> host.runtime.capabilities
     // 总览行列由 layout 脚本通过 LikeC4 布局提示约束，原生自动布局仍可独立使用。
-    autoLayout LeftRight 200 112 ortho
+    autoLayout LeftRight 160 112 ortho
   }
 
   view ingress of access {
@@ -184,19 +199,21 @@ views {
 
   view execution of host {
     title '执行、能力与出站适配'
-    include host.api, host.services, host.capabilities, host.runtime, host.runtime.*, host.provider, models
+    include host.api, host.services, host.runtime.capabilities, host.runtime, host.runtime.*, host.provider, models
+    exclude host.services -> host.runtime.capabilities
     autoLayout LeftRight 160 112 ortho
   }
 
   view services {
     title 'Host 服务层详情'
-    include host.api, host.services, host.services.*, host.runtime, host.capabilities
+    include host.api, host.services, host.services.*, host.runtime
+    exclude host.services -> host.runtime.capabilities
     autoLayout LeftRight 160 112 ortho
   }
 
   view capabilities {
-    title '能力总线详情'
-    include host.services, host.capabilities, host.capabilities.*, host.runtime
+    title '执行能力详情'
+    include host.runtime.capabilities, host.runtime.capabilities.*
     autoLayout LeftRight 160 112 ortho
   }
 }
