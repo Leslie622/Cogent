@@ -183,16 +183,25 @@ async function main(): Promise<void> {
   }
 
   let eventWatermark = 0
+  let stdoutBackpressured = false
+  process.stdout.on('drain', () => { stdoutBackpressured = false })
+  function writeStdout(line: string): void {
+    const ok = process.stdout.write(line)
+    if (!ok && !stdoutBackpressured) {
+      stdoutBackpressured = true
+      process.stderr.write('[host] stdout backpressure detected (consumer slower than event stream)\n')
+    }
+  }
   /** 事件发送：service → 宿主（stdio notification 帧）+ WS 消费者（2c 起双写） */
   function notify<E extends keyof ProtocolEvents>(method: E, params: ProtocolEvents[E]): void {
     const frame: RpcEvent = { jsonrpc: '2.0', method, params, sequence: ++eventWatermark }
-    process.stdout.write(JSON.stringify(frame) + '\n')
+    writeStdout(JSON.stringify(frame) + '\n')
     broadcastEvent?.(frame)
   }
 
   /** 响应发送 */
   function reply(response: RpcResponse): void {
-    process.stdout.write(JSON.stringify(response) + '\n')
+    writeStdout(JSON.stringify(response) + '\n')
   }
 
   // HTTP 门票据 store（决定 23）：一次性短 TTL，消费即焚 —— 与 rootSecret 同属
@@ -815,7 +824,13 @@ async function main(): Promise<void> {
     ['project.delete', handleProjectDelete],
     ['project.setPinned', handleProjectSetPinned],
     ['agent.submit', handleAgentSubmit],
-    ['agent.abort', (params) => ({ aborted: sessions.abort((params as { sessionId: string }).sessionId) })],
+    ['agent.abort', (params) => {
+      const p = params as Partial<{ sessionId: unknown }>
+      if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
+        throw new ProtocolError(RpcErrorCode.InvalidParams, 'agent.abort 需要 { sessionId: string }')
+      }
+      return { aborted: sessions.abort(p.sessionId) }
+    }],
     // 宿主侧裁决通道：不经 renderer 通用代理，main 的 approval:respond 专属
     // IPC 直抵这里 —— 但协议上是普通 method（任何宿主都能驱动，无传输层特权）
     ['approval.respond', handleApprovalRespond],

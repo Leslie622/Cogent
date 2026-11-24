@@ -18,7 +18,7 @@
  * 原子写，手法同 JsonStorageDriver.put（main 侧的 writeFileAtomic 不可
  * import，host 零 Electron 依赖的边界纪律）。
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ToolKind } from '../../protocol'
 
@@ -110,8 +110,13 @@ export class ApprovalRegistry {
     mkdirSync(this.root, { recursive: true })
     const doc: StoredRules = { version: RULES_FILE_VERSION, rules }
     const file = this.filePath, tmp = `${file}.tmp`
-    writeFileSync(tmp, JSON.stringify(doc, null, 2))
-    renameSync(tmp, file)
+    try {
+      writeFileSync(tmp, JSON.stringify(doc, null, 2))
+      renameSync(tmp, file)
+    } catch (error) {
+      try { rmSync(tmp, { force: true }) } catch { /* 清理失败不掩盖原错误 */ }
+      throw error
+    }
   }
 
   private get filePath(): string {

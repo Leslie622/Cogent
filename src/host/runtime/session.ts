@@ -38,12 +38,7 @@ export { toChatMessages } from './message-projection'
 
 import type { Agent, AgentMessage, ThinkingLevel } from '@earendil-works/pi-agent-core'
 import { builtinModels } from '@earendil-works/pi-ai/providers/all'
-import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { Api, AssistantMessage, Model, MutableModels } from '@earendil-works/pi-ai'
-// 上下文粗估（2026-11-11 明细区）：与 pi clampMaxTokensToContext 同一实现 ——
-// 引擎每轮算 max_tokens 预算用的就是 estimateContextTokens，明细口径与之同源
-import { estimateContextTokens, estimateMessageTokens, estimateTextTokens } from '@earendil-works/pi-ai/utils/estimate'
-import { getSystemMessageText } from '@earendil-works/pi-ai/utils/text'
 import type {
   AgentSession,
   AgentSessionEvent,
@@ -57,7 +52,6 @@ import { join, resolve, sep } from 'node:path'
 import { ProtocolError, RpcErrorCode } from '../../protocol'
 import type {
   ChatMessage,
-  ContextEstimate,
   CustomProviderDef,
   InspectEntryDetail,
   InspectEntrySummary,
@@ -99,11 +93,8 @@ import {
   readPiTranscript
 } from '../kernel/pi-session-factory'
 import { migrateLegacyTranscript, transcriptAuthority } from '../kernel/transcript-authority'
-// 上下文明细的转录整形（明细区数据源）：convertToLlmMessages 处理
-// compactionSummary 等自定义角色后与 pi 预算看到的载荷同源同形
-import { convertToLlmMessages, piTriggerRatio } from './compaction'
 import type { InspectStore, StorageDriver } from '../storage'
-import { SHELL_TOOL_NAME, toolDeclarations, toolMeta } from './tool-meta'
+import { toolMeta } from './tool-meta'
 import { matchingWriteRoots } from './write-boundary'
 import { AttachmentService } from './attachments'
 import type { AttachmentRef, DirectoryRef } from '../../shared/attachments'
@@ -113,82 +104,12 @@ import { createReadAttachmentTool } from './read-attachment'
 import { OutputsService } from './outputs/service'
 import { createReportOutputsTool, outputReceipt } from './outputs/tool'
 import type { OutputOutcome } from '../../shared/outputs'
+import { asStoredSession, SESSION_COLLECTION, SESSION_FILE_VERSION, type StoredSession } from './session-storage'
+import { buildSystemPrompt, estimateContext, permissionSectionText, planModeSectionText } from './session-prompt'
+import { projectModelSummaries } from './session-models'
 
 /** 引擎事件出口的类型别名：runtime 通过它上报事件，不关心传输层（形状住在南缝合同） */
 export type Notify = KernelNotifier
-
-/**
- * 会话盘上文档形状（v2）：只存会话域 summary —— 转录真源在
- * pi JSONL（<hostRoot>/pi/sessions/…，pi 逐条追加）；置顶/归档/权限模式是
- * Cogent 的私域，pi 不知情，落在本文件。
- */
-interface StoredSession {
-  deleted?: true
-  autoTitle?: 'ready' | 'attempted'
-  piCwd?: string
-  version: 1 | 2
-  transcript?: AgentMessage[]
-  summary: SessionSummary
-  /** 任务清单（交互座 4c）：todo_write 的活清单快照；缺省 = 无清单。模型侧另有转录回放兜底 */
-  todos?: TodoItem[]
-  /** 已批准计划（交互座 4c-3）：cogent_plan 段的数据源；缺省 = 无。新批准覆盖旧值 */
-  plan?: PlanRecord
-}
-
-/**
- * 启动恢复时的盘上数据收窄（信任边界：磁盘旧数据可能被手改/属旧版本格式）。
- * v1（架构重构前的盘上格式）带完整转录 —— 收进 legacyTranscript 等惰性导入 pi 树
- * （见 buildPiSession）；v2 只有 summary。只校验本层依赖的字段；转录内层
- * 结构信任 pi 的写入（引擎自己落的盘）。
- */
-function asStoredSession(
-  doc: unknown,
-  id: string
-): { summary: SessionSummary; autoTitle?: 'ready' | 'attempted'; piCwd?: string; todos?: TodoItem[]; plan?: PlanRecord; legacyTranscript?: AgentMessage[] } {
-  if (typeof doc !== 'object' || doc === null) throw new Error(`会话文档形状不合法（sessions/${id}.json）`)
-  const d = doc as {
-    version?: unknown
-    autoTitle?: unknown
-    piCwd?: unknown
-    summary?: SessionSummary
-    todos?: unknown
-    plan?: unknown
-    transcript?: unknown
-  }
-  if (d.version !== 2 && d.version !== 1) {
-    throw new Error(`会话文档版本不合法（sessions/${id}.json），请手工处理后重启`)
-  }
-  if (d.piCwd !== undefined && typeof d.piCwd !== 'string') throw new Error(`会话内核 cwd 损坏（sessions/${id}.json）`)
-  if (d.autoTitle !== undefined && d.autoTitle !== 'ready' && d.autoTitle !== 'attempted') throw new Error(`会话标题资格损坏（sessions/${id}.json）`)
-  if (typeof d.summary?.id !== 'string') {
-    throw new Error(`会话文档形状不合法（sessions/${id}.json），请手工处理后重启`)
-  }
-  if (d.version === 1 && !Array.isArray(d.transcript)) {
-    throw new Error(`会话文档转录形状不合法（sessions/${id}.json），请手工处理后重启`)
-  }
-  if (d.todos !== undefined && !Array.isArray(d.todos)) {
-    throw new Error(`会话文档任务清单形状不合法（sessions/${id}.json），请手工处理后重启`)
-  }
-  if (d.plan !== undefined && (typeof d.plan !== 'object' || typeof (d.plan as PlanRecord).plan !== 'string')) {
-    throw new Error(`会话文档计划形状不合法（sessions/${id}.json），请手工处理后重启`)
-  }
-  // v2 盘 plan 档迁移（正交开关 v3）：plan 曾是档位联合值，原档已被覆盖无从
-  // 考据 → 回 ask 缺省 + 开关开（行为保真：只读约束不丢）。磁盘旧数据属信任
-  // 边界，mode 以 string 比较（类型层 'plan' 已删）
-  const summary = { ...d.summary }
-  if ((d.summary.permissionMode as string) === 'plan') {
-    summary.permissionMode = 'ask'
-    summary.planEnabled = true
-  }
-  return {
-    summary,
-    ...(d.autoTitle !== undefined && { autoTitle: d.autoTitle }),
-    ...(d.piCwd !== undefined && { piCwd: d.piCwd }),
-    ...(d.todos !== undefined && { todos: d.todos as TodoItem[] }),
-    ...(d.plan !== undefined && { plan: d.plan as PlanRecord }),
-    ...(d.version === 1 && { legacyTranscript: d.transcript as AgentMessage[] })
-  }
-}
 
 /** 内存态会话：pi 内核惰性 —— 恢复的会话在首次 submit/compact 时才装配 */
 interface WorkspaceSnapshot { cwd: string; roots: string[] }
@@ -220,116 +141,6 @@ interface Session {
   systemPrompt?: string
 }
 
-/** AGENTS.md 只读加载的长度上限（字符）——巨型指令文件不吃满上下文 */
-const AGENTS_MD_MAX_CHARS = 16_000
-
-/**
- * 系统提示词装配（工作区上下文注入 + 多根化 2026-11-09；工具段 2026-11-10，
- * 修订后恒有工具）：基础人设 + 工作区声明（多目录，首个为主根；无绑定时无
- * 此段）+ 环境块（每根一行含 git 分支）+ 各根 AGENTS.md + 工具使用段。
- * 这是"工作区对模型生效"的第①通道（文字声明）—— 模型没有 cwd 概念，相对路径
- * 指哪全靠这里讲清。
- */
-function buildSystemPrompt(boundRoots: string[], toolRoots: string[]): string {
-  let prompt = 'You are Cogent, a helpful desktop agent.'
-
-  if (boundRoots.length > 0) {
-    const declared =
-      boundRoots.length === 1
-        ? boundRoots[0]
-        : `${boundRoots.map((r, i) => `${i + 1}. ${r}`).join('\n')}（首个为主根）`
-    prompt += `\n\n# 工作区\n你在用户的本地工作区中工作：${declared}` +
-      '\n用户消息里的相对路径（文件/目录）都相对这些根目录解析；未指明时优先主根。'
-
-    // 环境块（Claude Code 手法）：平台 + 每根目录与 git 分支（直读 .git/HEAD，
-    // 不 spawn 子进程 —— Windows 上免 git 依赖；非仓库/解析失败省略分支尾）
-    prompt += `\n\n# 环境\n- 平台: ${process.platform}`
-    for (const root of boundRoots) {
-      const branch = readGitBranch(root)
-      prompt += `\n- 工作区: ${root}${branch !== null ? `（Git 分支: ${branch}）` : ''}`
-    }
-
-    // 各根 AGENTS.md（项目给模型的指令，只读消费；存在才拼、每根限长）
-    for (const root of boundRoots) {
-      const agentsFile = join(root, 'AGENTS.md')
-      if (!existsSync(agentsFile)) continue
-      try {
-        const content = readFileSync(agentsFile, 'utf-8')
-        const trimmed = content.length > AGENTS_MD_MAX_CHARS
-          ? `${content.slice(0, AGENTS_MD_MAX_CHARS)}\n\n[AGENTS.md 已截断]`
-          : content
-        const label =
-          boundRoots.length > 1 ? `工作区指令（${root} 的 AGENTS.md）` : '工作区指令（AGENTS.md）'
-        prompt += `\n\n# ${label}\n${trimmed}`
-      } catch (error) {
-        // 读失败不挡会话创建：指令文件是增益不是必需品（外部世界失败是常态）
-        process.stderr.write(`[host] AGENTS.md 读取失败（跳过 ${root}）: ${(error as Error).message}\n`)
-      }
-    }
-  }
-
-  // 工具段（任何会话都有只读工具，无绑定会话以主目录为基）。讲清
-  // 有什么、路径规则（读相对基根/绝对不限；写限工作区根内 + 先审批 —— 边界
-  // 在审批层 enforce，越界写得到带可写根提示的错误结果）。不解释参数（工具
-  // schema 自描述，模型读 description 比提示词转述更准）
-  const bound = boundRoots.length > 0
-  const base =
-    bound
-      ? '相对路径相对工作区主根解析'
-      : `相对路径相对用户主目录（${toolRoots[0]}）解析`
-  prompt +=
-    '\n\n# 工具\n' +
-    '你可以调用工具：read（读单个文件，大文件用 offset/limit 分段读）、find（按通配模式找文件）、' +
-    'grep（按正则全文搜索，可带上下文行）、ls（列目录一层内容）、' +
-    'write（整文件写入，执行前可能需要用户批准）、' +
-    'edit（对已有文件做精确文本替换，执行前可能需要用户批准）、' +
-    `${SHELL_TOOL_NAME}（执行 shell 命令，工作目录${bound ? '为工作区主根' : '为用户主目录'}，执行前可能需要用户批准）。` +
-    '先用 ls/find/grep 定位、再用 read 读内容；修改已有文件优先 edit（带上下文精确匹配），' +
-    '整文件新建或重写才用 write。\n' +
-    // F6 定稿后不再宣称"写入只能在根内"（那会让模型对越界写自我审查、连
-    // 工具都不调 —— 引擎已按模式裁决：auto/autonomous 放行、ask 弹面板）。
-    // 审批语义由 cogent_permission 段按活模式动态告知；这里只留弱预期
-    `${base}；读取的绝对路径不限位置；工作区外的写入可能需要用户批准后执行。`
-  return prompt
-}
-
-/**
- * 权限模式通告段：**三档全设正向文案**，
- * 经 before_agent_start 扩展进 systemPromptOptions 的 cogent_permission
- * section（pi 对 sections 变更才追加 patch、回放按名替换 —— 运行中切模式
- * 下一轮即生效且不堆积）。
- * 为什么 ask 也设段（首版曾"非 ask 不设"）：切回 ask 只是把段移除，但会话
- * 历史里还留着此前被拦截的工具 error —— 模型会据历史推断"仍受限"、
- * 连尝试都不尝试。三档全给明确的当下状态（切换 = 内容替换），模型每轮拿到
- * 的是现状而非考古。文案与 decideApproval 的强制面同口径。
- * 只读计划是正交开关（cogent_plan_active 段），不在本段 —— 两个正交维度
- * 各自替换互不干扰（docs/模块/审批与权限.md）。
- */
-function permissionSectionText(mode: PermissionMode): string {
-  switch (mode) {
-    case 'auto':
-      return '当前会话处于完全访问模式：所有工具调用直接执行，无需用户逐次确认。'
-    case 'autonomous':
-      return '当前会话处于自主模式：文件写直接执行（不限工作区）；命令执行仍需用户确认。'
-    default:
-      return '当前会话处于变更前确认模式：文件写入和命令执行会先请求用户批准，你可以正常尝试调用需要的工具。'
-  }
-}
-
-/**
- * 计划模式段（开关开启时注入、关闭即撤段）：只读约束 + 调研→submit_plan
- * 工作流。zcode runtime-reminders 的 plan still active 提醒同源 —— 每回合
- * 常驻，防模型长对话后忘记自己只读。
- */
-function planModeSectionText(): string {
-  return (
-    '当前会话开启了计划模式（只读）：文件写入与命令执行会被拒绝，只能读取文件、搜索和列目录。不要尝试调用写类或执行类工具。\n' +
-    '工作流：先用只读工具完成调研；遇到需要用户拍板的疑点用 ask_user 澄清；' +
-    '调研充分后调 submit_plan 提交实现计划并等待批准。' +
-    '不要用普通文本或 ask_user 问「这个方案可以吗」—— 那正是 submit_plan 的职责。'
-  )
-}
-
 /**
  * 续写注入消息(R6③,Claude Code 的 append 式续写取向):显式 user 消息让
  * 模型明确「从截断处接着写」—— pi 的无痕 finishTurn{continue} 续跑可能开
@@ -342,19 +153,6 @@ function planModeSectionText(): string {
 const AUTO_CONTINUE_PREFIX = '[cogent:continue]'
 const AUTO_CONTINUE_MESSAGE = `${AUTO_CONTINUE_PREFIX} Continue your previous response from exactly where it was cut off. Do not repeat what you already wrote, do not apologize or explain — just continue seamlessly.`
 const AUTO_CONTINUE_LIMIT = 3
-
-/** git 当前分支：解析 <cwd>/.git/HEAD 的 ref: refs/heads/<branch>；非仓库/异常返回 null */
-function readGitBranch(cwd: string): string | null {
-  try {
-    const head = join(cwd, '.git', 'HEAD')
-    if (!existsSync(head)) return null
-    const content = readFileSync(head, 'utf-8').trim()
-    const match = /^ref: refs\/heads\/(.+)$/.exec(content)
-    return match?.[1] ?? null
-  } catch {
-    return null
-  }
-}
 
 /**
  * 会话内 run 的流式累积状态（工具循环段化）。
@@ -405,65 +203,6 @@ interface StreamingState {
   model?: string
 }
 
-/**
- * 上下文明细三段估算（悬浮卡分类区数据源）。
- *
- * 为什么用 pi 的 estimate 而不是自己数：clampMaxTokensToContext（simple-options.js）
- * 每轮算 max_tokens 预算用的就是 estimateContextTokens —— 明细与引擎真实预算
- * 同源自洽，这是 tiktoken/count_tokens 都给不了的（另一套词表对真实预算反而失真）。
- * 代价：3.5 chars/token 的字符粗估对中文偏松，UI 据此带 ≈ 标记。
- *
- * 三段拆法：pi 把系统提示词与工具声明合并放在 leading system message
- * （toolsAdded 字段，estimateMessageTokens 对 system 消息 = 文本 + 工具 schema），
- * 按字段拆开各算各的；其余消息（user/assistant/toolResult）全归"消息"段。
- * total 直接取 estimateContextTokens().tokens（= 末轮实报 usage + 其后 trailing
- * 估算，即预算式里的"占用"），保证三段和与引擎看到的占用一致。
- *
- * system 段来源：pi 的 system 是提示词状态不进树（只有
- * sections patch 消息落树），领头那条由调用方传入 systemPrompt 现合成 ——
- * 活会话取 piSession.systemPrompt（当前完整渲染），惰性会话取自拼提示词
- * （缺 pi 追加的环境节，≈ 粗估可接受）；工具声明按 toolDeclarations 重建。
- */
-function estimateContext(messages: AgentMessage[], systemPrompt?: string): ContextEstimate {
-  // 先过 convertToLlmMessages：转录可能含 compactionSummary 自定义角色（无
-  // content 数组），pi-ai estimateMessageTokens 对它不认识会炸；转换后与引擎
-  // max_tokens 预算看到的载荷同源同形（预算口径只可能更准）
-  const llmMessages = convertToLlmMessages(messages)
-  if (systemPrompt !== undefined) {
-    // 合成领头 system（引擎请求组装的真实形态：文本 + toolsAdded 声明）；
-    // 树里的 sections patch 消息照常后行（pi 请求时坍缩进头部，估算近似加总）
-    llmMessages.unshift({
-      role: 'system',
-      content: systemPrompt,
-      toolsAdded: toolDeclarations() as never,
-      timestamp: 0
-    })
-  }
-  let systemTextTokens = 0
-  let toolDefs = 0
-  const rest: ReturnType<typeof convertToLlmMessages> = []
-  for (const message of llmMessages) {
-    if (message.role === 'system') {
-      // content 可能是 string 或 TextContent[]；getSystemMessageText 统一成
-      // 模型可见的完整文本（含 sections 渲染），与 estimate 内部口径一致
-      systemTextTokens += estimateTextTokens(getSystemMessageText(message))
-      if (message.toolsAdded) toolDefs += estimateTextTokens(JSON.stringify(message.toolsAdded))
-      continue
-    }
-    rest.push(message)
-  }
-  return {
-    systemPrompt: systemTextTokens,
-    toolDefs,
-    messages: rest.reduce((sum, m) => sum + estimateMessageTokens(m), 0),
-    total: estimateContextTokens(llmMessages).tokens
-  }
-}
-
-/** 盘上文档格式版本（v2 = summary-only；v1 兼容读取，见 asStoredSession） */
-const SESSION_FILE_VERSION = 2
-/** 会话集合名（StorageDriver 顶层目录 ~/.cogent/sessions/） */
-const SESSION_COLLECTION = 'sessions'
 /** 首条消息截断为会话标题的长度上限 */
 const TITLE_MAX_CHARS = 24
 /** 拒绝附言截断上限（防长附言打爆工具结果，与截断纪律同源） */
@@ -1018,28 +757,7 @@ export class SessionManager implements CogentKernel {
   listModels(): { models: ModelSummary[]; defaultModel: { provider: string; id: string } } {
     return {
       defaultModel: { provider: DEFAULT_PROVIDER, id: DEFAULT_MODEL },
-      models: this.models.getModels().map((m) => {
-        // 压缩触发占比随目录下发：pi reserve 制真值口径
-        // （1 − min(16384, ctx/4)/ctx）—— 指示器预警线画引擎真实触发线，
-        // 画线偏离真值 = 用户看到"未到线就压了"
-        const ratio = piTriggerRatio(m.contextWindow)
-        return {
-          id: m.id,
-          name: m.name,
-          provider: m.provider,
-          reasoning: m.reasoning,
-          input: m.input,
-          // pi 按端点标定的 thinkingLevelMap 判定真实可用档（含 'off'）——
-          // UI 滑杆据此渲染/置灰，切模型据此 clamp，杜绝静默降级
-          thinkingLevels: getSupportedThinkingLevels(m),
-          contextWindow: m.contextWindow,
-          maxTokens: m.maxTokens,
-          // 目录原生 vs 用户添加（默认模型 UI 锁 id 的判定源，见 isUserDefined 注释）
-          userDefined: this.customProviders.isUserDefined(m.provider, m.id),
-          // NaN（窗口缺数据的怪模型）不带 → 渲染端回落 0.9
-          ...(Number.isFinite(ratio) && { compactionThresholdRatio: ratio })
-        }
-      })
+      models: projectModelSummaries(this.models.getModels(), (provider, id) => this.customProviders.isUserDefined(provider, id))
     }
   }
 

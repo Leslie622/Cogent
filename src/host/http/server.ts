@@ -30,7 +30,7 @@ import { cors } from 'hono/cors'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { WebSocket, WebSocketServer, type RawData } from 'ws'
-import { isRpcRequest, type RpcEvent, type RpcRequest, type RpcResponse, type TokenScope } from '../../protocol'
+import { httpMethodMinScope, isRpcRequest, type RpcEvent, type RpcRequest, type RpcResponse, type TokenScope } from '../../protocol'
 import { SCOPE_RANK, signToken, verifyToken, type CapabilityStore } from './auth'
 
 /** ws 文本帧的 data 侧（node ws 默认不分片、非 binary，恒为 Buffer） */
@@ -56,75 +56,6 @@ const WS_DRAIN_MS = 250
 /** 越档错误的 JSON-RPC code：server-error 区间（-32000~-32099）内自选 */
 const SCOPE_FORBIDDEN_CODE = -32_003
 
-/**
- * 方法档位表（决定 23 三档）：调用该方法所需的最低 scope。
- * 远程入口只接受明确登记的方法；新增本地方法不会自动暴露给网络。
- */
-const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
-  // 读类
-  initialize: 'readonly',
-  'session.defaults.get': 'readonly',
-  'session.defaults.set': 'admin',
-  'providers.custom.get': 'readonly',
-  'session.list': 'readonly',
-  'session.search': 'readonly',
-  'session.search.rebuild': 'admin',
-  'session.titleSettings.get': 'readonly',
-  'session.titleSettings.set': 'admin',
-  'session.messages': 'readonly',
-  'session.listArchived': 'readonly',
-  'project.list': 'readonly',
-  'credentials.list': 'readonly',
-  'models.list': 'readonly',
-  'inspect.entries': 'readonly',
-  'inspect.entry': 'readonly',
-  'mcp.list': 'readonly',
-  'skills.list': 'readonly',
-  'skills.read': 'readonly',
-  // 写类（会话/项目变更、提交与裁决、凭据写、provider 同步）
-  'session.create': 'write',
-  'session.delete': 'write',
-  'session.setPinned': 'write',
-  'session.rename': 'write',
-  'session.archive': 'write',
-  'session.setPermission': 'write',
-  'session.setPlanMode': 'write',
-  'session.compact': 'write',
-  'session.continue': 'write',
-  'project.create': 'write',
-  'project.rename': 'write',
-  'project.update': 'write',
-  'project.delete': 'write',
-  'project.setPinned': 'write',
-  'agent.submit': 'write',
-  // 探测会发起付费模型请求，与提交同档，readonly 票据不能消耗用户凭据。
-  'models.test': 'write',
-  'agent.abort': 'write',
-  'approval.respond': 'write',
-  // 交互座 4c-2：回答挂起中的 ask_user —— 同 approval.respond 的"宿主侧
-  // 人机裁决回流"语义面，同 write 档
-  'question.respond': 'write',
-  // 交互座 4c-3：裁决方案审批（批准 = 关计划开关）；同 write 档
-  'plan.respond': 'write',
-  'credentials.set': 'write',
-  'credentials.remove': 'write',
-  'providers.custom.sync': 'write',
-  // MCP server 定义 = 未来会话可拉起的本地进程/外联端点，敏感面与自定义
-  // provider 同级（stdio server 是进程执行面，但工具调用仍过审批链，write 档足够）
-  'mcp.sync': 'write',
-  // 项目级 override（enabled/exposure）只会收敛，不能扩权 —— 同 write 档
-  'mcp.override': 'write',
-  // 技能写路径：save/delete 直接落用户磁盘文件（SKILL.md + 状态 JSON），
-  // 是提示词注入面（进系统提示）—— 与 mcp.sync 同 write 档；setEnabled
-  // 只动状态文件，同档不细分
-  'skills.save': 'write',
-  'skills.delete': 'write',
-  'skills.setEnabled': 'write',
-  // 签发入口：只有 admin（或 stdio 血缘，不走此表）能再签票据 —— 防
-  // readonly/write 持有者经任意传输门自签提权
-  'capability.issue': 'admin'
-}
-
 /** 只对合法请求做档位判定，解析失败与意外事件仍按 Host 的协议语义处理。 */
 function readRequest(raw: string): RpcRequest | undefined {
   try {
@@ -135,9 +66,10 @@ function readRequest(raw: string): RpcRequest | undefined {
   }
 }
 
+/** 方法档位由 protocol/method-access.ts 单源定义；未登记 httpScope 的方法拒绝网络访问。 */
 function scopeDenial(scope: TokenScope, method: string): string | undefined {
-  if (!Object.hasOwn(METHOD_MIN_SCOPE, method)) return `method ${method} is not available over HTTP/WS`
-  const minimum = METHOD_MIN_SCOPE[method]
+  const minimum = httpMethodMinScope(method)
+  if (minimum === undefined) return `method ${method} is not available over HTTP/WS`
   if (SCOPE_RANK[scope] < SCOPE_RANK[minimum]) return `method ${method} requires ${minimum} scope`
   return undefined
 }
@@ -180,13 +112,13 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
   })
 
   // /auth/exchange 的凭证就是票据本身，不走 Bearer（否则鸡生蛋）；WS 握手是
-  // 原生 HTTP upgrade、不经 Hono fetch，鉴权在 upgrade 事件里同口径另挂
+  // 原生 HTTP upgrade、不经 Hono fetch，鉴权在 upgrade 事件里同口径另挂。
+  // 普通 HTTP 端点只认 Authorization: Bearer，拒绝 URL ?token=，避免长期 token 落入访问日志与 Referer。
   app.use('*', async (c, next) => {
     if (c.req.path === '/auth/exchange') return next()
     const authorization = c.req.header('authorization')
     const bearer = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length).trim() : undefined
-    const query = new URL(c.req.url).searchParams.get('token')?.trim()
-    const scope = verifyToken(options.rootSecret, bearer || query)
+    const scope = verifyToken(options.rootSecret, bearer)
     if (!scope) return c.json({ error: 'authentication required' }, 401)
     c.set('scope', scope)
     return next()

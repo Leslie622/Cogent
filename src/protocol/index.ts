@@ -2,4 +2,6 @@
  * 协议包出口。外部实现方（包括将来的旧项目集成）只应 import 这个入口，
  * 不深入到具体文件 —— 保证内部文件可自由重组。
  */
+export * from './domains'
+export * from './method-access'
 export * from './types'

@@ -51,5 +51,46 @@ export default tseslint.config(
       // 与基础 eslint 的默认一致，放开 rest 兄弟忽略
       '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }]
     }
+  },
+  // 目录即边界的静态守卫（docs/架构.md）：用 lint 固化依赖方向，防止跨层回流。
+  {
+    files: ['src/protocol/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          { group: ['electron', 'electron/*', '@earendil-works/*', '../shared', '../shared/*', '../host', '../host/*', '../electron', '../electron/*', '../renderer', '../renderer/*'], message: 'src/protocol 必须零运行时依赖且不得反向依赖 shared/host/electron/renderer。' }
+        ]
+      }]
+    }
+  },
+  {
+    files: ['src/host/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          { group: ['electron', 'electron/*', '**/electron/**', '**/renderer/**'], message: 'src/host 是独立 Node 引擎进程，禁止依赖 Electron 或 renderer。' }
+        ]
+      }]
+    }
+  },
+  {
+    files: ['src/shared/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          { group: ['electron', 'electron/*', '**/host/**', '**/electron/**', '**/renderer/**'], message: 'src/shared 是纯壳契约，禁止依赖 host/electron/renderer。' }
+        ]
+      }]
+    }
+  },
+  {
+    files: ['src/renderer/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          { group: ['electron', 'electron/*', '**/host/**', '**/electron/main/**'], message: 'src/renderer 禁止直接依赖 host 或 electron/main。' }
+        ]
+      }]
+    }
   }
 )

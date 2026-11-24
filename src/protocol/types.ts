@@ -11,16 +11,22 @@
  * 传输：newline-delimited JSON over stdio，一行一帧。
  * 三种帧：请求（id + method）、响应（id + result/error）、事件（method，无 id）。
  */
-import type { DefaultsMethods, SessionDefaults } from '../shared/host-config'
+import type {
+  AttachmentMethods,
+  DefaultsMethods,
+  FileContext,
+  FileInternalMethods,
+  FileMethods,
+  FileReference,
+  FileViewHostMethods,
+  OutputMethods,
+  SessionDefaults,
+  SessionSearchMethods,
+  SessionTitleMethods,
+  TurnOutputs
+} from './domains'
 /** 协议版本：语义承诺 = 帧格式与既有 method 语义不变，新增能力走可选字段/新 method */
 export const PROTOCOL_VERSION = 3
-
-import type { SessionSearchMethods } from '../shared/session-search'
-import type { AttachmentMethods } from '../shared/attachments'
-import type { FileMethods, FileInternalMethods, FileContext, FileReference } from '../shared/files'
-import type { FileViewHostMethods } from '../shared/file-views'
-import type { OutputMethods, TurnOutputs } from '../shared/outputs'
-import type { SessionTitleMethods } from '../shared/session-title'
 
 // ———— JSON-RPC 2.0 极简子集 ————
 

@@ -49,8 +49,13 @@ export class JsonStorageDriver implements StorageDriver {
     // 处只能被隔离，等于丢掉整个会话，这是必须堵住的写放大代价之外的真风险
     const file = this.documentPath(collection, id)
     const tmp = `${file}.tmp`
-    writeFileSync(tmp, JSON.stringify(document))
-    renameSync(tmp, file)
+    try {
+      writeFileSync(tmp, JSON.stringify(document))
+      renameSync(tmp, file)
+    } catch (error) {
+      try { rmSync(tmp, { force: true }) } catch { /* 故障注入目录或无权限时不掩盖原错误 */ }
+      throw error
+    }
   }
 
   delete(collection: string, id: string): boolean {

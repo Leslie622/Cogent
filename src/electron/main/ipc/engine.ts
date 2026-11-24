@@ -6,70 +6,18 @@
  * 白名单是唯一要守的边界：renderer 能触达哪些引擎方法在此显式收窄，
  * 未经点名的 method（如未来的 approval.respond）不经过 renderer 手。
  */
-import { handleTrusted } from './trusted'
+import { handleTrusted, isTrustedContents } from './trusted'
 import { BrowserWindow } from 'electron'
 import { IPC } from '../../../shared/ipc'
-import type { ProtocolMethods } from '../../../protocol'
+import { rendererAllowedMethods, type ProtocolMethods } from '../../../protocol'
 import type { IpcDeps } from './index'
-import { SHELL_ATTACHMENT_METHODS } from '../../../shared/attachments'
-import { SHELL_FILE_METHODS } from '../../../shared/files'
-import { SHELL_OUTPUT_METHODS } from '../../../shared/outputs'
-import { isTrustedContents } from './trusted'
 import { requireFileWindow } from './files'
 
 /**
- * renderer 可触达的引擎方法白名单（approval.respond 等宿主侧裁决不在此列）。
- * 注意 providers.custom.sync 不在白名单：自定义 provider 的写路径只有
- * custom-providers:set 一条（壳落盘 + 推引擎），若 renderer 还能经本通道直推
- * 引擎内存态，会出现"盘上不变、引擎重启回滚"的状态分叉。
- * mcp.list/sync 则走本通道：MCP 配置真源就是引擎的 ~/.cogent/mcp.json
- *（引擎独占写者，无壳侧双写），与 providers 的差异恰在持久层归属。
+ * renderer 可触达的引擎方法白名单：从 protocol/method-access.ts 单源派生
+ *（approval/question/plan.respond、credentials.set/remove、providers.custom.sync 等不在此列）。
  */
-const ALLOWED_METHODS = new Set<string>([
-  ...SHELL_FILE_METHODS,
-  ...SHELL_OUTPUT_METHODS,
-  ...SHELL_ATTACHMENT_METHODS,
-  'session.defaults.get',
-  'session.defaults.set',
-  'session.list',
-  'session.search',
-  'session.search.rebuild',
-  'session.create',
-  'session.delete',
-  'session.messages',
-  'session.setPinned',
-  'session.rename',
-  'session.titleSettings.get',
-  'session.titleSettings.set',
-  'session.archive',
-  'session.listArchived',
-  'session.setPermission',
-  'session.setPlanMode',
-  'session.compact',
-  'session.continue',
-  'project.list',
-  'project.create',
-  'project.rename',
-  'project.update',
-  'project.delete',
-  'project.setPinned',
-  'agent.submit',
-  'agent.abort',
-  'credentials.list',
-  'models.list',
-  'models.test',
-  'inspect.entries',
-  'inspect.entry',
-  'mcp.list',
-  'mcp.sync',
-  'mcp.override',
-  // 技能座（4b）：真源 = 引擎侧技能目录与状态文件（无壳侧双写，与 MCP 同理）
-  'skills.list',
-  'skills.read',
-  'skills.save',
-  'skills.delete',
-  'skills.setEnabled'
-])
+const ALLOWED_METHODS = rendererAllowedMethods()
 
 export function registerEngineIpc(deps: IpcDeps): void {
   const { host } = deps

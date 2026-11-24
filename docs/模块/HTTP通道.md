@@ -27,7 +27,7 @@
 ```
 stdio: main ──capability.issue {scope}──▶ Host 票据 store（32B · 30s · 消费即焚）
 HTTP:  消费者 ──POST /auth/exchange {ticket}──▶ 长期 token（v1.<payload>.<HMAC>，scope 随票据）
-之后:  HTTP 带 Authorization: Bearer（或 ?token=）；WS 握手带 ?token=（同 verifyToken 同口径）
+之后:  HTTP 只认 Authorization: Bearer（拒绝 ?token=）；WS 握手带 ?token=（同 verifyToken 同口径）
 ```
 
 - rootSecret 不出 Host 进程；重启 = 全部 token 失效；

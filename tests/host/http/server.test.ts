@@ -56,7 +56,7 @@ describe('鉴权（2b：开门即要 token）', () => {
     expect(res.status).toBe(401)
   })
 
-  it('Bearer 头与 ?token= query 双轨等价', async () => {
+  it('POST /rpc 仅认 Authorization: Bearer，拒绝 URL ?token=', async () => {
     const { base, token } = await start()
     const byHeader = await fetch(base + '/rpc', {
       method: 'POST',
@@ -68,7 +68,7 @@ describe('鉴权（2b：开门即要 token）', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'session.list', params: {} })
     })
     expect(byHeader.status).toBe(200)
-    expect(byQuery.status).toBe(200)
+    expect(byQuery.status).toBe(401)
   })
 
   it('伪造 token 401；401 优先于 404（未知路径也要 token）', async () => {
