@@ -1,9 +1,10 @@
 /** 壳层常驻搜索入口；查询身份约束迟到响应，Command 只负责键盘与列表呈现。 */
 import { useEffect, useRef, useState } from 'react'
-import { MessageSquareIcon } from 'lucide-react'
+import { ArrowDownIcon, ArrowUpIcon, CornerDownLeftIcon, MessageSquareIcon } from 'lucide-react'
 import type { SearchPage } from '@shared/session-search'
-import { Command, CommandDialog, CommandInput, CommandList, CommandGroup, CommandItem } from '@/components/ui/command'
+import { Command, CommandDialog, CommandFooter, CommandInput, CommandList, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Button } from '@/components/ui/button'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Spinner } from '@/components/ui/spinner'
 import { useSearchStore } from '@/stores/search'
 import { useProjectStore } from '@/stores/project'
@@ -91,7 +92,25 @@ export function SessionSearch() {
         {page?.nextCursor !== undefined && <CommandItem variant="search" value="next-page" disabled={loading} onSelect={() => { void more() }}>更多结果</CommandItem>}
         </CommandList>
       </div>
-      <div className="text-xs text-muted-foreground shrink-0 p-2">↑ ↓ 选择 · Enter 打开 · Esc 关闭</div>
+      <CommandFooter>
+        <div className="flex items-center gap-3.5">
+          <span className="inline-flex items-center gap-1.5">
+            <KbdGroup>
+              <Kbd aria-label="上移"><ArrowUpIcon /></Kbd>
+              <Kbd aria-label="下移"><ArrowDownIcon /></Kbd>
+            </KbdGroup>
+            <span>选择</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Kbd aria-label="回车"><CornerDownLeftIcon /></Kbd>
+            <span>打开</span>
+          </span>
+        </div>
+        <span className="inline-flex items-center gap-1.5">
+          <Kbd>Esc</Kbd>
+          <span>关闭</span>
+        </span>
+      </CommandFooter>
     </Command>
   </CommandDialog>
 }
