@@ -5,17 +5,25 @@
  * 只把客观错误判为失败：修起来是秒级，也不会有争议。预算超限取决于内容取舍，
  * 挡住检查只会逼人挪字，所以只列出。
  *
+ * 链接目标以 git 为准。入库的才算有效，没入库也没被忽略的文件算错误；被
+ * .gitignore 忽略的本地产物和参照仓不检查。它们在开发机上有、在 CI 的这个时点
+ * 没有，只看存在性会让两边的结论相反。
+ *
  * 边界：只读；代码围栏与行内代码里的链接是被演示或被测试的样例，不检查；
- * 指向 reference/ 的链接取决于本机是否克隆参照仓，不检查；
  * 不带文档名的章节引用（如「计划 §3.5」）目标不确定，不检查。
- * 用法：node scripts/check-docs.mjs [仓库根]。根参数供夹具测试使用。
+ * 用法：node scripts/check-docs.mjs [仓库根]。根参数供夹具测试使用；
+ * 不在仓库根运行时没有 git 清单，退回纯存在性检查。
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
+import { spawnSync } from 'node:child_process'
 
 const root = resolve(process.argv[2] ?? '.')
 const show = file => relative(root, file).split(sep).join('/')
+// Windows 的路径不区分大小写，git 清单与链接写法的大小写可能不同。
+const key = name => process.platform === 'win32' ? name.toLowerCase() : name
+const samePath = (a, b) => key(a) === key(b)
 
 function walk(directory, accept) {
   if (!existsSync(directory)) return []
@@ -88,16 +96,47 @@ function outline(file) {
 let failures = 0
 let linkCount = 0
 let sectionCount = 0
-// 可达性只在受检文档之间连边。reference/ 是本地克隆的只读参照，不入库；
-// 笔记的出处链接指向它，是否可点取决于本机有没有克隆，所以不检查。
-const reference = file => show(file).startsWith('reference/')
-const reachable = new Map(documents.map(file => [file, new Set()]))
 
 function fail(message) {
   console.error(message)
   failures++
 }
 
+function git(args, input) {
+  return spawnSync('git', args, { cwd: root, encoding: 'utf8', input, maxBuffer: 16 * 1024 * 1024 })
+}
+
+/** 入库文件清单。清单只认仓库根：在子目录运行时 git 只列该子目录，会把其余文件误判成未入库。 */
+function trackedPaths() {
+  const top = git(['rev-parse', '--show-toplevel'])
+  if (top.status !== 0 || !samePath(resolve(top.stdout.trim()), root)) return null
+  return new Set(git(['ls-files', '-z']).stdout.split('\0').filter(Boolean).map(key))
+}
+const tracked = trackedPaths()
+
+/** 只问一次 git 哪些路径被忽略；退出码 1 表示一个都没有，不是错误。已入库的文件不受忽略规则约束，不会被列出。 */
+function ignoredPaths(names) {
+  if (tracked === null || names.length === 0) return new Set()
+  const answer = git(['check-ignore', '-z', '--stdin'], `${[...new Set(names)].join('\0')}\0`)
+  if (answer.status !== 0 && answer.status !== 1) fail(`无法读取 git 忽略规则：${answer.stderr.trim()}`)
+  return new Set(answer.stdout.split('\0').filter(Boolean).map(key))
+}
+
+/**
+ * tracked 已入库，或本就是由入库文件构成的目录；untracked 没入库也没被忽略；
+ * ignored 被忽略的本地文件。没有 git 清单时只分存在与否。
+ */
+function classify(file) {
+  const name = key(show(file))
+  if (tracked === null) return existsSync(file) ? 'tracked' : 'untracked'
+  if (tracked.has(name)) return 'tracked'
+  if (ignored.has(name)) return 'ignored'
+  return existsSync(file) && statSync(file).isDirectory() ? 'tracked' : 'untracked'
+}
+
+// 可达性只在受检文档之间连边。
+const reachable = new Map(documents.map(file => [file, new Set()]))
+const references = []
 for (const file of documents) {
   for (const { number, text } of proseLines(readFileSync(file, 'utf8'))) {
     for (const match of text.matchAll(/!?\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
@@ -105,30 +144,35 @@ for (const file of documents) {
       if (/^(?:https?:|mailto:)/.test(target)) continue
       const hash = target.indexOf('#')
       const location = hash < 0 ? target : target.slice(0, hash)
-      const resolved = location === '' ? file : resolve(dirname(file), location)
-      if (reference(resolved)) continue
-      linkCount++
-      const anchor = hash < 0 ? '' : target.slice(hash + 1)
-      let decoded = anchor
-      try {
-        decoded = decodeURIComponent(anchor)
-      } catch {
-        // 百分号不成码时按字面找不到锚点，走下面的坏锚点报告。
-      }
-      const at = `${show(file)}:${number}`
-      if (!existsSync(resolved)) {
-        fail(`${at} 链接目标不存在：${target}`)
-        continue
-      }
-      if (reachable.has(resolved)) reachable.get(file).add(resolved)
-      if (decoded === '' || !statSync(resolved).isFile()) continue
-      const range = decoded.match(/^L(\d+)(?:-L?(\d+))?$/)
-      if (range) {
-        if (Number(range[2] ?? range[1]) > readFileSync(resolved, 'utf8').split('\n').length) fail(`${at} 行号超出文件：${target}`)
-      } else if (resolved.endsWith('.md') && !outline(resolved).anchors.has(decoded)) {
-        fail(`${at} 锚点不存在：${target}`)
-      }
+      references.push({ file, number, target, location, resolved: location === '' ? file : resolve(dirname(file), location), anchor: hash < 0 ? '' : target.slice(hash + 1) })
     }
+  }
+}
+const ignored = ignoredPaths(references.map(reference => show(reference.resolved)))
+
+for (const { file, number, target, location, resolved, anchor } of references) {
+  // 文内锚点指向本文，本文已在受检之列，不必再问 git。
+  const kind = location === '' ? 'tracked' : classify(resolved)
+  if (kind === 'ignored') continue
+  linkCount++
+  if (kind === 'untracked') {
+    fail(`${show(file)}:${number} 链接目标${existsSync(resolved) ? '未入库' : '不存在'}：${target}`)
+    continue
+  }
+  if (reachable.has(resolved)) reachable.get(file).add(resolved)
+  if (anchor === '' || !statSync(resolved).isFile()) continue
+  let decoded = anchor
+  try {
+    decoded = decodeURIComponent(anchor)
+  } catch {
+    // 百分号不成码时按字面找不到锚点，走下面的坏锚点报告。
+  }
+  if (decoded === '') continue
+  const range = decoded.match(/^L(\d+)(?:-L?(\d+))?$/)
+  if (range) {
+    if (Number(range[2] ?? range[1]) > readFileSync(resolved, 'utf8').split('\n').length) fail(`${show(file)}:${number} 行号超出文件：${target}`)
+  } else if (resolved.endsWith('.md') && !outline(resolved).anchors.has(decoded)) {
+    fail(`${show(file)}:${number} 锚点不存在：${target}`)
   }
 }
 
@@ -147,24 +191,23 @@ for (const file of documents) {
   if (!seen.has(file)) fail(`没有入口可达：${show(file)}`)
 }
 
-/** 文档名之前可以紧贴中文（「不属于约定.md」）：最后一段路径内从左逐字让位，取第一个存在的文件。 */
-function documentAt(from, referenced) {
-  const name = referenced.replaceAll('\\', '/')
-  const lead = name.slice(0, name.lastIndexOf('/') + 1)
-  const bases = [dirname(from), root, join(root, 'docs')]
-  for (let cut = lead.length; cut < name.length; cut++) {
-    const found = bases.map(base => join(base, lead + name.slice(cut))).find(path => existsSync(path) && statSync(path).isFile())
-    if (found) return found
-  }
-  return undefined
-}
-
 const sources = [
   ...['src', 'tests'].flatMap(name => walk(join(root, name), file => /[.](?:ts|tsx|mjs|cjs)$/.test(file))),
   ...documents
 ]
 const named = /([\p{L}\p{N}._/\\-]+[.]md)[^\S\n]*§[^\S\n]*(\d+(?:[.]\d+)*)/gu
 const convention = /(?<![\p{L}\p{N}._/\\-])约定[^\S\n]*§[^\S\n]*(\d+(?:[.]\d+)*)/gu
+/** 文档名之前可以紧贴中文（「不属于约定.md」）：最后一段路径内从左逐字让位，取第一个存在的文件。 */
+function documentAt(from, referenced) {
+  const name = referenced.replaceAll('\\', '/')
+  const lead = name.slice(0, name.lastIndexOf('/') + 1)
+  const bases = [dirname(from), root, join(root, 'docs')]
+  for (let cut = lead.length; cut < name.length; cut++) {
+    const found = bases.map(base => join(base, lead + name.slice(cut))).find(path => existsSync(path) && statSync(path).isFile() && classify(path) !== 'ignored')
+    if (found) return found
+  }
+  return undefined
+}
 for (const file of sources) {
   readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
     for (const match of line.matchAll(named)) {
