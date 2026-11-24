@@ -47,6 +47,8 @@ export class JsonStorageDriver implements StorageDriver {
     // MOVEFILE_REPLACE_EXISTING，同卷原子）。直接 writeFileSync 覆盖目标，
     // 进程在写入中途崩溃/断电会留下截断文件 —— 而截断的会话文件在启动恢复
     // 处只能被隔离，等于丢掉整个会话，这是必须堵住的写放大代价之外的真风险
+    // 临时文件名固定为 `${file}.tmp`：单写者由进程级 acquireStorageLease 保证，
+    // 集成测试通过预建同名 `.tmp` 目录做写盘故障注入（create-persistence / session-preparation），勿改为随机后缀。
     const file = this.documentPath(collection, id)
     const tmp = `${file}.tmp`
     try {

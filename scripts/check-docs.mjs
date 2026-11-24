@@ -174,7 +174,11 @@ for (const { file, number, target, location, resolved, anchor } of references) {
   if (decoded === '') continue
   const range = decoded.match(/^L(\d+)(?:-L?(\d+))?$/)
   if (range) {
-    if (Number(range[2] ?? range[1]) > readFileSync(resolved, 'utf8').split('\n').length) fail(`${show(file)}:${number} 行号超出文件：${target}`)
+    if (Number(range[2] ?? range[1]) > readFileSync(resolved, 'utf8').split('\n').length) {
+      // docs/计划/ 中的历史审查与方案稿保留当时的代码行号证据，源码重构后只提示不阻断；文件存在性仍由上方严格校验。
+      if (show(file).startsWith('docs/计划/')) console.log(`${show(file)}:${number} 历史行号超出当前文件（只提示）：${target}`)
+      else fail(`${show(file)}:${number} 行号超出文件：${target}`)
+    }
   } else if (resolved.endsWith('.md') && !outline(resolved).anchors.has(decoded)) {
     fail(`${show(file)}:${number} 锚点不存在：${target}`)
   }

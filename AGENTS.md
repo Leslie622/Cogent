@@ -21,6 +21,12 @@ Cogent 是 Electron + pi 的桌面 Agent 客户端。开发从对应的模块入
 - 实现变化同步负责该事实的文档，核对模块页的「验收：」。完成模块时更新对应技术笔记，附同主题 `reference/` 源码对照和出处。同类问题回填原规则和代表场景。
 - 实现交付按[约定](docs/约定.md#1-代码边界与交付)验证。报告真实结果，分别说明通过项、已知失败和待验证项。归因须有证据。
 
+## 常用命令
+
+- 四关交付：`npm run lint && npm run typecheck && npm run build && npm test`
+- 定向单测：`npx vitest run <path>` 或 `node tests/run-tests.mjs run --project node|web|integration`
+- 环境前提（Windows 沙箱 `TEMP` 隐藏目录、`tools.test.ts` 的 `rg`/`fd` 路径）见[测试边界](docs/模块/测试.md#测试边界)。
+
 ## 协作与工作区
 
 - 回答简洁直接。提问先回答再动手，回应审查先表明同意或不同意，再说处理结果。
