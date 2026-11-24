@@ -23,7 +23,6 @@ const root = resolve(process.argv[2] ?? '.')
 const show = file => relative(root, file).split(sep).join('/')
 // Windows 的路径不区分大小写，git 清单与链接写法的大小写可能不同。
 const key = name => process.platform === 'win32' ? name.toLowerCase() : name
-const samePath = (a, b) => key(a) === key(b)
 
 function walk(directory, accept) {
   if (!existsSync(directory)) return []
@@ -106,10 +105,14 @@ function git(args, input) {
   return spawnSync('git', args, { cwd: root, encoding: 'utf8', input, maxBuffer: 16 * 1024 * 1024 })
 }
 
-/** 入库文件清单。清单只认仓库根：在子目录运行时 git 只列该子目录，会把其余文件误判成未入库。 */
+/**
+ * 入库文件清单，不在仓库根时为 null。清单只认仓库根：在子目录运行时 git 只列该子目录，
+ * 会把其余文件误判成未入库。是否在仓库根不拿路径字符串比对——临时目录常以 8.3 短名
+ * 出现（CI 上是 C:\Users\RUNNER~1\…），而 git 报回长名，字符串比对会把两者判成不同目录。
+ */
 function trackedPaths() {
-  const top = git(['rev-parse', '--show-toplevel'])
-  if (top.status !== 0 || !samePath(resolve(top.stdout.trim()), root)) return null
+  const prefix = git(['rev-parse', '--show-prefix'])
+  if (prefix.status !== 0 || prefix.stdout.trim() !== '') return null
   return new Set(git(['ls-files', '-z']).stdout.split('\0').filter(Boolean).map(key))
 }
 const tracked = trackedPaths()
@@ -151,6 +154,8 @@ for (const file of documents) {
 const ignored = ignoredPaths(references.map(reference => show(reference.resolved)))
 
 for (const { file, number, target, location, resolved, anchor } of references) {
+  // 可达性只看链接关系；目标没入库另行报告，不重复算成不可达。
+  if (reachable.has(resolved)) reachable.get(file).add(resolved)
   // 文内锚点指向本文，本文已在受检之列，不必再问 git。
   const kind = location === '' ? 'tracked' : classify(resolved)
   if (kind === 'ignored') continue
@@ -159,7 +164,6 @@ for (const { file, number, target, location, resolved, anchor } of references) {
     fail(`${show(file)}:${number} 链接目标${existsSync(resolved) ? '未入库' : '不存在'}：${target}`)
     continue
   }
-  if (reachable.has(resolved)) reachable.get(file).add(resolved)
   if (anchor === '' || !statSync(resolved).isFile()) continue
   let decoded = anchor
   try {
