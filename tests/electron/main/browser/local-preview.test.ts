@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync, unlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync, unlinkSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, parse } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +10,9 @@ import { createPreviewPolicy, checkPreviewResource } from '../../../../src/elect
 
 let root = '', oldRoot: string | undefined
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'cogent-preview-test-')); oldRoot = process.env.COGENT_HOME
+  // 根取真实路径：Windows 临时目录可能是 8.3 短名（CI 上就是），而预览授权靠真实路径比对根是否变化。
+  // 同步版必须用 native：纯 JS 的 realpathSync 在 Windows 上不展开短名，取回来的仍是短名。
+  root = realpathSync.native(mkdtempSync(join(tmpdir(), 'cogent-preview-test-'))); oldRoot = process.env.COGENT_HOME
   process.env.COGENT_HOME = join(root, 'home'); mock.profile = join(root, 'profile')
   mkdirSync(process.env.COGENT_HOME); mkdirSync(mock.profile)
 })

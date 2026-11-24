@@ -1,5 +1,5 @@
 /** 真磁盘验证 lease/旧入口兼容、无会话 owner、父租约竞态及 frozen HTML 资源。 */
-import { mkdtemp, writeFile, rm, mkdir, symlink, unlink } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm, mkdir, symlink, unlink, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -14,7 +14,9 @@ import type { FileContext } from '../../../../src/shared/files'
 const fixtures: Array<{ root: string; service: FileViewsService; outputs: OutputsService }> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const f of fixtures.splice(0)) { f.service.dispose(); await f.outputs.drain(); f.outputs.dispose(); await rm(f.root, { recursive: true, force: true }) } })
 async function fixture(scanner?: DirectoryScanner) {
-  const root = await mkdtemp(join(tmpdir(), 'cogent-file-views-'))
+  // 根取真实路径：Windows 临时目录可能是 8.3 短名（CI 上就是），文件登记后得到的是真实路径，
+  // 根与它不同形时相对内链会被判成根外，手写策略里的 realPath 也会与复核结果对不上。
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'cogent-file-views-')))
   await writeFile(join(root, 'a.txt'), '原件 A'); await writeFile(join(root, 'index.html'), '<script src="./app.js"></script>'); await writeFile(join(root, 'app.js'), 'window.saved = true')
   const context: FileContext = { version: 1, turnId: 'turn', userEntryId: 'user', cwd: root, roots: [root], platform: process.platform }
   const source = vi.fn((id: string) => { if (id !== 'session') throw new Error('会话不存在'); return { context, saved: true } })
