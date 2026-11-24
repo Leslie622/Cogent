@@ -1,6 +1,7 @@
 import { acquireStorageLease } from '../../node/storage-lease'
 import { storageRoot, migrateFromUserData } from './storage-root'
 import { registerTrustedContents, checkCurrentCaller } from './ipc/trusted'
+import { release } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, shell, type WebContents } from 'electron'
@@ -34,9 +35,20 @@ if (process.platform === 'win32') {
 // Chrome 硬件加速（设置页开关）：关掉可规避部分显卡/驱动导致的白屏、闪退、
 // 渲染异常。disableHardwareAcceleration 只准在 app ready 前调 —— 启动期读档
 // 消费，设置页改的是盘上值，重启后在此生效（「修改后需重启」即此）
-if (readSettingsFile().hardwareAcceleration === false) {
+const hardwareAcceleration = readSettingsFile().hardwareAcceleration !== false
+if (!hardwareAcceleration) {
   app.disableHardwareAcceleration()
 }
+
+/** 仅 Windows 11 22H2+（build ≥ 22621）且开启硬件加速时启用系统 Acrylic 材质；
+    Win10、macOS、Linux/国产信创及关闭硬件加速的环境自动降级为不透明实色渐变，避免底板透灰或合成异常。 */
+function supportsAcrylicBackdrop(platform: NodeJS.Platform, osRelease: string, hwAccel: boolean): boolean {
+  if (!hwAccel || platform !== 'win32') return false
+  const [major = 0, , build = 0] = osRelease.split('.').map((part) => Number.parseInt(part, 10))
+  return major > 10 || (major === 10 && build >= 22621)
+}
+
+const backdropSupported = supportsAcrylicBackdrop(process.platform, release(), hardwareAcceleration)
 
 // cogent-sound:// 特权协议声明（registerSchemesAsPrivileged 只准 ready 前调）
 registerSoundScheme()
@@ -57,9 +69,9 @@ function createWindow(): void {
     // 无边框：系统标题栏去掉，由 renderer 自绘头部（拖拽区 + 窗口控制按钮，
     // 窗口控制走 ipc/window.ts；头部视觉按 UI 设计方针逐件重写）。
     frame: false,
-    // 试验：系统 acrylic 材质垫在窗口后面，外壳底色带透明度时透出模糊的桌面（renderer 侧见 globals.css 的 data-backdrop）。
+    // 仅在支持系统材质的环境中垫 acrylic 材质，外壳底色带透明度时透出模糊桌面（renderer 侧见 globals.css 的 data-backdrop）。
     // 不设 transparent：Electron 对透明窗口强制关闭 thickFrame，系统圆角和阴影会消失；设了材质本身窗口就按半透明合成。
-    backgroundMaterial: 'acrylic',
+    ...(backdropSupported ? { backgroundMaterial: 'acrylic' as const } : {}),
     webPreferences: {
       // CJS preload 可在 sandbox 中运行；contextIsolation 始终保持开启，
       // renderer 只能通过 preload 暴露的窄接口访问主进程。
@@ -72,6 +84,7 @@ function createWindow(): void {
       // 挂载值不动，而 spinner 是合成器动画照转，观感即"计时器卡死"。VS Code
       // 同款做法；桌面 Agent 客户端的流式 UI（计时/自动吸底）必须常活。
       backgroundThrottling: false,
+      additionalArguments: backdropSupported ? ['--cogent-backdrop=1'] : [],
       preload: join(import.meta.dirname, '../preload/index.cjs')
     }
   })

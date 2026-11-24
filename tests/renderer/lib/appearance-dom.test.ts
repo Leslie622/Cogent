@@ -11,7 +11,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute('style')
   media.matches = false
   media.addEventListener.mockClear()
-  useAppearanceStore.setState({ uiFontSize: 14, codeFontSize: null, colorMode: 'light', interfaceSkin: 'mint', codeWrap: false, accent: 'default' })
+  useAppearanceStore.setState({ uiFontSize: 14, codeFontSize: null, colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65, codeWrap: false, accent: 'default' })
 })
 
 afterEach(() => {
@@ -117,4 +117,27 @@ it.each([
   expect(useAppearanceStore.getState().codeFontSize).toBe(codeSize)
   expect(UI_FONT_SIZES).toEqual([11, 12, 13, 14, 15, 16])
   expect(CODE_FONT_SIZES).toEqual(Array.from({ length: 17 }, (_value, index) => index + 8))
+})
+
+it.each([
+  [undefined, 65], [39, 65], [101, 65], [72.5, 65], ['80', 65],
+  [40, 40], [65, 65], [100, 100],
+])('读取外壳不透明度 %s，非法或越界回落默认 65，合法整数保留并实时投影到外壳', async (stored, expected) => {
+  vi.stubGlobal('cogent', { backdropSupported: true })
+  unbind = bindAppearanceDom()
+  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { shellOpacity: stored }, version: 0 }))
+  await useAppearanceStore.persist.rehydrate()
+  expect(useAppearanceStore.getState().shellOpacity).toBe(expected)
+  expect(document.documentElement.hasAttribute('data-backdrop')).toBe(true)
+  const before = document.documentElement.style.getPropertyValue('--chrome-surface')
+  useAppearanceStore.getState().setShellOpacity(expected === 100 ? 50 : 100)
+  expect(document.documentElement.style.getPropertyValue('--chrome-surface')).not.toBe(before)
+})
+
+it('不支持系统材质的环境不挂 data-backdrop，自动保持实色渐变', () => {
+  vi.stubGlobal('cogent', { backdropSupported: false })
+  useAppearanceStore.setState({ shellOpacity: 50 })
+  unbind = bindAppearanceDom()
+  expect(document.documentElement.hasAttribute('data-backdrop')).toBe(false)
+  expect(document.documentElement.style.getPropertyValue('--sidebar')).toMatch(/^#[0-9a-f]{6}$/i)
 })

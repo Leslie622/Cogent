@@ -8,7 +8,7 @@ import { useAppearanceStore } from '@/stores/appearance'
 const storageKey = 'cogent-appearance'
 
 beforeEach(() => {
-  useAppearanceStore.setState({ colorMode: 'light', interfaceSkin: 'mint' })
+  useAppearanceStore.setState({ colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65 })
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
     matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
   }))
@@ -17,7 +17,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   useAppearanceStore.getState().setAccent('default')
-  useAppearanceStore.setState({ colorMode: 'light', interfaceSkin: 'mint' })
+  useAppearanceStore.setState({ colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65 })
   localStorage.removeItem(storageKey)
   vi.unstubAllGlobals()
 })
@@ -177,4 +177,27 @@ it('RGBA 输入与取色同步，改色不重置透明度，重新打开仍显�
   expect(screen.getByRole('textbox', { name: 'A (%)' })).toHaveValue('50')
   fireEvent.keyDown(screen.getByRole('slider', { name: '透明度' }), { key: 'ArrowLeft' })
   expect(screen.getByRole('textbox', { name: 'A (%)' })).toHaveValue('49')
+})
+
+it('外壳不透明度滑杆默认禁用恢复钮，调整后显示百分比、即时保存并可恢复默认', () => {
+  vi.stubGlobal('cogent', { backdropSupported: true })
+  render(<AppearanceSection />)
+  expect(screen.getByRole('group', { name: '外壳不透明度' })).toBeInTheDocument()
+  const reset = screen.getByRole('button', { name: '恢复默认不透明度' })
+  expect(screen.getByText('65%')).toBeInTheDocument()
+  expect(reset).toBeDisabled()
+  act(() => useAppearanceStore.getState().setShellOpacity(80))
+  expect(screen.getByText('80%')).toBeInTheDocument()
+  expect(reset).not.toBeDisabled()
+  expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ state: { shellOpacity: 80 } })
+  fireEvent.click(reset)
+  expect(useAppearanceStore.getState().shellOpacity).toBe(65)
+  expect(screen.getByText('65%')).toBeInTheDocument()
+  expect(reset).toBeDisabled()
+})
+
+it('不支持系统材质的平台隐藏外壳不透明度滑杆', () => {
+  vi.stubGlobal('cogent', { backdropSupported: false })
+  render(<AppearanceSection />)
+  expect(screen.queryByRole('group', { name: '外壳不透明度' })).not.toBeInTheDocument()
 })

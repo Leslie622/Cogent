@@ -12,9 +12,11 @@
 import { useRef, useState } from 'react'
 import { IconArrowBackUp, IconChevronDown, IconFileImport, IconTrash } from '@tabler/icons-react'
 import { ColorPicker } from '@/components/ColorPicker'
+import { Hint } from '@/components/Hint'
 import { InterfaceSkinPicker } from '@/components/InterfaceSkinPicker'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -26,7 +28,12 @@ import {
 } from '@/components/ui/select'
 import { DEFAULT_THEME_ID, useActiveTheme, useThemeStore } from '@/stores/theme'
 import type { HexColor } from '@/lib/hex-color'
-import { interfaceThemeColors } from '@/lib/interface-skins'
+import {
+  DEFAULT_SHELL_OPACITY,
+  interfaceThemeColors,
+  SHELL_OPACITY_MAX,
+  SHELL_OPACITY_MIN,
+} from '@/lib/interface-skins'
 import {
   CODE_FONT_SIZES,
   UI_FONT_SIZES,
@@ -109,6 +116,9 @@ export function AppearanceSection() {
   const setColorMode = useAppearanceStore((s) => s.setColorMode)
   const interfaceSkin = useAppearanceStore((s) => s.interfaceSkin)
   const setInterfaceSkin = useAppearanceStore((s) => s.setInterfaceSkin)
+  const shellOpacity = useAppearanceStore((s) => s.shellOpacity)
+  const setShellOpacity = useAppearanceStore((s) => s.setShellOpacity)
+  const backdropSupported = 'cogent' in window && Boolean(window.cogent.backdropSupported)
   const uiFontSize = useAppearanceStore((s) => s.uiFontSize)
   const setUiFontSize = useAppearanceStore((s) => s.setUiFontSize)
   const showLineNumbers = useAppearanceStore((s) => s.showLineNumbers)
@@ -174,6 +184,34 @@ export function AppearanceSection() {
           </div>
           <InterfaceSkinPicker value={interfaceSkin} dark={isDark} onValueChange={setInterfaceSkin} />
         </div>
+        {backdropSupported && (
+          <SettingsRow title="外壳不透明度" desc={`调节头部与两侧栏的透光程度，100% 时完全不透明（默认 ${DEFAULT_SHELL_OPACITY}%）`}>
+            <div className="flex items-center gap-2">
+              <span className="w-9 text-right text-xs text-muted-foreground tabular-nums">{shellOpacity}%</span>
+              <Slider
+                value={[shellOpacity]}
+                min={SHELL_OPACITY_MIN}
+                max={SHELL_OPACITY_MAX}
+                step={1}
+                onValueChange={(value) => setShellOpacity(value[0])}
+                className="w-40"
+                aria-label="外壳不透明度"
+                thumbAriaLabel="外壳不透明度"
+              />
+              <Hint tip="恢复默认不透明度">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={shellOpacity === DEFAULT_SHELL_OPACITY}
+                  onClick={() => setShellOpacity(DEFAULT_SHELL_OPACITY)}
+                  aria-label="恢复默认不透明度"
+                >
+                  <IconArrowBackUp />
+                </Button>
+              </Hint>
+            </div>
+          </SettingsRow>
+        )}
         <SettingsRow title="界面字号" desc="统一调整界面文字，保留标题与小字层级；聊天正文沿用内容主题">
           <Select
             value={String(uiFontSize)}

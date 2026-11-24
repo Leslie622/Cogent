@@ -45,9 +45,9 @@ async function verify(expectedColumns: 3 | 6) {
       const surface = style('#root > .chrome-surface').backgroundImage
       const preview = style(`${card} .chrome-surface`)
       assert(surface !== 'none', `${id} ${dark} 外壳渐变被覆盖`)
-      // 缩略图保持实色，只比较色阶和方向；系统材质的 alpha 差异不属于预览配色错误。
-      const opaqueSurface = surface.replaceAll(/rgba\((\d+), (\d+), (\d+), [\d.]+\)/g, 'rgb($1, $2, $3)')
-      assert(opaqueSurface === preview.backgroundImage, `${id} ${dark} 预览与外壳不一致：${JSON.stringify({ surface, preview: preview.backgroundImage })}`)
+      // 缩略图保持实色基底，只比较色阶、柔光晕和方向；系统材质的 alpha 差异不属于预览配色错误。
+      const stripAlpha = (value: string) => value.replaceAll(/rgba\((\d+), (\d+), (\d+), [\d.]+\)/g, 'rgb($1, $2, $3)')
+      assert(stripAlpha(surface) === stripAlpha(preview.backgroundImage), `${id} ${dark} 预览与外壳不一致：${JSON.stringify({ surface, preview: preview.backgroundImage })}`)
       // 侧栏需要轻底区分面层；祖先仍透出同一张外壳底图，不能重新起一段渐变。
       const sidebarOverlay = style('[data-sidebar-clip]').backgroundColor
       assert(sidebarOverlay !== 'rgba(0, 0, 0, 0)', `${id} ${dark} 内容侧栏缺少面层区分`)

@@ -81,10 +81,18 @@
   --focus-color: oklch(0.556 0 0);
   --focus-width: 1px;
   /* 首帧前的薄荷缺省；共享外观投影按皮肤与明暗写入同名变量。 */
-  --chrome-surface: radial-gradient(ellipse 100% 100% at 0% 0% in oklab, #e2f3eb 0%, #edf6f1 58%, #f5faf7 100%);
-  --sidebar: #edf6f1;
-  /* 内容侧栏叠浅底拉开面层，仍透出原渐变；不改变文字和系统材质的不透明度。 */
-  --content-sidebar-overlay: rgb(255 255 255 / 0.6);
+  --chrome-surface:
+    radial-gradient(ellipse 90% 70% at 18% 0% in oklab, rgb(165 243 224 / 0.22) 0%, transparent 72%),
+    linear-gradient(135deg in oklab, #c9f0e4 0%, #dff4f2 48%, #eef6fb 100%);
+  --sidebar: #dff4f2;
+  /* 内容侧栏叠轻柔雾面拉开面层，保留外壳渐变与系统材质通透感。 */
+  --content-sidebar-overlay: rgb(255 255 255 / 0.34);
+  /* 玻璃壳上的交互柔光与内容区描边/紧投影（浅色用极淡冷灰描边，避免白边发亮）。 */
+  --chrome-hover: rgb(255 255 255 / 0.36);
+  --chrome-active: rgb(255 255 255 / 0.58);
+  --chrome-active-shadow: 0 1px 2px rgb(15 23 42 / 0.06), inset 0 1px 0 rgb(255 255 255 / 0.8);
+  --shell-main-border: rgb(15 23 42 / 0.08);
+  --shell-main-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 2px 6px rgb(0 0 0 / 0.04);
   --sidebar-foreground: oklch(0.205 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -122,9 +130,17 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
   --focus-color: oklch(0.708 0 0);
-  --chrome-surface: radial-gradient(ellipse 100% 100% at 0% 0% in oklab, #263b34 0%, #23322c 58%, #202925 100%);
-  --sidebar: #23322c;
-  --content-sidebar-overlay: rgb(0 0 0 / 0.2);
+  --chrome-surface:
+    radial-gradient(ellipse 90% 70% at 18% 0% in oklab, rgb(45 140 120 / 0.16) 0%, transparent 72%),
+    linear-gradient(135deg in oklab, #163b36 0%, #172c30 48%, #161f24 100%);
+  --sidebar: #172c30;
+  /* 深色侧栏用极微弱白雾提亮区分面层，不压黑发闷。 */
+  --content-sidebar-overlay: rgb(255 255 255 / 0.05);
+  --chrome-hover: rgb(255 255 255 / 0.07);
+  --chrome-active: rgb(255 255 255 / 0.12);
+  --chrome-active-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1);
+  --shell-main-border: rgb(255 255 255 / 0.09);
+  --shell-main-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
   /* 亮面自定义灰系（placeholder/空态）——深色补齐暗面值，
       否则深底下仍是亮灰/亮绿一块（2026-11-18 深色上线时补） */
   --placeholder: oklch(0.55 0 0);
@@ -765,18 +781,12 @@
   }
 }
 
-/* 试验：主窗口垫系统 acrylic 材质（electron/main/index.ts），data-backdrop 由 lib/appearance-dom.ts 标记。
-   头部与两级侧栏共享渐变，不透明度在 lib/interface-skins.ts；阅读面由 --app-canvas 单独控制。
-   系统材质透出量由这两处 alpha 分别控制，侧栏叠层只负责面层区分；卡片自身仍走原有底色。
-   body 不能垫不透明底，否则材质完全不可见。 */
+/* 主窗口垫系统 acrylic 材质（electron/main/index.ts），data-backdrop 由 lib/appearance-dom.ts 标记。
+   外壳与两级侧栏透出系统模糊材质（不透明度在 lib/interface-skins.ts，侧栏叠 --content-sidebar-overlay 轻雾面）；
+   阅读面 --app-canvas 始终保持纯净实色，与通透外壳形成明确的前后景反差，保证长文与代码可读性。
+   body 不能垫不透明底，否则外壳材质不可见。 */
 :root {
   --app-canvas: var(--background);
-}
-:root[data-backdrop] {
-  --app-canvas: rgb(255 255 255 / 0.35);
-}
-.dark[data-backdrop] {
-  --app-canvas: rgb(10 10 10 /  0.35);
 }
 html[data-backdrop] > body {
   background: transparent;

@@ -36,20 +36,20 @@ export function AppShell() {
       <div className="flex min-h-0 flex-1">
         {/* 应用侧栏：上/下两组路由钮（chrome 底色与 header 融合） */}
         <AppSidebar />
-        {/* 内容侧栏以轻底叠在同一张外壳渐变上，区分面层且保留自然散色。
-            左描边贴着圆角走；overflow-hidden 保留内容区整体的圆角裁剪。 */}
-        <main className="min-w-0 flex-1 overflow-hidden rounded-tl-(--shell-radius) border-l border-border shadow-[0_1px_2px_rgba(0,0,0,0.06),0_2px_8px_rgba(0,0,0,0.07)]">
+        {/* 内容侧栏以轻雾面叠在同一张外壳渐变上，区分面层且保留自然散色。
+            顶边与左描边沿圆角给玻璃高光边；overflow-hidden 保留内容区整体的圆角裁剪。 */}
+        <main className="min-w-0 flex-1 overflow-hidden rounded-tl-(--shell-radius) border-t border-l border-(--shell-main-border) shadow-(--shell-main-shadow)">
           {/* 拖拽杀过渡（同 components/ui/resizable.tsx 手法）：把手
               data-separator=active 期间裁剪窗的 width 过渡失效 —— 拖拽逐帧直写，
               200ms 缓动会把跟手拖成延迟 */}
           <div className="flex h-full [&:has([data-separator=active])>[data-sidebar-clip]]:transition-none">
-            {/* 裁剪窗：宽度承载折叠/展开过渡（200ms ease-out，RRP 时代同参数）；
-                折叠时内容层保宽被裁（滑出/滑入），不逐帧换行 */}
+            {/* 裁剪窗：宽度承载折叠/展开过渡；折叠时内容层保宽被裁（滑出/滑入），不逐帧换行。
+                contain 限制裁剪重绘范围，减轻 Windows Acrylic + CPU 栅格化下的掉帧。 */}
             <div
               ref={sidebar.clipRef}
               data-sidebar-clip
               inert={sidebarCollapsed}
-              className="h-full w-0 shrink-0 overflow-hidden bg-(--content-sidebar-overlay) transition-[width] duration-200 ease-out"
+              className="h-full w-0 shrink-0 overflow-hidden bg-(--content-sidebar-overlay) transition-[width] duration-150 ease-out will-change-[width] [contain:layout_paint] motion-reduce:transition-none"
               style={{ width: sidebarCollapsed ? 0 : sidebar.widthPx }}
             >
               {/* 内容层：固定像素宽（min-w-60 = 下限 240px 兜底）。content-sidebar
@@ -68,10 +68,11 @@ export function AppShell() {
                 )}
               </div>
             </div>
-            {/* 自绘拖拽条：样式/光带/状态机与 GlowResizeHandle 同构；拖过下限
-                折叠成 0、再向外拖恢复、键盘 ±16、双击回默认 */}
+            {/* 自绘拖拽条：折叠态收至 w-0 透明隐藏视觉线，避免紧贴 <main> 圆角左缘形成双线缝隙，
+                仍保留 after 隐形命中区供拖出/双击恢复。 */}
             {!sidebarAutoCollapsed && <SidebarResizeHandle
-              withHandle={view !== 'home'}
+              className={sidebarCollapsed ? 'w-0 bg-transparent' : 'bg-foreground/[0.07]'}
+              withHandle={view !== 'home' && !sidebarCollapsed}
               min={SIDEBAR_WIDTH_MIN}
               max={SIDEBAR_WIDTH_MAX}
               readWidth={sidebar.readWidth}
@@ -82,7 +83,7 @@ export function AppShell() {
             {/* content-main：flex-1 吃剩余宽度，窗口缩放增量全在这。
                 内容随 AppView 换：首页（HomeMain，件 5 —— 内部再分
                 [主要区 | 标签页区]）与设置（SettingsMain，件 6）已落地 */}
-            <div data-content-main className="min-w-0 flex-1 bg-(--app-canvas)">
+            <div data-content-main className="min-w-0 flex-1 bg-(--app-canvas) [contain:layout_style]">
               <WorkspaceFrame visible={view === 'home'} autoCollapsed={sidebarAutoCollapsed}>
               {view === 'home' ? (
                 <HomeMain />

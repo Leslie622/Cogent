@@ -5,6 +5,7 @@ export interface InterfacePalette {
   start: HexColor
   middle: HexColor
   end: HexColor
+  glow: HexColor
   detail: HexColor
 }
 
@@ -15,36 +16,36 @@ interface InterfaceSkin {
 }
 
 export const INTERFACE_SKINS = {
-  // 相邻色阶收窄明度差，浅色保留轻染色、深色避免压黑；墨色保持中性灰。
+  // 微跨色相 + 左上柔光晕：浅色通透清亮、深色保留低明度色相光感；墨色保持微冷高级灰。
   ink: {
     name: '墨色',
-    light: { start: '#efefef', middle: '#f5f5f5', end: '#f9f9f9', detail: '#171717' },
-    dark: { start: '#2b2b2b', middle: '#252525', end: '#202020', detail: '#e5e5e5' },
+    light: { start: '#dfe3e8', middle: '#eceff3', end: '#f6f7f9', glow: '#ffffff', detail: '#171717' },
+    dark: { start: '#2c3036', middle: '#212429', end: '#181a1e', glow: '#788294', detail: '#e5e5e5' },
   },
   mint: {
     name: '薄荷',
-    light: { start: '#e2f3eb', middle: '#edf6f1', end: '#f5faf7', detail: '#398c79' },
-    dark: { start: '#263b34', middle: '#23322c', end: '#202925', detail: '#87cbb6' },
+    light: { start: '#c9f0e4', middle: '#dff4f2', end: '#eef6fb', glow: '#a5f3e0', detail: '#398c79' },
+    dark: { start: '#163b36', middle: '#172c30', end: '#161f24', glow: '#2d8c78', detail: '#87cbb6' },
   },
   honey: {
     name: '蜜蜂',
-    light: { start: '#f5edcf', middle: '#f8f4e5', end: '#f7f9f7', detail: '#9b8433' },
-    dark: { start: '#3c3525', middle: '#332f25', end: '#2b2c27', detail: '#d4bd72' },
+    light: { start: '#f7e8be', middle: '#f9f1d8', end: '#f6f8f2', glow: '#ffe194', detail: '#9b8433' },
+    dark: { start: '#40341a', middle: '#2e291b', end: '#20201b', glow: '#9e8034', detail: '#d4bd72' },
   },
   parchment: {
     name: '羊皮纸',
-    light: { start: '#f4e7dc', middle: '#f8f0e7', end: '#fcf8f1', detail: '#b16b4c' },
-    dark: { start: '#3c3029', middle: '#342c26', end: '#2c2723', detail: '#d6a286' },
+    light: { start: '#f6dfd0', middle: '#f9ebe1', end: '#fcf6f0', glow: '#ffceb0', detail: '#b16b4c' },
+    dark: { start: '#422b20', middle: '#31241e', end: '#231d1a', glow: '#9c6044', detail: '#d6a286' },
   },
   sea: {
     name: '海盐',
-    light: { start: '#e1edf9', middle: '#edf4fb', end: '#f6f9fd', detail: '#557da6' },
-    dark: { start: '#2a3a4d', middle: '#263343', end: '#222c38', detail: '#92b8df' },
+    light: { start: '#cde4fc', middle: '#e2ecfb', end: '#f1f2fc', glow: '#a6d4ff', detail: '#557da6' },
+    dark: { start: '#17324f', middle: '#1a2840', end: '#171d2c', glow: '#4080c8', detail: '#92b8df' },
   },
   dusk: {
     name: '暮紫',
-    light: { start: '#eee5f8', middle: '#f4eefb', end: '#faf7fd', detail: '#8a6aa5' },
-    dark: { start: '#3a3047', middle: '#322b3c', end: '#2a2632', detail: '#bda3d8' },
+    light: { start: '#e2d6fb', middle: '#f1e4f8', end: '#faf2f6', glow: '#d4b8ff', detail: '#8a6aa5' },
+    dark: { start: '#31214a', middle: '#2b1f38', end: '#1f1a28', glow: '#7e58b8', detail: '#bda3d8' },
   },
 } as const satisfies Record<string, InterfaceSkin>
 
@@ -64,19 +65,34 @@ export function isInterfaceSkinId(value: unknown): value is InterfaceSkinId {
   return INTERFACE_SKIN_IDS.some((id) => id === value)
 }
 
-/** 试验：主窗口垫系统材质时，外壳基底保留的不透明度（越小越透）；缩略图仍用实色。 */
-const BACKDROP_ALPHA = 0.7
+/** 主窗口垫系统材质时，外壳基底不透明度范围（%）与默认值；缩略图仍用实色。 */
+export const SHELL_OPACITY_MIN = 40
+export const SHELL_OPACITY_MAX = 100
+export const DEFAULT_SHELL_OPACITY = 65
+const GLOW_ALPHA_LIGHT = 0.22
+const GLOW_ALPHA_DARK = 0.16
 
-export function interfaceSkinVariables(id: InterfaceSkinId, dark: boolean, backdrop = false) {
+export function clampShellOpacity(value: number): number {
+  return Math.min(SHELL_OPACITY_MAX, Math.max(SHELL_OPACITY_MIN, Math.round(value)))
+}
+
+export function interfaceSkinVariables(
+  id: InterfaceSkinId,
+  dark: boolean,
+  backdrop = false,
+  opacity = DEFAULT_SHELL_OPACITY,
+) {
   const palette = INTERFACE_SKINS[id][dark ? 'dark' : 'light']
   const channel = (hex: HexColor) => {
     const value = Number.parseInt(hex.slice(1), 16)
     return `${(value >> 16) & 255} ${(value >> 8) & 255} ${value & 255}`
   }
-  const paint = (hex: HexColor) => backdrop ? `rgb(${channel(hex)} / ${BACKDROP_ALPHA})` : hex
+  const alpha = clampShellOpacity(opacity) / 100
+  const glowAlpha = dark ? GLOW_ALPHA_DARK : GLOW_ALPHA_LIGHT
+  const paint = (hex: HexColor) => (backdrop && alpha < 1 ? `rgb(${channel(hex)} / ${alpha})` : hex)
   return {
-    // 椭圆半径跟随宽高：顶部右端与左栏底部都能走完整段色阶，不把末色藏在正文下面。
-    '--chrome-surface': `radial-gradient(ellipse 100% 100% at 0% 0% in oklab, ${paint(palette.start)} 0%, ${paint(palette.middle)} 58%, ${paint(palette.end)} 100%)`,
+    // 宽幅漫射：顶部偏左大范围柔光晕 + 135deg 对角微跨色相渐变，避免色彩聚在左上死角。
+    '--chrome-surface': `radial-gradient(ellipse 90% 70% at 18% 0% in oklab, rgb(${channel(palette.glow)} / ${glowAlpha}) 0%, transparent 72%), linear-gradient(135deg in oklab, ${paint(palette.start)} 0%, ${paint(palette.middle)} 48%, ${paint(palette.end)} 100%)`,
     '--sidebar': paint(palette.middle),
     '--visual-radio-color': palette.detail,
   }

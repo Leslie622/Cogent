@@ -14,7 +14,15 @@ import { isHexColor, type HexColor } from '@/lib/hex-color'
 import { quoteFontFamily } from '@/lib/theme/compile'
 import type { ThemeTokens } from '@/lib/theme/tokens'
 import type { DurationPrecision } from '@/lib/format-duration'
-import { DEFAULT_INTERFACE_SKIN, isInterfaceSkinId, type InterfaceSkinId } from '@/lib/interface-skins'
+import {
+  clampShellOpacity,
+  DEFAULT_INTERFACE_SKIN,
+  DEFAULT_SHELL_OPACITY,
+  isInterfaceSkinId,
+  SHELL_OPACITY_MAX,
+  SHELL_OPACITY_MIN,
+  type InterfaceSkinId,
+} from '@/lib/interface-skins'
 
 export type OutputVerbosity = 'low' | 'high'
 
@@ -77,6 +85,8 @@ interface AppearanceState {
   durationPrecision: DurationPrecision
   colorMode: ColorMode
   interfaceSkin: InterfaceSkinId
+  /** 主窗口外壳（头部与两侧栏）不透明度（40–100%，100% 即完全不透明） */
+  shellOpacity: number
   uiFontSize: number
   /** 对话内容代码块行号（Streamdown lineNumbers prop；默认关 = 主流聊天惯例） */
   showLineNumbers: boolean
@@ -94,6 +104,7 @@ interface AppearanceState {
   setDurationPrecision: (precision: DurationPrecision) => void
   setColorMode: (mode: ColorMode) => void
   setInterfaceSkin: (skin: InterfaceSkinId) => void
+  setShellOpacity: (opacity: number) => void
   setUiFontSize: (size: number) => void
   setShowLineNumbers: (show: boolean) => void
   setCodeWrap: (wrap: boolean) => void
@@ -152,6 +163,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       durationPrecision: 2,
       colorMode: 'light',
       interfaceSkin: DEFAULT_INTERFACE_SKIN,
+      shellOpacity: DEFAULT_SHELL_OPACITY,
       uiFontSize: DEFAULT_UI_FONT_SIZE,
       showLineNumbers: false,
       codeWrap: false,
@@ -164,6 +176,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       setDurationPrecision: (durationPrecision) => set({ durationPrecision }),
       setColorMode: (colorMode) => set({ colorMode }),
       setInterfaceSkin: (interfaceSkin) => set({ interfaceSkin }),
+      setShellOpacity: (opacity) => set({ shellOpacity: clampShellOpacity(opacity) }),
       setUiFontSize: (uiFontSize) => set({ uiFontSize }),
       setShowLineNumbers: (showLineNumbers) => set({ showLineNumbers }),
       setCodeWrap: (codeWrap) => set({ codeWrap }),
@@ -185,6 +198,13 @@ export const useAppearanceStore = create<AppearanceState>()(
           colorMode:
             raw?.colorMode === 'dark' || raw?.colorMode === 'system' ? raw.colorMode : 'light',
           interfaceSkin: isInterfaceSkinId(raw?.interfaceSkin) ? raw.interfaceSkin : DEFAULT_INTERFACE_SKIN,
+          shellOpacity:
+            typeof raw?.shellOpacity === 'number' &&
+            Number.isInteger(raw.shellOpacity) &&
+            raw.shellOpacity >= SHELL_OPACITY_MIN &&
+            raw.shellOpacity <= SHELL_OPACITY_MAX
+              ? raw.shellOpacity
+              : DEFAULT_SHELL_OPACITY,
           uiFontSize:
             typeof raw?.uiFontSize === 'number' && (UI_FONT_SIZES as readonly number[]).includes(raw.uiFontSize)
               ? raw.uiFontSize

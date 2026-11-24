@@ -27,9 +27,8 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties
-/** chrome 面上的 ghost hover 覆盖（见文件头注释）：黑低透明度软叠（同 ChatGPT
-    配方），比白/灰块底通透、不压薄荷色相；深度按用户意见压到 5% */
-const CHROME_HOVER = 'hover:bg-foreground/5 hover:text-foreground'
+/** 玻璃外壳面上的 ghost hover 覆盖：用半透明柔白光替代黑灰叠层，在彩色磨砂底上更通透。 */
+const CHROME_HOVER = 'hover:bg-(--chrome-hover) hover:text-foreground'
 
 /** 菜单名：点击行为空位（后续件接菜单），先只出形 */
 const MENUS = ['文件', '编辑', '视图', '帮助'] as const

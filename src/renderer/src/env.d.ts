@@ -129,6 +129,8 @@ declare global {
       getSystemNotifyStatus: () => Promise<{ enabled: boolean | null }>
       /** 运行平台（'win32' | 'darwin' | 'linux'） */
       platform: string
+      /** 主窗口是否启用了系统半透明材质（不支持的环境降级为实色皮肤并隐藏不透明度滑杆） */
+      backdropSupported: boolean
       /** 订阅最大化状态变化，返回取消订阅函数 */
       onWindowState: (callback: (isMaximized: boolean) => void) => () => void
     }

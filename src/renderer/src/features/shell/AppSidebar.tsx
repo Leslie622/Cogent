@@ -45,14 +45,14 @@ const ITEMS: ReadonlyArray<{
   { view: 'plugins', label: '插件', icon: IconPuzzle, iconActive: IconPuzzleFilled },
 ]
 
-/** 图标钮样式：黑低透明度软叠（同 ChatGPT：hover ~8%、active ~12%），不用
-    白/灰实心块 —— 实心块在薄荷渐变上生硬发灰。active 仍配实心图标。
+/** 图标钮样式：玻璃面使用半透明柔光胶囊（--chrome-hover / --chrome-active + 顶部微高光），
+    在彩色渐变底上保持通透不发灰；active 仍配实心图标。
     未激活图标用实色 muted-foreground —— 透明度文字/图标会被 Chromium 降级
     光栅化而发虚（字体清晰度问题的同源规则，见 HomeSidebar 注释） */
 const railButton = (active: boolean) =>
   cn(
-    'rounded-lg text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
-    active && 'bg-foreground/5 text-foreground hover:bg-foreground/5'
+    'rounded-lg text-muted-foreground hover:bg-(--chrome-hover) hover:text-foreground',
+    active && 'bg-(--chrome-active) text-foreground shadow-(--chrome-active-shadow) hover:bg-(--chrome-active)'
   )
 
 export function AppSidebar() {

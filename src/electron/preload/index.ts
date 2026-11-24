@@ -166,6 +166,8 @@ const api = {
     ipcRenderer.invoke(IPC.notifySystemStatus),
   /** 运行平台（'win32' | 'darwin' | 'linux'；平台分支 UI 的判定源） */
   platform: process.platform,
+  /** 主窗口是否启用了系统半透明材质（仅 Win11 22H2+ 且开启硬件加速；其余平台与子窗口均为 false） */
+  backdropSupported: process.argv.includes('--cogent-backdrop=1'),
   /** 订阅最大化状态变化（自绘 header 的最大化/还原图标切换） */
   onWindowState: (callback: (isMaximized: boolean) => void): (() => void) => {
     const listener = (_event: unknown, isMaximized: boolean): void => callback(isMaximized)

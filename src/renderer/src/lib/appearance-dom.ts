@@ -5,15 +5,16 @@ import { interfaceSkinVariables } from '@/lib/interface-skins'
 export function bindAppearanceDom(): () => void {
   const root = document.documentElement
   const media = window.matchMedia('(prefers-color-scheme: dark)')
-  // 试验：只有主窗口垫了系统材质（electron/main/index.ts）；控制台与内嵌窗口按 hash 分流，保持不透明。
-  const backdrop = window.location.hash === ''
+  // 只有主窗口且宿主实际启用了系统材质（Win11 22H2+ 且开硬件加速）才启用透明底；
+  // 其他平台（Win10 / macOS / Linux / 国产信创 / 关硬件加速）与子窗口保持实色渐变。
+  const backdrop = window.location.hash === '' && 'cogent' in window && Boolean(window.cogent.backdropSupported)
   const apply = () => {
-    const { colorMode, interfaceSkin, codeWrap, accent, uiFontSize, codeFontSize } = useAppearanceStore.getState()
+    const { colorMode, interfaceSkin, shellOpacity, codeWrap, accent, uiFontSize, codeFontSize } = useAppearanceStore.getState()
     const dark = isDarkMode(colorMode, media.matches)
     root.classList.toggle('dark', dark)
     root.dataset.interfaceSkin = interfaceSkin
     root.toggleAttribute('data-backdrop', backdrop)
-    const skin = interfaceSkinVariables(interfaceSkin, dark, backdrop)
+    const skin = interfaceSkinVariables(interfaceSkin, dark, backdrop, shellOpacity)
     root.style.setProperty('--chrome-surface', skin['--chrome-surface'])
     root.style.setProperty('--sidebar', skin['--sidebar'])
     root.toggleAttribute('data-code-wrap', codeWrap)
