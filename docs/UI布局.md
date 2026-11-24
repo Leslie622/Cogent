@@ -87,7 +87,7 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 | --- | --- |
 | header + 两级侧栏 | `.chrome-surface` 统一绘制宽幅漫射渐变（顶部偏左大范围柔光晕 + 135° 对角微跨色相三段色阶，Oklab 插值），仅在 Windows 11 22H2+ 且开启硬件加速时垫系统 Acrylic 材质并开放 40–100% 外壳不透明度滑杆（默认 65%，100% 为纯实色）；Win10 / macOS / Linux / 国产信创及关闭硬件加速时自动降级为 100% 实色渐变并隐藏滑杆；内容侧栏叠 `--content-sidebar-overlay` 轻雾面（浅色白 34%、深色白 5%），保留通透渐变同时拉开面层。墨色 / 薄荷 / 蜜蜂 / 羊皮纸 / 海盐 / 暮紫各有浅深两套，默认薄荷；共享色板在 `lib/interface-skins.ts` |
 | content-main | 阅读面始终独立垫 100% 实色 `--app-canvas`（浅色纯白、深色中性暗底），不透桌面以保证长文与代码可读性；内容区整体保留左上圆角、顶/左细描边（`--shell-main-border`，浅色极淡冷灰、深色微弱白边）与轻紧投影；侧栏折叠后拖拽条视觉收至 0 宽隐藏，仅留隐形热区 |
-| hover / active | 玻璃外壳（header / app-sidebar）使用半透明柔光胶囊（`--chrome-hover` / `--chrome-active` + 微高光）；内容侧栏行使用低透明软叠 `bg-accent-foreground/5`；active 保持清晰层级 |
+| hover / active | 玻璃外壳（header / app-sidebar）使用半透明柔光胶囊（`--chrome-hover` / `--chrome-active` + 微高光）；内容侧栏行使用单层磁吸滑动胶囊 `bg-accent-foreground/5` 随指针在行间平滑过渡（减少动画下即时切换）；active 保持清晰层级且不叠色加深 |
 | 行内小钮 | 原生 ghost（hover `bg-muted`）；侧栏搜索入口用 Button ghost-soft，与会话行同为 `bg-accent-foreground/5`；软叠由组件变体提供，不落在 Button 调用点 |
 | 文字 | 实色 token；次级 `muted-foreground`，placeholder `--placeholder`；层级靠实色深浅 |
 | 语义色 | destructive 错误红；warning 琥珀 `oklch(0.666 0.155 70)`；chrome-accent 品牌蓝 `#0231fa` |

@@ -9,14 +9,12 @@ import { SETTINGS_GROUPS } from './data'
 import { cn } from 'cn'
 import { IconSearch } from '@tabler/icons-react'
 import { useSettingsStore } from '@/stores/settings'
-
-/** 行 hover / active 底色：黑 5% 软叠，active = 常驻 hover 色（全局规则） */
-const ROW_HOVER = 'hover:bg-accent-foreground/5'
-const ROW_ACTIVE = 'bg-accent-foreground/5'
+import { useSidebarHoverPill } from '@/hooks/use-sidebar-hover-pill'
 
 export function SettingsSidebar() {
   const section = useSettingsStore((s) => s.section)
   const setSection = useSettingsStore((s) => s.setSection)
+  const { containerRef, pillRef } = useSidebarHoverPill()
 
   return (
     <div className="flex h-full flex-col">
@@ -37,33 +35,44 @@ export function SettingsSidebar() {
           />
         </div>
 
-        {SETTINGS_GROUPS.map((group) => (
-          <section key={group.label} className="mt-4 first:mt-4 flex flex-col gap-0.5">
-            {/* 分组标题：灰字，非按钮（与 HomeSidebar 分区标题同档） */}
-            <div className="flex h-7 items-center px-2 text-sm text-muted-foreground">
-              {group.label}
-            </div>
-            {group.items.map(({ id, label, icon: Icon }) => {
-              const active = section === id
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setSection(id)}
-                  aria-current={active ? 'true' : undefined}
-                  className={cn(
-                    'flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground',
-                    ROW_HOVER,
-                    active && ROW_ACTIVE,
-                  )}
-                >
-                  <Icon className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{label}</span>
-                </button>
-              )
-            })}
-          </section>
-        ))}
+        <div ref={containerRef} className="relative">
+          <div
+            ref={pillRef}
+            aria-hidden="true"
+            data-visible="false"
+            className="sidebar-hover-pill rounded-md bg-accent-foreground/5"
+          />
+          {SETTINGS_GROUPS.map((group) => (
+            <section key={group.label} className="mt-4 flex flex-col gap-0.5">
+              {/* 分组标题：灰字，非按钮（与 HomeSidebar 分区标题同档） */}
+              <div className="flex h-7 items-center px-2 text-sm text-muted-foreground">
+                {group.label}
+              </div>
+              {group.items.map(({ id, label, icon: Icon }) => {
+                const active = section === id
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    data-sidebar-row
+                    data-active={active || undefined}
+                    onClick={() => setSection(id)}
+                    aria-current={active ? 'true' : undefined}
+                    className="sidebar-row group relative flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground"
+                  >
+                    <Icon
+                      className={cn(
+                        'sidebar-row-icon size-4 shrink-0 text-muted-foreground',
+                        active && 'text-foreground'
+                      )}
+                    />
+                    <span className="truncate">{label}</span>
+                  </button>
+                )
+              })}
+            </section>
+          ))}
+        </div>
       </div>
     </div>
   )

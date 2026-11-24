@@ -266,6 +266,55 @@
   background: var(--chrome-surface);
 }
 
+/* ── 侧边栏列表悬停磁吸动效（HomeSidebar / SettingsSidebar 共用）──
+   单层滑动胶囊在列表项间平滑滑行并自适应高度；选中/弹窗态在胶囊覆上时淡出自身底色，
+   避免双层 5% 叠色变深。图标仅随悬停平滑切换实色，不做位移或缩放抖动。 */
+.sidebar-hover-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--pill-h, 2rem);
+  translate: 0 var(--pill-y, 0px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    translate 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 120ms ease-out;
+  will-change: translate, opacity;
+}
+
+.sidebar-hover-pill[data-visible='true'] {
+  opacity: 1;
+}
+
+.sidebar-row {
+  transition: background-color 150ms ease-out;
+}
+
+.sidebar-row[data-active='true']:not([data-pill-over]),
+.sidebar-row[data-popup-open]:not([data-pill-over]),
+.sidebar-row:has([data-popup-open]):not([data-pill-over]) {
+  background-color: color-mix(in oklab, var(--accent-foreground) 5%, transparent);
+}
+
+.sidebar-row-icon {
+  transition: color 150ms ease-out;
+}
+
+.sidebar-row:hover .sidebar-row-icon {
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-hover-pill,
+  .sidebar-row,
+  .sidebar-row-icon {
+    transition: none;
+  }
+}
+
 /* ── 滚动渐隐（scroll-fade-*）：内容滚出视口边界处透明度渐隐，不硬截断 ──
    ChatGPT 同款手法：mask 渐变（不是叠色块，任意底色通用，滚动条也随带渐隐）。
    base-luma 组件（message-scroller / attachment / code-block）类名里引用了这组
