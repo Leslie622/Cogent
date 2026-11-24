@@ -13,7 +13,7 @@ function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message)
 }
 
-window.cogent = { onWindowState: () => () => {} } as unknown as typeof window.cogent
+window.cogent = { onWindowState: () => () => {}, onEngineEvent: () => () => {}, onBrowserEvent: () => () => {} } as unknown as typeof window.cogent
 useUiStore.setState({ view: 'settings' })
 useSettingsStore.setState({ section: 'appearance' })
 useAppearanceStore.setState({ interfaceSkin: 'mint', colorMode: 'light' })
@@ -41,16 +41,37 @@ async function verify(expectedColumns: 3 | 6) {
   for (const dark of [false, true]) {
     for (const id of INTERFACE_SKIN_IDS) {
       await select(id, dark)
+      const card = `[role=radio][aria-label="${INTERFACE_SKINS[id].name}"]`
       const surface = style('#root > .chrome-surface').backgroundImage
-      const preview = style(`[role=radio][aria-label="${INTERFACE_SKINS[id].name}"] .chrome-surface`)
+      const preview = style(`${card} .chrome-surface`)
       assert(surface !== 'none', `${id} ${dark} 外壳渐变被覆盖`)
-      assert(surface === preview.backgroundImage, `${id} ${dark} 预览与外壳不一致`)
-      assert(style('[data-sidebar-clip]').backgroundColor === style(`[role=radio][aria-label="${INTERFACE_SKINS[id].name}"] .bg-content-sidebar`).backgroundColor,
-      `${id} ${dark} 侧栏与预览不一致`)
+      // 缩略图保持实色，只比较色阶和方向；系统材质的 alpha 差异不属于预览配色错误。
+      const opaqueSurface = surface.replaceAll(/rgba\((\d+), (\d+), (\d+), [\d.]+\)/g, 'rgb($1, $2, $3)')
+      assert(opaqueSurface === preview.backgroundImage, `${id} ${dark} 预览与外壳不一致：${JSON.stringify({ surface, preview: preview.backgroundImage })}`)
+      // 侧栏需要轻底区分面层；祖先仍透出同一张外壳底图，不能重新起一段渐变。
+      const sidebarOverlay = style('[data-sidebar-clip]').backgroundColor
+      assert(sidebarOverlay !== 'rgba(0, 0, 0, 0)', `${id} ${dark} 内容侧栏缺少面层区分`)
+      assert(sidebarOverlay === style(`${card} [data-slot="interface-skin-sidebar"]`).backgroundColor, '缩略图侧栏面层与应用不一致')
+      for (const selector of ['[data-sidebar-clip]', `${card} [data-slot="interface-skin-sidebar"]`]) {
+        let node = document.querySelector<HTMLElement>(selector)!
+        assert(getComputedStyle(node).backgroundImage === 'none', '内容侧栏重复绘制渐变')
+        // 半透明背景保留原渐变色阶，不能成为完全不透明的色块。
+        const alpha = Number.parseFloat(getComputedStyle(node).backgroundColor.split(',').at(-1)!)
+        assert(alpha > 0 && alpha < 1, '内容侧栏没有保留外壳渐变')
+        node = node.parentElement!
+        while (!node.classList.contains('chrome-surface')) {
+          const background = getComputedStyle(node)
+          assert(background.backgroundColor === 'rgba(0, 0, 0, 0)' && background.backgroundImage === 'none',
+            `${id} ${dark} 侧栏没有连续透出外壳渐变：${selector}`)
+          node = node.parentElement!
+        }
+      }
       assert(!surfaces.has(surface), `${id} ${dark} 皮肤没有实际改变外壳`)
       surfaces.add(surface)
       const mode = dark ? 'dark' : 'light'
-      const background = style('main').backgroundColor
+      const background = style('[data-content-main]').backgroundColor
+      assert(background !== 'rgba(0, 0, 0, 0)', '阅读面没有独立底色')
+      assert(style(`${card} [data-slot="interface-skin-content"]`).backgroundColor !== 'rgba(0, 0, 0, 0)', '缩略图阅读面没有独立底色')
       if (mainBackground[mode] === '') mainBackground[mode] = background
       assert(background === mainBackground[mode], '换肤影响正文底色')
       assert(document.querySelectorAll('[role=radio][aria-checked=true]').length === 1, '皮肤不是单选')
@@ -63,7 +84,7 @@ async function verify(expectedColumns: 3 | 6) {
         const panel = document.querySelector('[role=radiogroup]')!.getBoundingClientRect()
         assert(box.width >= 56 && box.left >= panel.left && box.right <= panel.right + 1, '皮肤卡太窄或溢出')
       }
-      rows.push({ id, dark, width: innerWidth, surface, sidebar: style('[data-sidebar-clip]').backgroundColor })
+      rows.push({ id, dark, width: innerWidth, surface, background })
     }
   }
   return rows

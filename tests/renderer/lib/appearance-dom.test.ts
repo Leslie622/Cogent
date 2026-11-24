@@ -54,22 +54,22 @@ it('深色继续响应皮肤，切明暗保留选择与独立强调色', () => {
   store.setInterfaceSkin('sea')
   expect(root.dataset.interfaceSkin).toBe('sea')
   const lightSurface = root.style.getPropertyValue('--chrome-surface')
-  const lightSidebar = root.style.getPropertyValue('--content-sidebar')
+  const lightSidebar = root.style.getPropertyValue('--sidebar')
   store.setColorMode('dark')
   expect(root.classList.contains('dark')).toBe(true)
   const darkSurface = root.style.getPropertyValue('--chrome-surface')
-  const darkSidebar = root.style.getPropertyValue('--content-sidebar')
+  const darkSidebar = root.style.getPropertyValue('--sidebar')
   expect(darkSurface).not.toBe(lightSurface)
   expect(darkSidebar).not.toBe(lightSidebar)
   store.setInterfaceSkin('parchment')
   expect(root.style.getPropertyValue('--chrome-surface')).not.toBe(darkSurface)
-  expect(root.style.getPropertyValue('--content-sidebar')).not.toBe(darkSidebar)
+  expect(root.style.getPropertyValue('--sidebar')).not.toBe(darkSidebar)
   expect(root.style.getPropertyValue('--chrome-accent')).toBe('#123abc')
   expect(useAppearanceStore.getState().colorMode).toBe('dark')
   store.setInterfaceSkin('sea')
   store.setColorMode('light')
   expect(root.style.getPropertyValue('--chrome-surface')).toBe(lightSurface)
-  expect(root.style.getPropertyValue('--content-sidebar')).toBe(lightSidebar)
+  expect(root.style.getPropertyValue('--sidebar')).toBe(lightSidebar)
 })
 
 it('跟随系统换套且不重写皮肤偏好，同源窗口重读皮肤并在首帧恢复', async () => {
@@ -95,8 +95,8 @@ it('跟随系统换套且不重写皮肤偏好，同源窗口重读皮肤并在�
 })
 
 it.each([
-  [undefined, 'mint'], ['constructor', 'mint'], ['unknown', 'mint'], [42, 'mint'],
-  ['forest', 'forest'], ['mint', 'mint'], ['honey', 'honey'], ['parchment', 'parchment'], ['sea', 'sea'], ['dusk', 'dusk'],
+  [undefined, 'mint'], ['constructor', 'mint'], ['unknown', 'mint'], [42, 'mint'], ['forest', 'mint'], // 已下线的皮肤 ID
+  ['ink', 'ink'], ['mint', 'mint'], ['honey', 'honey'], ['parchment', 'parchment'], ['sea', 'sea'], ['dusk', 'dusk'],
 ])('读取皮肤偏好 %s，旧档和非法值回原薄荷，合法选择保留', async (stored, expected) => {
   localStorage.setItem('cogent-appearance', JSON.stringify({ state: { interfaceSkin: stored }, version: 0 }))
   await useAppearanceStore.persist.rehydrate()

@@ -38,9 +38,14 @@ app.whenReady().then(async()=>{
  const output=${JSON.stringify(output ? resolve(output) : null)};
  if(output) {
    mkdirSync(output,{recursive:true});
-   for(const [width,id,dark] of [[1120,'forest',false],[1120,'sea',true],[400,'dusk',true]]) {
+   const scenes=['ink','mint','honey','parchment','sea','dusk'].flatMap(id=>[false,true].map(dark=>[1120,id,dark]));
+   scenes.push([400,'dusk',true]);
+   for(const [width,id,dark] of scenes) {
      win.setContentSize(width,850);
+     // 离屏窗口没有桌面材质，截图用中性明暗底承接 alpha，避免暗色被默认白底冲淡。
+     win.setBackgroundColor(dark?'#171717':'#ffffff');
      await win.webContents.executeJavaScript('window.interfaceSkinHarness.select('+JSON.stringify(id)+','+dark+')');
+     await win.webContents.executeJavaScript('document.querySelector(".scrollbar-gutter-stable").scrollTop=0');
      await new Promise(resolve=>setTimeout(resolve,200));
      writeFileSync(join(output,id+'-'+(dark?'dark':'light')+'-'+width+'.png'),(await win.webContents.capturePage()).toPNG());
    }

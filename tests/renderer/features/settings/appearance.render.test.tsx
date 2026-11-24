@@ -31,21 +31,21 @@ it('主题色紧随深浅模式，卡片单选即时保存，键盘可切换且�
   const cards = within(picker)
   expect(cards.getAllByRole('radio')).toHaveLength(6)
   expect(cards.getByRole('radio', { name: '薄荷' })).toHaveAttribute('aria-checked', 'true')
-  const forest = cards.getByRole('radio', { name: '森林' })
-  const lightPreview = forest.style.getPropertyValue('--chrome-surface')
-  await user.click(forest)
-  expect(forest).toHaveAttribute('aria-checked', 'true')
-  expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ state: { interfaceSkin: 'forest', colorMode: 'light' } })
+  const ink = cards.getByRole('radio', { name: '墨色' })
+  const lightPreview = ink.style.getPropertyValue('--chrome-surface')
+  await user.click(ink)
+  expect(ink).toHaveAttribute('aria-checked', 'true')
+  expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ state: { interfaceSkin: 'ink', colorMode: 'light' } })
   await user.keyboard('{ArrowRight}')
   expect(cards.getByRole('radio', { name: '薄荷' })).toHaveAttribute('aria-checked', 'true')
   expect(useAppearanceStore.getState().interfaceSkin).toBe('mint')
   act(() => useAppearanceStore.getState().setColorMode('dark'))
-  expect(forest.style.getPropertyValue('--chrome-surface')).not.toBe(lightPreview)
+  expect(ink.style.getPropertyValue('--chrome-surface')).not.toBe(lightPreview)
   await user.click(cards.getByRole('radio', { name: '暮紫' }))
   expect(useAppearanceStore.getState()).toMatchObject({ interfaceSkin: 'dusk', colorMode: 'dark' })
   act(() => useAppearanceStore.getState().setColorMode('light'))
   expect(cards.getByRole('radio', { name: '暮紫' })).toHaveAttribute('aria-checked', 'true')
-  expect(forest.style.getPropertyValue('--chrome-surface')).toBe(lightPreview)
+  expect(ink.style.getPropertyValue('--chrome-surface')).toBe(lightPreview)
 })
 
 it('打开取色面板不改设置，Themd 色板和 HEX 输入即时保存，默认档可恢复', () => {
@@ -84,8 +84,8 @@ it('打开取色面板不改设置，Themd 色板和 HEX 输入即时保存，�
 })
 
 it.each([
-  ['light', ['#4d7560', '#398c79', '#9b8433', '#b16b4c', '#557da6', '#8a6aa5']],
-  ['dark', ['#9bc6a6', '#87cbb6', '#d4bd72', '#d6a286', '#92b8df', '#bda3d8']],
+  ['light', ['#171717', '#398c79', '#9b8433', '#b16b4c', '#557da6', '#8a6aa5']],
+  ['dark', ['#e5e5e5', '#87cbb6', '#d4bd72', '#d6a286', '#92b8df', '#bda3d8']],
 ] as const)('取色器底部的六个主题色共用%s色板，点选保留透明度并即时保存', (colorMode, colors) => {
   useAppearanceStore.setState({ colorMode, interfaceSkin: 'sea', accent: '#12345680' })
   render(<AppearanceSection />)
@@ -97,7 +97,7 @@ it.each([
   const themes = picker.getByRole('group', { name: '主题色' })
   expect(standard.compareDocumentPosition(themes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   const choices = within(themes)
-  const names = ['森林', '薄荷', '蜜蜂', '羊皮纸', '海盐', '暮紫']
+  const names = ['墨色', '薄荷', '蜜蜂', '羊皮纸', '海盐', '暮紫']
   expect(choices.getAllByRole('button')).toHaveLength(6)
   expect(choices.queryAllByRole('button', { pressed: true })).toHaveLength(0)
   names.forEach((name, index) => {
@@ -119,14 +119,14 @@ it.each([
 it('取色器打开时切换明暗，主题色候选更新而自选颜色保持原值', () => {
   render(<AppearanceSection />)
   fireEvent.click(screen.getByRole('button', { name: '选择颜色' }))
-  fireEvent.click(screen.getByRole('button', { name: '主题色 森林' }))
-  expect(useAppearanceStore.getState().accent).toBe('#4d7560')
+  fireEvent.click(screen.getByRole('button', { name: '主题色 墨色' }))
+  expect(useAppearanceStore.getState().accent).toBe('#171717')
   act(() => useAppearanceStore.getState().setColorMode('dark'))
-  expect(screen.getByRole('button', { name: '主题色 森林' })).toHaveAttribute('title', '森林 #9bc6a6')
-  expect(screen.getByRole('textbox', { name: 'HEX' })).toHaveValue('#4d7560')
-  fireEvent.click(screen.getByRole('button', { name: '主题色 森林' }))
-  expect(screen.getByRole('textbox', { name: 'HEX' })).toHaveValue('#9bc6a6')
-  expect(useAppearanceStore.getState().accent).toBe('#9bc6a6')
+  expect(screen.getByRole('button', { name: '主题色 墨色' })).toHaveAttribute('title', '墨色 #e5e5e5')
+  expect(screen.getByRole('textbox', { name: 'HEX' })).toHaveValue('#171717')
+  fireEvent.click(screen.getByRole('button', { name: '主题色 墨色' }))
+  expect(screen.getByRole('textbox', { name: 'HEX' })).toHaveValue('#e5e5e5')
+  expect(useAppearanceStore.getState().accent).toBe('#e5e5e5')
 })
 
 it.each([

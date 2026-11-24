@@ -27,13 +27,13 @@ export function InterfaceSkinPicker({
               <span className="size-0.5 rounded-sm bg-(--visual-radio-color) opacity-30" />
               <span className="mt-auto mb-1 size-0.5 rounded-sm bg-(--visual-radio-color) opacity-30" />
             </span>
-            <span className="absolute inset-x-2 top-[36%] bottom-0 flex overflow-hidden rounded-tl-md border-t border-l border-foreground/10 bg-background">
-              <span className="flex w-[34%] shrink-0 flex-col gap-1 bg-content-sidebar p-1">
+            <span className="absolute inset-x-2 top-[36%] bottom-0 flex overflow-hidden rounded-tl-md border-t border-l border-foreground/10">
+              <span data-slot="interface-skin-sidebar" className="flex w-[34%] shrink-0 flex-col gap-1 bg-(--content-sidebar-overlay) p-1">
                 <span className="h-0.5 w-4/5 rounded-full bg-(--visual-radio-color) opacity-40" />
                 <span className="h-0.5 w-3/5 rounded-full bg-(--visual-radio-color) opacity-20" />
                 <span className="h-0.5 w-4/5 rounded-full bg-(--visual-radio-color) opacity-20" />
               </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-1 p-1.5">
+              <span data-slot="interface-skin-content" className="flex min-w-0 flex-1 flex-col gap-1 bg-background p-1.5">
                 <span className="h-1 w-4/5 rounded-full bg-foreground/20" />
                 <span className="h-0.5 w-full rounded-full bg-foreground/10" />
                 <span className="h-0.5 w-3/5 rounded-full bg-foreground/10" />

@@ -57,6 +57,9 @@ function createWindow(): void {
     // 无边框：系统标题栏去掉，由 renderer 自绘头部（拖拽区 + 窗口控制按钮，
     // 窗口控制走 ipc/window.ts；头部视觉按 UI 设计方针逐件重写）。
     frame: false,
+    // 试验：系统 acrylic 材质垫在窗口后面，外壳底色带透明度时透出模糊的桌面（renderer 侧见 globals.css 的 data-backdrop）。
+    // 不设 transparent：Electron 对透明窗口强制关闭 thickFrame，系统圆角和阴影会消失；设了材质本身窗口就按半透明合成。
+    backgroundMaterial: 'acrylic',
     webPreferences: {
       // CJS preload 可在 sandbox 中运行；contextIsolation 始终保持开启，
       // renderer 只能通过 preload 暴露的窄接口访问主进程。

@@ -5,15 +5,17 @@ import { interfaceSkinVariables } from '@/lib/interface-skins'
 export function bindAppearanceDom(): () => void {
   const root = document.documentElement
   const media = window.matchMedia('(prefers-color-scheme: dark)')
+  // 试验：只有主窗口垫了系统材质（electron/main/index.ts）；控制台与内嵌窗口按 hash 分流，保持不透明。
+  const backdrop = window.location.hash === ''
   const apply = () => {
     const { colorMode, interfaceSkin, codeWrap, accent, uiFontSize, codeFontSize } = useAppearanceStore.getState()
     const dark = isDarkMode(colorMode, media.matches)
     root.classList.toggle('dark', dark)
     root.dataset.interfaceSkin = interfaceSkin
-    const skin = interfaceSkinVariables(interfaceSkin, dark)
+    root.toggleAttribute('data-backdrop', backdrop)
+    const skin = interfaceSkinVariables(interfaceSkin, dark, backdrop)
     root.style.setProperty('--chrome-surface', skin['--chrome-surface'])
     root.style.setProperty('--sidebar', skin['--sidebar'])
-    root.style.setProperty('--content-sidebar', skin['--content-sidebar'])
     root.toggleAttribute('data-code-wrap', codeWrap)
     root.style.setProperty('--ui-font-size', `${uiFontSize}px`)
     if (codeFontSize === null) root.style.removeProperty('--app-code-size')

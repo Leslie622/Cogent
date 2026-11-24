@@ -36,9 +36,9 @@ export function AppShell() {
       <div className="flex min-h-0 flex-1">
         {/* 应用侧栏：上/下两组路由钮（chrome 底色与 header 融合） */}
         <AppSidebar />
-        {/* 内容区卡：左描边天然贴弧线走（"线跟着圆角走"），投影收窄压实不泛。
-            overflow-hidden：内层灰底子面板是方角，不裁会戳进左上弧线区 */}
-        <main className="min-w-0 flex-1 overflow-hidden rounded-tl-(--shell-radius) border-l border-border bg-background shadow-[0_1px_2px_rgba(0,0,0,0.06),0_2px_8px_rgba(0,0,0,0.07)]">
+        {/* 内容侧栏以轻底叠在同一张外壳渐变上，区分面层且保留自然散色。
+            左描边贴着圆角走；overflow-hidden 保留内容区整体的圆角裁剪。 */}
+        <main className="min-w-0 flex-1 overflow-hidden rounded-tl-(--shell-radius) border-l border-border shadow-[0_1px_2px_rgba(0,0,0,0.06),0_2px_8px_rgba(0,0,0,0.07)]">
           {/* 拖拽杀过渡（同 components/ui/resizable.tsx 手法）：把手
               data-separator=active 期间裁剪窗的 width 过渡失效 —— 拖拽逐帧直写，
               200ms 缓动会把跟手拖成延迟 */}
@@ -49,7 +49,7 @@ export function AppShell() {
               ref={sidebar.clipRef}
               data-sidebar-clip
               inert={sidebarCollapsed}
-              className="h-full w-0 shrink-0 overflow-hidden bg-content-sidebar transition-[width] duration-200 ease-out"
+              className="h-full w-0 shrink-0 overflow-hidden bg-(--content-sidebar-overlay) transition-[width] duration-200 ease-out"
               style={{ width: sidebarCollapsed ? 0 : sidebar.widthPx }}
             >
               {/* 内容层：固定像素宽（min-w-60 = 下限 240px 兜底）。content-sidebar
@@ -82,7 +82,7 @@ export function AppShell() {
             {/* content-main：flex-1 吃剩余宽度，窗口缩放增量全在这。
                 内容随 AppView 换：首页（HomeMain，件 5 —— 内部再分
                 [主要区 | 标签页区]）与设置（SettingsMain，件 6）已落地 */}
-            <div className="min-w-0 flex-1">
+            <div data-content-main className="min-w-0 flex-1 bg-(--app-canvas)">
               <WorkspaceFrame visible={view === 'home'} autoCollapsed={sidebarAutoCollapsed}>
               {view === 'home' ? (
                 <HomeMain />

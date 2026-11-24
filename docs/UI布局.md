@@ -85,8 +85,8 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 
 | 对象 | 配方 |
 | --- | --- |
-| header + app-sidebar | `.chrome-surface` 消费主题色的 135° 三段渐变；森林 / 薄荷 / 蜜蜂 / 羊皮纸 / 海盐 / 暮紫各有浅深两套，默认薄荷；共享色板在 `lib/interface-skins.ts` |
-| content-sidebar / main | `--content-sidebar` 随主题色与明暗换套；main 沿用 `--background`，浅色纯白、深色中性暗底，形成层级 |
+| header + 两级侧栏 | `.chrome-surface` 统一绘制左上角椭圆渐变，按窗口宽高铺开三段相近色阶，使用 Oklab 插值；内容侧栏叠 `--content-sidebar-overlay`（浅色白 60%、深色黑 20%），保留渐变同时区分面层。墨色 / 薄荷 / 蜜蜂 / 羊皮纸 / 海盐 / 暮紫各有浅深两套，默认薄荷；共享色板在 `lib/interface-skins.ts` |
+| content-main | 阅读面独立垫 `--app-canvas`，浅色纯白、深色中性暗底；内容区整体保留左上圆角、左描边与轻投影 |
 | hover / active | 黑低透明软叠 `bg-foreground/5` 或 `bg-accent-foreground/5`；active 保持同一深度 |
 | 行内小钮 | 原生 ghost（hover `bg-muted`）；侧栏搜索入口用 Button ghost-soft，与会话行同为 `bg-accent-foreground/5`；软叠由组件变体提供，不落在 Button 调用点 |
 | 文字 | 实色 token；次级 `muted-foreground`，placeholder `--placeholder`；层级靠实色深浅 |
