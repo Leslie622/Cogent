@@ -87,6 +87,7 @@ export interface RunOutcome {
  * 错误（「不判失败：受理是真的」）。
  */
 export interface RunSubscription {
+  bindRun(runId: string): void
   ready(): Promise<void>
   awaitOutcome(waitMs: number, signal: AbortSignal | undefined): Promise<RunOutcome>
   close(): void
@@ -97,6 +98,8 @@ export function subscribeRun(sessionId: string): RunSubscription {
   if (access === null) throw new HostError('no-access', NO_ACCESS_HINT)
   const ws = new WebSocket(`ws://127.0.0.1:${access.port}/ws?token=${encodeURIComponent(access.token)}`)
 
+  let runId: string | undefined
+  const early = new Map<string, RunOutcome>()
   let settled: RunOutcome | undefined
   let resolveOutcome: ((outcome: RunOutcome) => void) | undefined
   const outcomePromise = new Promise<RunOutcome>((resolve) => {
@@ -121,15 +124,20 @@ export function subscribeRun(sessionId: string): RunSubscription {
     } catch {
       return // 非帧行（不该发生，但推送通道的畸形行不该炸等待）
     }
-    if (frame.params?.sessionId !== sessionId) return
+    if (frame.params?.sessionId !== sessionId || typeof frame.params.runId !== 'string') return
+    const candidateId = frame.params.runId
+    const accept = (outcome: RunOutcome): void => {
+      if (runId === candidateId) settle(outcome)
+      else if (runId === undefined && early.size < 64) early.set(candidateId, outcome)
+    }
     if (frame.method === 'run.completed') {
       const params = frame.params as { message?: RunOutcome['message']; messages?: RunOutcome['messages']; stopReason?: string }
-      settle({ state: 'completed', message: params.message, messages: params.messages, stopReason: params.stopReason })
+      accept({ state: 'completed', message: params.message, messages: params.messages, stopReason: params.stopReason })
     } else if (frame.method === 'run.failed') {
       // run.failed 的 message 按协议是 string（types.ts:1091）；推送通道按
       // 宽形收，此处收窄一次
       const params = frame.params as { message?: string }
-      settle({ state: 'failed', failure: params.message ?? '' })
+      accept({ state: 'failed', failure: params.message ?? '' })
     }
   })
   // 断连/握手失败都归 timeout 语义（结果未知）；ready() 另用 once 挂同事件
@@ -138,6 +146,7 @@ export function subscribeRun(sessionId: string): RunSubscription {
   ws.on('close', () => settle({ state: 'timeout' }))
 
   return {
+    bindRun: id => { runId = id; const outcome = early.get(id); early.clear(); if (outcome) settle(outcome) },
     ready: () =>
       new Promise<void>((resolveReady, rejectReady) => {
         if (ws.readyState === WebSocket.OPEN) return resolveReady()

@@ -114,7 +114,7 @@ interface EngineState {
   setActiveModel: (modelId: string, providerId?: string | null) => void
   setThinkingLevel: (level: EngineState['thinkingLevel']) => void
   /** 设置页「默认权限」开关：落盘 + 内存态（新会话物化缺省随动） */
-  setDefaultPermissionMode: (mode: 'ask' | 'auto') => void
+  setDefaultPermissionMode: (mode: 'ask' | 'auto') => Promise<void>
   /** 设置页「发送快捷键」下拉：落盘 + 内存态（输入框 keydown 即时随动） */
   setSendShortcut: (shortcut: EngineState['sendShortcut']) => void
   /** 设置页「关闭窗口时」下拉 / 询问弹窗「不再询问」固化：落盘 + 内存态 */
@@ -250,11 +250,12 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   // 失败落 engineError（App 横幅 + 重试），不再裸抛成 unhandled rejection
   load: async () => {
     try {
-      const [modelsResult, keyStatus, customPayload, settings] = await Promise.all([
+      const [modelsResult, keyStatus, customPayload, settings, defaults] = await Promise.all([
         window.cogent.engineRequest('models.list', {}),
         window.cogent.listApiKeys(),
         window.cogent.getCustomProviders(),
-        loadSettings()
+        loadSettings(),
+        window.cogent.engineRequest('session.defaults.get', {})
       ])
       const keys = toKeyMap(keyStatus)
       // 默认模型随 models.list 回带（协议 additive）：不再 renderer 侧复制
@@ -272,7 +273,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
         activeModelId: settings.activeModelId ?? defaultModel.id,
         activeProviderId: settings.activeProviderId ?? defaultModel.provider,
         thinkingLevel: normalizeThinkingLevel(settings.thinkingLevel),
-        defaultPermissionMode: settings.defaultPermissionMode ?? 'ask',
+        defaultPermissionMode: defaults.defaultPermissionMode,
         sendShortcut: settings.sendShortcut ?? 'enter',
         closeBehavior: settings.closeBehavior ?? 'ask',
         hardwareAcceleration: settings.hardwareAcceleration ?? true,
@@ -280,14 +281,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
         loaded: true,
         engineError: null
       })
-      // 引擎（重）启动后定义清零：把宿主落盘的定义经唯一写路径重推
-      // （setCustomProviders = 落盘 + 推引擎合一；providers.custom.sync 已退出
-      // renderer 白名单，防"盘上不变、引擎内存态被直改"的分叉）。starting 期
-      // 请求会在引擎 stdin 排队、握手后作答，不因"还没 running"失败
-      if (customPayload.providers.length > 0 || customPayload.overrides.length > 0) {
-        await window.cogent.setCustomProviders(customPayload.providers, customPayload.overrides)
-        await get().refreshModels()
-      }
+
     } catch (error) {
       set({ engineError: error instanceof Error ? error.message : String(error), loaded: false })
     }
@@ -350,9 +344,14 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     set({ thinkingLevel })
     void window.cogent.saveSettings({ thinkingLevel })
   },
-  setDefaultPermissionMode: (defaultPermissionMode) => {
-    set({ defaultPermissionMode })
-    void window.cogent.saveSettings({ defaultPermissionMode })
+  setDefaultPermissionMode: async (defaultPermissionMode) => {
+    try {
+      const result = await window.cogent.engineRequest('session.defaults.set', { defaultPermissionMode })
+      set({ defaultPermissionMode: result.defaultPermissionMode })
+    } catch (error) {
+      set({ engineError: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
   },
   setSendShortcut: (sendShortcut) => {
     set({ sendShortcut })

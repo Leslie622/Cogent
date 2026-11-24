@@ -1,3 +1,6 @@
+import { acquireStorageLease } from '../../node/storage-lease'
+import { storageRoot, migrateFromUserData } from './storage-root'
+import { registerTrustedContents, checkCurrentCaller } from './ipc/trusted'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, shell, type WebContents } from 'electron'
@@ -5,7 +8,6 @@ import { HostManager } from './host/manager'
 import { refreshMcpAccessFile } from './host/mcp-access'
 import { resolveEngineNode } from './host/runtime'
 import { CredentialStore } from './credentials/store'
-import { CustomProvidersStore } from './custom-providers/store'
 import { registerIpc } from './ipc'
 import { readSettingsFile } from './ipc/settings'
 import { registerNotifyIpc, registerSoundScheme } from './notifications'
@@ -56,9 +58,9 @@ function createWindow(): void {
     // 窗口控制走 ipc/window.ts；头部视觉按 UI 设计方针逐件重写）。
     frame: false,
     webPreferences: {
-      // ESM preload（.mjs）要求关闭 sandbox；contextIsolation 始终保持开启，
+      // CJS preload 可在 sandbox 中运行；contextIsolation 始终保持开启，
       // renderer 只能通过 preload 暴露的窄接口访问主进程。
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
@@ -70,6 +72,8 @@ function createWindow(): void {
       preload: join(import.meta.dirname, '../preload/index.cjs')
     }
   })
+
+  registerTrustedContents(mainWindow.webContents, 'main')
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
 
@@ -145,7 +149,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', restoreMainWindow)
 
   // 入口 fire-and-forget（void 标记）：whenReady 之后的失败都在各自边界内处理
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
+    await acquireStorageLease(storageRoot(), 'shell')
     // 凭据存取（safeStorage）：可用性探测失败不再只落 console —— 记入 store 的
     // startupError，经 credentials:status 暴露给设置页呈现（同损坏降级一条通道）。
     // 降级链路细节见 credentials/store.ts 文件头：损坏/DPAPI 不匹配都不炸启动。
@@ -156,7 +161,8 @@ if (!app.requestSingleInstanceLock()) {
       credentialStore.noteStartupError((error as Error).message)
       console.error('[main] credential store unavailable:', error)
     }
-    const customProvidersStore = new CustomProvidersStore()
+    migrateFromUserData('custom-providers.json', app.getPath('userData'))
+    migrateFromUserData('settings.json', app.getPath('userData'))
 
     // 引擎代理：握手时把宿主持久化的 key 灌进引擎内存表（凭据降级时这里是空表，
     // 引擎按"无 key"启动 —— 用户重输 key 后经 credentials:set 即时推送）
@@ -164,11 +170,12 @@ if (!app.requestSingleInstanceLock()) {
     host = new HostManager({
       entryPath: join(import.meta.dirname, 'host.js'),
       nodeBin: engineNodeBin,
-      handshakeCredentials: credentialStore.readAll(),
+      beforeSend: checkCurrentCaller,
+      readCredentials: () => credentialStore.readAll(),
       // HTTP 门默认开（阶段 3a 起：webview 页面消费者需要；loopback + 恒鉴权）
       enableHttpRpc: true
     })
-    registerIpc({ host, getWindow: () => mainWindow }, credentialStore, customProvidersStore)
+    registerIpc({ host, getWindow: () => mainWindow }, credentialStore)
   // 通知域（toast 展示 / 声音文件管理 / cogent-sound 协议 handle）
   registerNotifyIpc({ getWindow: () => mainWindow })
 
@@ -206,10 +213,17 @@ if (!app.requestSingleInstanceLock()) {
         hidden.focus()
       } else if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
-  })
+  }).catch((error: unknown) => { console.error('[main] 启动失败:', error); app.exit(1) })
 
+  let quitting = false
+  app.on('before-quit', event => {
+    if (quitting || !host) return
+    event.preventDefault()
+    quitting = true
+    void host.stop().finally(() => app.quit())
+  })
   app.on('window-all-closed', () => {
-    host?.stop()
     if (process.platform !== 'darwin') app.quit()
+    else void host?.stop()
   })
 }

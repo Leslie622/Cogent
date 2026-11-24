@@ -6,13 +6,15 @@
  * 白名单是唯一要守的边界：renderer 能触达哪些引擎方法在此显式收窄，
  * 未经点名的 method（如未来的 approval.respond）不经过 renderer 手。
  */
-import { BrowserWindow, ipcMain } from 'electron'
+import { handleTrusted } from './trusted'
+import { BrowserWindow } from 'electron'
 import { IPC } from '../../../shared/ipc'
 import type { ProtocolMethods } from '../../../protocol'
 import type { IpcDeps } from './index'
 import { SHELL_ATTACHMENT_METHODS } from '../../../shared/attachments'
 import { SHELL_FILE_METHODS } from '../../../shared/files'
 import { SHELL_OUTPUT_METHODS } from '../../../shared/outputs'
+import { isTrustedContents } from './trusted'
 import { requireFileWindow } from './files'
 
 /**
@@ -27,6 +29,8 @@ const ALLOWED_METHODS = new Set<string>([
   ...SHELL_FILE_METHODS,
   ...SHELL_OUTPUT_METHODS,
   ...SHELL_ATTACHMENT_METHODS,
+  'session.defaults.get',
+  'session.defaults.set',
   'session.list',
   'session.search',
   'session.search.rebuild',
@@ -70,7 +74,7 @@ const ALLOWED_METHODS = new Set<string>([
 export function registerEngineIpc(deps: IpcDeps): void {
   const { host } = deps
   // 信任边界：renderer 不可信 —— method 白名单 + params 形状在此收窄，业务校验在引擎 dispatch
-  ipcMain.handle(IPC.engineRequest, async (event, raw: unknown) => {
+  handleTrusted(IPC.engineRequest, async (event, raw: unknown) => {
     if (typeof raw !== 'object' || raw === null) throw new Error('engine:request 需要对象参数')
     const payload = raw as { method: unknown; params: unknown }
     if (typeof payload.method !== 'string' || !ALLOWED_METHODS.has(payload.method)) {
@@ -96,7 +100,7 @@ export function registerEngineIpc(deps: IpcDeps): void {
       console.log('[main] engine event:', JSON.stringify(rpcEvent).slice(0, 200))
     }
     for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) window.webContents.send(IPC.engineEvent, rpcEvent)
+      if (!window.isDestroyed() && isTrustedContents(window.webContents)) window.webContents.send(IPC.engineEvent, rpcEvent)
     }
   })
 }

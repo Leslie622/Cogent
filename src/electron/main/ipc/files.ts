@@ -1,5 +1,6 @@
 /** 桌面文件动作只接受可信主窗口顶层帧；fileId 在 Host 复核，路径不进入 shell 插值。 */
-import { dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
+import { handleTrusted, checkCurrentCaller } from './trusted'
+import { dialog, shell, type IpcMainInvokeEvent } from 'electron'
 import { copyFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { isAbsolute } from 'node:path'
@@ -51,21 +52,23 @@ export function registerFileIpc(deps: IpcDeps): void {
         filters: [{ name: '编辑器可执行文件', extensions: ['exe'] }]
       })
     })
+    checkCurrentCaller()
     if (result.canceled) return { canceled: true }
     writeSettingsFile({ fileEditor: result.filePaths[0] })
     return { canceled: false }
   }
-  ipcMain.handle(IPC.filesConfigureEditor, async (event) => {
+  handleTrusted(IPC.filesConfigureEditor, async (event) => {
     requireFileWindow(event, deps)
     return configure()
   })
-  ipcMain.handle(IPC.filesAction, async (event, raw: unknown) => {
+  handleTrusted(IPC.filesAction, async (event, raw: unknown) => {
     requireFileWindow(event, deps)
     const request = fileActionRequest(raw)
     const target = await deps.host.request('files.actionTarget', {
       sessionId: request.sessionId,
       fileId: request.fileId
     })
+    checkCurrentCaller()
     if (request.action === 'reveal') {
       if (target.kind === 'directory') {
         const error = await shell.openPath(target.path)
@@ -84,14 +87,17 @@ export function registerFileIpc(deps: IpcDeps): void {
         title: '另存文件',
         defaultPath: target.name
       })
+      checkCurrentCaller()
       if (result.canceled) return { canceled: true }
       // 对话框期间文件可能被删除或替换，动作前重新向 Host 核对。
       const checked = await deps.host.request('files.actionTarget', request)
+      checkCurrentCaller()
       await copyFile(checked.path, result.filePath)
       return { canceled: false }
     }
     if (readSettingsFile().fileEditor === undefined && (await configure()).canceled)
       return { canceled: true }
+    checkCurrentCaller()
     const executable = readSettingsFile().fileEditor!
     if (!isAbsolute(executable)) throw new Error('编辑器必须为绝对可执行文件路径')
     const location = request.location

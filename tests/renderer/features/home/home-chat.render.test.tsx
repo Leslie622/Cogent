@@ -72,7 +72,7 @@ beforeEach(() => {
     sessions: [{ id: SID, title: '工作槽', createdAt: 1_000, updatedAt: 1_100 }],
     bySession: {
       [SID]: {
-        ...emptyBucket(),
+        ...emptyBucket(), historyLoaded: true,
         messages: [user, streaming],
         runtime: { ...emptyBucket().runtime, running: true }
       }
@@ -162,7 +162,7 @@ describe('HomeChat 流内 live 工作状态', () => {
     act(() => { useChatStore.setState({
       bySession: {
         [SID]: {
-          ...emptyBucket(),
+          ...emptyBucket(), historyLoaded: true,
           messages: [user, completed],
           turnOutcomes: { [user.id]: outcome },
           runtime: { ...emptyBucket().runtime, ...runtime }
@@ -291,7 +291,7 @@ describe('HomeChat 的真实停止终态接线', () => {
     act(() => { useChatStore.setState((state) => ({
       activeSessionId: 'other',
       bySession: { ...state.bySession, other: {
-        ...emptyBucket(), messages: [{ ...user, id: 'other-u', content: 'B问题' }],
+        ...emptyBucket(), historyLoaded: true, messages: [{ ...user, id: 'other-u', content: 'B问题' }],
         runtime: { ...emptyBucket().runtime, running: true }
       } }
     })) })
@@ -393,7 +393,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
   it('未知历史回合不因新submit被拒绝而伪标失败', async () => {
     useChatStore.setState((state) => ({
       bySession: { ...state.bySession, [SID]: {
-        ...emptyBucket(), messages: [user, completed]
+        ...emptyBucket(), historyLoaded: true, messages: [user, completed]
       } }
     }))
     render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)

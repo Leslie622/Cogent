@@ -60,7 +60,7 @@ const SID = 's1'
 const seedMessages = (items: MessageItem[]): void => {
   useHomeStore.setState({ session: { kind: 'chat', chatId: SID } })
   useChatStore.setState((state) => ({
-    bySession: { ...state.bySession, [SID]: { ...emptyBucket(), messages: items } },
+    bySession: { ...state.bySession, [SID]: { ...emptyBucket(), historyLoaded: true, messages: items } },
     activeSessionId: SID
   }))
 }
@@ -70,6 +70,52 @@ const userMsg = (content: string, at: number): ChatMessage => ({ id: `u-${conten
 const assistantMsg = (content: string, at: number): ChatMessage => ({ id: `a-${content}`, role: 'assistant', content, timestamp: at })
 
 bindEngineEvents()
+
+describe('外部运行与历史水合', () => {
+  it('外部项目换根/移除事件更新本地项目，文件工作面可按新根重新建立上下文', () => {
+    const project = { id: 'external-project', name: '原项目', cwds: ['C:/A'], createdAt: 1 }
+    useProjectStore.setState({ projects: [project] })
+    emit({ method: 'project.changed', params: { projectId: project.id, summary: { ...project, cwds: ['C:/B'] } } })
+    expect(useProjectStore.getState().projects[0].cwds).toEqual(['C:/B'])
+    emit({ method: 'project.changed', params: { projectId: project.id } })
+    expect(useProjectStore.getState().projects).toEqual([])
+  })
+  it('外部开始创建对应输入并置运行态，不改写上一条 user', () => {
+    const old = userMsg('上一回合', 10)
+    seedMessages([old, assistantMsg('旧答复', 20)])
+    emit({ method: 'run.started', params: { sessionId: SID, runId: 'external-run', turnId: 'external-turn', input: { text: '外部任务', timestamp: 30 } } })
+    expect(messages()[0]).toBe(old)
+    expect(messages().at(-1)).toMatchObject({ id: 'external-turn', turnId: 'external-turn', content: '外部任务' })
+    expect(useChatStore.getState().bySession[SID]!.runtime).toMatchObject({ running: true, runId: 'external-run' })
+    emit({ method: 'run.completed', params: { sessionId: SID, runId: 'previous-run', messages: [] } })
+    expect(useChatStore.getState().bySession[SID]!.runtime.running).toBe(true)
+  })
+
+  it('先收到工具事件仍须加载旧历史，并保留请求期间比快照新的工具', async () => {
+    emit({ method: 'tool.started', sequence: 1, params: { sessionId: SID, callId: 'before-open', name: 'read', kind: 'read' } })
+    let release!: (value: unknown) => void
+    engineRequest.mockImplementation(method => method === 'session.messages' ? new Promise(resolve => { release = resolve }) : Promise.resolve([]))
+    const loading = useChatStore.getState().selectSession(SID)
+    emit({ method: 'tool.started', sequence: 11, params: { sessionId: SID, callId: 'new-tool', name: 'read', kind: 'read' } })
+    release({ messages: [userMsg('磁盘历史', 1)], eventWatermark: 10, runtime: { running: true, runId: 'run' } })
+    await loading
+    expect(engineRequest).toHaveBeenCalledWith('session.messages', { sessionId: SID })
+    expect(messages().map(item => item.id)).toEqual(['u-磁盘历史', 'new-tool'])
+    expect(useChatStore.getState().bySession[SID]!.historyLoaded).toBe(true)
+  })
+
+  it('快照已含的事件不重复重放，断线使旧历史请求失效并显示结果待确认', async () => {
+    let release!: (value: unknown) => void
+    engineRequest.mockImplementation(method => method === 'session.messages' ? new Promise(resolve => { release = resolve }) : Promise.resolve([]))
+    const loading = useChatStore.getState().selectSession(SID)
+    emit({ method: 'run.started', sequence: 5, params: { sessionId: SID, runId: 'run', turnId: 'turn', input: { text: '任务', timestamp: 2 } } })
+    emit({ method: 'host.disconnected', params: { message: 'Host exited' } })
+    release({ messages: [userMsg('迟到快照', 1)], eventWatermark: 5, runtime: { running: true, runId: 'run' } })
+    await loading
+    expect(messages().some(item => item.type === undefined && item.content === '迟到快照')).toBe(false)
+    expect(useChatStore.getState().bySession[SID]!.runtime).toMatchObject({ running: false, lastRunOutcome: null, lastError: '连接已断开，运行结果待确认' })
+  })
+})
 
 describe('审批调用关联', () => {
   it('事件携带的 callId 经过挂起与裁决留存，重复摘要不串到先一张卡', async () => {

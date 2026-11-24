@@ -67,17 +67,16 @@ export class ProjectRegistry {
     // 启动全量恢复（项目是小实体，全进内存）。损坏逐文件隔离（同 session 口径）：
     // 报错 + 旁置 .corrupt + 恢复其余 —— 单文件损坏不炸引擎启动
     for (const id of this.storage.ids(PROJECT_COLLECTION)) {
-      try {
-        const { summary, migrated } = asStoredProject(this.storage.get(PROJECT_COLLECTION, id), id)
-        this.projects.set(summary.id, summary)
-        // v1 盘上文件立即转写 v2（迁移不是兼容读，盘上只留最新格式）
-        if (migrated) this.persist(summary.id)
-      } catch (error) {
+      let restored: ReturnType<typeof asStoredProject>
+      try { restored = asStoredProject(this.storage.get(PROJECT_COLLECTION, id), id) }
+      catch (error) {
         this.storage.quarantine(PROJECT_COLLECTION, id)
-        process.stderr.write(
-          `[host] 项目文档损坏已隔离（projects/${id}.json → .corrupt）: ${(error as Error).message}\n`
-        )
+        process.stderr.write(`[host] 项目文档损坏已隔离（projects/${id}.json → .corrupt）: ${(error as Error).message}\n`)
+        continue
       }
+      // 迁移写盘失败属于存储故障，不能把合法原件误隔离为损坏。
+      if (restored.migrated) this.writeProject(restored.summary)
+      this.projects.set(restored.summary.id, restored.summary)
     }
   }
 
@@ -103,28 +102,31 @@ export class ProjectRegistry {
   }
 
   rename(projectId: string, name: string): ProjectSummary {
-    const summary = this.require(projectId)
+    const summary = { ...this.require(projectId) }
     summary.name = name.trim()
-    this.persist(projectId)
+    this.writeProject(summary)
+    this.projects.set(projectId, summary)
     return { ...summary }
   }
 
   /** 编辑（改名 + 目录全量替换）。cwds 由 dispatch 入口校验 ≥1，这里信任入参 ——
       引擎不复核磁盘（同 create：存的是绑定声明，submit 时才复查存在性） */
   update(projectId: string, name: string, cwds: string[]): ProjectSummary {
-    const summary = this.require(projectId)
+    const summary = { ...this.require(projectId) }
     summary.name = name.trim()
     summary.cwds = [...cwds]
-    this.persist(projectId)
+    this.writeProject(summary)
+    this.projects.set(projectId, summary)
     return { ...summary }
   }
 
   /** 项目置顶/取消（字段落盘，同会话 setPinned 口径） */
   setPinned(projectId: string, pinned: boolean): ProjectSummary {
-    const summary = this.require(projectId)
+    const summary = { ...this.require(projectId) }
     if (pinned) summary.pinnedAt = Date.now()
     else delete summary.pinnedAt
-    this.persist(projectId)
+    this.writeProject(summary)
+    this.projects.set(projectId, summary)
     return { ...summary }
   }
 
@@ -134,16 +136,17 @@ export class ProjectRegistry {
    * 用方不会走到这 —— 审批入口按会话反查项目后才落。
    */
   setDefaultPermissionMode(projectId: string, mode: PermissionMode): ProjectSummary {
-    const summary = this.require(projectId)
+    const summary = { ...this.require(projectId) }
     summary.defaultPermissionMode = mode
-    this.persist(projectId)
+    this.writeProject(summary)
+    this.projects.set(projectId, summary)
     return { ...summary }
   }
 
   delete(projectId: string): boolean {
     if (!this.projects.has(projectId)) return false
-    this.projects.delete(projectId)
     this.storage.delete(PROJECT_COLLECTION, projectId)
+    this.projects.delete(projectId)
     return true
   }
 
@@ -151,17 +154,6 @@ export class ProjectRegistry {
     const summary = this.projects.get(projectId)
     if (!summary) throw new ProtocolError(RpcErrorCode.InternalError, `项目不存在: ${projectId}`)
     return summary
-  }
-
-  /** 尽力语义（失败记诊断不抛），同 SessionManager.persist 的口径与理由 */
-  private persist(projectId: string): void {
-    const summary = this.projects.get(projectId)
-    if (!summary) return
-    try {
-      this.writeProject(summary)
-    } catch (error) {
-      process.stderr.write(`[host] 项目落盘失败（${projectId}，下回合重试）: ${(error as Error).message}\n`)
-    }
   }
 
   private writeProject(summary: ProjectSummary): void {

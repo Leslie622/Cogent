@@ -18,11 +18,12 @@
  * ④ 系统通知设置跳转（shell:open-notification-settings）：平台 URI，
  *    Linux 无统一入口不注册（renderer 按 preload 暴露的 platform 隐藏按钮）。
  */
+import { handleTrusted, checkCurrentCaller } from './ipc/trusted'
 import { randomUUID } from 'node:crypto'
 import { constants, copyFileSync, lstatSync, mkdirSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { dialog, ipcMain, net, protocol, shell, Notification, type BrowserWindow } from 'electron'
+import { dialog, net, protocol, shell, Notification, type BrowserWindow } from 'electron'
 import { IPC, NOTIFY_SOUND_FILE_FIELDS, type NotifyKind, type NotifyToastPayload } from '../../shared/ipc'
 import { storageRoot } from './storage-root'
 import { readSettingsFile, writeSettingsFile } from './ipc/settings'
@@ -79,7 +80,7 @@ export function registerSoundScheme(): void {
 
 export function registerNotifyIpc(deps: { getWindow: () => BrowserWindow | null }): void {
   // ———— toast：只展示，不判条件（单一判定源在 renderer）————
-  ipcMain.handle(IPC.notifyToast, (_event, raw: unknown) => {
+  handleTrusted(IPC.notifyToast, (_event, raw: unknown) => {
     // 信任边界：载荷收窄（约定 §1.1）
     const payload = raw as Partial<NotifyToastPayload>
     if (typeof payload.title !== 'string' || typeof payload.body !== 'string') {
@@ -101,7 +102,7 @@ export function registerNotifyIpc(deps: { getWindow: () => BrowserWindow | null 
   })
 
   // ———— 自定义声音文件：选（拷贝）/ 清（删除）————
-  ipcMain.handle(IPC.soundPickFile, async (_event, raw: unknown) => {
+  handleTrusted(IPC.soundPickFile, async (_event, raw: unknown) => {
     if (!isNotifyKind(raw)) {
       throw new Error("sound:pick-file 载荷必须是 'turn-done' | 'approval' | 'question'")
     }
@@ -118,6 +119,7 @@ export function registerNotifyIpc(deps: { getWindow: () => BrowserWindow | null 
         ? await dialog.showOpenDialog(parent, options)
         : await dialog.showOpenDialog(options)
     if (picked.canceled || picked.filePaths.length === 0) return null // 用户取消是常态不是错误
+    checkCurrentCaller()
     const source = picked.filePaths[0]
     const field = NOTIFY_SOUND_FILE_FIELDS[kind]
     const previous = managedSoundPath(readSettingsFile()[field], kind)
@@ -133,7 +135,7 @@ export function registerNotifyIpc(deps: { getWindow: () => BrowserWindow | null 
     return name
   })
 
-  ipcMain.handle(IPC.soundClearFile, (_event, raw: unknown) => {
+  handleTrusted(IPC.soundClearFile, (_event, raw: unknown) => {
     if (!isNotifyKind(raw)) {
       throw new Error("sound:clear-file 载荷必须是 'turn-done' | 'approval' | 'question'")
     }
@@ -147,7 +149,7 @@ export function registerNotifyIpc(deps: { getWindow: () => BrowserWindow | null 
 
   // ———— 系统通知设置跳转：Linux 无统一入口不注册 ————
   if (process.platform === 'win32' || process.platform === 'darwin') {
-    ipcMain.handle(IPC.openNotificationSettings, () => {
+    handleTrusted(IPC.openNotificationSettings, () => {
       const url =
         process.platform === 'win32'
           ? 'ms-settings:notifications'
@@ -157,7 +159,7 @@ export function registerNotifyIpc(deps: { getWindow: () => BrowserWindow | null 
   }
 
   // ———— 系统通知开关快照（Windows）：注册表无变更事件，只能按需查一次 ————
-  ipcMain.handle(IPC.notifySystemStatus, async () => {
+  handleTrusted(IPC.notifySystemStatus, async () => {
     if (process.platform !== 'win32') return { enabled: null }
     // reg query 固定参数无用户输入；外部边界（spawn）失败按未知处理不炸调用方
     const { execFile } = await import('node:child_process')
@@ -180,6 +182,7 @@ export function registerNotifyIpc(deps: { getWindow: () => BrowserWindow | null 
 
   // cogent-sound:// 代理读（协议声明在 ready 前，handle 在 ready 后都合法）
   protocol.handle('cogent-sound', (request) => {
+    checkCurrentCaller()
     const file = resolveSoundPath(request.url)
     if (file === null) return new Response('forbidden', { status: 403 })
     if (!lstatSync(file, { throwIfNoEntry: false })?.isFile()) return new Response('not found', { status: 404 })

@@ -25,6 +25,7 @@ function accessFilePath(): string {
  * 约定.md §1.1）。
  */
 export async function refreshMcpAccessFile(host: HostManager): Promise<void> {
+  const generation = host.getGeneration()
   const settings = readSettingsFile()
   if (settings.externalMcp?.enabled !== true) {
     if (existsSync(accessFilePath())) {
@@ -53,6 +54,7 @@ export async function refreshMcpAccessFile(host: HostManager): Promise<void> {
     })
     if (!response.ok) throw new Error(`exchange HTTP ${response.status}`)
     const exchanged = (await response.json()) as { token: string }
+    if (host.getGeneration() !== generation || host.getStatus().state !== 'running') return
     ensureRoot()
     writeFileAtomic(accessFilePath(), JSON.stringify({ port, token: exchanged.token, scope }, null, 2))
     console.log(`[main] 对外 MCP 凭据已写入（scope=${scope}, port=${port}）: ${accessFilePath()}`)

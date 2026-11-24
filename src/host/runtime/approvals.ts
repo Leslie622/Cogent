@@ -100,23 +100,18 @@ export class ApprovalRegistry {
     const sameSet = (a: string[], b: string[]): boolean =>
       a.length === b.length && a.every((r) => b.includes(r))
     if (this.rules.some((rule) => rule.kind === kind && sameSet(rule.roots, roots))) return
-    this.rules.push({ roots: [...roots], kind, createdAt: Date.now() })
-    this.persist()
+    const rules = [...this.rules, { roots: [...roots], kind, createdAt: Date.now() }]
+    this.persist(rules)
+    this.rules = rules
   }
 
-  /** 尽力落盘（失败记诊断不抛，同 session/project persist 口径：内存判定先行，盘上下次重试） */
-  private persist(): void {
-    try {
-      mkdirSync(this.root, { recursive: true })
-      const doc: StoredRules = { version: RULES_FILE_VERSION, rules: this.rules }
-      // 原子替换（tmp+rename）：写中途崩溃留下完整旧文件而非截断新文件
-      const file = this.filePath
-      const tmp = `${file}.tmp`
-      writeFileSync(tmp, JSON.stringify(doc, null, 2))
-      renameSync(tmp, file)
-    } catch (error) {
-      process.stderr.write(`[host] 审批规则落盘失败（下次变更重试）: ${(error as Error).message}\n`)
-    }
+  /** 用户显式保存的信任规则必须真实落盘，失败不改变本次审批或内存规则。 */
+  private persist(rules: ApprovalRule[]): void {
+    mkdirSync(this.root, { recursive: true })
+    const doc: StoredRules = { version: RULES_FILE_VERSION, rules }
+    const file = this.filePath, tmp = `${file}.tmp`
+    writeFileSync(tmp, JSON.stringify(doc, null, 2))
+    renameSync(tmp, file)
   }
 
   private get filePath(): string {

@@ -1,7 +1,8 @@
 /** 目录分页、读取竞态与搜索游标的行为回归，不替代真实虚拟布局验收。 */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FileViewContext, FileViewDirectory, FileViewEntry, FileViewSearch } from '@shared/file-views'
-import { FileNavigatorOwner, bindFileNavigatorScope, getFileNavigatorOwner, releaseFileNavigatorScope, type FileNavigatorRequest } from '@/features/workspace/file-navigator-owner'
+import { FileNavigatorOwner, bindFileNavigatorScope, getFileNavigatorOwner, invalidateProjectNavigators, releaseFileNavigatorScope, type FileNavigatorRequest } from '@/features/workspace/file-navigator-owner'
+import { useProjectStore } from '@/stores/project'
 
 const root = { id: 'root', path: 'C:/项目', name: '项目', kind: 'directory' as const }
 const context = (contextId = 'context-1'): FileViewContext => ({ contextId, generation: 1, roots: [root], selectedPaths: [], grantIds: [], canceled: false })
@@ -31,6 +32,46 @@ afterEach(async () => {
 })
 
 describe('文件导航数据所有者', () => {
+  it('项目变更立即释放全部会话的导航，包括后台未再次打开的目录', async () => {
+    let opened = 0
+    const request = vi.fn((method: string) => Promise.resolve(method === 'fileViews.openContext' ? context(`background-${++opened}`) : method === 'fileViews.listDirectory' ? directory([]) : { ok: true }))
+    window.cogent = { fileViewsRequest: request } as unknown as typeof window.cogent
+    const first = getFileNavigatorOwner({ scopeId: 'background-1', projectId: 'background-p' })
+    const second = getFileNavigatorOwner({ scopeId: 'background-2', projectId: 'background-p' })
+    await Promise.all([first.initialize(), second.initialize()])
+    await invalidateProjectNavigators('background-p')
+    expect(request).toHaveBeenCalledWith('fileViews.closeContext', { contextId: 'background-1' })
+    expect(request).toHaveBeenCalledWith('fileViews.closeContext', { contextId: 'background-2' })
+    expect(getFileNavigatorOwner({ scopeId: 'background-1', projectId: 'background-p' })).not.toBe(first)
+    await releaseFileNavigatorScope('background-1')
+    await releaseFileNavigatorScope('background-2')
+  })
+  it('项目换根更换owner，旧打开回包只能归还上下文；仅改名保留新owner', async () => {
+    const oldProjects = useProjectStore.getState().projects
+    const pending = deferred<FileViewContext>()
+    let count = 0
+    const request = vi.fn((method: string) => {
+      if (method === 'fileViews.openContext') return ++count === 1 ? pending.promise : Promise.resolve(context('root-B-context'))
+      return Promise.resolve(method === 'fileViews.listDirectory' ? directory([]) : { ok: true })
+    })
+    window.cogent = { fileViewsRequest: request } as unknown as typeof window.cogent
+    const project = { id: 'switch-project', name: 'A', cwds: ['C:/A'], createdAt: 1 }
+    useProjectStore.setState({ projects: [project] })
+    const source = { scopeId: 'switch-scope', projectId: project.id, sessionId: 'switch-scope' }
+    try {
+      const previous = getFileNavigatorOwner(source), loading = previous.initialize()
+      useProjectStore.setState({ projects: [{ ...project, cwds: ['C:/B'] }] })
+      const current = getFileNavigatorOwner(source)
+      expect(current).not.toBe(previous)
+      await current.initialize()
+      pending.resolve(context('late-root-A-context')); await loading
+      expect(previous.getSnapshot().context).toBeNull()
+      expect(current.getSnapshot().context?.contextId).toBe('root-B-context')
+      expect(request).toHaveBeenCalledWith('fileViews.closeContext', { contextId: 'late-root-A-context' })
+      useProjectStore.setState({ projects: [{ ...project, name: '只改名', cwds: ['C:/B'] }] })
+      expect(getFileNavigatorOwner(source)).toBe(current)
+    } finally { await releaseFileNavigatorScope(source.scopeId); useProjectStore.setState({ projects: oldProjects }) }
+  })
   it.each(['draft:no-project', 'ordinary-session'])('未绑定项目的%s保留文件/外部目录授权，但树与搜索为空', async scopeId => {
     const externalRoots = [
       { id: 'pdf', grantId: 'pdf-grant', path: 'D:/外部/月报.pdf', name: '月报.pdf', kind: 'file' as const },

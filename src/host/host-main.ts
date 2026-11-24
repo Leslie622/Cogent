@@ -21,6 +21,8 @@
  * 的请求路由/鉴权都挂在它上 —— 必须先建再装配会话运行时，main() 收拢全部
  * 启动序列，拒绝顶层零散 await。
  */
+import { providersSchema, defaultsSchema } from './runtime/business-config'
+import { acquireStorageLease } from '../node/storage-lease'
 import { validateSearchQuery } from './runtime/search/validation'
 
 import { createInterface } from 'node:readline'
@@ -41,7 +43,6 @@ import {
   type CredentialsListResult,
   type SessionArchiveParams,
   type CredentialsSetParams,
-  type CustomProviderDef,
   type InitializeParams,
   type InitializeResult,
   type McpExposure,
@@ -57,8 +58,6 @@ import {
   type SkillWriteResult,
   type PermissionMode,
   type ProtocolEvents,
-  type ProviderOverrideDef,
-  type ProvidersCustomSyncParams,
   type ProvidersCustomSyncResult,
   type RpcEvent,
   type RpcResponse,
@@ -125,6 +124,7 @@ async function main(): Promise<void> {
   const startup = (stage: string): void => {
     process.stderr.write(`[startup] +${Math.round(process.uptime() * 1000)}ms ${stage}\n`)
   }
+  await acquireStorageLease(STORAGE_ROOT, 'host')
   startup('初始化模型运行时')
   // pi 运行时（模型目录 + 鉴权 + 请求路由）：底层配**空 CredentialStore** ——
   // Cogent 的 key 真源是壳侧 safeStorage（经 initialize/credentials.set 进
@@ -182,9 +182,10 @@ async function main(): Promise<void> {
     else await modelRuntime.removeRuntimeApiKey(providerId)
   }
 
+  let eventWatermark = 0
   /** 事件发送：service → 宿主（stdio notification 帧）+ WS 消费者（2c 起双写） */
   function notify<E extends keyof ProtocolEvents>(method: E, params: ProtocolEvents[E]): void {
-    const frame: RpcEvent = { jsonrpc: '2.0', method, params }
+    const frame: RpcEvent = { jsonrpc: '2.0', method, params, sequence: ++eventWatermark }
     process.stdout.write(JSON.stringify(frame) + '\n')
     broadcastEvent?.(frame)
   }
@@ -202,6 +203,20 @@ async function main(): Promise<void> {
   let httpPort: number | undefined
   // WS 事件广播器（2c）：开门后回填。事件帧出口从 stdio 单出口变双出口
   //（stdout → main 不变 + WS → 在线消费者），同一帧同一时刻双写
+  let httpServer: Awaited<ReturnType<typeof startHttpRpc>> | undefined
+  let stopping = false
+  let shutdownPromise: Promise<void> | undefined
+  function shutdown(): Promise<void> {
+    if (shutdownPromise) return shutdownPromise
+    stopping = true
+    shutdownPromise = (async () => {
+      try { await sessions.shutdown() }
+      catch (error) { process.stderr.write(`[host] 退出清理: ${String(error)}\n`) }
+      fileViews.dispose()
+      await httpServer?.close()
+    })()
+    return shutdownPromise
+  }
   let broadcastEvent: ((frame: RpcEvent) => void) | null = null
 
   /**
@@ -296,7 +311,10 @@ async function main(): Promise<void> {
     }
     const todos = sessions.todos(p.sessionId)
     return {
-      messages: sessions.messages(p.sessionId),
+      messages: sessions.snapshotMessages(p.sessionId),
+      interactions: sessions.interactionSnapshot(p.sessionId),
+      runtime: sessions.runtimeSnapshot(p.sessionId),
+      eventWatermark,
       // 交互座 4c：TodoStrip 打开会话的种子数据（运行中增量走 todos.updated 事件）
       ...(todos.length > 0 && { todos })
     }
@@ -365,7 +383,7 @@ async function main(): Promise<void> {
   }
 
   /** session.delete 入口校验：sessionId 非空 string */
-  function handleSessionDelete(params: unknown) {
+  async function handleSessionDelete(params: unknown) {
     const p = params as Partial<{ sessionId: unknown }>
     if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.delete 需要 { sessionId: string }')
@@ -373,16 +391,19 @@ async function main(): Promise<void> {
     const deleted = sessions.delete(p.sessionId)
     fileViews.releaseSession(p.sessionId)
     files.releaseSession(p.sessionId)
-    return { deleted }
+    const cleanupError = await sessions.deletionSettled(p.sessionId)
+    return { deleted, ...(cleanupError && { cleanupPending: true, cleanupError }) }
   }
 
   /** project.delete 入口校验：projectId 非空 string */
-  function handleProjectDelete(params: unknown) {
+  async function handleProjectDelete(params: unknown) {
     const p = params as Partial<{ projectId: unknown }>
     if (typeof p.projectId !== 'string' || p.projectId.length === 0) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'project.delete 需要 { projectId: string }')
     }
-    return { deleted: projects.delete(p.projectId) }
+    const deleted = await sessions.deleteProject(p.projectId)
+    if (deleted) notify('project.changed', { projectId: p.projectId })
+    return { deleted }
   }
 
   /** project.setPinned 入口校验：projectId 非空 string + pinned 布尔。
@@ -392,6 +413,7 @@ async function main(): Promise<void> {
     if (typeof p.projectId !== 'string' || p.projectId.length === 0 || typeof p.pinned !== 'boolean') {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'project.setPinned 需要 { projectId: string, pinned: boolean }')
     }
+    sessions.assertProjectAvailable(p.projectId)
     return { summary: projects.setPinned(p.projectId, p.pinned) }
   }
 
@@ -429,8 +451,8 @@ async function main(): Promise<void> {
     if (p.text.trim().length === 0 && (p.attachmentIds === undefined || p.attachmentIds.length === 0) && directories.length === 0) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, '正文和附件不能同时为空')
     }
-    sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel, p.provider, p.attachmentIds, p.inputId, directories)
-    return { accepted: true as const }
+    const run = sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel, p.provider, p.attachmentIds, p.inputId, directories)
+    return { accepted: true as const, ...run }
   }
 
   /** approval.respond 入口校验：requestId 非空 string + approved 布尔；optional
@@ -582,12 +604,13 @@ async function main(): Promise<void> {
     if (typeof p.projectId !== 'string' || p.projectId.length === 0 || typeof p.name !== 'string' || p.name.trim().length === 0) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'project.rename 需要 { projectId: string, name: string }')
     }
+    sessions.assertProjectAvailable(p.projectId)
     return { summary: projects.rename(p.projectId, p.name) }
   }
 
   /** project.update 入口校验（编辑弹窗：改名 + 目录增删一次提交）：name/cwds
       口径与 create 完全一致（name 非空 + cwds ≥1 个非空 string，全量替换语义） */
-  function handleProjectUpdate(params: unknown) {
+  async function handleProjectUpdate(params: unknown) {
     const p = params as Partial<{ projectId: unknown; name: unknown; cwds: unknown }>
     if (
       typeof p.projectId !== 'string' ||
@@ -604,62 +627,20 @@ async function main(): Promise<void> {
     ) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'project.update 需要至少一个工作区目录（cwds: string[]）')
     }
-    return { summary: projects.update(p.projectId, p.name, p.cwds as string[]) }
+    const summary = await sessions.updateProject(p.projectId, p.name, p.cwds as string[])
+    notify('project.changed', { projectId: p.projectId, summary })
+    return { summary }
   }
 
   /** providers.custom.sync 入口校验：两数组存在、每项字段形状收窄（id 带 custom/ 前缀的交由 registry 处理）。
       载荷实为外部任意 JSON，协议类型只是声明 —— 按 unknown 收窄，不依赖标注类型 */
   function handleProvidersCustomSync(params: unknown): ProvidersCustomSyncResult {
-    const p = params as Partial<ProvidersCustomSyncParams>
-    const defs = p.providers
-    const overrides = p.overrides
-    const API_FORMATS = ['openai-completions', 'openai-responses', 'anthropic-messages'] as const
-    // ModelDef 按 unknown 逐字段收窄（id 必填非空；其余 optional 限值域）
-    const isModelDef = (value: unknown): boolean => {
-      if (typeof value !== 'object' || value === null) return false
-      const m = value as Record<string, unknown>
-      if (typeof m.id !== 'string' || m.id.length === 0) return false
-      if (m.name !== undefined && typeof m.name !== 'string') return false
-      if (m.contextWindow !== undefined && typeof m.contextWindow !== 'number') return false
-      if (m.maxTokens !== undefined && typeof m.maxTokens !== 'number') return false
-      if (m.reasoning !== undefined && typeof m.reasoning !== 'boolean') return false
-      if (m.input !== undefined) {
-        if (!Array.isArray(m.input) || !m.input.every((v) => v === 'text' || v === 'image')) return false
-      }
-      return true
-    }
-    const isDef = (def: CustomProviderDef): boolean =>
-      typeof def.id === 'string' &&
-      def.id.startsWith('custom/') &&
-      typeof def.name === 'string' &&
-      typeof def.baseUrl === 'string' &&
-      Array.isArray(def.models) &&
-      def.models.every((m) => typeof m === 'string' && m.length > 0) &&
-      // 四个 optional 开关/过滤字段：缺省合法，带了就约束值域
-      (def.modelDefs === undefined || (Array.isArray(def.modelDefs) && def.modelDefs.every(isModelDef))) &&
-      (def.apiFormat === undefined || (API_FORMATS as readonly string[]).includes(def.apiFormat)) &&
-      (def.disabledModels === undefined ||
-        (Array.isArray(def.disabledModels) &&
-          def.disabledModels.every((m) => typeof m === 'string' && m.length > 0))) &&
-      (def.disabled === undefined || typeof def.disabled === 'boolean')
-    if (!Array.isArray(defs) || !defs.every(isDef)) {
-      throw new ProtocolError(
-        RpcErrorCode.InvalidParams,
-        'providers.custom.sync 需要 providers: CustomProviderDef[]（id 以 custom/ 开头）'
-      )
-    }
-    // baseUrl 空串合法 = 不覆盖端点、只做模型调整
-    const isOverride = (o: ProviderOverrideDef): boolean =>
-      typeof o.providerId === 'string' &&
-      typeof o.baseUrl === 'string' &&
-      (o.models === undefined || (Array.isArray(o.models) && o.models.every(isModelDef))) &&
-      (o.disabledModels === undefined ||
-        (Array.isArray(o.disabledModels) &&
-          o.disabledModels.every((m) => typeof m === 'string' && m.length > 0)))
-    if (!Array.isArray(overrides) || !overrides.every(isOverride)) {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, 'providers.custom.sync 需要 overrides: ProviderOverrideDef[]')
-    }
-    return { synced: sessions.syncCustomProviders(defs, overrides) }
+    const parsed = providersSchema.safeParse(params)
+    if (!parsed.success) throw new ProtocolError(RpcErrorCode.InvalidParams, parsed.error.message)
+    const value = parsed.data
+    const synced = sessions.syncCustomProviders(value.providers, value.overrides)
+    notify('providers.custom.changed', {})
+    return { synced }
   }
 
   /** mcp.sync 入口校验：每项按 stdio/http 判别联合逐字段收窄（stdio 帧载荷是
@@ -846,6 +827,15 @@ async function main(): Promise<void> {
     ['models.list', () => sessions.listModels()],
     ['models.test', handleModelsTest],
     ['providers.custom.sync', handleProvidersCustomSync],
+    ['providers.custom.get', () => structuredClone(sessions.businessConfig.providers)],
+    ['session.defaults.get', () => ({ ...sessions.businessConfig.defaults })],
+    ['session.defaults.set', params => {
+      const parsed = defaultsSchema.safeParse(params)
+      if (!parsed.success) throw new ProtocolError(RpcErrorCode.InvalidParams, parsed.error.message)
+      const result = sessions.businessConfig.setDefaults(parsed.data)
+      notify('session.defaultsChanged', result)
+      return result
+    }],
     // MCP 座（4a + 作用域管理）：摘要/诊断只读（带 cwd = 项目合并视图）；
     // 全量写 user 级定义；项目级 override 全量替换（空 = 清除回落）
     ['mcp.list', handleMcpList],
@@ -902,6 +892,12 @@ async function main(): Promise<void> {
       return null
     }
 
+    if (frame.method === 'host.shutdown') {
+      if (transport !== 'stdio') return { jsonrpc: '2.0', id: frame.id, error: { code: RpcErrorCode.InvalidRequest, message: '仅宿主管道可关闭 Host' } }
+      await shutdown()
+      return { jsonrpc: '2.0', id: frame.id, result: { ok: true } }
+    }
+    if (stopping) return { jsonrpc: '2.0', id: frame.id, error: { code: RpcErrorCode.InvalidRequest, message: 'Host 正在退出' } }
     const handler = frame.method === 'initialize'
       ? (params: unknown) => handleInitialize(params, transport)
       : handlers.get(frame.method)
@@ -941,6 +937,7 @@ async function main(): Promise<void> {
       rootSecret: createRootSecret(),
       store: capabilityStore
     })
+    httpServer = http
     httpPort = http.port
     broadcastEvent = http.broadcastEvent
     if (hostname !== '127.0.0.1' && hostname !== '::1' && hostname !== 'localhost') {
@@ -961,17 +958,13 @@ async function main(): Promise<void> {
       if (response) reply(response)
     })
   })
-  // 宿主关闭管道（退出/被杀）时服务随行退出。无引擎级退出清场：pi 的
-  // bash/powershell 自管单命令进程树（abort/超时杀），但无全局登记表 ——
-  // 引擎退出时在跑的命令在 unix 上留孤儿是 pi 上游语义（工具系统.md 已记）
-  stdin.on('close', () => {
-    fileViews.dispose()
-    process.exit(0)
-  })
-  process.on('SIGTERM', () => {
-    fileViews.dispose()
-    process.exit(0)
-  })
+  const exit = (): void => {
+    // process.exit 仅在所有清理完成后调用；有界兜底处理失联扩展或管道。
+    const deadline = setTimeout(() => process.exit(1), 7_000)
+    void shutdown().then(() => { clearTimeout(deadline); process.exit(0) })
+  }
+  stdin.on('close', exit)
+  process.on('SIGTERM', exit)
   startup('stdio 就绪，等待 initialize')
 }
 

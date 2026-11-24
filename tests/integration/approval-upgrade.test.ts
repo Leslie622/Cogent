@@ -292,7 +292,7 @@ describe('审批集成（S1–S6 场景流，17 项断言）', () => {
     check('21b. 项目默认 autonomous 零审批直写（default-me.txt 落盘）', dEnd.params.isError === false && existsSync(join(ws, 'default-me.txt')))
     // S7e：项目外新会话不受影响（cwd 不在任何 cwds 内 → ask 缺省，不带字段）
     const s7eResp = await engine.send<{ id: string; permissionMode?: string }>('session.create', { cwd: outside })
-    check('22. 项目外会话不吃项目默认（缺省不带 = ask）', s7eResp.result?.id !== undefined && s7eResp.result.permissionMode === undefined)
+    check('22. 项目外会话不吃项目默认（Host 全局缺省 = ask）', s7eResp.result?.id !== undefined && s7eResp.result.permissionMode === 'ask')
 
     // ———— S8 审批审计对（钩子座 4d：只读回查，复用上面各场景的会话）————
     // decided 词表见 inspector.ts VERDICT_LABELS；read 类不经审批域（S6 的纯

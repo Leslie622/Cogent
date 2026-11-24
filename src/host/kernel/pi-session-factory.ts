@@ -66,14 +66,16 @@ export interface PiSessionOptions {
   onMessageCommitted?: (message: AgentMessage, entryId: string) => void
   onUserEntry?: (entryId: string, cwd: string) => { attachment?: Omit<AttachmentInput, 'userEntryId'>; fileContext?: FileContext } | undefined
   onFileReferences?: (callId: string, refs: FileReference[]) => void
-  /** 会话主根（pi 的 cwd：项目发现 + 会话目录编码；无绑定根时调用方兜底主目录） */
+  /** 本次工作主根（工具、配置和项目发现）；转录目录由独立锚点决定。 */
   cwd: string
+  /** 转录原目录独立于本次 cwd，换工作区仍打开同一文件，不改写旧 header。 */
+  transcriptCwd?: string
   /** Cogent Host 根（pi 域 = <hostRoot>/pi） */
   hostRoot: string
   /** Cogent 会话 id = pi 会话 id */
   sessionId: string
   modelRuntime: ModelRuntime
-  /** Cogent 自拼系统提示词（buildSystemPrompt 的产物，会话生命周期内不变） */
+  /** Cogent 自拼系统提示词（buildSystemPrompt 的产物，本 pi 实例生命周期内不变） */
   systemPrompt: string
   /**
    * 自定义系统提示段：每轮运行前（before_agent_start）活算的 段名→内容 表。
@@ -118,20 +120,21 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
   createdNew: boolean
 }> {
   const agentDir = join(opts.hostRoot, PI_AGENT_DIR_NAME)
-  const sessionDir = piSessionDir(opts.cwd, agentDir)
+  const transcriptCwd = opts.transcriptCwd ?? opts.cwd
+  const sessionDir = piSessionDir(transcriptCwd, agentDir)
 
   // pi 会话定位：先找旧（本 Cogent 会话已落过 pi JSONL），没有则新建（id 对齐）
-  const existingFile = PiSessionManager.findById(opts.cwd, opts.sessionId, sessionDir)
+  const existingFile = PiSessionManager.findById(transcriptCwd, opts.sessionId, sessionDir)
   const createdNew = existingFile === undefined
   const piSessionManager = createdNew
-    ? PiSessionManager.create(opts.cwd, sessionDir, { id: opts.sessionId })
+    ? PiSessionManager.create(transcriptCwd, sessionDir, { id: opts.sessionId })
     : PiSessionManager.open(existingFile, sessionDir)
 
   const appendMessage = piSessionManager.appendMessage.bind(piSessionManager)
   piSessionManager.appendMessage = (message) => {
     const id = appendMessage(message)
     if (message.role === 'user') {
-      const input = opts.onUserEntry?.(id, piSessionManager.getCwd())
+      const input = opts.onUserEntry?.(id, opts.cwd)
       if (input?.attachment !== undefined) piSessionManager.appendCustomEntry('cogent.attachment-input.v1', { ...input.attachment, userEntryId: id })
       if (input?.fileContext !== undefined) piSessionManager.appendCustomEntry('cogent.file-context.v1', input.fileContext)
     }

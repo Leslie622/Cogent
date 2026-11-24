@@ -167,7 +167,7 @@ describe('产物申报与交付版本', () => {
   it('删除会话回收受管字节，源文件仍在，旧owner无法回写', async () => {
     const f = await fixture(); await f.report([{ path: 'B.txt' }])
     const reading = f.service.get('s1')
-    f.service.releaseSession('s1')
+    await f.service.releaseSession('s1')
     expect(await reading).toEqual([])
     await expect(f.service.stage('s1', f.context, f.owner, 'late', [{ path: 'C.txt' }])).rejects.toThrow('已失效')
     await vi.waitFor(async () => expect(await f.service.get('s1')).toEqual([]))

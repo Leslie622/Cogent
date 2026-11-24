@@ -27,7 +27,8 @@ describe('HostManager 启动诊断', () => {
   })
 
   afterEach(() => {
-    host.stop()
+    void host.stop()
+    child.emit('exit', 0)
     child.stdin.destroy()
     child.stdout.destroy()
     child.stderr.destroy()
@@ -43,7 +44,7 @@ describe('HostManager 启动诊断', () => {
     await vi.advanceTimersByTimeAsync(60_000)
     const message = '引擎握手超时（60000ms）；最后阶段：[startup] +80ms 初始化模型运行时'
     expect(await started).toEqual(new Error(message))
-    expect(await pending).toEqual(new Error(`host closed: ${message}`))
+    expect(await pending).toEqual(new Error(message))
     expect(child.kill).toHaveBeenCalledOnce()
     expect(host.getStatus()).toEqual({ state: 'failed', nodeVersion: null, error: message })
     child.emit('exit', null)
@@ -75,8 +76,9 @@ describe('HostManager 启动诊断', () => {
     expect(host.getStatus().state).toBe('starting')
     expect(child.kill).not.toHaveBeenCalled()
     child.stdout.write(JSON.stringify({ id: 1, result: { node: 'v22.23.5' } }) + '\n')
-    child.stdout.write(JSON.stringify({ id: 2, result: { sessions: [] } }) + '\n')
     await started
+    await Promise.resolve()
+    child.stdout.write(JSON.stringify({ id: 2, result: { sessions: [] } }) + '\n')
     expect(await listed).toEqual({ sessions: [] })
     await vi.advanceTimersByTimeAsync(60_000)
     expect(host.getStatus().state).toBe('running')
@@ -89,5 +91,66 @@ describe('HostManager 启动诊断', () => {
     expect(await started).toEqual(new Error('host closed: spawn ENOENT'))
     expect(host.getStatus().state).toBe('failed')
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('启动期的新增、替换、删除逐项应用，普通请求等到凭据交接完成', async () => {
+    host = new HostManager({ entryPath: '/app/host.js', nodeBin: '/runtime/node', readCredentials: () => ({ test: { apiKey: 'old' } }) })
+    const frames: Array<{ id: number; method: string; params: unknown }> = []
+    child.stdin.on('data', (line: Buffer) => frames.push(JSON.parse(line.toString()) as typeof frames[number]))
+    const reply = (index: number, result: unknown = { ok: true }) => child.stdout.write(JSON.stringify({ id: frames[index].id, result }) + '\n')
+    const starting = host.start()
+    expect(frames[0].params).toMatchObject({ credentials: { test: { apiKey: 'old' } } })
+    const first = host.applyCredential('test', 'new')
+    const second = host.applyCredential('other', 'added')
+    const third = host.applyCredential('test')
+    const listed = host.request('session.list', {})
+    expect(frames.map(frame => frame.method)).toEqual(['initialize'])
+    reply(0, { node: 'v22.23.5' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(frames[1]).toMatchObject({ method: 'credentials.set', params: { providerId: 'test', apiKey: 'new' } })
+    expect(host.getStatus().state).toBe('starting')
+    reply(1); await first; await vi.advanceTimersByTimeAsync(0)
+    expect(frames[2]).toMatchObject({ method: 'credentials.set', params: { providerId: 'other', apiKey: 'added' } })
+    reply(2); await second; await vi.advanceTimersByTimeAsync(0)
+    expect(frames[3]).toMatchObject({ method: 'credentials.remove', params: { providerId: 'test' } })
+    reply(3); await third; await starting; await vi.advanceTimersByTimeAsync(0)
+    expect(frames[4].method).toBe('session.list')
+    reply(4, []); expect(await listed).toEqual([])
+  })
+
+  it('旧进程迟到退出与回包不能关闭新进程，每次启动现读凭据', async () => {
+    const readCredentials = vi.fn(() => ({ test: { apiKey: 'current' } }))
+    host = new HostManager({ entryPath: '/app/host.js', nodeBin: '/runtime/node', readCredentials })
+    const first = host.start().catch((error: unknown) => error)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(await first).toBeInstanceOf(Error)
+    const old = child
+    child = makeChild(); spawn.mockReturnValue(child)
+    const frames: Array<{ id: number }> = []
+    child.stdin.on('data', (line: Buffer) => frames.push(JSON.parse(line.toString()) as typeof frames[number]))
+    const starting = host.start()
+    old.emit('exit', 1)
+    old.stdout.write(JSON.stringify({ id: frames[0].id, result: { node: 'v1.0.0' } }) + '\n')
+    child.stdout.write(JSON.stringify({ id: frames[0].id, result: { node: 'v22.23.5' } }) + '\n')
+    await starting
+    expect(readCredentials).toHaveBeenCalledTimes(2)
+    expect(host.getStatus().state).toBe('running')
+    expect(child.kill).not.toHaveBeenCalled()
+    old.stdin.destroy(); old.stdout.destroy(); old.stderr.destroy()
+  })
+
+  it('正常停止先发私有清理请求，收到确认后才结束子进程', async () => {
+    const frames: Array<{ id: number; method: string }> = []
+    child.stdin.on('data', (line: Buffer) => frames.push(JSON.parse(line.toString()) as typeof frames[number]))
+    const starting = host.start()
+    child.stdout.write(JSON.stringify({ id: frames[0].id, result: { node: 'v22.23.5' } }) + '\n')
+    await starting
+    const stopping = host.stop()
+    expect(frames.at(-1)!.method).toBe('host.shutdown')
+    expect(child.kill).not.toHaveBeenCalled()
+    child.stdout.write(JSON.stringify({ id: frames.at(-1)!.id, result: { ok: true } }) + '\n')
+    await stopping
+    expect(child.kill).toHaveBeenCalledOnce()
+    expect(host.getStatus().state).toBe('stopped')
   })
 })

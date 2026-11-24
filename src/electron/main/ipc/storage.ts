@@ -9,10 +9,10 @@
  * 分类映射、排序、字节格式化都在渲染层纯函数（storage-view.ts + 单测），
  * 壳契约只报每条目字节数的事实。
  */
+import { handleTrusted } from './trusted'
 import { existsSync } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { ipcMain } from 'electron'
 import { IPC, type StorageUsageEntry } from '../../../shared/ipc'
 import { storageRoot } from '../storage-root'
 
@@ -46,7 +46,7 @@ async function dirBytes(dir: string): Promise<number> {
 }
 
 export function registerStorageIpc(): void {
-  ipcMain.handle(IPC.storageUsage, async () => {
+  handleTrusted(IPC.storageUsage, async () => {
     const root = storageRoot()
     // 根尚未创建 = 应用从未写过任何数据（首启常态），0 字节是事实而非降级
     if (!existsSync(root)) return { root, totalBytes: 0, entries: [] }

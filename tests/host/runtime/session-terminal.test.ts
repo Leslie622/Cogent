@@ -63,7 +63,7 @@ beforeEach(async () => {
   release = deferred()
   prompt = vi.fn<AgentSession['prompt']>(async () => { entered.resolve(); await release.promise })
   abort = vi.fn<AgentSession['abort']>().mockResolvedValue(undefined)
-  const pi = { agent: { state, subscribe: vi.fn(() => () => {}) }, systemPrompt: 'test', prompt, abort, dispose: vi.fn() }
+  const pi = { agent: { state, subscribe: vi.fn(() => () => {}) }, systemPrompt: 'test', prompt, abort, dispose: vi.fn(), extensionRunner: { emit: vi.fn().mockResolvedValue(undefined) } }
   vi.mocked(createPiSession).mockImplementation((value) => {
     options = value
     return Promise.resolve({ session: pi as unknown as AgentSession, createdNew: false,
@@ -163,6 +163,7 @@ describe('Host run 终态原因与分段快照', () => {
     state.errorMessage = 'Request was aborted'
     await settle(true)
     expect(terminals).toEqual([{ method: 'run.failed', params: {
+      runId: expect.any(String) as string, turnId: expect.any(String) as string,
       sessionId, reason: 'aborted', message: 'Request was aborted', messages: []
     } }])
   })
@@ -192,6 +193,7 @@ describe('Host run 终态原因与分段快照', () => {
     manager.submit(sessionId, '开始')
     await vi.waitFor(() => expect(terminals).toHaveLength(1))
     expect(terminals[0]).toEqual({ method: 'run.failed', params: {
+      runId: expect.any(String) as string, turnId: expect.any(String) as string,
       sessionId, reason: 'error', message: '鉴权被拒绝'
     } })
     expect(manager.abort(sessionId)).toBe(false)

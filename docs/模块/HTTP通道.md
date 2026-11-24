@@ -36,6 +36,8 @@ HTTP:  消费者 ──POST /auth/exchange {ticket}──▶ 长期 token（v1.<
   （防任意传输门低档 token 自签提权）。
 - `initialize` 在 HTTP/WS 只读取服务信息，凭据快照由 stdio 宿主交接。
 - HTTP 请求体和 WS 单条消息均限制为 1,000,000 字节，HTTP 分块上传按实际字节计算。
+- 共享在途上限 128、每 WS 在途 32、WS 连接数 128、每客户端待发 4,000,000 字节。
+  超限返回 429 / -32004 或释放慢连接；连接断开不取消已受理的运行。预算是当前准入保护，真实容量仍须另测。
 
 **三个门，一套帧**（消息格式与传输正交）：
 
@@ -60,7 +62,8 @@ owner: 事件源 = Host 服务层；广播出口 = notify
 （本项目 2.x），单端点场景标准 upgrade 路径无桥接依赖；浏览器 WebSocket
 不能自定义 Authorization 头（MDN WebSockets API），`?token=` query 是标准
 传递位。HTTP 服务的 `close()` 可先关闭 WS 并等待 250ms，再终止余下连接。
-当前 Host 进程退出路径直接结束进程，该排空方法尚未进入生产关停链。
+生产关停在会话清理后调用该排空方法；HTTP 排空超过 1 秒关闭残余连接。
+验收：并发上限拒绝、慢连接回收及新连接继续服务见 `tests/host/http/server.test.ts`。
 
 **CORS 全放行**（hono/cors）：页面消费者（webview/浏览器）与 `127.0.0.1`
 永远跨源，无放行头浏览器直接拦（Pi-meme 用同源反代绕开，Cogent 页面直连

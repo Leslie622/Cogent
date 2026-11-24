@@ -132,6 +132,8 @@ export type RunOutcome = 'completed' | 'stopped' | 'failed'
  * 2026-11-17 桶化并入 —— 删会话 = 删桶一键，编译器保证不再漏清某一项。
  */
 export interface SessionRuntime {
+  runId?: string
+  turnId?: string
   /** 流式中（发送/停止钮切换；分桶防跨会话互踩） */
   running: boolean
   /** 本窗停止请求在途；终态消费后清除，不作为回合结果 */
@@ -161,6 +163,7 @@ export interface SessionRuntime {
  * 生命周期 = 会话生命周期（selectSession/createSession 建，deleteSession 删）。
  */
 export interface SessionBucket {
+  historyLoaded?: boolean
   /** 桶在增量更新期间身份不变；迟到历史查询不能借用删除后重建的同名桶。 */
   owner: object
   outputs: Partial<Record<string, import('@shared/outputs').TurnOutputs>>

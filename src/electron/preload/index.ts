@@ -49,6 +49,7 @@ const api = {
   attachmentPreview: (id: string, thumbnail: boolean): Promise<string> => ipcRenderer.invoke(IPC.attachmentsPreview, { id, thumbnail }),
   attachmentAction: (id: string, action: 'reveal' | 'save'): Promise<void> => ipcRenderer.invoke(IPC.attachmentsAction, { id, action }),
   /** 查询 Agent 引擎服务连接状态（诊断） */
+  restartHost: (): Promise<AppStatus> => ipcRenderer.invoke(IPC.appRestart),
   getStatus: (): Promise<AppStatus> => ipcRenderer.invoke(IPC.appStatus),
 
   /** 引擎方法代理：method 名受 ipc/engine.ts 白名单收窄，载荷类型由 ProtocolMethods 约束 */

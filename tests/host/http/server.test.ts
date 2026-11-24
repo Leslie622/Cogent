@@ -302,6 +302,36 @@ function wsNextMessage(ws: WebSocket): Promise<string> {
 }
 
 describe('WS 门（2c）', () => {
+  it('单连接在途到上限后拒绝额外请求，断线不取消已受理工作', async () => {
+    const releases: Array<() => void> = []
+    const handler = vi.fn<FrameHandler>(raw => new Promise(resolve => {
+      const request = JSON.parse(raw) as { id: number }
+      releases.push(() => resolve({ jsonrpc: '2.0', id: request.id, result: { ok: true } }))
+    }))
+    const { base, token } = await start(handler)
+    const ws = await wsOpen(`${base}/ws?token=${token('readonly')}`)
+    const denied = new Promise<RpcResponse>(resolve => ws.on('message', data => {
+      const frame = JSON.parse((data as Buffer).toString()) as RpcResponse
+      if (frame.id === 33) resolve(frame)
+    }))
+    try {
+      for (let id = 1; id <= 33; id++) ws.send(JSON.stringify({ jsonrpc: '2.0', id, method: 'session.list', params: {} }))
+      expect((await denied).error?.code).toBe(-32004)
+      expect(handler).toHaveBeenCalledTimes(32)
+      ws.close()
+    } finally { for (const release of releases) release() }
+  })
+  it('待发事件超预算关闭慢连接，正常连接仍能请求', async () => {
+    const { base, server, token } = await start()
+    const ws = await wsOpen(`${base}/ws?token=${token('readonly')}`)
+    const closed = new Promise<void>(resolve => ws.once('close', () => resolve()))
+    server.broadcastEvent({ jsonrpc: '2.0', method: 'run.failed', params: { sessionId: 's', message: 'x'.repeat(4_000_001) } })
+    await closed
+    const next = await wsOpen(`${base}/ws?token=${token('readonly')}`)
+    const response = wsNextMessage(next)
+    next.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.list', params: {} }))
+    expect((JSON.parse(await response) as RpcResponse).result).toEqual({ echo: 'session.list' })
+  })
   it('admin 也不能经 WS 取得桌面附件入口', async () => {
     const { base, token } = await start()
     const ws = await wsOpen(`${base}/ws?token=${token('admin')}`)

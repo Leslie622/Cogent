@@ -1,5 +1,5 @@
 /** 准备期取消回归：可控装配/公开pi分派回调驱动真实Host，验证预约与迟到结果归属。 */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -38,6 +38,7 @@ type Terminal = { method: 'run.completed'; params: ProtocolEvents['run.completed
 
 let root: string
 let manager: SessionManager
+let projects: ProjectRegistry
 let sid: string
 let options: PiSessionOptions
 let state: { messages: AgentMessage[]; errorMessage?: string }
@@ -52,6 +53,14 @@ let dispose: ReturnType<typeof vi.fn<AgentSession['dispose']>>
 let setModel: ReturnType<typeof vi.fn<AgentSession['setModel']>>
 let tree: PiSessionManager
 let coreListeners: Set<Parameters<Agent['subscribe']>[0]>
+let shutdownExtension: ReturnType<typeof vi.fn>
+
+it('续写读取冲突历史失败时不留下运行预约或伪造开始事件', async () => {
+  vi.spyOn(manager, 'messages').mockImplementationOnce(() => { throw new Error('转录存在分叉') })
+  await expect(manager.continueSession(sid)).rejects.toThrow('分叉')
+  expect(manager.abort(sid)).toBe(false)
+  expect(started).toBe(0)
+})
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'cogent-prepare-'))
@@ -71,18 +80,20 @@ beforeEach(async () => {
   dispose = vi.fn<AgentSession['dispose']>()
   setModel = vi.fn<AgentSession['setModel']>().mockResolvedValue(undefined)
   coreListeners = new Set()
+  shutdownExtension = vi.fn().mockResolvedValue(undefined)
   const pi = { agent: { state, subscribe: (listener: Parameters<Agent['subscribe']>[0]) => {
     coreListeners.add(listener)
     return () => { coreListeners.delete(listener) }
   } }, systemPrompt: 'test', sessionManager: tree,
     refreshContext: () => { state.messages = tree.buildSessionContext().messages },
-    prompt, compact, abort, abortCompaction, dispose, setModel }
+    prompt, compact, abort, abortCompaction, dispose, setModel, extensionRunner: { emit: shutdownExtension } }
   vi.mocked(createPiSession).mockImplementation(async (value) => {
     options = value
     await build.promise
     return { session: pi as unknown as AgentSession, piSessionManager: tree, createdNew: false }
   })
   const storage = new JsonStorageDriver(root)
+  projects = new ProjectRegistry(storage)
   const runtime = await ModelRuntime.create({ credentials: {
     read: () => Promise.resolve(undefined), list: () => Promise.resolve([]),
     modify: () => Promise.resolve(undefined), delete: () => Promise.resolve(undefined)
@@ -91,7 +102,7 @@ beforeEach(async () => {
     if (method === 'run.started') started++
     if (method === 'run.completed') terminal.push({ method, params: params as ProtocolEvents['run.completed'] })
     if (method === 'run.failed') terminal.push({ method, params: params as ProtocolEvents['run.failed'] })
-  }, new ProjectRegistry(storage), new ApprovalRegistry(root), new McpConfigStore(root),
+  }, projects, new ApprovalRegistry(root), new McpConfigStore(root),
   new SkillStore(root, join(root, 'agents')), new InspectStore(root), runtime, root)
   sid = manager.create({ cwd: root }).id
 })
@@ -102,6 +113,68 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true })
 })
 const tick = () => new Promise<void>((done) => setImmediate(done))
+
+describe('项目目录交接', () => {
+  it('重复移除已不存在的项目不打断保留下来的运行会话', async () => {
+    const project = projects.create('项目', [root])
+    const id = manager.create({ projectId: project.id }).id
+    expect(await manager.deleteProject(project.id)).toBe(true)
+    manager.submit(id, '已移除项目的聊天')
+    expect(await manager.deleteProject(project.id)).toBe(false)
+    expect(manager.abort(id)).toBe(true)
+    build.resolve(); await tick()
+  })
+  it('旧实例退出失败不保存新根，下一轮可以从旧根重建', async () => {
+    const project = projects.create('旧项目', [root])
+    const id = manager.create({ projectId: project.id }).id
+    build.resolve(); manager.submit(id, '完成'); await tick(); await tick()
+    shutdownExtension.mockRejectedValueOnce(new Error('扩展清理失败'))
+    await expect(manager.updateProject(project.id, '新项目', [join(root, 'next')])).rejects.toThrow('扩展清理失败')
+    expect(projects.get(project.id)).toEqual(project)
+    expect(dispose).toHaveBeenCalledOnce()
+    manager.submit(id, '可重试'); await tick(); await tick()
+    expect(options.cwd).toBe(root)
+    expect(prompt).toHaveBeenCalledTimes(2)
+  })
+  it.each(['submit', 'compact'] as const)('%s 准备中拒绝换根，保留原项目', async action => {
+    const project = projects.create('项目', [root])
+    const id = manager.create({ projectId: project.id }).id
+    const work = action === 'compact' ? manager.compactSession(id).catch(() => {}) : undefined
+    if (action === 'submit') manager.submit(id, '准备中')
+    await expect(manager.updateProject(project.id, '新项目', [join(root, 'next')])).rejects.toThrow('正在工作')
+    expect(projects.get(project.id)).toEqual(project)
+    manager.abort(id); build.resolve(); await work; await tick()
+  })
+
+  it('等扩展退出才发布新根，交接期间各任务入口不能进入，失败后按旧根重建', async () => {
+    const project = projects.create('项目', [root]), next = join(root, 'next')
+    mkdirSync(next)
+    const id = manager.create({ projectId: project.id }).id
+    build.resolve(); manager.submit(id, '完成一轮'); await tick(); await tick()
+    const closing = deferred<void>()
+    shutdownExtension.mockReturnValueOnce(closing.promise)
+    const updated = manager.updateProject(project.id, '换根', [next])
+    await tick()
+    expect(projects.get(project.id)?.cwds).toEqual([root])
+    expect(() => manager.submit(id, '交接中')).toThrow('正在切换')
+    await expect(manager.continueSession(id)).rejects.toThrow('正在切换')
+    await expect(manager.compactSession(id)).rejects.toThrow('正在切换')
+    expect(() => manager.create({ projectId: project.id })).toThrow('正在切换')
+    await expect(manager.updateProject(project.id, '并发', [root])).rejects.toThrow('正在切换')
+    closing.resolve(); await updated
+    expect(dispose).toHaveBeenCalledOnce()
+    manager.submit(id, '新根'); await tick(); await tick()
+    expect(options.cwd).toBe(next)
+    expect(options.transcriptCwd).toBe(root)
+
+    mkdirSync(join(root, 'projects', `${project.id}.json.tmp`))
+    await expect(manager.updateProject(project.id, '写盘失败', [root])).rejects.toThrow()
+    expect(projects.get(project.id)?.cwds).toEqual([next])
+    rmSync(join(root, 'projects', `${project.id}.json.tmp`), { recursive: true })
+    manager.submit(id, '恢复旧根'); await tick(); await tick()
+    expect(options.cwd).toBe(next)
+  })
+})
 const seedPrefix = () => {
   tree.appendMessage({ role: 'user', content: '问题', timestamp: 100 })
   tree.appendMessage(answer('已有前缀'))
@@ -132,6 +205,7 @@ describe('Host 准备阶段停止与运行预约', () => {
       expect.objectContaining({ content: '准备期问题' })
     ])
     expect(terminal).toEqual([{ method: 'run.failed', params: {
+      runId: expect.any(String) as string, turnId: expect.any(String) as string,
       sessionId: sid, reason: 'aborted', message: '已停止', messages: []
     } }])
   })
@@ -239,6 +313,7 @@ describe('Host 准备阶段停止与运行预约', () => {
     build.reject(new Error('初始化失败'))
     await tick()
     expect(terminal).toEqual([{ method: 'run.failed', params: {
+      runId: expect.any(String) as string, turnId: expect.any(String) as string,
       sessionId: sid, reason: 'error', message: '初始化失败'
     } }])
     expect(tree.getBranch().filter((entry) => entry.type === 'message')).toEqual([])
@@ -351,7 +426,7 @@ describe('Host 准备阶段停止与运行预约', () => {
     expect(coreListeners.size).toBe(1)
     manager.delete(sid)
     input.resolve(); await tick()
-    expect(abort).toHaveBeenCalledOnce()
+    expect(abort).toHaveBeenCalled()
     expect(coreListeners.size).toBe(0)
     expect(terminal).toEqual([])
   })

@@ -5,6 +5,10 @@
  * 协议版本回显客户端请求值（握手必成，测试不关心版本协商本身）。
  */
 import { createInterface } from 'node:readline'
+import { writeFileSync } from 'node:fs'
+
+// 生命周期回归只记录本夹具自己的 PID，不涉及真实外部服务器。
+if (process.env.COGENT_TEST_PID_FILE) writeFileSync(process.env.COGENT_TEST_PID_FILE, String(process.pid))
 
 const stdin = createInterface({ input: process.stdin })
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\n')

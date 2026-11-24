@@ -49,10 +49,11 @@ export function FileWorkspacePane({ tabs, scopeId, projectId, sessionId, grantId
   const [treeOpen, setTreeOpen] = useState(true)
   const breadcrumbRef = useRef<HTMLElement>(null)
   const hasScopeFiles = tabs.some(tab => tab.scopeId === scopeId)
+  const project = useProjectStore(state => state.projects.find(project => project.id === projectId))
   // 最后逻辑tab关闭会销毁registry中的owner；常驻面板重开时必须读取新owner。
   const owner = hasScopeFiles ? getFileNavigatorOwner({ scopeId, projectId, sessionId, grantIds }) : null
   const snapshot = useSyncExternalStore<NavigatorSnapshot | null>(owner?.subscribe ?? subscribeEmpty, owner?.getSnapshot ?? emptySnapshot)
-  const projectName = useProjectStore(state => state.projects.find(project => project.id === projectId)?.name)
+  const projectName = project?.name
   const selected = tabs.find(tab => tab.id === activeTabId && tab.scopeId === scopeId)
   const file = selected?.kind === 'file' ? selected : undefined
   const preview = useFilePreviewStore(state => file === undefined ? undefined : state.byTab[file.id])

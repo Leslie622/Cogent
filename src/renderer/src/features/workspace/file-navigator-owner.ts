@@ -1,5 +1,6 @@
 /** 文件导航的数据所有者；目录分页与取消留在这里，树库只读取同步快照。 */
 import { projectFileRoots, type FileViewContext, type FileViewEntry, type FileViewMethods, type FileViewRoot } from '@shared/file-views'
+import { useProjectStore } from '@/stores/project'
 
 export type FileNavigatorRequest = <M extends keyof FileViewMethods>(
   method: M,
@@ -136,6 +137,7 @@ export class FileNavigatorOwner {
       const result = await this.request('fileViews.openContext', {
         scopeId: this.source.scopeId,
         ...(this.source.projectId !== undefined && { projectId: this.source.projectId }),
+        ...(this.source.sessionId !== undefined && { sessionId: this.source.sessionId }),
         grantIds: this.snapshot.context?.grantIds ?? this.restoredGrants ?? this.source.grantIds ?? [],
         ...(pick !== undefined && { pick })
       })
@@ -403,11 +405,23 @@ export class FileNavigatorOwner {
 }
 
 const owners = new Map<string, { scopeId: string; owner: FileNavigatorOwner }>()
+const sourceKey = (source: NavigatorSource): string => JSON.stringify([
+  source.scopeId, source.projectId, source.sessionId,
+  useProjectStore.getState().projects.find(project => project.id === source.projectId)?.cwds
+])
 
 export function getFileNavigatorOwner(source: NavigatorSource): FileNavigatorOwner {
-  const key = JSON.stringify([source.scopeId, source.projectId, source.sessionId])
+  const key = sourceKey(source)
   let entry = owners.get(key)
   if (entry === undefined) {
+    // 同一项目换根后旧请求只可释放旧上下文，不能重新发布旧目录树；文件 lease 独立归属。
+    for (const [oldKey, previous] of owners) {
+      const old = previous.owner.source
+      if (old.scopeId === source.scopeId && old.projectId === source.projectId && old.sessionId === source.sessionId) {
+        owners.delete(oldKey)
+        void previous.owner.dispose().catch((error: unknown) => console.error('旧项目文件导航清理失败', error))
+      }
+    }
     entry = { scopeId: source.scopeId, owner: new FileNavigatorOwner(source, (method, params) => window.cogent.fileViewsRequest(method, params)) }
     owners.set(key, entry)
   }
@@ -416,6 +430,13 @@ export function getFileNavigatorOwner(source: NavigatorSource): FileNavigatorOwn
 
 export async function releaseFileNavigatorScope(scopeId: string): Promise<void> {
   const selected = [...owners].filter(([, entry]) => entry.scopeId === scopeId)
+  selected.forEach(([key]) => owners.delete(key))
+  await Promise.all(selected.map(([, entry]) => entry.owner.dispose()))
+}
+
+/** 后台会话的导航也要立即收尾，不能等用户切回时才释放旧根 watcher。 */
+export async function invalidateProjectNavigators(projectId: string): Promise<void> {
+  const selected = [...owners].filter(([, entry]) => entry.owner.source.projectId === projectId)
   selected.forEach(([key]) => owners.delete(key))
   await Promise.all(selected.map(([, entry]) => entry.owner.dispose()))
 }
@@ -432,7 +453,7 @@ export function bindFileNavigatorScope(draftScopeId: string, sessionId: string):
     entry.scopeId = sessionId
     entry.owner.source.scopeId = sessionId
     entry.owner.source.sessionId = sessionId
-    const nextKey = JSON.stringify([sessionId, entry.owner.source.projectId, sessionId])
+    const nextKey = sourceKey(entry.owner.source)
     const previous = owners.get(nextKey)
     if (previous !== undefined && previous.owner !== entry.owner) {
       owners.set(`${nextKey}:retained:${crypto.randomUUID()}`, previous)

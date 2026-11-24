@@ -64,7 +64,7 @@ describe('文件导航视图', () => {
     view.rerender(<FileNavigator key={fresh} scopeId={fresh} sessionId={fresh} grantIds={[]} onOpen={onOpen} />)
     await screen.findByText('当前目录为空')
     expect(screen.queryByRole('treeitem', { name: '月报.pdf' })).toBeNull()
-    expect(request).toHaveBeenCalledWith('fileViews.openContext', { scopeId: fresh, grantIds: [] })
+    expect(request).toHaveBeenCalledWith('fileViews.openContext', { scopeId: fresh, sessionId: fresh, grantIds: [] })
     view.rerender(<FileNavigator key={original} scopeId={original} sessionId={original} grantIds={[grantId]} onOpen={onOpen} />)
     await screen.findByText('当前目录为空')
     expect(screen.queryByRole('button', { name: '打开文件' })).toBeNull()

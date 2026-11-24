@@ -94,7 +94,7 @@ export function GeneralSection() {
         >
           <Switch
             checked={defaultPermissionMode === 'auto'}
-            onCheckedChange={(checked) => setDefaultPermissionMode(checked ? 'auto' : 'ask')}
+            onCheckedChange={(checked) => { void setDefaultPermissionMode(checked ? 'auto' : 'ask').catch(() => {}) }}
             aria-label="默认权限"
           />
         </SettingsRow>

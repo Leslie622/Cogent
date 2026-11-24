@@ -1,4 +1,5 @@
 /** 主窗口顶层的浏览器白名单；网页和子 frame 无权请求 lease 或桌面文件资源。 */
+import { handleTrusted, checkCurrentCaller } from './trusted'
 import { dialog, ipcMain } from 'electron'
 import { z } from 'zod'
 import { BROWSER_CHANNEL, type BrowserMethod } from '../../../shared/browser'
@@ -40,7 +41,7 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): void {
     if (!parsed.success) { event.returnValue = null; return }
     runtime.prompt(event, parsed.data.message, parsed.data.defaultValue, parsed.data.kind)
   })
-  ipcMain.handle(BROWSER_CHANNEL.request, async (event, raw: unknown) => {
+  handleTrusted(BROWSER_CHANNEL.request, async (event, raw: unknown) => {
     const window = deps.getWindow()
     if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('浏览器操作仅允许主窗口顶层页面')
     const request = z.object({ method: z.string(), params: z.unknown() }).parse(raw)
@@ -73,6 +74,7 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): void {
         let selectedRoot: string | undefined
         if (p.pickRoot) {
           const selected = await dialog.showOpenDialog(window, { title: '选择HTML资源目录', properties: ['openDirectory'] })
+          checkCurrentCaller()
           runtime.state(owner, p.lease) // 原生选择框可跨重载/关页存活；迟到结果不重新授权。
           if (selected.canceled) return runtime.state(owner, p.lease)
           selectedRoot = selected.filePaths[0]

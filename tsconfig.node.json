@@ -27,6 +27,7 @@
     "electron.vite.config.ts",
     "src/electron/**/*",
     "src/host/**/*",
+    "src/node/**/*",
     "src/protocol/**/*",
     "src/shared/**/*"
   ]

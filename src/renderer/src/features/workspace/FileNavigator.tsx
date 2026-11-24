@@ -14,6 +14,7 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '
 import { Hint } from '@/components/Hint'
 import { FileIcon } from '@/components/FileIcon'
 import { cn } from '@/lib/utils'
+import { useProjectStore } from '@/stores/project'
 import {
   getFileNavigatorOwner, NAVIGATOR_ROOT,
   type FileNavigatorOwner, type NavigatorItem, type NavigatorSnapshot
@@ -186,7 +187,8 @@ function SearchResults({ owner, snapshot, onOpen }: {
 }
 
 export function FileNavigator({ scopeId, projectId, sessionId, grantIds, active = true, title, selectedPath, onOpen, onContextChange }: FileNavigatorProps) {
-  const owner = useMemo(() => getFileNavigatorOwner({ scopeId, projectId, sessionId, grantIds }), [scopeId, projectId, sessionId, grantIds])
+  const rootsKey = useProjectStore(state => JSON.stringify(state.projects.find(project => project.id === projectId)?.cwds))
+  const owner = useMemo(() => getFileNavigatorOwner({ scopeId, projectId, sessionId, grantIds }), [scopeId, projectId, sessionId, grantIds, rootsKey])
   const snapshot = useSyncExternalStore(owner.subscribe, owner.getSnapshot)
   const contextCallback = useRef(onContextChange)
   contextCallback.current = onContextChange

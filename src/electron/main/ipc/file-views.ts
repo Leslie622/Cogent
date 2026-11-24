@@ -1,5 +1,6 @@
 /** 文件视图 IPC：所有来源先验主窗口；主进程选择/项目事实生成授权，Host 复核每次读取。 */
-import { dialog, ipcMain, shell } from 'electron'
+import { handleTrusted } from './trusted'
+import { dialog, shell } from 'electron'
 import { copyFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { basename, isAbsolute } from 'node:path'
@@ -14,7 +15,7 @@ import type { IpcDeps } from './index'
 export function registerFileViewsIpc(deps: IpcDeps): void {
   const grants = new FileViewGrants(storageRoot())
   const registeredWindows = new Map<number, { epoch: number; closed: boolean; ready: Promise<void> }>()
-  ipcMain.handle(FILE_VIEWS_CHANNEL, async (event, raw: unknown) => {
+  handleTrusted(FILE_VIEWS_CHANNEL, async (event, raw: unknown) => {
     requireFileWindow(event, deps)
     const payload = fileViewObject(raw); const method = fileViewString(payload, 'method'); const params = fileViewObject(payload.params)
     const win = deps.getWindow()!; const windowId = win.webContents.id
@@ -51,11 +52,20 @@ export function registerFileViewsIpc(deps: IpcDeps): void {
       if (params.grantIds !== undefined && (!Array.isArray(params.grantIds) || params.grantIds.length > 64 || params.grantIds.some((value) => typeof value !== 'string'))) throw new Error('文件授权列表不合法')
       const grantIds = [...(params.grantIds as string[] | undefined ?? [])]
       const roots: FileViewRoot[] = []
+      if (params.sessionId !== undefined) {
+        const sessionId = fileViewString(params, 'sessionId')
+        if (sessionId !== scopeId) throw new Error('会话目录不属于当前文件工作区')
+        const activeSessions = await active(deps.host.request('session.list', {}))
+        const session = activeSessions.find(session => session.id === sessionId)
+          ?? (await active(deps.host.request('session.listArchived', {}))).find(session => session.id === sessionId)
+        if (session === undefined) throw new Error('会话不存在或已移除')
+        if (session.cwd !== undefined) roots.push({ id: `session:${session.id}`, path: session.cwd, name: basename(session.cwd) || session.cwd, kind: 'directory' })
+      }
       if (params.projectId !== undefined) {
         const projectId = fileViewString(params, 'projectId')
         const project = (await active(deps.host.request('project.list', {}))).find((project) => project.id === projectId)
-        if (project === undefined) throw new Error('项目不存在或已移除')
-        roots.push(...project.cwds.map((path, index) => ({ id: `project:${project.id}:${index}`, path, name: basename(path) || path, kind: 'directory' as const })))
+        if (project === undefined && params.sessionId === undefined) throw new Error('项目不存在或已移除')
+        if (project !== undefined) roots.push(...project.cwds.map((path, index) => ({ id: `project:${project.id}:${index}`, path, name: basename(path) || path, kind: 'directory' as const })))
       }
       let selectedPaths: string[] = []
       if (params.pick !== undefined) {

@@ -1,3 +1,5 @@
+import { shutdownPiSession } from '../kernel/pi-lifecycle'
+import { BusinessConfig } from './business-config'
 /**
  * 会话运行时 —— pi AgentSession 的托管层。
  *
@@ -30,7 +32,7 @@
  */
 import { SessionSearchService } from './search/service'
 import type { SearchQuery, SearchPage } from '../../shared/session-search'
-import { findPiTranscriptFile, legacyMessages } from '../kernel/transcript'
+import { findPiTranscriptFile } from '../kernel/transcript'
 import { toChatMessages, summarizeToolResult, tailToolResult, extractResultDiff, projectUsage, sumOptional, accumulateUsage } from './message-projection'
 export { toChatMessages } from './message-projection'
 
@@ -96,7 +98,7 @@ import {
   PI_AGENT_DIR_NAME,
   readPiTranscript
 } from '../kernel/pi-session-factory'
-import { importLegacyTranscript } from '../kernel/legacy-import'
+import { migrateLegacyTranscript, transcriptAuthority } from '../kernel/transcript-authority'
 // 上下文明细的转录整形（明细区数据源）：convertToLlmMessages 处理
 // compactionSummary 等自定义角色后与 pi 预算看到的载荷同源同形
 import { convertToLlmMessages, piTriggerRatio } from './compaction'
@@ -121,6 +123,7 @@ export type Notify = KernelNotifier
  * Cogent 的私域，pi 不知情，落在本文件。
  */
 interface StoredSession {
+  deleted?: true
   autoTitle?: 'ready' | 'attempted'
   piCwd?: string
   version: 1 | 2
@@ -188,7 +191,10 @@ function asStoredSession(
 }
 
 /** 内存态会话：pi 内核惰性 —— 恢复的会话在首次 submit/compact 时才装配 */
+interface WorkspaceSnapshot { cwd: string; roots: string[] }
 interface Session {
+  /** 装配/运行共享的根快照，只有空闲项目交接会使其失效。 */
+  workspace?: WorkspaceSnapshot
   /** 缺省为历史会话，不补发；消费标记在辅助 API 前落盘，崩溃恢复也不重复计费。 */
   autoTitle?: 'ready' | 'attempted'
   /** pi 转录目录锚点独立于可变项目根；不把新项目配置当旧工具 cwd。 */
@@ -362,6 +368,8 @@ function readGitBranch(cwd: string): string | null {
  * 续写链的全窗口，也是 submit 忙判定的单一账本（见 submit）。
  */
 interface StreamingState {
+  workspace: WorkspaceSnapshot
+  runId: string
   titleInput?: { text: string }
   finalization?: Promise<void>
   turnId?: string
@@ -464,6 +472,8 @@ const DEFAULT_MODEL = 'claude-sonnet-4-5'
 const DEFAULT_PROVIDER = 'anthropic'
 
 export class SessionManager implements CogentKernel {
+  private changingProjects = new Set<string>()
+  private shuttingDown = false
   readonly searchService: SessionSearchService
   private messageSources = new WeakMap<AgentMessage, string>()
   readonly titleSettings: SessionTitleConfig
@@ -472,6 +482,7 @@ export class SessionManager implements CogentKernel {
   }>()
   readonly outputs: OutputsService
   private sessions = new Map<string, Session>()
+  private deletionTasks = new Map<string, Promise<void>>()
   private streaming = new Map<string, StreamingState>()
   /**
    * 手动压缩进行中的会话（并发护栏）：pi.compact() 是 async RPC，窗口期
@@ -499,6 +510,8 @@ export class SessionManager implements CogentKernel {
       sessionId: string
       kind: ToolKind
       toolName: string
+      callId: string
+      summary: string
       ruleRoots: string[]
       withinRoots: boolean
       resolve: (result: { block: boolean; reason?: string }) => void
@@ -512,7 +525,7 @@ export class SessionManager implements CogentKernel {
    */
   private pendingQuestions = new Map<
     string,
-    { sessionId: string; resolve: (result: { answers: AskAnswers; cancelled?: boolean }) => void }
+    { sessionId: string; questions: AskQuestion[]; resolve: (result: { answers: AskAnswers; cancelled?: boolean }) => void }
   >()
   /**
    * 挂起中的方案审批（交互座 4c-3，同款骨架）：submit_plan 的 execute 悬着等
@@ -539,6 +552,7 @@ export class SessionManager implements CogentKernel {
   private modelRuntime: ModelRuntime
   /** Cogent Host 根（pi 域 <root>/pi 的父目录，装配 pi 会话树用） */
   private hostRoot: string
+  readonly businessConfig: BusinessConfig
   readonly attachments: AttachmentService
 
   constructor(
@@ -568,6 +582,8 @@ export class SessionManager implements CogentKernel {
     this.models = builtinModels()
     this.customProviders = new CustomProviderRegistry(this.models, modelRuntime)
     this.customProviders.snapshotBuiltin()
+    this.businessConfig = new BusinessConfig(hostRoot)
+    this.customProviders.sync(this.businessConfig.providers.providers, this.businessConfig.providers.overrides)
     // 启动恢复：只拉摘要（惰性装配，见 Session.pi / Session.inspector 注释）。
     // 损坏（截断/手改/旧版本形状）逐文件隔离：报错 + 改名 .corrupt 旁置 + 继续
     // 恢复其余会话 —— 单文件损坏若任其炸构造器，引擎进程拒启 = 全部会话陪葬，
@@ -575,7 +591,12 @@ export class SessionManager implements CogentKernel {
     // 诊断 + 旁置文件可查，且该会话确实不加载 = 不静默重建）
     for (const id of this.storage.ids(SESSION_COLLECTION)) {
       try {
-        const doc = asStoredSession(this.storage.get(SESSION_COLLECTION, id), id)
+        const stored = this.storage.get(SESSION_COLLECTION, id)
+        const doc = asStoredSession(stored, id)
+        if (stored?.deleted === true) {
+          this.trackDeletion(id, this.cleanupDeleted(id, doc.piCwd ?? this.projectByIdOrCwd(doc.summary.cwd, doc.summary.projectId)?.cwds[0] ?? doc.summary.cwd ?? homedir()))
+          continue
+        }
         this.sessions.set(doc.summary.id, {
           summary: doc.summary,
           autoTitle: doc.autoTitle,
@@ -615,6 +636,7 @@ export class SessionManager implements CogentKernel {
    * 顺序去重（同目录只声明一次）。
    */
   private workspaceRoots(session: Session): string[] {
+    if (session.workspace !== undefined) return session.workspace.roots
     const roots: string[] = []
     if (session.summary.cwd !== undefined) roots.push(session.summary.cwd)
     if (session.summary.projectId !== undefined) {
@@ -623,6 +645,63 @@ export class SessionManager implements CogentKernel {
       }
     }
     return roots
+  }
+
+  private captureWorkspace(session: Session): WorkspaceSnapshot {
+    if (session.workspace === undefined) {
+      const roots = this.workspaceRoots(session)
+      session.workspace = { cwd: roots[0] ?? homedir(), roots: [...roots] }
+    }
+    return session.workspace
+  }
+
+  assertProjectAvailable(projectId: string): void {
+    if (this.changingProjects.has(projectId)) throw new ProtocolError(RpcErrorCode.InvalidRequest, '项目目录正在切换，请稍后重试')
+  }
+
+  private assertWorkspaceAvailable(session: Session): void {
+    if (session.summary.projectId !== undefined) this.assertProjectAvailable(session.summary.projectId)
+  }
+
+  async updateProject(projectId: string, name: string, cwds: string[]): Promise<import('../../protocol').ProjectSummary> {
+    this.assertProjectAvailable(projectId)
+    const current = this.projects.get(projectId)
+    if (current !== undefined && current.cwds.length === cwds.length && current.cwds.every((root, index) => root === cwds[index]))
+      return this.projects.update(projectId, name, cwds)
+    return this.replaceProjectRoots(projectId, () => this.projects.update(projectId, name, cwds))
+  }
+
+  async deleteProject(projectId: string): Promise<boolean> {
+    this.assertProjectAvailable(projectId)
+    if (this.projects.get(projectId) === undefined) return false
+    return this.replaceProjectRoots(projectId, () => this.projects.delete(projectId))
+  }
+
+  /** 先预约所有归属会话，再等旧资源退出；失败不发布新根，释放后的实例可按旧根重建。 */
+  private async replaceProjectRoots<T>(projectId: string, commit: () => T): Promise<T> {
+    this.assertProjectAvailable(projectId)
+    const affected = [...this.sessions.values()].filter(session => session.summary.projectId === projectId)
+    if (affected.some(session => this.streaming.has(session.summary.id) || this.compacting.has(session.summary.id) || session.piBuilding !== undefined))
+      throw new ProtocolError(RpcErrorCode.InvalidRequest, '项目中的会话正在工作，请先停止或等待完成后再修改目录')
+    this.changingProjects.add(projectId)
+    try {
+      for (const session of affected) {
+        if (session.piCwd === undefined) {
+          const candidate = { ...session, piCwd: this.transcriptCwd(session) }
+          this.writeSession(candidate)
+          session.piCwd = candidate.piCwd
+        }
+        this.cancelTitle(session.summary.id, '项目目录变更')
+      }
+      const results = await Promise.allSettled(affected.map(async session => {
+        try { if (session.pi !== undefined) await shutdownPiSession(session.pi) }
+        finally { session.pi = undefined; session.systemPrompt = undefined; session.workspace = undefined }
+      }))
+      const failed = results.find(result => result.status === 'rejected')
+      if (failed?.status === 'rejected') throw failed.reason
+      if (this.shuttingDown) throw new ProtocolError(RpcErrorCode.InvalidRequest, '引擎正在退出，项目目录未切换')
+      return commit()
+    } finally { this.changingProjects.delete(projectId) }
   }
 
   private transcriptCwd(session: Session): string {
@@ -672,13 +751,14 @@ export class SessionManager implements CogentKernel {
 
   /** 系统提示词惰性算 + 缓存（submit 的观测快照与 pi 装配共用同一份） */
   private ensureSystemPrompt(session: Session): string {
+    this.captureWorkspace(session)
     session.systemPrompt ??= buildSystemPrompt(this.workspaceRoots(session), this.toolRoots(session))
     return session.systemPrompt
   }
 
   /** 自定义 provider / 内置 baseUrl 覆盖的全量同步（providers.custom.sync 委托） */
   syncCustomProviders(defs: CustomProviderDef[], overrides: ProviderOverrideDef[]): number {
-    return this.customProviders.sync(defs, overrides)
+    return this.businessConfig.setProviders({ providers: defs, overrides }, () => this.customProviders.prepare(defs, overrides))
   }
 
   // ———— 会话 CRUD ————
@@ -692,6 +772,7 @@ export class SessionManager implements CogentKernel {
       planEnabled?: boolean
     } = {}
   ): SessionSummary {
+    if (params.projectId !== undefined) this.assertProjectAvailable(params.projectId)
     const now = Date.now()
     // 模式缺省解析（F6）：直驱协议/其他宿主不带 permissionMode 时按项目默认
     // 兜底（renderer 走自己的同规则链，显式值优先两不冲突）。项目也没设 →
@@ -699,7 +780,7 @@ export class SessionManager implements CogentKernel {
     const defaultMode =
       params.permissionMode !== undefined
         ? params.permissionMode
-        : this.projectByIdOrCwd(params.cwd, params.projectId)?.defaultPermissionMode
+        : this.projectByIdOrCwd(params.cwd, params.projectId)?.defaultPermissionMode ?? this.businessConfig.defaults.defaultPermissionMode
     // UUID 而非自增序号：自增在持久化后重启必然撞号（旧盘 s-1 vs 新会话 s-1）
     const summary: SessionSummary = {
       id: crypto.randomUUID(),
@@ -709,10 +790,11 @@ export class SessionManager implements CogentKernel {
       updatedAt: now,
       ...(params.cwd !== undefined && { cwd: params.cwd }),
       ...(params.projectId !== undefined && { projectId: params.projectId }),
-      ...(defaultMode !== undefined && { permissionMode: defaultMode }),
+      permissionMode: defaultMode,
       ...(params.planEnabled === true && { planEnabled: true })
     }
     const session: Session = { summary, todos: [], ...(summary.titleManual !== true && { autoTitle: 'ready' }) }
+    session.piCwd = this.transcriptCwd(session)
     // 显式创建只有摘要保存后才可被其他调用看见，磁盘失败由 RPC 边界返回。
     this.writeSession(session)
     this.sessions.set(summary.id, session)
@@ -748,56 +830,65 @@ export class SessionManager implements CogentKernel {
 
   setPinned(sessionId: string, pinned: boolean): SessionSummary {
     const session = this.requireSession(sessionId)
+    const summary = { ...session.summary }
     // 存时间不存布尔：置顶分区按 pinnedAt 倒序，新置顶在上；取消 = 字段移除
-    if (pinned) session.summary.pinnedAt = Date.now()
-    else delete session.summary.pinnedAt
-    this.persist(sessionId)
-    return { ...session.summary }
+    if (pinned) summary.pinnedAt = Date.now()
+    else delete summary.pinnedAt
+    this.writeSession({ ...session, summary })
+    session.summary = summary
+    return { ...summary }
   }
 
   /** 归档/恢复（回收站语义：archived=false = 恢复回活跃列表）。归档不中止进行中
       回复 —— 转录由 pi 照常落盘，只是会话从主列表消失（agent_settled 不受影响） */
   archive(sessionId: string, archived: boolean): SessionSummary {
     const session = this.requireSession(sessionId)
-    if (archived) session.summary.archivedAt = Date.now()
-    else delete session.summary.archivedAt
-    this.persist(sessionId)
-    return { ...session.summary }
+    const summary = { ...session.summary }
+    if (archived) summary.archivedAt = Date.now()
+    else delete summary.archivedAt
+    this.writeSession({ ...session, summary })
+    session.summary = summary
+    return { ...summary }
   }
 
   delete(sessionId: string): boolean {
     const session = this.sessions.get(sessionId)
     if (!session) return false
+    // 删除标记先提交；后续文件清理失败或进程崩溃，都不会在重启时复活。
+    this.writeSession(session, true)
     this.cancelTitle(sessionId, '会话已删除')
-    this.outputs.releaseSession(sessionId)
     this.streaming.get(sessionId)?.attachmentPreparation?.abort()
     // pi 内核整拆（abort 全部运行中工作 + 拆钩，agent-session dispose 语义）
-    session.pi?.dispose()
+    const closing = session.pi ? shutdownPiSession(session.pi) : session.piBuilding?.then(pi => shutdownPiSession(pi)) ?? Promise.resolve()
     // 挂起审批/提问先收尾再拆会话：resolve 让挂起中的 await 落地、
     // run 正常走完收尾路径（事件转译要能找到会话，先 settle 后删）
     this.settleApprovals(sessionId, '会话已删除')
     this.settleInteractions(sessionId)
-    // 重启恢复的会话尚无 pi 实例，沿历史读取的目录锚点定位原转录。
-    const piFile = session.pi === undefined
-      ? findPiTranscriptFile(this.transcriptCwd(session), this.hostRoot, sessionId)
-      : session.pi.sessionManager.getSessionFile()
-    if (piFile !== undefined) {
-      try {
-        rmSync(piFile, { force: true })
-      } catch (error) {
-        // 删文件失败不拦会话删除（外部世界失败是常态）；孤儿 JSONL 留待手清
-        process.stderr.write(`[host] pi 会话文件删除失败（${sessionId}）: ${(error as Error).message}\n`)
-      }
-    }
     this.sessions.delete(sessionId)
     this.streaming.delete(sessionId)
     this.compacting.delete(sessionId)
-    this.storage.delete(SESSION_COLLECTION, sessionId)
-    // 观测记录随会话清理（聊天转录同生共死，不留孤儿文件）
+    this.trackDeletion(sessionId, closing.then(() => this.cleanupDeleted(sessionId, this.transcriptCwd(session))))
+    return true
+  }
+
+  private trackDeletion(id: string, work: Promise<void>): void {
+    this.deletionTasks.set(id, work)
+    void work.catch(error => process.stderr.write(`[host] 删除已提交，清理待重试（${id}）: ${String(error)}\n`))
+  }
+  async deletionSettled(id: string): Promise<string | undefined> {
+    try { await this.deletionTasks.get(id); this.deletionTasks.delete(id); return undefined }
+    catch (error) { return error instanceof Error ? error.message : String(error) }
+  }
+
+  private async cleanupDeleted(sessionId: string, cwd: string): Promise<void> {
+    const piFile = findPiTranscriptFile(cwd, this.hostRoot, sessionId)
+    if (piFile !== undefined) rmSync(piFile, { force: true })
     this.inspectStore.delete(sessionId)
     const attachmentConfig = new AttachmentConfig(this.hostRoot)
-    this.attachments.releaseSession(sessionId, (id) => attachmentConfig.references(id))
-    return true
+    this.attachments.releaseSession(sessionId, id => attachmentConfig.references(id))
+    await this.outputs.releaseSession(sessionId)
+    // 标记最后移除；任一清理失败仍有可恢复入口。
+    this.storage.delete(SESSION_COLLECTION, sessionId)
   }
 
   /**
@@ -823,11 +914,38 @@ export class SessionManager implements CogentKernel {
     return result
   }
 
+  interactionSnapshot(sessionId: string) {
+    return {
+      approvals: [...this.pendingApprovals].filter(([, p]) => p.sessionId === sessionId).map(([requestId, p]) => ({ sessionId, requestId, callId: p.callId, toolName: p.toolName, kind: p.kind, summary: p.summary, outsideRoots: !p.withinRoots })),
+      questions: [...this.pendingQuestions].filter(([, p]) => p.sessionId === sessionId).map(([requestId, p]) => ({ sessionId, requestId, questions: p.questions })),
+      plans: [...this.pendingPlans].filter(([, p]) => p.sessionId === sessionId).map(([requestId, p]) => ({ sessionId, requestId, plan: p.plan }))
+    }
+  }
+
+  snapshotMessages(sessionId: string): ChatMessage[] {
+    const history = this.messages(sessionId), run = this.streaming.get(sessionId)
+    if (!run) return history
+    const userAt = history.findLastIndex(message => message.role === 'user' && message.turnId === run.turnId)
+    const prefix = userAt >= 0 ? history.slice(0, userAt + 1) : [...history]
+    if (userAt < 0 && run.input !== null) prefix.push({ id: run.turnId!, turnId: run.turnId, role: 'user', content: run.input.text, timestamp: run.input.timestamp,
+      attachments: run.attachmentInput?.attachments, directories: run.attachmentInput?.directories })
+    const segments = SessionManager.displaySegments(run)
+    if (run.text !== '' || run.thinking !== '' || run.tools.length > 0) segments.push({
+      id: run.messageId, role: 'assistant', turnId: run.turnId, content: run.text, thinking: run.thinking || undefined,
+      toolCalls: run.tools.map(tool => ({ ...tool })), timestamp: Date.now()
+    })
+    return [...prefix, ...segments]
+  }
+
+  runtimeSnapshot(sessionId: string): { running: boolean; runId?: string; turnId?: string; activeMessageId?: string } {
+    this.requireSession(sessionId)
+    const run = this.streaming.get(sessionId)
+    return { running: run !== undefined, ...(run && { runId: run.runId, turnId: run.turnId, activeMessageId: run.messageId }) }
+  }
+
   messages(sessionId: string): ChatMessage[] {
     const session = this.requireSession(sessionId)
-    const source: AgentMessage[] =
-      readPiTranscript(this.transcriptCwd(session), this.hostRoot, sessionId) ??
-      (session.legacyTranscript === undefined ? [] : legacyMessages(session.legacyTranscript))
+    const source: AgentMessage[] = transcriptAuthority(this.transcriptCwd(session), this.hostRoot, sessionId, session.legacyTranscript).messages
     const projected = toChatMessages(source)
     // 上下文明细按需现算挂"末条带 usage 的消息"（历史回查路径，重启/切换会话
     // 走这）：agent_settled 只把估算挂到事件侧 streaming 对象随 run.completed
@@ -856,7 +974,7 @@ export class SessionManager implements CogentKernel {
     const context = active?.turnId === turnId ? active?.fileContext : undefined
     const saved = context ?? (turnId === undefined ? undefined : readPiTranscript(this.transcriptCwd(session), this.hostRoot, sessionId)?.find((message) => message.fileContext?.turnId === turnId)?.fileContext)
     if (turnId !== undefined && saved === undefined) throw new Error('文件来源尚未保存或该回合不存在，请稍后重试')
-    return saved === undefined ? { context: { cwd: session.pi?.sessionManager.getCwd() ?? this.workspaceRoots(session).at(0) ?? homedir(), roots: this.workspaceRoots(session), platform: process.platform }, saved: false } : { context: saved, saved: true }
+    return saved === undefined ? { context: { cwd: this.workspaceRoots(session).at(0) ?? homedir(), roots: this.workspaceRoots(session), platform: process.platform }, saved: false } : { context: saved, saved: true }
   }
 
   /**
@@ -964,8 +1082,10 @@ export class SessionManager implements CogentKernel {
    * 恢复/续写链的 run 间隙会瞬时为 false，查它会放双 prompt 进同一个链）。
    */
   submit(sessionId: string, text: string, model?: string, thinkingLevel?: string, provider?: string,
-    attachmentIds: string[] = [], inputId: string = crypto.randomUUID(), directories: DirectoryRef[] = []): void {
+    attachmentIds: string[] = [], inputId: string = crypto.randomUUID(), directories: DirectoryRef[] = []): { runId: string; turnId: string } {
     const session = this.requireSession(sessionId)
+    this.assertWorkspaceAvailable(session)
+    const workspace = this.captureWorkspace(session)
     // 工作区复查（多根）：任一根目录被删/移动 → 显式报错（外部世界会变，
     // 静默继续 = 模型对不存在的目录输出幻觉操作）。同步 throw → dispatch 错误帧
     for (const root of this.workspaceRoots(session)) {
@@ -1008,9 +1128,11 @@ export class SessionManager implements CogentKernel {
     } else this.persist(sessionId)
     if (firstInput && !previousInput) this.notify('session.summaryChanged', { summary: { ...session.summary } })
 
-    this.notify('run.started', { sessionId, turnId: inputId })
+    const runId = crypto.randomUUID()
     this.ensureInspector(session).runStarted(text, this.ensureSystemPrompt(session), thinkingLevel ?? 'off')
     const streaming: StreamingState = {
+      workspace,
+      runId,
       turnId: inputId,
       fileReferences: new Map(),
       messageId: `m-${crypto.randomUUID()}`,
@@ -1031,6 +1153,7 @@ export class SessionManager implements CogentKernel {
     if (attachments.length > 0 || directories.length > 0) streaming.attachmentInput = { inputId, text, attachments,
       ...(directories.length > 0 && { directories }), bound: false }
     this.streaming.set(sessionId, streaming)
+    this.notify('run.started', { sessionId, runId, turnId: inputId, input: streaming.input! })
     this.outputs.begin(sessionId, inputId, streaming)
     this.continuationBudget.set(sessionId, AUTO_CONTINUE_LIMIT)
     // 异步段的三类失败（装配炸 / prompt 前置校验拒 / 续写链异常）都收口到
@@ -1039,12 +1162,13 @@ export class SessionManager implements CogentKernel {
       // 终态已由 pi 事件收口或会话已删时，旧异步链不能再发第二份终态、更不能清新 run。
       if (this.streaming.get(sessionId) !== streaming) return
       if (streaming.attachmentInput !== undefined && session.pi !== undefined) this.saveUnstartedInput(session.pi, streaming)
-      await this.finishRun(session, streaming, 'error', () => this.notify('run.failed', {
+      await this.finishRun(session, streaming, 'error', () => this.notify('run.failed', { runId: streaming.runId, turnId: streaming.turnId,
         sessionId,
         reason: 'error',
         message: error instanceof Error ? error.message : String(error)
       }))
     })
+    return { runId, turnId: inputId }
   }
 
   /** submit 异步段：装配 pi 内核 → 应用模型/思考档 → prompt → 续写链收尾 */
@@ -1184,7 +1308,7 @@ export class SessionManager implements CogentKernel {
     if (!streaming.stopRequested) return false
     this.saveUnstartedInput(pi, streaming)
     session.inspector?.runFailed('已停止')
-    void this.finishRun(session, streaming, 'aborted', () => this.notify('run.failed', { sessionId: session.summary.id, reason: 'aborted', message: '已停止',
+    void this.finishRun(session, streaming, 'aborted', () => this.notify('run.failed', { runId: streaming.runId, turnId: streaming.turnId, sessionId: session.summary.id, reason: 'aborted', message: '已停止',
       messages: SessionManager.displaySegments(streaming) }))
     return true
   }
@@ -1215,7 +1339,7 @@ export class SessionManager implements CogentKernel {
       this.saveUnstartedInput(pi, streaming)
       if (this.finishPreparingRun(session, pi, streaming)) return
       session.inspector?.runCompleted({ text: '', thinking: '' })
-      await this.finishRun(session, streaming, 'completed', () => this.notify('run.completed', { sessionId: session.summary.id, messages: SessionManager.displaySegments(streaming) }))
+      await this.finishRun(session, streaming, 'completed', () => this.notify('run.completed', { runId: streaming.runId, turnId: streaming.turnId, sessionId: session.summary.id, messages: SessionManager.displaySegments(streaming) }))
     }
   }
 
@@ -1268,15 +1392,26 @@ export class SessionManager implements CogentKernel {
    * 新一段(run.started + 新 streaming),完成后 run.completed 的 stopReason
    * 非 length 会自然熄掉宿主的截断提示。
    */
-  async continueSession(sessionId: string): Promise<{ ok: true }> {
+  async continueSession(sessionId: string): Promise<{ ok: true; runId?: string; turnId?: string }> {
     const session = this.requireSession(sessionId)
+    this.assertWorkspaceAvailable(session)
     if (this.streaming.has(sessionId) || this.compacting.has(sessionId)) {
       throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话正在回复中，无法续写')
     }
+    // 历史可能存在迁移冲突；读取失败须发生在预约之前，不能留下没有终态的运行。
+    const previousUser = this.messages(sessionId).findLast(message => message.role === 'user')
+    const workspace = this.captureWorkspace(session)
+    const previousContext = previousUser?.fileContext
+    if (previousContext !== undefined && (previousContext.cwd !== workspace.cwd || JSON.stringify(previousContext.roots) !== JSON.stringify(workspace.roots)))
+      throw new ProtocolError(RpcErrorCode.InvalidRequest, '项目目录已变化，请发送新消息开始新的回合')
+    const turnId = previousUser?.turnId
     this.continuationBudget.set(sessionId, AUTO_CONTINUE_LIMIT)
     session.summary.updatedAt = Date.now()
-    this.notify('run.started', { sessionId })
+
     const streaming: StreamingState = {
+      workspace,
+      runId: crypto.randomUUID(),
+      turnId,
       fileReferences: new Map(),
       messageId: `m-${crypto.randomUUID()}`,
       stopRequested: false,
@@ -1290,9 +1425,10 @@ export class SessionManager implements CogentKernel {
       tools: []
     }
     this.streaming.set(sessionId, streaming)
+    this.notify('run.started', { sessionId, runId: streaming.runId, turnId: streaming.turnId })
     try {
       const pi = await this.ensurePiSession(session)
-      if (!this.ownsRun(session, streaming)) return { ok: true }
+      if (!this.ownsRun(session, streaming)) return { ok: true, runId: streaming.runId, turnId: streaming.turnId }
       // 显示转录保留压缩影子区，不能只用模型上下文裁剪后的旧回答做替换。
       const source = readPiTranscript(this.transcriptCwd(session), this.hostRoot, sessionId) ?? pi.agent.state.messages
       const projected = toChatMessages(source)
@@ -1301,7 +1437,7 @@ export class SessionManager implements CogentKernel {
       streaming.fileContext = projected[userAt]?.fileContext
       if (streaming.turnId !== undefined) this.outputs.begin(sessionId, streaming.turnId, streaming, true)
       streaming.baseSegments = projected.slice(userAt + 1).filter((message) => message.role === 'assistant')
-      if (this.finishPreparingRun(session, pi, streaming)) return { ok: true }
+      if (this.finishPreparingRun(session, pi, streaming)) return { ok: true, runId: streaming.runId, turnId: streaming.turnId }
       const last = pi.agent.state.messages.at(-1)
       if (last === undefined || last.role !== 'assistant' || last.stopReason !== 'length') {
         throw new ProtocolError(RpcErrorCode.InvalidRequest, '末条回复不是输出截断，无需续写')
@@ -1316,7 +1452,7 @@ export class SessionManager implements CogentKernel {
       // 终态 —— 清 streaming 补发 run.failed 后把错误照常交给 dispatch 转错
       // 误响应帧（手动动作要双通道显式反馈）
       if (this.streaming.get(sessionId) === streaming) {
-        await this.finishRun(session, streaming, 'error', () => this.notify('run.failed', {
+        await this.finishRun(session, streaming, 'error', () => this.notify('run.failed', { runId: streaming.runId, turnId: streaming.turnId,
           sessionId,
           reason: 'error',
           message: error instanceof Error ? error.message : String(error),
@@ -1325,7 +1461,7 @@ export class SessionManager implements CogentKernel {
       }
       throw error
     }
-    return { ok: true }
+    return { ok: true, runId: streaming.runId, turnId: streaming.turnId }
   }
 
   /**
@@ -1337,6 +1473,7 @@ export class SessionManager implements CogentKernel {
    */
   async compactSession(sessionId: string): Promise<{ tokensBefore: number; tokensAfter: number }> {
     const session = this.requireSession(sessionId)
+    this.assertWorkspaceAvailable(session)
     if (this.streaming.has(sessionId) || this.compacting.has(sessionId)) {
       throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话正在回复中，请等待完成后再压缩')
     }
@@ -1382,8 +1519,33 @@ export class SessionManager implements CogentKernel {
     return true
   }
 
+  async shutdown(): Promise<void> {
+    this.shuttingDown = true
+    for (const id of this.sessions.keys()) {
+      this.abort(id)
+      this.settleApprovals(id, '引擎退出')
+      this.settleInteractions(id)
+    }
+    const work = [...this.sessions.values()].map(async session => {
+      const pi = session.pi ?? await session.piBuilding
+      if (pi) await shutdownPiSession(pi)
+    })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const drain = async () => {
+      const results = await Promise.allSettled(work)
+      for (const result of results) if (result.status === 'rejected') process.stderr.write(`[host] 会话退出失败: ${String(result.reason)}\n`)
+      await Promise.all([...this.streaming.values()].flatMap(run => run.finalization ? [run.finalization] : []))
+      await Promise.allSettled(this.deletionTasks.values())
+      await this.outputs.drain()
+    }
+    try {
+      await Promise.race([drain(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('会话退出超过 5 秒，强制收尾')), 5_000) })])
+    } finally { clearTimeout(timer); this.disposeAll() }
+  }
+
   /** 进程退出前统一收尾（引擎随宿主关闭；pi dispose 内聚 abort 全部运行） */
   disposeAll(): void {
+    this.shuttingDown = true
     this.searchService.dispose()
     for (const sessionId of this.titleTasks.keys()) this.cancelTitle(sessionId, '引擎退出')
     this.outputs.dispose()
@@ -1427,14 +1589,11 @@ export class SessionManager implements CogentKernel {
       // 允许本次 + 落工作区级规则（同 roots 集合幂等，见 ApprovalRegistry.add）
       this.approvals.add(pending.ruleRoots, pending.kind)
     }
-    this.pendingApprovals.delete(requestId)
     // 「允许，并切换为 X」（F6 定稿，zcode 同款）：本次放行 + 会话切模式 +
     // 记为项目默认（同一项目的新会话沿用）。无项目归属的会话只切当前会话
     let summary: SessionSummary | undefined
     if (switchMode !== undefined) {
-      session.summary.permissionMode = switchMode
-      this.persist(session.summary.id)
-      summary = { ...session.summary }
+      summary = this.setPermission(session.summary.id, switchMode)
       // 与 setPermission/setPlanMode 同款北向广播：审批面板切档是引擎侧改档，
       // 不广播则宿主权限钮不联动（session.summaryChanged 的统一语义）
       this.notify('session.summaryChanged', { summary })
@@ -1448,6 +1607,7 @@ export class SessionManager implements CogentKernel {
       !approved && message !== undefined && message.trim() !== ''
         ? `用户拒绝了本次操作。用户指示：${message.trim().slice(0, APPROVAL_MESSAGE_MAX_CHARS)}`
         : '用户拒绝了本次操作'
+    this.pendingApprovals.delete(requestId)
     pending.resolve(approved ? { block: false } : { block: true, reason: denyReason })
     // 审计对的 decided 半边（钩子座 4d）：与 approval.asked 同 requestId 配对，
     // 三种用户裁决分词（放行也留痕的 zcode 口径）
@@ -1468,9 +1628,9 @@ export class SessionManager implements CogentKernel {
    */
   setPermission(sessionId: string, mode: PermissionMode): SessionSummary {
     const session = this.requireSession(sessionId)
-    session.summary.permissionMode = mode
-    this.persist(sessionId)
-    const summary = { ...session.summary }
+    const summary = { ...session.summary, permissionMode: mode }
+    this.writeSession({ ...session, summary })
+    session.summary = summary
     this.notify('session.summaryChanged', { summary })
     return summary
   }
@@ -1482,10 +1642,11 @@ export class SessionManager implements CogentKernel {
    */
   setPlanMode(sessionId: string, enabled: boolean): SessionSummary {
     const session = this.requireSession(sessionId)
-    if (enabled) session.summary.planEnabled = true
-    else delete session.summary.planEnabled
-    this.persist(sessionId)
     const summary = { ...session.summary }
+    if (enabled) summary.planEnabled = true
+    else delete summary.planEnabled
+    this.writeSession({ ...session, summary })
+    session.summary = summary
     this.notify('session.summaryChanged', { summary })
     return summary
   }
@@ -1535,7 +1696,7 @@ export class SessionManager implements CogentKernel {
     const roots = this.workspaceRoots(session)
     const isFileWrite = kind === 'write' || kind === 'edit'
     const targetRoots = isFileWrite && typeof args.path === 'string'
-      ? matchingWriteRoots(args.path, this.transcriptCwd(session), roots.length > 0 ? roots : [homedir()])
+      ? matchingWriteRoots(args.path, this.captureWorkspace(session).cwd, roots.length > 0 ? roots : [homedir()])
       : []
     const withinRoots = !isFileWrite || targetRoots.length > 0
     // 自主模式（已定稿）：文件写信任放行（不限根内 —— 越界也放，F6 定稿），
@@ -1557,7 +1718,7 @@ export class SessionManager implements CogentKernel {
     return new Promise((resolve) => {
       // 先登记再发事件：respondApproval 走这张表找 resolver，时序上不存在
       // 「事件未到、respond 先行」的窗口（宿主是收到事件才可能裁决）
-      this.pendingApprovals.set(requestId, { sessionId, kind, toolName, ruleRoots: roots, withinRoots, resolve })
+      this.pendingApprovals.set(requestId, { sessionId, kind, toolName, callId, summary, ruleRoots: roots, withinRoots, resolve })
       audit.approvalAsked({ requestId, toolName, kind, summary, mode, outsideRoots: !withinRoots })
       this.notify('approval.request', {
         sessionId,
@@ -1637,16 +1798,19 @@ export class SessionManager implements CogentKernel {
     if (pending === undefined) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, `方案请求不存在或已被裁决: ${requestId}`)
     }
-    this.pendingPlans.delete(requestId)
     let summary: SessionSummary | undefined
     if (approved) {
       const session = this.requireSession(pending.sessionId)
-      delete session.summary.planEnabled
-      session.plan = { plan: pending.plan, approvedAt: Date.now() }
-      this.persist(session.summary.id)
+      const candidate = { ...session.summary }
+      delete candidate.planEnabled
+      const plan = { plan: pending.plan, approvedAt: Date.now() }
+      this.writeSession({ ...session, summary: candidate, plan })
+      session.summary = candidate
+      session.plan = plan
       summary = { ...session.summary }
       this.notify('session.summaryChanged', { summary })
     }
+    this.pendingPlans.delete(requestId)
     const trimmed = message?.trim()
     pending.resolve(
       approved
@@ -1710,10 +1874,10 @@ export class SessionManager implements CogentKernel {
   private ensurePiSession(session: Session): Promise<AgentSession> {
     if (session.pi !== undefined) return Promise.resolve(session.pi)
     if (session.piBuilding !== undefined) return session.piBuilding
-    const building = this.buildPiSession(session).then((pi) => {
+    const building = this.buildPiSession(session).then(async (pi) => {
       // 装配本身不一定支持取消；删除/退出后归还的实例只能回收，不得挂回旧会话。
       if (this.sessions.get(session.summary.id) !== session) {
-        pi.dispose()
+        await shutdownPiSession(pi)
         return pi
       }
       session.pi = pi
@@ -1730,7 +1894,8 @@ export class SessionManager implements CogentKernel {
 
   private async buildPiSession(session: Session): Promise<AgentSession> {
     const sessionId = session.summary.id
-    const boundRoots = this.workspaceRoots(session)
+    const workspace = this.captureWorkspace(session)
+    const boundRoots = workspace.roots
     // MCP 快照（Pi-meme 快照语义）：pi 内核装配时定格 user+project 合并结果，
     // 之后改配置不影响本会话（新会话生效）。诊断（项目级越权条目等）不拦装配
     // —— 坏条目已在快照里剔除，MCP 是增益面，stderr 留痕即可
@@ -1744,11 +1909,17 @@ export class SessionManager implements CogentKernel {
     if (skillDiagnostics.length > 0) {
       process.stderr.write(`[host] 技能目录诊断（会话 ${sessionId}）: ${skillDiagnostics.join('；')}\n`)
     }
-    const { session: pi, piSessionManager, createdNew } = await createPiSession({
+    if (session.legacyTranscript !== undefined) {
+      migrateLegacyTranscript(this.transcriptCwd(session), this.hostRoot, sessionId, session.legacyTranscript)
+      this.writeSession({ ...session, legacyTranscript: undefined })
+      session.legacyTranscript = undefined
+    }
+    const { session: pi } = await createPiSession({
       // pi 的 cwd = 工作区主根（无绑定时主目录兜底，同 toolRoots 语义）：
       // 项目发现（.gitignore/AGENTS.md）与会话目录编码都锚在它上；
       // 工具集 = pi 内置（tool-meta 的 COGENT_TOOL_NAMES，shell 按平台）
-      cwd: session.piCwd ?? boundRoots.at(0) ?? homedir(),
+      cwd: workspace.cwd,
+      transcriptCwd: this.transcriptCwd(session),
       hostRoot: this.hostRoot,
       sessionId,
       onUserEntry: (entryId, cwd) => {
@@ -1756,9 +1927,9 @@ export class SessionManager implements CogentKernel {
         if (session.pi === undefined) return undefined
         const run = this.streaming.get(sessionId)
         if (run === undefined || run.input === null || run.fileContext !== undefined) return undefined
-        const fileContext: FileContext = { version: 1, turnId: run.turnId!, userEntryId: entryId, cwd, roots: this.workspaceRoots(session), platform: process.platform }
+        const fileContext: FileContext = { version: 1, turnId: run.turnId!, userEntryId: entryId, cwd, roots: [...run.workspace.roots], platform: process.platform }
         run.fileContext = fileContext
-        session.piCwd = cwd
+        session.piCwd ??= this.transcriptCwd(session)
         this.persist(sessionId)
         this.startTitle(session, run)
         const input = run.attachmentInput
@@ -1806,7 +1977,7 @@ export class SessionManager implements CogentKernel {
           ask: (questions: AskQuestion[], signal) =>
             new Promise<{ answers: AskAnswers; cancelled?: boolean }>((resolve) => {
               const requestId = `ask-${crypto.randomUUID()}`
-              this.pendingQuestions.set(requestId, { sessionId, resolve })
+              this.pendingQuestions.set(requestId, { sessionId, questions, resolve })
               this.notify('question.asked', {
                 sessionId,
                 requestId,
@@ -1887,28 +2058,6 @@ export class SessionManager implements CogentKernel {
     // ensurePiSession的唯一接收点会dispose此实例。
     if (this.sessions.get(sessionId) !== session) return pi
 
-    // v1 旧转录一次性导入（只在 pi 树是新建时 —— 已有 JSONL 说明早前导入过，
-    // 重导会整段重复）。compactionSummary → 压缩条（firstKeptEntryId=null 语义
-    // 对齐），其余角色逐条 append；导入后清引用 + 盘上重写 v2（v2 文档不带
-    // transcript 字段）
-    if (createdNew && session.legacyTranscript !== undefined) {
-      const legacy = session.legacyTranscript
-      if (legacy.length > 0) {
-        const { imported, skipped } = importLegacyTranscript(piSessionManager, legacy)
-        if (skipped > 0) {
-          process.stderr.write(
-            `[host] 旧转录导入跳过 ${skipped} 条（非持久化角色，见 kernel/legacy-import.ts）\n`
-          )
-        }
-        pi.refreshContext()
-        if (imported > 0) {
-          session.piCwd = piSessionManager.getCwd()
-          process.stderr.write(`[host] 旧转录已导入 pi 会话树（${imported} 条，会话 ${sessionId}）\n`)
-        }
-      }
-      session.legacyTranscript = undefined
-      this.persist(sessionId)
-    }
     return pi
   }
 
@@ -1966,8 +2115,9 @@ export class SessionManager implements CogentKernel {
   }
 
   /** 共用文档形状；显式保存操作直接调用，回合内的尽力落盘由 persist 翻译失败。 */
-  private writeSession(session: Session): void {
+  private writeSession(session: Session, deleted = false): void {
     const doc: StoredSession = {
+      ...(deleted && { deleted: true }),
       // 惰性导入前元数据操作不能擦掉 v1 唯一转录；真正导入 pi 后才写 v2。
       version: session.legacyTranscript === undefined ? SESSION_FILE_VERSION : 1,
       ...(session.legacyTranscript !== undefined && { transcript: session.legacyTranscript }),
@@ -2255,7 +2405,7 @@ export class SessionManager implements CogentKernel {
             const lastSegment = streaming.segments.at(-1)
             if (lastSegment?.usage) lastSegment.usage.contextEstimate = { ...estimate }
           }
-          void this.finishRun(session, streaming, reason === 'aborted' ? 'aborted' : 'error', () => this.notify('run.failed', { sessionId, reason, message, messages: SessionManager.displaySegments(streaming) }))
+          void this.finishRun(session, streaming, reason === 'aborted' ? 'aborted' : 'error', () => this.notify('run.failed', { runId: streaming.runId, turnId: streaming.turnId, sessionId, reason, message, messages: SessionManager.displaySegments(streaming) }))
           return
         }
         // length 截断可续写：抑制终态、streaming 保活 ——
@@ -2302,7 +2452,7 @@ export class SessionManager implements CogentKernel {
         const displayUsage = segments.reduce<MessageUsage | undefined>((usage, segment) =>
           segment.usage !== undefined ? accumulateUsage(usage, segment.usage) : usage, undefined)
         const displayDuration = segments.reduce<number | undefined>((duration, segment) => sumOptional(duration, segment.durationMs), undefined)
-        void this.finishRun(session, streaming, 'completed', () => this.notify('run.completed', {
+        void this.finishRun(session, streaming, 'completed', () => this.notify('run.completed', { runId: streaming.runId, turnId: streaming.turnId,
           sessionId,
           // 分段终态（优先消费）：text 段与工具段按发生序 —— 交错保真的代价是
           // 一 run 多条消息，宿主用它整体替换流式占位（含流式期插入的工具卡）

@@ -129,7 +129,7 @@ describe('renderer 30ms 发布', () => {
     expect(useChatStore.getState().bySession.a?.messages ?? []).toEqual([])
   })
 
-  it('切换先flush；异步历史快照落账discard加载期间队列', async () => {
+  it('切换先flush；历史回包保留快照之后的实时增量', async () => {
     delta('保留')
     useChatStore.setState((s) => ({ bySession: { a: s.bySession.a } }))
     let resolve!: (value: unknown) => void
@@ -140,7 +140,7 @@ describe('renderer 30ms 发布', () => {
     resolve({ messages: [], todos: [] })
     await loading
     vi.advanceTimersByTime(1000)
-    expect(bucket('b').messages).toEqual([])
+    expect(bucket('b').messages).toEqual([expect.objectContaining({ content: '加载间旧队列' })])
   })
 
   it('submit先排空旧批再追加user；卸载重订阅等价StrictMode清理，无重复监听和timer', async () => {

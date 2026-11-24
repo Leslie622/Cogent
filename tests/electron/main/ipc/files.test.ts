@@ -37,3 +37,9 @@ describe('文件桌面边界', () => {
     expect(request).toHaveBeenCalledTimes(1)
   })
 })
+
+// 入口身份合同由 trusted.test.ts 直接验证；本件保留各域参数与资源 owner 回归。
+vi.mock('../../../../src/electron/main/ipc/trusted', async () => {
+  const { ipcMain } = await import('electron')
+  return { handleTrusted: (...args: Parameters<typeof ipcMain.handle>) => ipcMain.handle(...args), registerTrustedContents: vi.fn(), checkCurrentCaller: vi.fn() }
+})

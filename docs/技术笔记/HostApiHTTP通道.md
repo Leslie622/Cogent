@@ -77,3 +77,5 @@ preload 把 fetch 裸引用传给 SDK 会丢 this，需 fetch.bind(globalThis)�
 `src/host/http/server.ts` 管传输、upgrade 和 drain，`auth.ts` 管票据/HMAC，
 `src/host/host-main.ts` 管唯一分发与事件广播。纯逻辑回归在 `tests/host/http/`，
 构建产物全链在 `tests/integration/http-auth.test.ts`；用量和命令不在笔记重复维护。
+
+本轮文档/运行身份、提交/迁移、配置与退出的三仓对照见[运行交接与数据可靠性](运行交接与数据可靠性.md)，当前实现以对应模块为准。

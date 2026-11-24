@@ -45,8 +45,13 @@ function EngineFailureBanner() {
         size="xs"
         onClick={() => {
           setStatusDetail(null)
-          void useEngineStore.getState().load()
-          void useChatStore.getState().load()
+          void (async () => {
+            const status = await window.cogent.getStatus()
+            if (status.state !== 'running') await window.cogent.restartHost()
+            await Promise.all([useEngineStore.getState().load(), useChatStore.getState().load()])
+            const id = useChatStore.getState().activeSessionId
+            if (id) await useChatStore.getState().selectSession(id)
+          })().catch(error => useEngineStore.setState({ engineError: String(error) }))
         }}
       >
         重试
@@ -66,7 +71,7 @@ export default function App() {
     // （load 内部已把失败落 error 状态，void 不产生 unhandled rejection）
     const unbind = bindEngineEvents()
     let active = true
-    // 等待完整 load（含自定义模型同步与首个会话历史），不把中途 loaded 标志当作完成。
+    // 等待完整 load（含配置/模型读取与首个会话历史），不把中途 loaded 标志当作完成。
     void Promise.all([
       useEngineStore.getState().load(),
       useChatStore.getState().load()

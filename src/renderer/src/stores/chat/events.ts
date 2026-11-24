@@ -7,15 +7,19 @@
  * 不做 as + typeof 抽查 —— 那会把联合拆成 untyped record，类型系统从此拦不住
  * 取错字段（当初形状 bug 的成因，见约定.md §1.2-7）。
  */
+import { rememberDuringHistory, setHistoryReplay } from './hydration'
+import type { EngineEvent } from '@/env.d'
 import { replaceRunTerminal } from './flatten'
-import { emptyBucket, messageDeltas, patchBucket, recordTurnOutcome, useChatStore } from './store'
+import { emptyBucket, invalidateHistories, messageDeltas, patchBucket, recordTurnOutcome, useChatStore } from './store'
 import { notifyEvent } from '@/lib/notify'
 import { useEngineStore } from '@/stores/engine'
+import { useProjectStore } from '@/stores/project'
+import { invalidateProjectNavigators } from '@/features/workspace/file-navigator-owner'
 import type { ChatMessage } from '@/env.d'
 import type { ApprovalItem, MessageItem, SessionBucket, SessionRuntime, ToolItem } from './types'
 
 export function bindEngineEvents(): () => void {
-  const unsubscribe = window.cogent.onEngineEvent((event) => {
+  const consume = (event: EngineEvent, replaying = false): void => {
     if (event.method === 'message.delta') {
       messageDeltas.enqueue(event.params)
       return
@@ -24,6 +28,18 @@ export function bindEngineEvents(): () => void {
     if ('sessionId' in event.params) messageDeltas.flush(event.params.sessionId)
     else if (event.method === 'session.summaryChanged') messageDeltas.flush(event.params.summary.id)
     switch (event.method) {
+      case 'project.changed': {
+        const { projectId, summary } = event.params
+        const previous = useProjectStore.getState().projects.find(project => project.id === projectId)
+        if (JSON.stringify(previous?.cwds) !== JSON.stringify(summary?.cwds))
+          void invalidateProjectNavigators(projectId).catch((error: unknown) => console.error('项目旧目录清理失败', error))
+        useProjectStore.setState(state => ({ projects: summary === undefined
+          ? state.projects.filter(project => project.id !== projectId)
+          : state.projects.some(project => project.id === projectId)
+            ? state.projects.map(project => project.id === projectId ? summary : project)
+            : [...state.projects, summary] }))
+        return
+      }
       case 'outputs.updated': {
         const doc = event.params
         useChatStore.setState((state) => {
@@ -52,16 +68,26 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'run.started': {
-        const { sessionId, turnId } = event.params
-        if (turnId === undefined) return
-        useChatStore.setState((state) => {
-          const bucket = state.bySession[sessionId]
-          if (bucket === undefined) return state
-          const user = bucket.messages.findLast((item) => item.type === undefined && item.role === 'user')
-          return patchBucket(state, sessionId, (b) => ({ ...b, messages: b.messages.map((item) => item === user ? { ...item, turnId } : item) }))
-        })
+        const { sessionId, turnId, runId, input } = event.params
+        useChatStore.setState(state => patchBucket(state, sessionId, bucket => {
+          const matched = turnId === undefined ? undefined : bucket.messages.find(item => item.type === undefined && item.role === 'user' && (item.id === turnId || item.turnId === turnId))
+          const messages = matched ? bucket.messages.map(item => item === matched ? { ...item, turnId } : item) :
+            input && turnId ? [...bucket.messages, { id: turnId, turnId, role: 'user' as const, content: input.text, timestamp: input.timestamp }] : bucket.messages
+          return { ...bucket, messages, runtime: { ...bucket.runtime, runId, turnId, running: true, stopping: false, lastRunOutcome: null, lastError: null, truncated: false } }
+        }))
         return
       }
+      case 'host.disconnected': {
+        useEngineStore.setState({ engineError: event.params.message })
+        invalidateHistories()
+        messageDeltas.flushAll()
+        useChatStore.setState(state => ({ bySession: Object.fromEntries(Object.entries(state.bySession).map(([id, bucket]) => [id, bucket && { ...bucket, historyLoaded: false,
+          pendingApprovals: [], pendingQuestions: [], pendingPlans: [], runtime: { ...bucket.runtime, running: false, stopping: false, compacting: false,
+            runRequestId: null, stopRequestId: null, lastRunOutcome: null, lastError: bucket.runtime.running ? '连接已断开，运行结果待确认' : bucket.runtime.lastError } }])) }))
+        return
+      }
+      case 'session.defaultsChanged': useEngineStore.setState({ defaultPermissionMode: event.params.defaultPermissionMode }); return
+      case 'providers.custom.changed': void useEngineStore.getState().load(); return
       case 'tool.started': {
         const { sessionId, callId, name, kind, summary } = event.params
         useChatStore.setState((state) =>
@@ -148,7 +174,7 @@ export function bindEngineEvents(): () => void {
             ]
           }))
         )
-        notifyEvent('approval', useEngineStore.getState().notify)
+        if (!replaying) notifyEvent('approval', useEngineStore.getState().notify)
         return
       }
       case 'todos.updated': {
@@ -168,7 +194,7 @@ export function bindEngineEvents(): () => void {
             pendingQuestions: [...bucket.pendingQuestions, { requestId, questions }]
           }))
         )
-        notifyEvent('question', useEngineStore.getState().notify)
+        if (!replaying) notifyEvent('question', useEngineStore.getState().notify)
         return
       }
       case 'plan.requested': {
@@ -335,7 +361,8 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'run.completed': {
-        const { sessionId, message, messages, stopReason } = event.params
+        const { sessionId, message, messages, stopReason, runId } = event.params
+        if (runId !== undefined && useChatStore.getState().bySession[sessionId]?.runtime.runId !== runId) return
         useChatStore.setState((state) => {
           const bucket = state.bySession[sessionId]
           if (bucket === undefined) return state
@@ -372,12 +399,13 @@ export function bindEngineEvents(): () => void {
             )
           }
         })
-        void refreshSessionTitle()
-        notifyEvent('turn-done', useEngineStore.getState().notify)
+        if (!replaying) void refreshSessionTitle()
+        if (!replaying) notifyEvent('turn-done', useEngineStore.getState().notify)
         return
       }
       case 'run.failed': {
-        const { sessionId, message, messages, reason } = event.params
+        const { sessionId, message, messages, reason, runId } = event.params
+        if (runId !== undefined && useChatStore.getState().bySession[sessionId]?.runtime.runId !== runId) return
         useChatStore.setState((state) => {
           const existing = state.bySession[sessionId]
           // 引擎终态才是停止事实；本窗点过停止不代表错误一定由停止造成。
@@ -459,14 +487,16 @@ export function bindEngineEvents(): () => void {
         })
         // 失败提醒（failed 变体文案）；aborted 不提醒 —— 用户自己停的，知道结果
         if (reason !== 'aborted') {
-          notifyEvent('turn-done', useEngineStore.getState().notify, true)
+          if (!replaying) notifyEvent('turn-done', useEngineStore.getState().notify, true)
         }
         return
       }
       default:
         return
     }
-  })
+  }
+  setHistoryReplay(event => consume(event, true))
+  const unsubscribe = window.cogent.onEngineEvent(event => { rememberDuringHistory(event); consume(event) })
   return () => {
     unsubscribe()
     messageDeltas.flushAll()

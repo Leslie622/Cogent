@@ -86,3 +86,9 @@ it('同名文件重新选择换播放版本，失败保留当前音源，恢复�
   expect(readSettingsFile().approvalSoundFile).toBeUndefined()
   expect(readdirSync(sounds)).toEqual([])
 })
+
+// 入口身份合同由 trusted.test.ts 直接验证；本件保留各域参数与资源 owner 回归。
+vi.mock('../../../src/electron/main/ipc/trusted', async () => {
+  const { ipcMain } = await import('electron')
+  return { handleTrusted: (...args: Parameters<typeof ipcMain.handle>) => ipcMain.handle(...args), registerTrustedContents: vi.fn(), checkCurrentCaller: vi.fn() }
+})

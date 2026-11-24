@@ -11,7 +11,7 @@
  * 传输：newline-delimited JSON over stdio，一行一帧。
  * 三种帧：请求（id + method）、响应（id + result/error）、事件（method，无 id）。
  */
-
+import type { DefaultsMethods, SessionDefaults } from '../shared/host-config'
 /** 协议版本：语义承诺 = 帧格式与既有 method 语义不变，新增能力走可选字段/新 method */
 export const PROTOCOL_VERSION = 3
 
@@ -40,6 +40,7 @@ export interface RpcResponse {
 
 /** 事件（notification）：host → 宿主的单向推送，无 id、无应答 */
 export interface RpcEvent {
+  sequence?: number
   jsonrpc: '2.0'
   method: string
   params: unknown
@@ -357,6 +358,8 @@ export interface AgentSubmitParams {
   thinkingLevel?: ThinkingLevelWithOff
 }
 export interface AgentSubmitResult {
+  runId?: string
+  turnId?: string
   /** 已受理；执行结果经事件流推送（run.* / message.* / tool.*） */
   accepted: true
 }
@@ -432,6 +435,9 @@ export interface SessionMessagesParams {
   sessionId: string
 }
 export interface SessionMessagesResult {
+  interactions?: { approvals: ProtocolEvents['approval.request'][]; questions: ProtocolEvents['question.asked'][]; plans: ProtocolEvents['plan.requested'][] }
+  eventWatermark?: number
+  runtime?: { running: boolean; runId?: string; turnId?: string; activeMessageId?: string }
   messages: ChatMessage[]
   /**
    * 当前任务清单（交互座 4c，additive）：todo_write 维护的活清单 —— 打开
@@ -553,6 +559,8 @@ export interface SessionContinueParams {
   sessionId: string
 }
 export interface SessionContinueResult {
+  runId?: string
+  turnId?: string
   ok: true
 }
 
@@ -1039,11 +1047,13 @@ export interface CapabilityIssueResult {
 /**
  * method 注册表：键名即线上协议。新增 method = 在此加一行 + 服务端加 handler。
  */
-export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, FileViewHostMethods, SessionTitleMethods, SessionSearchMethods {
+export interface ProtocolMethods extends DefaultsMethods, AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, FileViewHostMethods, SessionTitleMethods, SessionSearchMethods {
+  'host.shutdown': { params: Record<string, never>; result: { ok: true } }
+  'providers.custom.get': { params: Record<string, never>; result: ProvidersCustomSyncParams }
   initialize: { params: InitializeParams; result: InitializeResult }
   'session.list': { params: Record<string, never>; result: SessionSummary[] }
   'session.create': { params: { title?: string; permissionMode?: PermissionMode; planEnabled?: boolean; cwd?: string; projectId?: string }; result: SessionSummary }
-  'session.delete': { params: { sessionId: string }; result: { deleted: boolean } }
+  'session.delete': { params: { sessionId: string }; result: { deleted: boolean; cleanupPending?: boolean; cleanupError?: string } }
   'session.messages': { params: SessionMessagesParams; result: SessionMessagesResult }
   'session.setPinned': { params: SessionSetPinnedParams; result: SessionSetPinnedResult }
   'session.rename': { params: SessionRenameParams; result: SessionRenameResult }
@@ -1100,13 +1110,18 @@ export interface ProtocolMethods extends AttachmentMethods, FileMethods, FileInt
 // ———— 事件映射（host → 宿主；骨架期先定形状，随实现细化） ————
 
 export interface ProtocolEvents {
+  'project.changed': { projectId: string; summary?: ProjectSummary }
+  'session.defaultsChanged': SessionDefaults
+  'providers.custom.changed': Record<string, never>
   'fileViews.directoryChanged': { contextId: string; directoryId: string; generation: number; error?: string }
   'message.source': { sessionId: string; turnId: string; role: 'user' | 'assistant'; sourceId: string }
   'outputs.updated': TurnOutputs
   'outputs.error': { sessionId: string; turnId: string; message: string }
   'files.invalidated': Record<string, never>
-  'run.started': { sessionId: string; turnId?: string }
+  'run.started': { sessionId: string; turnId?: string; runId?: string; input?: { text: string; timestamp: number } }
   'run.completed': {
+    runId?: string
+    turnId?: string
     sessionId: string
     /** 最终完整 assistant 回复；renderer 用它替换流式累积，免拼 delta */
     message?: ChatMessage
@@ -1128,6 +1143,8 @@ export interface ProtocolEvents {
     stopReason?: string
   }
   'run.failed': {
+    runId?: string
+    turnId?: string
     sessionId: string
     message: string
     /** run 级终态原因；缺省按 error 消费，不能用宿主停止按钮或错误文本猜中止。 */

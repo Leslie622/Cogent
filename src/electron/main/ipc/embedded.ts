@@ -7,8 +7,10 @@
  * 与 console 同配，它只是宿主，真正的页面边界在 guest 侧）。
  * 单例语义同 console：已开则聚焦。
  */
+import { registerTrustedContents } from './trusted'
+import { handleTrusted } from './trusted'
 import { join } from 'node:path'
-import { BrowserWindow, ipcMain, shell } from 'electron'
+import { BrowserWindow, shell } from 'electron'
 import { IPC } from '../../../shared/ipc'
 
 let embeddedWindow: BrowserWindow | null = null
@@ -24,9 +26,9 @@ function createEmbeddedWindow(): void {
     title: 'Cogent 内嵌页面 demo',
     webPreferences: {
       // 宿主容器配置：webviewTag 是放 <webview> 的前提（Electron 默认关）；
-      // sandbox:false 供 ESM 形态的主 preload（与主窗口一致）。guest 的硬化
+      // CJS 主 preload 在 sandbox 运行（与主窗口一致）。guest 的硬化
       // 不在这里 —— 在 webview-policy 的 will-attach-webview（那个才是页面边界）
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
@@ -34,6 +36,8 @@ function createEmbeddedWindow(): void {
       preload: join(import.meta.dirname, '../preload/index.cjs')
     }
   })
+
+  registerTrustedContents(embeddedWindow.webContents, 'embedded')
 
   embeddedWindow.on('ready-to-show', () => embeddedWindow?.show())
 
@@ -57,7 +61,7 @@ function createEmbeddedWindow(): void {
 }
 
 export function registerEmbeddedIpc(): void {
-  ipcMain.handle(IPC.embeddedOpen, () => {
+  handleTrusted(IPC.embeddedOpen, () => {
     if (embeddedWindow && !embeddedWindow.isDestroyed()) embeddedWindow.focus()
     else createEmbeddedWindow()
   })

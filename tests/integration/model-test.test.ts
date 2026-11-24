@@ -64,7 +64,7 @@ it('同名模型按供应商双键命中真实路由与凭据，测试不创建�
     expect(requests.at(-1)!.body).not.toHaveProperty('tools')
   }
   expect((await engine.send('session.list', {})).result).toEqual([])
-  expect(engine.events).toEqual([])
+  expect(engine.events.filter(event => event.method !== 'providers.custom.changed')).toEqual([])
 })
 
 it('内置供应商同样使用当前覆盖端点', async () => {

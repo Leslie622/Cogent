@@ -1,3 +1,6 @@
+import type { DefaultsMethods, SessionDefaults } from '@shared/host-config'
+type DefaultsParams = { [K in keyof DefaultsMethods]: DefaultsMethods[K]['params'] }
+type DefaultsResults = { [K in keyof DefaultsMethods]: DefaultsMethods[K]['result'] }
 /// <reference types="vite/client" />
 /**
  * window.cogent 的类型声明（与 electron/preload/index.ts 的 api 形状保持一致）。
@@ -43,6 +46,7 @@ declare global {
       attachmentPreview: (id: string, thumbnail: boolean) => Promise<string>
       attachmentAction: (id: string, action: 'reveal' | 'save') => Promise<void>
       /** 查询 Agent 引擎服务连接状态（诊断） */
+      restartHost: () => Promise<unknown>
       getStatus: () => Promise<{
         state: 'starting' | 'running' | 'stopped' | 'failed'
         nodeVersion: string | null
@@ -134,6 +138,7 @@ declare global {
 /** 引擎方法名（renderer 可触达的子集；白名单在 main 侧 ipc/engine.ts 收窄 ——
     providers.custom.sync 已退出：自定义 provider 的写路径只有 custom-providers:set） */
 export type EngineMethod =
+  | keyof DefaultsMethods
   | keyof SessionSearchMethods
   | keyof SessionTitleMethods
   | keyof OutputMethods
@@ -260,7 +265,7 @@ export interface ProjectSummary {
 }
 
 /** 与 protocol/types.ts 对应 method 的参数形状（renderer 侧镜像声明） */
-export interface EngineMethodParams extends AttachmentParams, FileParams, OutputParams, TitleParams, SearchParams {
+export interface EngineMethodParams extends DefaultsParams, AttachmentParams, FileParams, OutputParams, TitleParams, SearchParams {
   'session.list': Record<string, never>
   'session.create': { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode; planEnabled?: boolean }
   'session.delete': { sessionId: string }
@@ -303,11 +308,11 @@ export interface TodoItem {
 }
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
-export interface EngineMethodResult extends AttachmentResults, FileResults, OutputResults, TitleResults, SearchResults {
+export interface EngineMethodResult extends DefaultsResults, AttachmentResults, FileResults, OutputResults, TitleResults, SearchResults {
   'session.list': SessionSummary[]
   'session.create': SessionSummary
-  'session.delete': { deleted: boolean }
-  'session.messages': { messages: ChatMessage[]; todos?: TodoItem[] }
+  'session.delete': { deleted: boolean; cleanupPending?: boolean; cleanupError?: string }
+  'session.messages': { interactions?: { approvals: Extract<EngineEventBody, { method: 'approval.request' }>['params'][]; questions: Extract<EngineEventBody, { method: 'question.asked' }>['params'][]; plans: Extract<EngineEventBody, { method: 'plan.requested' }>['params'][] }; messages: ChatMessage[]; todos?: TodoItem[]; eventWatermark?: number; runtime?: { running: boolean; runId?: string; turnId?: string; activeMessageId?: string } }
   'session.setPinned': { summary: SessionSummary }
   'session.rename': { summary: SessionSummary }
   'session.archive': { summary: SessionSummary }
@@ -315,14 +320,14 @@ export interface EngineMethodResult extends AttachmentResults, FileResults, Outp
   'session.setPermission': { summary: SessionSummary }
   'session.setPlanMode': { summary: SessionSummary }
   'session.compact': { tokensBefore: number; tokensAfter: number }
-  'session.continue': { ok: true }
+  'session.continue': { ok: true; runId?: string; turnId?: string }
   'project.list': ProjectSummary[]
   'project.create': { summary: ProjectSummary }
   'project.rename': { summary: ProjectSummary }
   'project.update': { summary: ProjectSummary }
   'project.delete': { deleted: boolean }
   'project.setPinned': { summary: ProjectSummary }
-  'agent.submit': { accepted: true }
+  'agent.submit': { accepted: true; runId?: string; turnId?: string }
   'agent.abort': { aborted: boolean }
   'credentials.list': { providers: ProviderSummary[] }
   'models.list': { models: ModelSummary[]; defaultModel?: { provider: string; id: string } }
@@ -395,16 +400,23 @@ export interface SkillSummary {
  * 业务载荷在 params 里 —— 之前误声明成平铺形状，TS 没能拦住消费侧按顶层取字段的
  * bug（'sessionId' in event 永假 → 事件被静默丢弃），类型必须忠实于运行时形状。
  */
-export type EngineEvent =
+export type EngineEvent = EngineEventBody & { sequence?: number }
+type EngineEventBody =
+  | { method: 'project.changed'; params: { projectId: string; summary?: ProjectSummary } }
+  | { method: 'host.disconnected'; params: { message: string } }
+  | { method: 'session.defaultsChanged'; params: SessionDefaults }
+  | { method: 'providers.custom.changed'; params: Record<string, never> }
   | { method: 'fileViews.directoryChanged'; params: { contextId: string; directoryId: string; generation: number; error?: string } }
   | { method: 'message.source'; params: { sessionId: string; turnId: string; role: 'user' | 'assistant'; sourceId: string } }
   | { method: 'outputs.updated'; params: TurnOutputs }
   | { method: 'outputs.error'; params: { sessionId: string; turnId: string; message: string } }
   | { method: 'files.invalidated'; params: Record<string, never> }
-  | { method: 'run.started'; params: { sessionId: string; turnId?: string } }
+  | { method: 'run.started'; params: { sessionId: string; turnId?: string; runId?: string; input?: { text: string; timestamp: number } } }
   | {
       method: 'run.completed'
       params: {
+        runId?: string
+        turnId?: string
         sessionId: string
         message?: ChatMessage
         /** 完整显示分段（工具循环保序，手动续写含旧前缀）；优先于 message 消费 */
@@ -416,6 +428,8 @@ export type EngineEvent =
   | {
       method: 'run.failed'
       params: {
+        runId?: string
+        turnId?: string
         sessionId: string
         message: string
         /** 明确的 run 终态原因；旧事件缺省按 error，不从按钮状态推断 */

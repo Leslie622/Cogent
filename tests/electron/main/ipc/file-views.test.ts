@@ -31,6 +31,18 @@ describe('文件视图IPC边界', () => {
     expect(result).toMatchObject({ roots: [{ path: 'C:/trusted' }] })
     expect(mocks.open).not.toHaveBeenCalled()
   })
+  it('显式会话cwd排在项目根前；项目移除后保留显式cwd，不接受其他scope借用', async () => {
+    let removed = false
+    request.mockImplementation((method: string, params: unknown) => Promise.resolve(method === 'session.list' ? [{ id: 's', cwd: 'C:/explicit' }]
+      : method === 'project.list' ? removed ? [] : [{ id: 'p', cwds: ['C:/project', 'C:/explicit'] }]
+        : { contextId: 'ctx', roots: (params as { roots: unknown }).roots }))
+    const invoke = mocks.handlers.get('fileViews:request')!
+    const payload = { method: 'fileViews.openContext', params: { scopeId: 's', sessionId: 's', projectId: 'p' } }
+    expect(await invoke(event, payload)).toMatchObject({ roots: [{ path: 'C:/explicit' }, { path: 'C:/project' }] })
+    removed = true
+    expect(await invoke(event, payload)).toMatchObject({ roots: [{ path: 'C:/explicit' }] })
+    await expect(invoke(event, { ...payload, params: { ...payload.params, scopeId: 'other' } })).rejects.toThrow('不属于')
+  })
   it('取消原生选择返回取消结果，不写授权或登记新上下文', async () => {
     mocks.open.mockResolvedValue({ canceled: true, filePaths: [] })
     const add = vi.spyOn(FileViewGrants.prototype, 'add')
@@ -109,4 +121,10 @@ describe('文件视图IPC边界', () => {
     sender.emit('render-process-gone'); finish({ path: 'C:/late.txt', kind: 'text' })
     await expect(pending).rejects.toThrow('重载'); expect(mocks.shell).not.toHaveBeenCalled()
   })
+})
+
+// 入口身份合同由 trusted.test.ts 直接验证；本件保留各域参数与资源 owner 回归。
+vi.mock('../../../../src/electron/main/ipc/trusted', async () => {
+  const { ipcMain } = await import('electron')
+  return { handleTrusted: (...args: Parameters<typeof ipcMain.handle>) => ipcMain.handle(...args), registerTrustedContents: vi.fn(), checkCurrentCaller: vi.fn() }
 })

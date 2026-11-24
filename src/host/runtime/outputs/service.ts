@@ -287,7 +287,7 @@ export class OutputsService {
     try { await this.storage.removeCopies(items) }
     catch (error) { process.stderr.write(`[outputs] 回收未提交暂存失败，稍后按manifest引用重试: ${message(error)}\n`) }
   }
-  releaseSession(sessionId: string): void {
+  releaseSession(sessionId: string): Promise<void> {
     // 读历史也可能修复中断manifest；删除先封住读修复入口，避免它在rm期间重建目录。
     this.deleted.add(sessionId)
     this.lifetimes.get(sessionId)?.abort()
@@ -298,9 +298,10 @@ export class OutputsService {
     const jobs = [...this.queues].filter(([id]) => id.startsWith(sessionId + '/')).map(([, job]) => job)
     const cleaning = this.cleaning.get(sessionId)
     if (cleaning !== undefined) jobs.push(cleaning)
-    const removal = Promise.all(jobs).then(() => this.storage.removeSession(sessionId)).catch((error: unknown) => { process.stderr.write(`[outputs] 删除产物失败: ${message(error)}\n`) })
+    const removal = Promise.all(jobs).then(() => this.storage.removeSession(sessionId))
     this.deletions.set(sessionId, removal)
-    void removal.then(() => this.deletions.delete(sessionId))
+    void removal.finally(() => this.deletions.delete(sessionId)).catch(() => {})
+    return removal
   }
   dispose(): void { for (const run of this.runs.values()) run.controller.abort(); for (const lifetime of this.lifetimes.values()) lifetime.abort(); this.runs.clear(); this.lifetimes.clear(); this.storage.cleanExports() }
 }

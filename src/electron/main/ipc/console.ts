@@ -10,8 +10,10 @@
  * 窗口自身 frameless + renderer 自绘 header（与主窗口同一套窗口控制 IPC，
  * window.ts 已按"发起窗口"寻址，主/控制台窗口共用）。
  */
+import { registerTrustedContents } from './trusted'
+import { handleTrusted } from './trusted'
 import { join } from 'node:path'
-import { BrowserWindow, ipcMain, shell } from 'electron'
+import { BrowserWindow, shell } from 'electron'
 import { IPC } from '../../../shared/ipc'
 
 /** 控制台窗口引用；null = 未开（单例，见文件头） */
@@ -28,15 +30,17 @@ function createConsoleWindow(): void {
     title: 'Cogent 控制台',
     frame: false,
     webPreferences: {
-      // 与主窗口同配置：ESM preload 关 sandbox + 恒开 contextIsolation +
+      // 与主窗口同配置：CJS preload 开 sandbox + 恒开 contextIsolation +
       // 关后台节流（主窗口 index.ts 同款理由：控制台的实时时间线也在跑计时）
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
       preload: join(import.meta.dirname, '../preload/index.cjs')
     }
   })
+
+  registerTrustedContents(consoleWindow.webContents, 'console')
 
   consoleWindow.on('ready-to-show', () => consoleWindow?.show())
 
@@ -71,7 +75,7 @@ function createConsoleWindow(): void {
 
 export function registerConsoleIpc(): void {
   // 无参数：动作语义由 channel 表达（同 window 域）
-  ipcMain.handle(IPC.consoleOpen, () => {
+  handleTrusted(IPC.consoleOpen, () => {
     if (consoleWindow && !consoleWindow.isDestroyed()) {
       // Windows 上聚焦不会唤回最小化窗口，必须先恢复再请求焦点。
       if (consoleWindow.isMinimized()) consoleWindow.restore()

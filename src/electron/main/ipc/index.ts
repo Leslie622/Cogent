@@ -6,7 +6,6 @@
 import type { BrowserWindow } from 'electron'
 import type { HostManager } from '../host/manager'
 import type { CredentialStore } from '../credentials/store'
-import type { CustomProvidersStore } from '../custom-providers/store'
 import { registerAppIpc } from './app'
 import { registerWindowIpc } from './window'
 import { registerConsoleIpc } from './console'
@@ -31,7 +30,7 @@ export interface IpcDeps {
   getWindow: () => BrowserWindow | null
 }
 
-export function registerIpc(deps: IpcDeps, store: CredentialStore, customProviders: CustomProvidersStore): void {
+export function registerIpc(deps: IpcDeps, store: CredentialStore): void {
   registerAppIpc(deps.host)
   registerWindowIpc()
   registerConsoleIpc()
@@ -40,7 +39,7 @@ export function registerIpc(deps: IpcDeps, store: CredentialStore, customProvide
   registerEngineIpc(deps)
   registerApprovalIpc(deps)
   registerCredentialsIpc(deps.host, store)
-  registerCustomProvidersIpc(deps.host, customProviders)
+  registerCustomProvidersIpc(deps.host)
   registerWorkspaceIpc(deps)
   registerSettingsIpc()
   registerStorageIpc()

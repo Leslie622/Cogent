@@ -121,17 +121,19 @@ export class CredentialStore {
 
   write(providerId: string, apiKey: string): void {
     this.assertAvailable()
-    const providers = this.ensureLoaded()
+    const providers = new Map(this.ensureLoaded())
     providers.set(providerId, { apiKey })
     this.encryptAll(providers)
+    this.cache = providers
     // 落盘成功 = 之前的损坏文件已被全新合法文件覆盖，降级态解除
     this.startupError = null
   }
 
   remove(providerId: string): void {
-    const providers = this.ensureLoaded()
+    const providers = new Map(this.ensureLoaded())
     providers.delete(providerId)
     this.encryptAll(providers)
+    this.cache = providers
   }
 
   private encryptAll(providers: Map<string, { apiKey: string }>): void {

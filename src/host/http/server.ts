@@ -45,6 +45,10 @@ export type FrameHandler = (raw: string) => Promise<RpcResponse | null>
 
 /** 单帧体积上限：协议里最大方法（会话消息/转录）远小于此值 */
 const MAX_BODY_BYTES = 1_000_000
+const MAX_INFLIGHT = 128
+const MAX_WS_INFLIGHT = 32
+const MAX_CLIENTS = 128
+const MAX_OUTBOUND_BYTES = 4_000_000
 
 /** WS 关闭排空窗口（zcode server-core 同款语义：先 close(1001) 再 terminate 兜底） */
 const WS_DRAIN_MS = 250
@@ -59,6 +63,9 @@ const SCOPE_FORBIDDEN_CODE = -32_003
 const METHOD_MIN_SCOPE: Record<string, TokenScope> = {
   // 读类
   initialize: 'readonly',
+  'session.defaults.get': 'readonly',
+  'session.defaults.set': 'admin',
+  'providers.custom.get': 'readonly',
   'session.list': 'readonly',
   'session.search': 'readonly',
   'session.search.rebuild': 'admin',
@@ -163,7 +170,14 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
   // 无 CORS 头浏览器直接拦 —— Pi-meme 用同源反代绕开，Cogent 页面直连就必须
   // 回头）。安全性不受影响：CORS 只是浏览器同源策略的形式，真边界是恒鉴权
   // token —— 恶意网页能发请求但无 token 一律 401（票据也拿不到）。
+  let inflight = 0, closing = false
   app.use('*', cors())
+  app.use('*', async (c, next) => {
+    if (closing) return c.json({ error: 'server shutting down' }, 503)
+    if (inflight >= MAX_INFLIGHT) return c.json({ error: 'too many in-flight requests' }, 429)
+    inflight++
+    try { await next() } finally { inflight-- }
+  })
 
   // /auth/exchange 的凭证就是票据本身，不走 Bearer（否则鸡生蛋）；WS 握手是
   // 原生 HTTP upgrade、不经 Hono fetch，鉴权在 upgrade 事件里同口径另挂
@@ -209,6 +223,16 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
   // ———— WS 门：ws 官方 noServer 模式，单端点不走 Hono 路由 ————
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_BODY_BYTES })
   const clients = new Set<WebSocket>()
+  const send = (client: WebSocket, line: string): void => {
+    if (client.readyState !== WebSocket.OPEN) return
+    if (client.bufferedAmount + Buffer.byteLength(line) > MAX_OUTBOUND_BYTES) {
+      client.close(1013, 'outbound budget exceeded')
+      // close 帧同样可能堵塞；立即释放慢消费者，不影响已受理任务。
+      client.terminate()
+      return
+    }
+    client.send(line)
+  }
 
   return new Promise((resolve) => {
     const server = serve(
@@ -220,16 +244,19 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
             if (frame.method.startsWith('outputs.') || frame.method.startsWith('fileViews.')) return
             const line = JSON.stringify(frame)
             for (const client of clients) {
-              if (client.readyState === WebSocket.OPEN) client.send(line)
+              send(client, line)
             }
           },
           close: async () => {
+            closing = true
             // HTTP server.close() 不会收敛已 upgrade 的 WS（zcode 同款坑）：
             // 先 close(1001) 给正常客户端排空窗口，再 terminate 兜底
             for (const client of clients) client.close(1001, 'server shutting down')
             await new Promise<void>((r) => setTimeout(r, WS_DRAIN_MS))
             for (const client of clients) client.terminate()
-            await new Promise<void>((res) => server.close(() => res()))
+            const deadline = setTimeout(() => { if ('closeAllConnections' in server) server.closeAllConnections() }, 1000)
+            try { await new Promise<void>((res) => server.close(() => res())) }
+            finally { clearTimeout(deadline); wss.close() }
           }
         })
       }
@@ -237,6 +264,7 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
     // ServerType 是 http/https 联合，on('upgrade') 重载解析不出参数类型 ——
     // 按 node:http 文档签名显式注参（upgrade 事件三参形状固定）
     server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+      if (closing || clients.size >= MAX_CLIENTS) { socket.destroy(); return }
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (url.pathname !== '/ws') {
         socket.destroy()
@@ -252,6 +280,7 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
       }
       wss.handleUpgrade(request, socket, head, (ws) => {
         clients.add(ws)
+        let pending = 0
         ws.on('message', (data) => {
           const raw = frameText(data)
           // 档位强制与 /rpc 同一份判定；WS 无 HTTP 状态码，越档回
@@ -259,7 +288,7 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
           const request = readRequest(raw)
           const denial = request === undefined ? undefined : scopeDenial(scope, request.method)
           if (request !== undefined && denial !== undefined) {
-            ws.send(
+            send(ws,
               JSON.stringify({
                 jsonrpc: '2.0',
                 id: request.id,
@@ -271,9 +300,14 @@ export function startHttpRpc(handleFrame: FrameHandler, options: HttpRpcOptions)
             )
             return
           }
-          void handleFrame(raw).then((response) => {
-            if (response) ws.send(JSON.stringify(response))
-          })
+          if (closing || pending >= MAX_WS_INFLIGHT || inflight >= MAX_INFLIGHT) {
+            if (request) send(ws, JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32004, message: 'too many in-flight requests' } }))
+            return
+          }
+          pending++; inflight++
+          void handleFrame(raw).then(response => {
+            if (response) send(ws, JSON.stringify(response))
+          }, () => { ws.close(1011, 'request failed') }).finally(() => { pending--; inflight-- })
         })
         // error 后 ws 必发 close，双挂 delete 幂等（防御边界外的清理动作）
         ws.on('close', () => clients.delete(ws))

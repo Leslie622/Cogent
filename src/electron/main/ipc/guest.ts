@@ -7,13 +7,13 @@
  * scope 定档：3a demo 页 = write（列会话 + 发起对话 + 收事件流）。
  * 页面级细档（session 绑定）= 决定 30 的后续批次。
  */
-import { ipcMain } from 'electron'
+import { handleTrusted } from './trusted'
 import { IPC, type GuestCredentialsResult } from '../../../shared/ipc'
 import type { IpcDeps } from './index'
 import { isTrustedAppGuest } from '../webview-policy'
 
 export function registerGuestIpc(deps: IpcDeps): void {
-  ipcMain.handle(IPC.guestCredentials, async (event): Promise<GuestCredentialsResult> => {
+  handleTrusted(IPC.guestCredentials, async (event): Promise<GuestCredentialsResult> => {
     // 信任边界：sender 是跨信任边界的外部页面环境（经硬化 webview），在此做
     // 唯一一次校验 —— 非 webview guest（主 UI preload 伪造调用等）直接拒
     if (!isTrustedAppGuest(event.sender) || event.senderFrame !== event.sender.mainFrame || event.sender.hostWebContents === null) {

@@ -70,6 +70,7 @@ beforeEach(async () => {
     const gate = deferred<void>(); main.set(options.sessionId, gate)
     const pi = { model, thinkingLevel: 'off', systemPrompt: 'test', sessionManager: tree,
       agent: { state, subscribe: () => () => {} }, dispose: () => {}, abort: () => Promise.resolve(),
+      extensionRunner: { emit: () => Promise.resolve() },
       setModel: (selected: Model<Api>) => { pi.model = selected; state.model = selected; return Promise.resolve() },
       prompt: async (text: string, opts?: Parameters<AgentSession['prompt']>[1]) => {
         opts?.preflightResult?.('started')

@@ -53,11 +53,13 @@ export interface HostOptions {
    * optional：冒烟脚本/老宿主可不带。
    */
   handshakeCredentials?: Record<string, { apiKey: string }>
+  readCredentials?: () => Record<string, { apiKey: string }>
   /**
    * 开引擎 HTTP 门（阶段 3a 起默认开：webview 页面消费者需要；loopback +
    * 恒鉴权，见 模块/HTTP通道.md）。注入 COGENT_HTTP_RPC=1，随机端口经
    * initialize 响应 httpPort 上报。
    */
+  beforeSend?: () => void
   enableHttpRpc?: boolean
 }
 
@@ -67,6 +69,11 @@ export class HostManager {
   private pending = new Map<number, Pending>()
   private nextId = 1
   private status: AppStatus = { state: 'stopped', nodeVersion: null, error: null }
+  private initialized: Promise<unknown> = Promise.resolve()
+  private generation = 0
+  private starting: Promise<void> | null = null
+  private credentialsTail: Promise<void> = Promise.resolve()
+  private shutdownPromise: Promise<void> | null = null
   private manualStop = false
   private closed = true
   /** HTTP 门端口（initialize 响应带回；引擎停了端口随之失效，close 时清） */
@@ -97,6 +104,8 @@ export class HostManager {
   }
 
   /** HTTP 门端口（未开门/引擎停止时 undefined；消费者侧由阶段 3 webview 接） */
+  getGeneration(): number { return this.generation }
+
   getHttpPort(): number | undefined {
     return this.httpPort
   }
@@ -114,8 +123,20 @@ export class HostManager {
    * 启动引擎并完成握手。所有启动期失败（node 不在 PATH / 版本不足 / 进程秒退 /
    * 握手超时）都收敛为这一个 Promise 的 rejection，由调用方决定如何呈现。
    */
-  async start(): Promise<void> {
+  start(): Promise<void> {
+    if (this.starting) return this.starting
+    if (!this.closed) return Promise.resolve()
+    const promise = this.startGeneration()
+    this.starting = promise
+    void promise.finally(() => { if (this.starting === promise) this.starting = null }).catch(() => {})
+    return promise
+  }
+
+  private async startGeneration(): Promise<void> {
     if (!this.closed) return // start 是一次性语义，进行中/已启动时静默幂等
+    const generation = ++this.generation
+    this.credentialsTail = Promise.resolve()
+    this.shutdownPromise = null
     this.manualStop = false
     this.closed = false
     this.status = { state: 'starting', nodeVersion: null, error: null }
@@ -137,27 +158,32 @@ export class HostManager {
     let startupStage = '尚未收到 Host 启动阶段日志'
     console.info(`[main] host starting (bin ${this.opts.nodeBin}, entry ${this.opts.entryPath})`)
 
-    child.once('error', (error) => this.close(error.message))
+    child.once('error', (error) => { if (this.generation === generation) this.close(error.message) })
     child.once('exit', (code) => {
+      if (this.child !== child || this.generation !== generation) return
       this.child = null
       this.close(this.manualStop ? null : `引擎进程意外退出（code ${code ?? 'unknown'}）`)
     })
     // stdio 配置为 pipe，Node 类型重载已把流标记为非空，无需断言
-    createInterface({ input: child.stdout }).on('line', (line) => this.onLine(line))
+    createInterface({ input: child.stdout }).on('line', (line) => { if (this.child === child && this.generation === generation) this.onLine(line) })
     createInterface({ input: child.stderr }).on('line', (line) => {
       if (line.startsWith('[startup] ')) startupStage = line
       console.error('[host]', line)
     })
 
+    let snapshot
+    try { snapshot = this.opts.readCredentials?.() ?? this.opts.handshakeCredentials }
+    catch (error) { this.terminate((error as Error).message); throw error }
     const handshake = withTimeout(
-      this.request('initialize', {
+      this.send('initialize', {
         client: 'cogent-main',
         protocolVersion: PROTOCOL_VERSION,
-        ...(this.opts.handshakeCredentials ? { credentials: this.opts.handshakeCredentials } : {})
+        ...(snapshot ? { credentials: snapshot } : {})
       }),
       HANDSHAKE_TIMEOUT_MS,
       () => `引擎握手超时（${HANDSHAKE_TIMEOUT_MS}ms）；最后阶段：${startupStage}`
     )
+    this.initialized = handshake
     // 握手失败（超时/进程秒退/发回错误帧）必须收尾：杀子进程 + 拒绝在途请求 +
     // 落 failed 态。不清理的话超时路径会留下孤儿进程且 status 永卡 'starting'
     // （另一条对照路径：版本守卫失败在下方 catch 里已做同样收尾）
@@ -167,6 +193,7 @@ export class HostManager {
     } catch (error) {
       // stop() 默认落 'stopped'（正常关停语义），这里是失败路径：显式改写 failed
       // + 错误信息（与下方版本守卫失败路径的收尾姿势一致）
+      if (this.generation !== generation || this.child !== child) throw error
       this.terminate((error as Error).message)
       this.status = { state: 'failed', nodeVersion: null, error: (error as Error).message }
       throw error
@@ -175,13 +202,29 @@ export class HostManager {
     try {
       ensureNodeVersion(info.node, MIN_NODE)
     } catch (error) {
+      if (this.generation !== generation || this.child !== child) throw error
       this.terminate((error as Error).message)
       this.status = { state: 'failed', nodeVersion: info.node, error: (error as Error).message }
       throw error
     }
 
+    if (!this.ownsProcess(child, generation)) throw new Error('Host 启动已取消')
+    // 初始化只负责快照；启动期间变更按登记顺序排在握手之后。
+    try {
+      let tail: Promise<void>
+      do { tail = this.credentialsTail; await tail } while (tail !== this.credentialsTail)
+    } catch (error) {
+      if (this.generation === generation && this.child === child) this.terminate((error as Error).message)
+      throw error
+    }
+    if (!this.ownsProcess(child, generation)) throw new Error('Host 启动已取消')
     this.status = { state: 'running', nodeVersion: info.node, error: null }
     this.httpPort = info.httpPort
+  }
+
+  /** await 之后重新读取进程与关闭状态，不能沿用 await 之前的局部收窄。 */
+  private ownsProcess(child: ChildProcess, generation: number): boolean {
+    return this.child === child && this.generation === generation && !this.closed
   }
 
   /**
@@ -189,7 +232,33 @@ export class HostManager {
    * 仅握手场景需要超时（引擎可能起不来）；业务请求一律不设超时 —— LLM 循环
    * 以分钟计，超时会把慢变快错。
    */
-  request<M extends keyof ProtocolMethods>(
+  async request<M extends keyof ProtocolMethods>(method: M, params: ProtocolMethods[M]['params']): Promise<ProtocolMethods[M]['result']> {
+    const generation = this.generation
+    const startup = this.starting
+    const changes = this.credentialsTail
+    if (startup) await startup
+    await changes
+    if (generation !== this.generation || this.closed || this.shutdownPromise) throw new Error('host closed')
+    this.opts.beforeSend?.()
+    return this.send(method, params)
+  }
+
+  /** 安全存储已提交后登记；离线只保存，下次启动现读，不让旧代队列越过进程身份。 */
+  applyCredential(providerId: string, apiKey?: string): Promise<void> {
+    if (this.closed) return Promise.resolve()
+    const generation = this.generation, child = this.child, initialized = this.initialized
+    const operation = this.credentialsTail.catch(() => {}).then(async () => {
+      await initialized
+      if (this.child !== child || this.generation !== generation || this.closed) throw new Error('host closed')
+      if (apiKey === undefined) await this.send('credentials.remove', { providerId })
+      else await this.send('credentials.set', { providerId, apiKey })
+    })
+    this.credentialsTail = operation
+    void operation.catch(() => {})
+    return operation.catch(cause => { throw new Error(`凭据已保存，应用到引擎失败: ${(cause as Error).message}`, { cause }) })
+  }
+
+  private send<M extends keyof ProtocolMethods>(
     method: M,
     params: ProtocolMethods[M]['params']
   ): Promise<ProtocolMethods[M]['result']> {
@@ -202,13 +271,26 @@ export class HostManager {
     const frame: RpcRequest = { jsonrpc: '2.0', id, method, params }
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject })
-      stdin.write(JSON.stringify(frame) + '\n')
+      stdin.write(JSON.stringify(frame) + '\n', error => {
+        if (!error) return
+        this.pending.delete(id)
+        reject(error)
+      })
     })
   }
 
   /** 停止引擎（窗口关闭/版本守卫失败时调用）；幂等。 */
-  stop(): void {
-    this.terminate(null)
+  stop(): Promise<void> {
+    if (this.shutdownPromise) return this.shutdownPromise
+    if (this.closed) return Promise.resolve()
+    const child = this.child, generation = this.generation
+    this.shutdownPromise = (async () => {
+      this.manualStop = true
+      try { await withTimeout(this.send('host.shutdown', {}), 8_000, () => '引擎退出超时') }
+      catch (error) { console.error('[main] graceful shutdown:', (error as Error).message) }
+      if (this.child === child && this.generation === generation) this.terminate(null)
+    })()
+    return this.shutdownPromise
   }
 
   /** 启动失败时保留原始原因，让并发 IPC 请求的拒绝信息能指回握手故障。 */
@@ -217,6 +299,7 @@ export class HostManager {
     this.child?.kill()
     this.child = null
     this.close(error)
+    if (error !== null) this.status = { ...this.status, state: 'failed', error }
   }
 
   /** 关停收尾：拒绝全部在途请求、落状态。幂等。 */
@@ -229,7 +312,10 @@ export class HostManager {
     }
     this.pending.clear()
     // 旧 fileId 与预览字节属于被关闭的 Host；主窗口应立即回收，正文仍可在新服务重新解析。
-    if (this.eventSink !== null) this.emitEvent({ jsonrpc: '2.0', method: 'files.invalidated', params: {} })
+    if (this.eventSink !== null) {
+      this.emitEvent({ jsonrpc: '2.0', method: 'files.invalidated', params: {} })
+      this.emitEvent({ jsonrpc: '2.0', method: 'host.disconnected', params: { message: error ?? '引擎已断开，运行结果待确认' } })
+    }
     this.status = {
       state: this.manualStop ? 'stopped' : 'failed',
       nodeVersion: this.status.nodeVersion,

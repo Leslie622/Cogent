@@ -145,42 +145,51 @@ export class CustomProviderRegistry {
    * 启用集里"，走同一条移除路径 —— 之前注册过的会被 deleteProvider 卸下。
    */
   sync(defs: CustomProviderDef[], overrides: ProviderOverrideDef[]): number {
+    return this.prepare(defs, overrides)()
+  }
+
+  prepare(defs: CustomProviderDef[], overrides: ProviderOverrideDef[]): () => number {
     const active = defs.filter((def) => def.disabled !== true)
-
-    // 自定义 provider：id 带 custom/ 前缀（与内置 id 空间隔离）；同一实例
-    // 双注册（目录 + pi runtime，见文件头注释）
-    for (const def of active) {
-      const provider = this.buildCustomProvider(def)
-      this.models.setProvider(provider)
-      this.modelRuntime.registerNativeProvider(provider)
-      this.customIds.add(def.id)
-    }
-    for (const existingId of this.customIds) {
-      if (!active.some((def) => def.id === existingId)) {
-        this.models.deleteProvider(existingId)
-        this.modelRuntime.unregisterProvider(existingId)
-        this.customIds.delete(existingId)
-      }
-    }
-
-    // 内置 provider 的本地调整（baseUrl 覆盖 / 模型增删）：同 id 新 provider，
-    // 流式/auth 委托原实例。不用对象展开 —— provider 接口的方法要绑定原实例的
-    // 闭包状态，浅拷贝会丢行为。
-    for (const override of overrides) {
+    const providers = active.map(def => this.buildCustomProvider(def))
+    const replacements = overrides.flatMap(override => {
       const original = this.originals.get(override.providerId)
-      if (!original) continue
-      this.models.setProvider(this.buildOverrideProvider(original, override))
-      this.overriddenIds.add(override.providerId)
-    }
-    for (const existingId of this.overriddenIds) {
-      if (!overrides.some((override) => override.providerId === existingId)) {
-        const original = this.originals.get(existingId)
-        if (original) this.models.setProvider(original) // 撤覆盖 = 还原原实例
-        this.overriddenIds.delete(existingId)
+      return original ? [this.buildOverrideProvider(original, override)] : []
+    })
+    return () => {
+      // 自定义 provider：id 带 custom/ 前缀（与内置 id 空间隔离）；同一实例
+      // 双注册（目录 + pi runtime，见文件头注释）
+      for (const provider of providers) {
+        this.models.setProvider(provider)
+        this.modelRuntime.registerNativeProvider(provider)
+        this.customIds.add(provider.id)
       }
-    }
+      for (const existingId of this.customIds) {
+        if (!active.some((def) => def.id === existingId)) {
+          this.models.deleteProvider(existingId)
+          this.modelRuntime.unregisterProvider(existingId)
+          this.customIds.delete(existingId)
+        }
+      }
 
-    return defs.length + overrides.length
+      // 内置 provider 的本地调整（baseUrl 覆盖 / 模型增删）：同 id 新 provider，
+      // 流式/auth 委托原实例。不用对象展开 —— provider 接口的方法要绑定原实例的
+      // 闭包状态，浅拷贝会丢行为。
+      for (const override of overrides) {
+        const original = this.originals.get(override.providerId)
+        if (!original) continue
+        this.models.setProvider(replacements.find(provider => provider.id === original.id)!)
+        this.overriddenIds.add(override.providerId)
+      }
+      for (const existingId of this.overriddenIds) {
+        if (!overrides.some((override) => override.providerId === existingId)) {
+          const original = this.originals.get(existingId)
+          if (original) this.models.setProvider(original) // 撤覆盖 = 还原原实例
+          this.overriddenIds.delete(existingId)
+        }
+      }
+
+      return defs.length + overrides.length
+    }
   }
 
   /**

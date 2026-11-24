@@ -16,11 +16,11 @@
  * （zcodeSessionStoreTypes.ts:237）；zcode 自认"桶无删除路径"（内存诊断
  * 记账），本处以单键删除从结构上杜绝。
  */
+import { beginHistory, cancelHistory, finishHistory } from './hydration'
 import { create } from 'zustand'
 import type { ChatMessage, PermissionMode } from '@/env.d'
 import { useHomeStore } from '@/stores/home'
 import { disposeWorkspaceScope } from '@/features/workspace/runtime'
-import { useEngineStore } from '@/stores/engine'
 import { useProjectStore } from '@/stores/project'
 import { useAttachmentStore } from '@/stores/attachments'
 import { unwrapIpcError } from '@/lib/ipc'
@@ -123,6 +123,10 @@ export const messageDeltas = createDeltaBatcher((sessionId, deltas) => {
 
 // 历史读取有独立身份；删除/同会话重读后，迟到快照不能重建旧桶。
 const historyLoads = new Map<string, symbol>()
+export function invalidateHistories(): void {
+  for (const id of historyLoads.keys()) cancelHistory(id)
+  historyLoads.clear()
+}
 
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
@@ -160,10 +164,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 按需拉历史建桶（盘上转录已持久化，切换时重拉一次拿最新；本地缓存优化属后续件）。
     // 展平：段化消息里的 toolCalls → 独立工具卡行（与流式期事件路径同一形状）；
     // todos 字段 = TodoStrip 种子（运行中增量走 todos.updated 事件）
-    if (get().bySession[sessionId] === undefined) {
+    if (!get().bySession[sessionId]?.historyLoaded) {
       const owner = Symbol(sessionId)
       historyLoads.set(sessionId, owner)
-      const { messages, todos } = await window.cogent.engineRequest('session.messages', { sessionId }).catch((error: unknown) => {
+      beginHistory(sessionId, owner)
+      const { messages, todos, runtime, interactions, eventWatermark } = await window.cogent.engineRequest('session.messages', { sessionId }).catch((error: unknown) => {
+        cancelHistory(sessionId, owner)
         if (historyLoads.get(sessionId) === owner) historyLoads.delete(sessionId)
         throw error
       })
@@ -173,9 +179,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set((state) => ({
         bySession: {
           ...state.bySession,
-          [sessionId]: { ...emptyBucket(), messages: flattenSegments(messages), ...(todos !== undefined && { todos }) }
+          [sessionId]: { ...(state.bySession[sessionId] ?? emptyBucket()), historyLoaded: true,
+            messages: flattenSegments(messages).map(item => item.type === undefined && item.role === 'assistant' && item.id === runtime?.activeMessageId ? { ...item, placeholder: true } : item), ...(todos !== undefined && { todos }),
+            ...(runtime && { runtime: { ...(state.bySession[sessionId]?.runtime ?? emptyBucket().runtime), ...runtime } }),
+            ...(interactions && { pendingApprovals: interactions.approvals.map(p => ({ ...p, toolKind: p.kind })), pendingQuestions: interactions.questions, pendingPlans: interactions.plans }) }
         }
       }))
+      if (!finishHistory(sessionId, owner, eventWatermark)) {
+        set(state => patchBucket(state, sessionId, bucket => ({ ...bucket, historyLoaded: false })))
+        return get().selectSession(sessionId)
+      }
+      messageDeltas.flush(sessionId)
       const bucket = get().bySession[sessionId]!
       // 产物历史独立水合，不能拖住调用方的openChat/草稿身份切换，造成标题先恢复、发送仍走新聊天。
       void (async () => { try {
@@ -195,19 +209,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   createSession: async (params) => {
-    // 权限模式随物化落定（审批交互升级第 3 步 + F6 项目默认）：显式 params >
-    // 新聊天暂存位 > **项目默认**（「允许，并切换为」落位，zcode 同款：同一
-    // 项目的新会话沿用）> 设置页「默认权限」（engine store；ask 缺省语义与
-    // 协议/引擎一致）。项目匹配与引擎 projectIdOf 同口径：projectId 直配，
-    // 否则 cwd 前缀落进某项目 cwds
+    // 客户端只提交显式选择（params > 新聊天暂存位）；项目和全局默认由 Host
+    // 在创建时求值，避免界面未打开或配置更新时使用旧的本地副本。
     const home = useHomeStore.getState().session
-    // 链尾 engine store 字段非 optional，链必有值 → 直接落（等值覆盖 params 的
-    // 同名字段，语义 = 显式选择优先已由 ?? 链前段保证）
     const permissionMode =
       params?.permissionMode ??
-      (home.kind === 'new' ? home.permissionMode : undefined) ??
-      projectDefaultMode(params?.projectId, params?.cwd) ??
-      useEngineStore.getState().defaultPermissionMode
+      (home.kind === 'new' ? home.permissionMode : undefined)
     const summary = await window.cogent.engineRequest('session.create', {
       ...params,
       permissionMode,
@@ -217,7 +224,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       sessions: [{ ...summary }, ...state.sessions],
       ...(useHomeStore.getState().session === home && { activeSessionId: summary.id }),
-      bySession: { ...state.bySession, [summary.id]: emptyBucket() }
+      bySession: { ...state.bySession, [summary.id]: { ...emptyBucket(), historyLoaded: true } }
     }))
     return summary.id
   },
@@ -276,6 +283,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!(await disposeWorkspaceScope(sessionId))) return
     await window.cogent.engineRequest('session.delete', { sessionId })
     historyLoads.delete(sessionId)
+    cancelHistory(sessionId)
     messageDeltas.discard(sessionId)
     const wasActive = get().activeSessionId === sessionId
     set((state) => {

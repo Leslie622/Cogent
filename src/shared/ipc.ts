@@ -15,6 +15,7 @@ export const IPC = {
   attachmentsAction: 'attachments:action',
   /** renderer → main：查询 Agent 引擎服务连接状态 */
   appStatus: 'app:status',
+  appRestart: 'app:restart',
   /** renderer → main：引擎方法通用代理（载荷 { method, params }；白名单校验在 ipc/engine.ts） */
   engineRequest: 'engine:request',
   /** main → renderer：引擎事件流转发（载荷 = protocol RpcEvent） */

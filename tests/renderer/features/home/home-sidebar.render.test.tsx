@@ -74,7 +74,7 @@ describe('侧栏新聊天入口', () => {
     const draftId = `new-${view.draftId}`
     const items = [{ key: 'file', name: '未发附件.txt', size: 12, status: 'importing' as const }]
     useAttachmentStore.setState({ drafts: { [draftId]: { ...EMPTY_DRAFT, loaded: true, text: '未发正文', items } } })
-    useChatStore.setState({ activeSessionId: oldSession.id, sessions: [oldSession], bySession: { [oldSession.id]: emptyBucket() } })
+    useChatStore.setState({ activeSessionId: oldSession.id, sessions: [oldSession], bySession: { [oldSession.id]: { ...emptyBucket(), historyLoaded: true } } })
     useHomeStore.getState().openChat(oldSession.id)
     render(<HomeSidebar />)
     fireEvent.click(screen.getByRole('button', { name: '新聊天' }))
@@ -92,7 +92,7 @@ describe('侧栏新聊天入口', () => {
     useChatStore.setState({
       activeSessionId: empty.id,
       sessions: [empty],
-      bySession: { [empty.id]: emptyBucket() }
+      bySession: { [empty.id]: { ...emptyBucket(), historyLoaded: true } }
     })
     useHomeStore.getState().openChat(empty.id)
     render(<HomeSidebar />)
@@ -111,7 +111,7 @@ describe('会话行工作状态', () => {
       ...(kind === '置顶' && { pinnedAt: 1 }),
       ...(kind === '项目' && { projectId: 'project' })
     }
-    useChatStore.setState({ sessions: [chat], bySession: { [chat.id]: emptyBucket() } })
+    useChatStore.setState({ sessions: [chat], bySession: { [chat.id]: { ...emptyBucket(), historyLoaded: true } } })
     if (kind === '项目') {
       engineRequest.mockResolvedValue([{ id: 'project', name: '项目一', cwds: ['C:/project'], createdAt: 1, updatedAt: 1 }])
     }
@@ -129,7 +129,7 @@ describe('会话行工作状态', () => {
         useChatStore.setState((state) => ({
           activeSessionId: 'another-chat',
           bySession: {
-            [chat.id]: { ...emptyBucket(), runtime: { ...state.bySession[chat.id]!.runtime, ...runtime } }
+            [chat.id]: { ...emptyBucket(), historyLoaded: true, runtime: { ...state.bySession[chat.id]!.runtime, ...runtime } }
           }
         }))
       })
@@ -146,7 +146,7 @@ describe('会话行工作状态', () => {
   })
 
   it('运行中等待审批优先显示等待确认，审批解除后恢复 spinner', async () => {
-    const bucket = emptyBucket()
+    const bucket = { ...emptyBucket(), historyLoaded: true }
     bucket.runtime.running = true
     bucket.pendingApprovals = [{ requestId: 'approval', toolName: 'write', toolKind: 'write', summary: '写文件' }]
     useChatStore.setState({ sessions: [oldSession], bySession: { [oldSession.id]: bucket } })
@@ -171,7 +171,7 @@ describe('会话行点击区域', () => {
       ...(kind === '置顶' && { pinnedAt: 1 }),
       ...(kind === '项目' && { projectId: 'project' })
     }
-    const bucket = emptyBucket()
+    const bucket = { ...emptyBucket(), historyLoaded: true }
     if (kind === '等待确认') {
       bucket.pendingApprovals = [{ requestId: 'approval', toolName: 'write', toolKind: 'write', summary: '写文件' }]
     }

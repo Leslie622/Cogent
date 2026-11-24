@@ -209,10 +209,10 @@ export function createCogentMcpServer(scope: 'readonly' | 'write' | null): McpSe
           // 两段式（host-client.subscribeRun 头注）：先 WS 就绪、再 submit ——
           // 事件不重放，先提交再订阅会错过快任务的 completed
           const subscription = subscribeRun(args.sessionId)
-          let submit: { accepted: boolean }
+          let submit: { accepted: boolean; runId?: string }
           try {
             await subscription.ready()
-            submit = await callHost<{ accepted: boolean }>('agent.submit', {
+            submit = await callHost<{ accepted: boolean; runId?: string }>('agent.submit', {
               sessionId: args.sessionId,
               text: args.text,
               ...(args.model !== undefined ? { model: args.model } : {}),
@@ -223,6 +223,8 @@ export function createCogentMcpServer(scope: 'readonly' | 'write' | null): McpSe
             subscription.close()
             throw cause
           }
+          if (submit.runId === undefined) { subscription.close(); throw new HostError('outcome-uncertain', 'Host 未返回运行身份，请更新 Host 后查询消息确认结果') }
+          subscription.bindRun(submit.runId)
           const outcome = await subscription.awaitOutcome(args.waitMs, extra.signal)
           return {
             ...submit,

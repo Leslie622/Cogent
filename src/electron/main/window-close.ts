@@ -15,7 +15,8 @@
  *             拦截器见标志直接放行，否则退出流程会被自己拦住
  *   asking    询问弹窗在开（防重入：连点关闭钮不重弹，cancel 复位）
  */
-import { app, BrowserWindow, Menu, Tray, ipcMain } from 'electron'
+import { handleTrusted } from './ipc/trusted'
+import { app, BrowserWindow, Menu, Tray } from 'electron'
 import { IPC, type WindowCloseAnswer } from '../../shared/ipc'
 import { readSettingsFile } from './ipc/settings'
 
@@ -86,7 +87,7 @@ export function installCloseBehavior(win: BrowserWindow): void {
     win.webContents.send(IPC.windowAskClose)
   })
 
-  ipcMain.handle(IPC.windowConfirmClose, (event, raw: unknown) => {
+  handleTrusted(IPC.windowConfirmClose, (event, raw: unknown) => {
     // 信任边界：载荷收窄（unknown → 判别联合），越界即抛（约定 §1.1）
     const answer = raw as Partial<WindowCloseAnswer>
     if (

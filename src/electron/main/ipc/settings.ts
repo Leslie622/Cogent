@@ -8,12 +8,12 @@
  * 后回默认 —— 偏好可再生（与凭据的"降级引导"口径相比这里不值得 UI 呈现），
  * 但必须留日志痕迹，否则用户偏好无端丢失无从排障。
  */
+import { handleTrusted } from './trusted'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, ipcMain } from 'electron'
 import { z } from 'zod'
 import { IPC, type RendererSettingsPatch, type SettingsFile } from '../../../shared/ipc'
-import { storageRoot, ensureRoot, migrateFromUserData, writeFileAtomic } from '../storage-root'
+import { storageRoot, ensureRoot, writeFileAtomic } from '../storage-root'
 import { managedSoundFileName } from '../sound-files'
 
 function filePath(): string {
@@ -23,7 +23,6 @@ function filePath(): string {
 function readAll(): SettingsFile {
   // 迁移源与其他 store 统一：老版本存 userData（app.getPath），不是手拼 APPDATA
   // 路径 —— 非 Windows 上 APPDATA 为空时会得到碰运气的相对路径 'Electron'
-  migrateFromUserData('settings.json', app.getPath('userData'))
   if (!existsSync(filePath())) return { version: 1 }
   try {
     const raw = JSON.parse(readFileSync(filePath(), 'utf-8')) as Partial<SettingsFile>
@@ -38,7 +37,7 @@ function readAll(): SettingsFile {
       activeModelId: raw.activeModelId,
       activeProviderId: raw.activeProviderId,
       thinkingLevel: raw.thinkingLevel,
-      defaultPermissionMode: raw.defaultPermissionMode === 'auto' ? 'auto' : 'ask',
+      defaultPermissionMode: raw.defaultPermissionMode,
       // 发送组合键：越界值（手改文件/未来版本）按可再生偏好归缺省（enter 由消费侧补）
       sendShortcut:
         raw.sendShortcut === 'enter' || raw.sendShortcut === 'shift+enter' || raw.sendShortcut === 'ctrl+enter'
@@ -101,7 +100,6 @@ const rendererPatch = z.strictObject({
   activeModelId: z.string(),
   activeProviderId: z.string(),
   thinkingLevel: z.string(),
-  defaultPermissionMode: z.enum(['ask', 'auto']),
   sendShortcut: z.enum(['enter', 'shift+enter', 'ctrl+enter']),
   closeBehavior: z.enum(['minimize', 'quit', 'ask']),
   hardwareAcceleration: z.boolean(),
@@ -112,7 +110,7 @@ const rendererPatch = z.strictObject({
   soundEnabled: z.boolean(),
   soundVolume: z.number().min(0).max(1),
   soundPitch: z.number().min(400).max(1200)
-} satisfies Record<keyof RendererSettingsPatch, z.ZodType>).partial()
+} satisfies Record<Exclude<keyof RendererSettingsPatch, 'defaultPermissionMode'>, z.ZodType>).partial()
 
 /**
  * main 的单一字段合并写。各入口先校验自己接收的值；undefined 在落盘时删键，
@@ -123,9 +121,9 @@ export function writeSettingsFile(patch: Partial<Omit<SettingsFile, 'version'>>)
 }
 
 export function registerSettingsIpc(): void {
-  ipcMain.handle(IPC.settingsGet, () => readAll())
+  handleTrusted(IPC.settingsGet, () => readAll())
 
-  ipcMain.handle(IPC.settingsSave, (_event, raw: unknown) => {
+  handleTrusted(IPC.settingsSave, (_event, raw: unknown) => {
     writeSettingsFile(rendererPatch.parse(raw))
     return { ok: true as const }
   })

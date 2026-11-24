@@ -1,5 +1,9 @@
 # 对外MCP
 
+等待运行结果时，先订阅再提交，按受理回包的 runId 认领终态；同会话上一 run 的结束不会串入本次结果。
+受理回包前已完成的终态暂存后认领；断线只报告结果未知，不能当正常完成或盲目重发。
+验收：交错终态、先完成后回包和断线见 `tests/host/mcp-server/host-client.test.ts`；真实 MCP 链见 `tests/integration/external-mcp.test.ts`。
+
 > 对外出口座：外部 agent（zcode / Codex / Claude Code 等
 > MCP 客户端）经 MCP 驱动**运行中的** Cogent Host —— 与 [MCP座](MCP座.md)
 > 方向相反（那是 Cogent 作为客户端消费外部 server）。

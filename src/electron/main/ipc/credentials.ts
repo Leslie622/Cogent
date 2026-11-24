@@ -3,14 +3,14 @@
  * main 是 key 明文的唯一的家：safeStorage 落盘 + 推给引擎内存；批量状态只回
  * 布尔位，明文只经 credentials:get 按 provider 单取（设置页全量回显，产品决策）。
  */
-import { ipcMain } from 'electron'
+import { handleTrusted } from './trusted'
 import { IPC } from '../../../shared/ipc'
 import type { CredentialStore } from '../credentials/store'
 import type { HostManager } from '../host/manager'
 
 export function registerCredentialsIpc(host: HostManager, store: CredentialStore): void {
   // 信任边界：providerId/apiKey 形状校验；业务语义（provider 是否存在）由引擎报错
-  ipcMain.handle(IPC.credentialsSet, async (_event, raw: unknown) => {
+  handleTrusted(IPC.credentialsSet, async (_event, raw: unknown) => {
     const payload = raw as Partial<{ providerId: unknown; apiKey: unknown }>
     if (typeof payload.providerId !== 'string' || payload.providerId.length === 0 || typeof payload.apiKey !== 'string') {
       throw new Error('credentials:set 需要 { providerId: string, apiKey: string }')
@@ -22,25 +22,21 @@ export function registerCredentialsIpc(host: HostManager, store: CredentialStore
     }
     store.write(payload.providerId, payload.apiKey)
     // 引擎未运行时（启动失败）仅落盘：下次握手注入；这里不阻塞保存动作本身
-    if (host.getStatus().state === 'running') {
-      await host.request('credentials.set', { providerId: payload.providerId, apiKey: payload.apiKey })
-    }
+    await host.applyCredential(payload.providerId, payload.apiKey)
     return { ok: true as const }
   })
 
-  ipcMain.handle(IPC.credentialsRemove, async (_event, raw: unknown) => {
+  handleTrusted(IPC.credentialsRemove, async (_event, raw: unknown) => {
     const payload = raw as Partial<{ providerId: unknown }>
     if (typeof payload.providerId !== 'string' || payload.providerId.length === 0) {
       throw new Error('credentials:remove 需要 { providerId: string }')
     }
     store.remove(payload.providerId)
-    if (host.getStatus().state === 'running') {
-      await host.request('credentials.remove', { providerId: payload.providerId })
-    }
+    await host.applyCredential(payload.providerId)
     return { ok: true as const }
   })
 
-  ipcMain.handle(IPC.credentialsGet, (_event, raw: unknown) => {
+  handleTrusted(IPC.credentialsGet, (_event, raw: unknown) => {
     const payload = raw as Partial<{ providerId: unknown }>
     if (typeof payload.providerId !== 'string' || payload.providerId.length === 0) {
       throw new Error('credentials:get 需要 { providerId: string }')
@@ -48,13 +44,13 @@ export function registerCredentialsIpc(host: HostManager, store: CredentialStore
     return store.read(payload.providerId)
   })
 
-  ipcMain.handle(IPC.credentialsList, () => {
+  handleTrusted(IPC.credentialsList, () => {
     return store.listConfigured()
   })
 
   // 凭据链路健康状态：启动期降级（文件损坏/DPAPI 不匹配/safeStorage 不可用）
   // 的 UI 呈现源 —— 见 credentials/store.ts 文件头"损坏降级"
-  ipcMain.handle(IPC.credentialsStatus, () => {
+  handleTrusted(IPC.credentialsStatus, () => {
     return store.status()
   })
 }
