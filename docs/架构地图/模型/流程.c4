@@ -1,0 +1,224 @@
+// 专题机制流程图：与核心结构共用 LikeC4 模型语义与完成度标注。
+model {
+  flow = system '专题流程节点' {
+    // 1. 身份验证与权限流程
+    auth = system '身份验证与权限' {
+      stdio = component 'stdio 进程管道' { technology 'Electron main → Host' }
+      http = component 'HTTP 入口' { technology 'POST /rpc · /auth/exchange' }
+      ws = component 'WebSocket 入口' { technology 'GET /ws upgrade' }
+      userSys = component '用户系统' { technology '用户 token 签发' }
+      ticket = component '一次性票据兑换' { technology 'CapabilityStore · 30s TTL' }
+      verify = component 'Token 恒时验签' { technology 'HMAC-SHA256 · verifyToken' }
+      native = component 'Cogent 原生解析' { technology 'isRpcRequest' }
+      adapter = component '自定义协议适配' { technology '旧 /xxx/chat 转换' }
+      scope = component '方法 Scope 校验' { technology 'METHOD_ACCESS · scopeDenial' }
+      resource = component '资源归属授权' { technology '项目 · 会话权限' }
+      dispatch = component 'HostApi 分发' { technology 'handlers.get(method)' }
+
+      stdio -[call]-> native '本机信任身份'
+      http -[call]-> ticket '换取 token'
+      http -[call]-> verify 'Bearer 校验'
+      ws -[call]-> verify '握手 query token'
+      userSys -[call]-> verify '用户身份凭据' { #planned }
+      ticket -[call]-> verify '签发 scoped token'
+      verify -[call]-> native '原生调用'
+      verify -[call]-> adapter '自有协议调用' { #planned }
+      native -[call]-> scope '统一入站'
+      adapter -[call]-> scope '统一入站' { #planned }
+      scope -[call]-> resource '方法放行后查资源' { #planned }
+      resource -[call]-> dispatch '授权通过'
+    }
+
+    // 2. 消息与审批闭环流程
+    approval = system '消息与审批闭环' {
+      send = component '用户发送消息' { technology 'HomeChat · draft' }
+      ipc = component '通用引擎代理' { technology 'engine:request 白名单' }
+      submit = component '任务受理' { technology 'SessionManager.submit' }
+      piLoop = component 'PiSdkKernel 循环' { technology 'AgentSession 执行' }
+      hook = component '审批拦截钩子' { technology 'beforeToolCall · tool_call' }
+      decide = component '规则与档位判定' { technology 'decideApproval' }
+      pending = component '挂起审批表' { technology 'pendingApprovals' }
+      panel = component '审批面板裁决' { technology 'ApprovalPanel' }
+      respondIpc = component '专属审批通道' { technology 'approval:respond IPC' }
+      stream = component '流式事件推送' { technology 'stdout · WS → UI' }
+
+      send -[call]-> ipc '提交内容'
+      ipc -[call]-> submit 'agent.submit'
+      submit -[call]-> piLoop '启动回合与模型'
+      piLoop -[call]-> hook '写/执行工具前'
+      piLoop -[call]-> stream '推 delta / 终态'
+      hook -[call]-> decide '查 plan · mode · 规则'
+      decide -[call]-> pending 'ask 或越界挂起'
+      pending -[call]-> panel 'approval.request'
+      panel -[call]-> respondIpc '允许 / 拒绝 / 切档'
+      respondIpc -[call]-> decide 'resolve 工具调用'
+    }
+
+    // 3. MCP 双轨机制（消费外部 vs 对外暴露）
+    mcpFlow = system 'MCP 双轨机制' {
+      config = component '两级 MCP 配置' { technology 'user 定义 + project override' }
+      snapshot = component '会话启动快照' { technology 'buildPiSession 定格' }
+      ext = component 'pi MCP 扩展' { technology 'createMcpExtension' }
+      toolExec = component 'mcp__* 工具审批' { technology 'beforeToolCall exec 档' }
+
+      extAgent = component '外部 Agent' { technology 'Codex · Claude · zcode' }
+      server = component 'cogent-mcp 入口' { technology 'StdioServerTransport' }
+      cred = component '重读凭据文件' { technology '~/.cogent/mcp-access.json' }
+      bridge = component '两段式订阅调用' { technology '先 WS 订阅再 HTTP /rpc' }
+      hostApi = component 'HostApi 服务' { technology '14 个受控工具面' }
+
+      config -[call]-> snapshot '项目信任门过滤'
+      snapshot -[call]-> ext 'session_start 连后台'
+      ext -[call]-> toolExec '注册 direct 工具'
+
+      extAgent -[call]-> server 'stdio MCP 调用'
+      server -[call]-> cred '每次调用读取'
+      cred -[call]-> bridge 'Bearer + scope 校验'
+      bridge -[call]-> hostApi '转 Cogent 原生帧'
+    }
+
+    // 4. 技能加载机制
+    skills = system '技能加载机制' {
+      ui = component '设置页技能区' { technology 'SkillSection' }
+      store = component '技能配置写盘' { technology 'SkillStore · skills.save' }
+      files = component '四目录技能包' { technology '.cogent 两级 + .agents 只读' }
+      hook = component '回合前段钩子' { technology 'before_agent_start' }
+      snap = component '活快照与合并' { technology 'project 优先 · 启停求值' }
+      format = component '清单格式化' { technology '<available_skills> · 20k 预算' }
+      diff = component 'pi 提示词 Diff' { technology '变更才打补丁（热刷新）' }
+      consume = component '按需加载正文' { technology 'read 工具 / /skill: 展开' }
+
+      ui -[call]-> store 'engine:request'
+      store -[call]-> files '原子写与校验'
+      hook -[call]-> snap '每回合无缓存重扫'
+      files -[call]-> snap 'loadSkillsFromDir'
+      snap -[call]-> format '生成 XML 清单'
+      format -[call]-> diff '写入 sections.skills'
+      diff -[call]-> consume '模型按需读取'
+    }
+
+    // 5. 钩子与扩展机制
+    hooks = system '钩子与扩展机制' {
+      factory = component '会话装配入口' { technology 'buildPiSession' }
+      sections = component '系统提示段注入' { technology 'before_agent_start' }
+      approval = component '双路工具审批' { technology 'wrapApprovalChain + nested' }
+      cancel = component '请求取消守卫' { technology 'wrapRequestCancellation' }
+      observe = component '标量与产物钩子' { technology 'inspector · context · afterTool' }
+      nativeExt = component 'pi 原生扩展发现' { technology '.pi/extensions（默认存活）' }
+      plugins = component '本地插件分发层' { technology '决定 37 · manifest 包' }
+
+      factory -[call]-> sections '权限 · 计划 · 技能段'
+      factory -[call]-> approval '直接 + 嵌套共用桥'
+      factory -[call]-> cancel '前后查 signal'
+      factory -[call]-> observe '观测回调与产物声明'
+      factory -[call]-> nativeExt 'DefaultResourceLoader'
+      nativeExt -[call]-> plugins '接管安装与启停' { #planned }
+    }
+
+    // 6. 上下文压缩与转录机制
+    compaction = system '上下文压缩与转录' {
+      trigger = component '触发与溢出恢复' { technology 'ctx - reserve · overflow' }
+      adapt = component '小窗参数收敛' { technology 'adaptCompactionToWindow' }
+      summarize = component 'pi 摘要压缩' { technology 'AgentSession · compact' }
+      autoContinue = component '截断自动续写' { technology 'AUTO_CONTINUE ≤ 3' }
+      tree = component '保留式转录树' { technology 'pi/ JSONL · append-only' }
+      event = component '压缩事件与预警' { technology 'compaction.* · piTriggerRatio' }
+      llmProj = component '请求投影裁剪' { technology 'convertToLlmMessages' }
+      history = component '历史与换根回查' { technology 'readSessionBranch' }
+      search = component '派生搜索索引' { technology 'SessionSearchService' }
+
+      trigger -[call]-> adapt '按 ctx 收敛 reserve/keep'
+      adapt -[call]-> summarize 'prompt() 生命周期内置'
+      summarize -[call]-> autoContinue 'maxTokens 截断续写'
+      summarize -[call]-> tree '写入 compaction 条目'
+      summarize -[call]-> event '广播摘要与预警比例'
+      tree -[call]-> llmProj '折叠影子区进 LLM 请求'
+      tree -[call]-> history '重拉不删旧消息'
+      tree -[call]-> search 'revision 变更重索引'
+    }
+
+    // 7. 文件边界与产物交付机制
+    outputs = system '文件边界与产物交付' {
+      attach = component '附件导入与校验' { technology 'AttachmentService · SHA256' }
+      writeRoot = component '工作区根界判定' { technology 'matchingWriteRoots' }
+      remind = component '交付声明提醒' { technology 'context · afterToolCall' }
+      tool = component '模型申报产物' { technology 'report_outputs · model-only' }
+      stage = component '校验复制与暂存' { technology 'OutputsService.stage' }
+      commit = component '原子清单与副本' { technology 'outputs/v1/ · manifest.json' }
+      lease = component '工作区文件租约' { technology 'FileViewsService · OutputTarget' }
+      preview = component '安全预览与导出' { technology 'hash 校验 · 临时副本' }
+
+      attach -[call]-> writeRoot '附件只读引用隔离'
+      writeRoot -[call]-> remind '写文件后条件提醒'
+      remind -[call]-> tool '模型终答前申报'
+      tool -[call]-> stage '限额校验与分块复制'
+      stage -[call]-> commit 'afterToolCall + 终态复核'
+      commit -[call]-> lease 'outputs.resolve 登记'
+      lease -[call]-> preview '优先预览受管副本'
+    }
+
+    // 8. 凭据与模型出站机制
+    models = system '凭据与模型出站' {
+      safeStorage = component '系统密钥链加密' { technology 'CredentialStore · safeStorage' }
+      handshake = component '启动队列交接' { technology 'HostManager.initialize' }
+      overlay = component '内存密钥覆盖表' { technology 'CredentialRegistry' }
+      catalog = component '自定义目录与覆写' { technology 'CustomProviderRegistry' }
+      probe = component '模型连通性探测' { technology 'testModelConnectivity' }
+      dialect = component '三方言出站适配' { technology 'OpenAI · Responses · Anthropic' }
+      remote = component '远端模型 API' { technology 'HTTP 流式 SSE 响应' }
+      usage = component '用量与预算投影' { technology 'projectModelSummaries · usage' }
+
+      safeStorage -[call]-> handshake '开机 · 变更队列'
+      handshake -[call]-> overlay '代次校验入内存'
+      overlay -[configuration]-> dialect '按 provider 注入密钥'
+      overlay -[call]-> catalog 'models.list 仅传 keyConfigured'
+      catalog -[configuration]-> dialect '合并目录 · 覆写 baseUrl'
+      catalog -[call]-> probe '先等保存再发 hi 探测'
+      probe -[call]-> dialect '复用 streamSimple'
+      dialect -[call]-> remote '发送出站模型请求'
+      remote -[call]-> usage 'done / error · token 费用'
+    }
+  }
+}
+
+views {
+  view flowAuth {
+    title '身份验证与权限'
+    include flow.auth.*
+  }
+
+  view flowApproval {
+    title '消息与审批闭环'
+    include flow.approval.*
+  }
+
+  view flowMcp {
+    title 'MCP 双轨机制'
+    include flow.mcpFlow.*
+  }
+
+  view flowSkills {
+    title '技能加载机制'
+    include flow.skills.*
+  }
+
+  view flowHooks {
+    title '钩子与扩展机制'
+    include flow.hooks.*
+  }
+
+  view flowCompaction {
+    title '上下文压缩与转录'
+    include flow.compaction.*
+  }
+
+  view flowOutputs {
+    title '文件边界与产物交付'
+    include flow.outputs.*
+  }
+
+  view flowModels {
+    title '凭据与模型出站'
+    include flow.models.*
+  }
+}

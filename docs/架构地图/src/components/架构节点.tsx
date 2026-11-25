@@ -1,17 +1,15 @@
-/** 节点直接使用共享 shadcn 卡片与按钮，避免 LikeC4 shadow DOM 内的第二套 UI。 */
+/** 节点与关系渲染：使用自包含轻组件与 SVG 图标，支持状态过滤与连线契约点选。 */
 import { useEffect, useRef } from 'react'
 import { Handle, Position, type EdgeProps, type NodeProps } from '@xyflow/react'
-import { ArrowUpRight } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
-import type { ArchitectureEdge, ArchitectureNode } from '../布局适配'
+import type { ArchitectureEdge, ArchitectureNode } from '../网格布局'
 import { moduleDetails } from '../模块说明'
+import { ArrowUpRightIcon } from './图标'
 import { ImplementationBadge } from './实现标记'
 import { FeatureList } from './能力明细'
+import { Button, Card, CardHeader, CardTitle } from './UI'
 
 function useReturnFocus(onReturnFocus: (() => void) | undefined) {
   const button = useRef<HTMLButtonElement>(null)
-  // React Flow 在测量期间隐藏节点，等本节点实际可见再接回焦点。
   useEffect(() => {
     const target = button.current
     const wrapper = target?.closest('.react-flow__node')
@@ -33,53 +31,130 @@ function useReturnFocus(onReturnFocus: (() => void) | undefined) {
 export function ModuleNode({ id, data, selected }: NodeProps<ArchitectureNode>) {
   const { icon: Icon, features, showStatus, navigateOnClick } = moduleDetails[id]
   const button = useReturnFocus(data.onReturnFocus)
-  return <div className="architecture-node" data-selected={selected} data-status={data.status}>
-    <Handle type="target" position={Position.Left} />
-    <Card size="sm" className="h-full">
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <CardTitle>
-            <Button ref={button} variant="link" size="default" aria-label={`查看${data.title}`}>
-              {data.title}{navigateOnClick === true && <ArrowUpRight className="size-3" aria-hidden="true" />}
-            </Button>
-          </CardTitle>
-        </div>
-        {features !== undefined ? <FeatureList items={features} /> : <>
-          <p className="text-xs text-muted-foreground">{data.technology}</p>
-          <div className="flex h-5 items-center">{showStatus !== false && <ImplementationBadge status={data.status} />}</div>
-        </>}
-      </CardHeader>
-    </Card>
-    <Handle type="source" position={Position.Right} />
-  </div>
+  return (
+    <div
+      className="architecture-node"
+      data-selected={selected}
+      data-status={data.status}
+      data-tone={data.tone}
+      data-dimmed={data.dimmed}
+      data-highlighted={data.highlighted}
+    >
+      <Handle type="target" position={Position.Left} />
+      <Card size="sm" className="h-full">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Icon className="size-4 shrink-0 text-muted-foreground" />
+            <CardTitle>
+              <Button ref={button} variant="link" size="default" aria-label={`查看${data.title}`}>
+                {data.title}
+                {navigateOnClick === true && <ArrowUpRightIcon className="size-3 shrink-0" />}
+              </Button>
+            </CardTitle>
+          </div>
+          {features !== undefined ? (
+            <FeatureList items={features} />
+          ) : (
+            <>
+              <p className="pointer-events-none text-xs text-muted-foreground">{data.technology}</p>
+              <div className="pointer-events-none flex h-5 items-center">
+                {showStatus !== false && <ImplementationBadge status={data.status} />}
+              </div>
+            </>
+          )}
+        </CardHeader>
+      </Card>
+      <Handle type="source" position={Position.Right} />
+    </div>
+  )
 }
 
 export function BoundaryNode({ id, data }: NodeProps<ArchitectureNode>) {
-  const { icon: Icon, boundaryNote } = moduleDetails[id]
+  const { icon: Icon } = moduleDetails[id]
   const button = useReturnFocus(data.onReturnFocus)
-  return <div className="architecture-boundary">
-    <Handle type="target" position={Position.Left} />
-    <div className="architecture-boundary-heading">
-      <Icon className="size-4" aria-hidden="true" />
-      <Button ref={button} variant="ghost" size="sm" aria-label={`查看${data.title}`}>{data.title}</Button>
-      <span className="text-xs text-muted-foreground">{data.technology}</span>
+  return (
+    <div className="architecture-boundary" data-tone={data.tone} data-dimmed={data.dimmed}>
+      <Handle type="target" position={Position.Left} />
+      <div className="architecture-boundary-heading">
+        <Icon className="size-4 shrink-0" />
+        <Button ref={button} variant="ghost" size="sm" aria-label={`查看${data.title}`}>
+          {data.title}
+        </Button>
+        <span className="text-xs text-muted-foreground">{data.technology}</span>
+      </div>
+      {data.stages.map((stage) => (
+        <span key={stage.label} className="architecture-stage text-xs" style={{ left: stage.x, width: stage.width }}>
+          {stage.label}
+        </span>
+      ))}
+      {data.boundaryNote !== undefined && (
+        <p className="architecture-boundary-note text-xs text-muted-foreground">{data.boundaryNote}</p>
+      )}
+      <Handle type="source" position={Position.Right} />
     </div>
-    {data.stages.map(stage => <span key={stage.label} className="architecture-stage text-xs" style={{ left: stage.x, width: stage.width }}>{stage.label}</span>)}
-    {boundaryNote !== undefined && <p className="architecture-boundary-note text-xs text-muted-foreground">{boundaryNote}</p>}
-    <Handle type="source" position={Position.Right} />
-  </div>
+  )
 }
 
-export function RelationshipEdge({ id, data, label }: EdgeProps<ArchitectureEdge>) {
-  const { path, labelBox, crossings, bidirectional, planned, line, kind, head, tail } = data!
-  return <g className="architecture-relationship" data-planned={planned} data-bidirectional={bidirectional} data-line={line} data-kind={kind}>
-    {crossings.map(point => <circle key={`${point.x},${point.y}`} cx={point.x} cy={point.y} r={4} fill="var(--background)" data-crossing="true" />)}
-    <path id={id} d={path} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray={line === 'dotted' ? '1 5' : line === 'dashed' ? '5 4' : undefined} strokeLinecap={line === 'dotted' ? 'round' : undefined} markerEnd={head === 'none' ? undefined : `url(#architecture-arrow-${head ?? 'normal'})`} markerStart={tail === undefined || tail === 'none' ? undefined : `url(#architecture-arrow-${tail})`} />
-    {labelBox !== null && label && <g transform={`translate(${labelBox.x + labelBox.width / 2}, ${labelBox.y + labelBox.height / 2})`}>
-      <rect x={-labelBox.width / 2} y={-labelBox.height / 2} width={labelBox.width} height={labelBox.height} rx={4} />
-      {planned && <g role="img" aria-label="未实现关系" className="text-orange-600 dark:text-orange-400"><circle cx={-labelBox.width / 2 + 7} cy={0} r={2.5} fill="currentColor" /></g>}
-      <text x={planned ? 8 : 0} textAnchor="middle" dominantBaseline="central" className="text-xs">{label}</text>
-    </g>}
-  </g>
+export function RelationshipEdge({ id, data, label, selected }: EdgeProps<ArchitectureEdge>) {
+  const { path, labelBox, crossings, bidirectional, planned, dimmed, highlighted, line, kind, head, tail } = data!
+  return (
+    <g
+      className="architecture-relationship"
+      data-planned={planned}
+      data-bidirectional={bidirectional}
+      data-line={line}
+      data-kind={kind}
+      data-dimmed={dimmed}
+      data-highlighted={highlighted}
+      data-selected={selected}
+    >
+      {crossings.map((point) => (
+        <circle key={`${point.x},${point.y}`} cx={point.x} cy={point.y} r={4} fill="var(--background)" data-crossing="true" />
+      ))}
+      {/* 透明宽点击热区，方便直接点击连线查看边界契约。 */}
+      <path d={path} fill="none" stroke="transparent" strokeWidth="22" pointerEvents="stroke" className="react-flow__edge-interaction" />
+      {selected === true && (
+        <path
+          d={path}
+          fill="none"
+          pointerEvents="none"
+          stroke="color-mix(in srgb, var(--ring) 26%, transparent)"
+          strokeWidth="6"
+        />
+      )}
+      <path
+        id={id}
+        d={path}
+        fill="none"
+        pointerEvents="none"
+        stroke={selected === true ? 'var(--foreground)' : highlighted ? '#d97706' : 'currentColor'}
+        strokeWidth={selected === true ? '2.25' : '1.5'}
+        strokeDasharray={line === 'dotted' ? '1 5' : line === 'dashed' ? '5 4' : undefined}
+        strokeLinecap={line === 'dotted' ? 'round' : undefined}
+        markerEnd={head === 'none' ? undefined : `url(#architecture-arrow-${head ?? 'normal'})`}
+        markerStart={tail === undefined || tail === 'none' ? undefined : `url(#architecture-arrow-${tail})`}
+      />
+      {labelBox !== null && label && (
+        <g pointerEvents="all" transform={`translate(${labelBox.x + labelBox.width / 2}, ${labelBox.y + labelBox.height / 2})`}>
+          <rect
+            x={-labelBox.width / 2}
+            y={-labelBox.height / 2}
+            width={labelBox.width}
+            height={labelBox.height}
+            rx={4}
+            stroke={selected === true ? 'var(--ring)' : 'none'}
+            strokeWidth={selected === true ? 1 : 0}
+          />
+          {planned && (
+            <g role="img" aria-label="未实现关系" className="text-orange-600 dark:text-orange-400">
+              <circle cx={-labelBox.width / 2 + 7} cy={0} r={2.5} fill="currentColor" />
+            </g>
+          )}
+          <text x={planned ? 8 : 0} textAnchor="middle" dominantBaseline="central" className="text-xs">
+            {label}
+          </text>
+        </g>
+      )}
+    </g>
+  )
 }

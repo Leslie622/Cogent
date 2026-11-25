@@ -4,16 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "layout": "node ../../scripts/layout-architecture.mjs",
-    "predev": "npm run layout",
     "dev": "vite --host 127.0.0.1",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "pretest": "npm run layout",
     "test": "vitest run",
     "pretest:browser": "npm run build",
     "test:browser": "node ../../scripts/check-architecture-browser.mjs",
-    "prebuild": "npm run layout",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },

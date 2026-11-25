@@ -1,4 +1,4 @@
-// 目标架构：结构、接线与视图在此维护；能力完成度与源码依据由模块说明统一维护。
+// 目标架构：结构、接线与视图在此维护；能力完成度、契约与源码依据由模块说明统一维护。
 specification {
   tag planned
   element system {
@@ -16,11 +16,11 @@ specification {
   }
   relationship configuration {
     line dashed
-    head none
+    head open
   }
   relationship assembly {
     line dashed
-    head none
+    head open
   }
   relationship dependency {
     line dotted
@@ -29,9 +29,61 @@ specification {
 }
 
 model {
-  desktop = component '主 UI 桌面壳' {
+  desktop = system '主 UI 桌面壳' {
     technology 'Electron · IPC'
+    description '桌面前端、Preload 白名单桥与 Electron 主进程，通过 stdio 驱动 Host。'
+
+    renderer = system 'Renderer 界面层' {
+      technology 'React · Zustand'
+      description '无 Node 权限；仅通过 window.cogent 白名单桥调用主进程。'
+
+      ui = component '主界面与设置' {
+        technology 'AppShell · HomeChat'
+        description '负责会话对话、设置页、审批面板与控制台呈现。'
+      }
+      workspace = component '多标签工作区' {
+        technology 'WorkspaceFrame'
+        description '常驻承载文件导航、代码/文档预览与内嵌浏览器面板。'
+      }
+    }
+
+    preload = system 'Preload 隔离桥' {
+      technology 'contextBridge'
+      description '显式暴露受限 API，隔离 renderer 与 Electron/Node。'
+
+      main = component '主窗口桥' {
+        technology 'preload/index.ts'
+        description '暴露 engineRequest、专属审批与凭据白名单接口。'
+      }
+      guest = component 'Guest 沙箱桥' {
+        technology 'preload/guest.ts'
+        description '仅注入可信 demo webview 的最小 SDK 能力。'
+      }
+    }
+
+    main = system 'Electron 主进程' {
+      technology 'Electron 40 · Node 24'
+      description '窗口生命周期、分域 IPC 校验、凭据加密与 Host 子进程托管。'
+
+      ipc = component '分域 IPC 路由' {
+        technology 'handleTrusted · engineRequest'
+        description '按域收窄调用来源与参数；审批与凭据写走专属通道。'
+      }
+      browser = component '浏览器与 Webview 硬化' {
+        technology 'BrowserTabRuntime'
+        description '强制沙箱、隔离 Partition 与来源策略。'
+      }
+      credentials = component '凭据加密存取' {
+        technology 'safeStorage'
+        description '负责宿主密钥的加密落盘与开机交接，明文不进 Host 磁盘。'
+      }
+      hostManager = component 'Host 进程管理' {
+        technology 'HostManager · Node 22'
+        description '定位自带 Node 22 并拉起 Host，维护 stdio 管道与重启恢复。'
+      }
+    }
   }
+
   nativeClients = component 'Cogent 原生调用' {
     technology 'UI · 远程服务'
     description '使用 Cogent 原生协议的 UI 或远程服务；按调用所用协议分类，不把远程等同于 UI。'
@@ -98,13 +150,13 @@ model {
     }
 
     services = system 'Host 服务层' {
-      technology '会话 · 项目 · 凭据 · 观测'
-      description '业务服务负责会话与任务生命周期、项目、凭据桥、观测和能力配置。'
+      technology '配置真源 · 会话 · 项目 · 凭据'
+      description '业务服务负责会话与任务生命周期、项目、凭据桥、观测和能力配置真源。'
       sessions = component '会话与任务' { technology '受理 · 取消 · 恢复' }
       projects = component '项目管理' { technology '工作区 · 会话归属' }
       credentials = component '凭据桥' { technology '宿主密钥注入' }
       observability = component '执行观测' { technology '事件 · 运行记录' }
-      configuration = component '能力配置' { technology '工具 · MCP · 技能 · 钩子' }
+      configuration = component '能力配置' { technology '管配置真源与快照（不跑模型）' }
     }
 
     runtime = system 'KernelRunner' {
@@ -122,8 +174,8 @@ model {
       }
 
       capabilities = system '执行能力' {
-        technology '工具 · MCP · 技能 · 钩子'
-        description '按 pi 官方工具和扩展形状装配 Agent 能力；含交互工具，子会话为预留。'
+        technology '运行时装配（消费能力配置）'
+        description '消费 Host 服务层能力配置快照，按 pi 官方工具和扩展形状装配进内核会话；含交互工具，子会话为预留。'
         tools = component '内置工具' { technology '文件 · 搜索 · 执行' }
         mcp = component 'MCP 工具' { technology '外部工具连接与装配' }
         skills = component '技能' { technology '知识与提示段加载' }
@@ -140,13 +192,56 @@ model {
 
     authentication -[call]<-> native 'Cogent 原生协议'
     authentication -[call]<-> adapter '适配调用方协议' { #planned }
-    native -[call]<-> policy '统一调用' { #planned }
+    native -[call]<-> policy '统一入站策略'
     adapter -[call]<-> policy '统一调用' { #planned }
-    policy -[call]<-> api '授权后执行'
-    api -[call]<-> services '业务调用与事件'
-    services -[configuration]-> runtime.capabilities '配置与治理'
-    services -[call]<-> runtime '会话驱动与事件'
-    runtime -[call]<-> provider '模型请求与流'
+    policy -[call]<-> api '方法入站分发'
+    api -[call]<-> services '业务 RPC ⇄ 事件'
+    services.configuration -[configuration]-> runtime.capabilities '配置快照供给'
+    services.sessions -[call]<-> runtime 'submit ⇄ delta/tool'
+    runtime.capabilities -[assembly]-> runtime.kernel '装配工具 · 段 · 钩子'
+    runtime -[call]<-> provider '方言适配 ⇄ SSE 流'
+  }
+
+  storageRoot = system 'COGENT_HOME（~/.cogent）' {
+    technology '单写者 · 原子写'
+    description '所有持久化文件集中在同一存储根下，按模块划分唯一写者，禁止跨进程双写。'
+
+    shellPrefs = component '壳偏好与授权' {
+      technology 'settings · grants · browser'
+      description 'Main 原子写入设置、文件目录授权与浏览器站点策略。'
+    }
+    credentials = component '加密凭据' {
+      technology 'credentials.json'
+      description 'safeStorage 密文存储；损坏或跨机恢复时显式提示，不静默清空。'
+    }
+    business = component '业务配置与规则' {
+      technology 'defaults · providers · mcp · skills'
+      description 'Host 独占管理的默认权限、自定义模型方言、审批规则与能力配置。'
+    }
+    sessions = component '会话摘要与项目' {
+      technology 'sessions/ · projects/'
+      description 'JsonStorageDriver 按单文档 JSON + .tmp 原子落盘，损坏文件旁置 .corrupt。'
+    }
+    outputs = component '交付产物库' {
+      technology 'outputs/v1/'
+      description '先保存字节副本与 sha256，再原子替换 manifest，与转录和附件分域。'
+    }
+    inspect = component '执行观测日志' {
+      technology 'inspect/*.jsonl'
+      description '追加式 JSONL，超限裁剪尾部；尽力落盘，绝不阻断对话。'
+    }
+    attachments = component '附件内容库' {
+      technology 'attachments/v1/'
+      description '按内容 SHA256 去重与记录元数据关联会话，草稿/会话释放后才回收对象。'
+    }
+    searchIndex = component '派生搜索索引' {
+      technology 'search/sessions-v1.sqlite'
+      description '单 worker 独占维护的 SQLite FTS5 + 短词派生库，损坏可直接重建。'
+    }
+    transcript = component 'pi 会话转录' {
+      technology 'pi/ JSONL 真源'
+      description '由 pi 内核在 message_end 追加；搜索与历史回查仅做只读解析。'
+    }
   }
 
   users = component '用户系统' {
@@ -159,8 +254,29 @@ model {
     description '既有模型 API 或需要保留契约的远端 /xxx/chat 服务。'
   }
 
+  // 桌面壳内部与接入链路
+  desktop.renderer.ui -[call]<-> desktop.preload.main 'window.cogent'
+  desktop.renderer.workspace -[call]<-> desktop.preload.guest 'guest SDK'
+  desktop.preload.main -[call]<-> desktop.main.ipc 'Electron IPC'
+  desktop.preload.guest -[call]<-> desktop.main.browser 'webview 策略'
+  desktop.main.ipc -[call]<-> desktop.main.credentials '凭据读写'
+  desktop.main.ipc -[call]<-> desktop.main.hostManager '引擎代理与审批'
+  desktop.main.hostManager -[call]<-> access.stdio 'IPC 转管道'
+  desktop.preload.guest -[call]<-> access.network 'HTTP/WS + token'
+
+  // 存储归属（单写者）
+  desktop.main -[call]-> storageRoot.shellPrefs '原子写'
+  desktop.main -[call]-> storageRoot.credentials 'safeStorage 写'
+  host.services -[call]-> storageRoot.business '业务配置写'
+  host.services -[call]-> storageRoot.sessions '单文档写'
+  host.services -[call]-> storageRoot.outputs '字节与清单写'
+  host.services -[call]-> storageRoot.inspect '追加落盘'
+  host.services -[call]-> storageRoot.attachments '对象与引用写'
+  host.services -[call]-> storageRoot.searchIndex 'worker 派生写'
+  host.runtime.kernel -[call]-> storageRoot.transcript 'append-only'
+
+  // 引擎总览主链与外围关系
   access.stdio -[call]<-> host.native '本机调用身份'
-  desktop -[call]<-> access.stdio 'IPC 转管道'
   nativeClients -[call]<-> access.network.http 'Cogent 原生协议'
   nativeClients -[call]<-> access.network.ws 'Cogent 原生协议'
   customClients -[call]<-> access.network.http '自定义协议' { #planned }
@@ -182,40 +298,42 @@ model {
 
 views {
   view overview {
-    title 'Cogent 目标架构'
+    title '架构总览'
     include desktop, nativeClients, customClients, externalAgent, mcp, access.*, host.*, host.runtime.*, models
+    include desktop -> access.stdio with { title 'IPC 转管道' }
     include mcp -> access.network with { title 'Cogent 原生协议' }
     include access.network -> host.authentication with { title '验证凭据' }
     include host.authentication -> host.native with { title '原生处理' }
     include host.authentication -> host.adapter with { title '协议转换' }
+    exclude desktop -> access.network
     exclude host.services -> host.runtime.capabilities
-    // 总览行列由 layout 脚本通过 LikeC4 布局提示约束，原生自动布局仍可独立使用。
-    autoLayout LeftRight 160 112 ortho
+    exclude host.services.configuration -> host.runtime.capabilities
+    exclude host.runtime.capabilities -> host.runtime.kernel
   }
 
-  view ingress of access {
-    title '接入、认证与协议适配'
-    include desktop, nativeClients, customClients, externalAgent, mcp, access.stdio, access.network.*, users, host.authentication, host.native, host.adapter, host.policy, host.api
-    autoLayout LeftRight 160 96 ortho
-  }
-
-  view execution of host {
-    title '执行、能力与出站适配'
-    include host.api, host.services, host.runtime.capabilities, host.runtime, host.runtime.*, host.provider, models
-    exclude host.services -> host.runtime.capabilities
-    autoLayout LeftRight 160 112 ortho
+  view desktopShell {
+    title '桌面壳内部'
+    include desktop.renderer, desktop.renderer.*, desktop.preload, desktop.preload.*, desktop.main, desktop.main.*, access.stdio, access.network
+    exclude desktop.main -> storageRoot.shellPrefs
+    exclude desktop.main -> storageRoot.credentials
   }
 
   view services {
-    title 'Host 服务层详情'
-    include host.api, host.services, host.services.*, host.runtime
-    exclude host.services -> host.runtime.capabilities
-    autoLayout LeftRight 160 112 ortho
+    title 'Host 服务层'
+    include host.api, host.services, host.services.*, host.runtime, host.runtime.capabilities
+    exclude host.services -> storageRoot.*
   }
 
   view capabilities {
-    title '执行能力详情'
-    include host.runtime.capabilities, host.runtime.capabilities.*
-    autoLayout LeftRight 160 112 ortho
+    title '执行能力'
+    include host.services.configuration, host.runtime, host.runtime.capabilities, host.runtime.capabilities.*, host.runtime.kernel
+    exclude host.services.configuration -> storageRoot.*
+  }
+
+  view storage {
+    title '数据与存储'
+    include desktop.main, host.services, host.runtime.kernel, storageRoot, storageRoot.*
+    exclude desktop.main -> access.stdio
+    exclude host.services -> host.runtime
   }
 }
