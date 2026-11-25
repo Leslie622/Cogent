@@ -90,6 +90,7 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 | hover / active | 玻璃外壳（header / app-sidebar）使用半透明柔光胶囊（`--chrome-hover` / `--chrome-active` + 微高光）；内容侧栏行使用单层磁吸滑动胶囊 `bg-accent-foreground/5` 随指针在行间平滑过渡（减少动画下即时切换）；active 保持清晰层级且不叠色加深 |
 | 行内小钮 | 原生 ghost（hover `bg-muted`）；侧栏搜索入口用 Button ghost-soft，与会话行同为 `bg-accent-foreground/5`；软叠由组件变体提供，不落在 Button 调用点 |
 | 文字 | 实色 token；次级 `muted-foreground`，placeholder `--placeholder`；层级靠实色深浅 |
+| 轻量浮层 | `Select` / `DropdownMenu` / `ContextMenu` / `Popover` / `Combobox` / `HoverCard` 在 `html[data-popover-glass]` 且支持 `backdrop-filter` 时使用 `.popover-glass`（浅色 `--popover-glass` 82% 白 / 深色 78% 暗底 + `blur(16px) saturate(1.4)`），子菜单用 `.popover-glass-sub`（浅 90% / 深 88%）防止嵌套发灰；关闭开关或不支持时自动回落实色 `bg-popover`。`Dialog` / `AlertDialog` / `CommandDialog` 与 `Tooltip` 保持实色本体 |
 | 语义色 | destructive 错误红；warning 琥珀 `oklch(0.666 0.155 70)`；chrome-accent 品牌蓝 `#0231fa` |
 | 聚焦 | `--focus-width: 1px` 内贴实线，浅色 `oklch(0.556 0 0)`、深色 `oklch(0.708 0 0)`，默认 150ms 淡入淡出。控件例外见[组件库与安装](#组件库与安装) |
 | 圆角 | 内容主体左上角 `--radius-xl`；输入卡 `InputGroup` composer 档 `rounded-2xl`（原生表单仍 `rounded-lg`）；发送/停止钮 `Button icon-sm` 原生圆角；其余按组件变体，信息区条只圆上两角 |
@@ -235,7 +236,7 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   文件预览使用右侧多标签工作区，布局与尺寸合同见本文“布局结构”；宽度变化保留节点与阅读状态。
   操作菜单沿用 shadcn，正文/代码字号使用共享消费点，预览不另外造字号档。
   Office纸张、表格与幻灯片内的字体/尺寸属于文件内容，保留原版式并限定作用域；不套应用字号或污染聊天。
-  lineNumbers 由外观设置「显示代码行号」驱动（默认关）、库内 animated、linkSafety
+  lineNumbers 由外观设置「显示代码行号」驱动（默认开，与标签页文件预览共用）、库内 animated、linkSafety
   弹窗关闭，Shiki 传 [github-light, github-dark] 双主题随 html.dark 切换；
   Tailwind 显式 `@source` 扫 Streamdown。深浅色三档（浅/深/跟随系统）切
   html.dark，初值 main.tsx 同步挂防闪白；代码长行换行走 html[data-code-wrap]

@@ -11,7 +11,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute('style')
   media.matches = false
   media.addEventListener.mockClear()
-  useAppearanceStore.setState({ uiFontSize: 14, codeFontSize: null, colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65, codeWrap: false, accent: 'default' })
+  useAppearanceStore.setState({ uiFontSize: 14, codeFontSize: null, colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65, popoverGlass: true, codeWrap: false, accent: 'default' })
 })
 
 afterEach(() => {
@@ -117,6 +117,20 @@ it.each([
   expect(useAppearanceStore.getState().codeFontSize).toBe(codeSize)
   expect(UI_FONT_SIZES).toEqual([11, 12, 13, 14, 15, 16])
   expect(CODE_FONT_SIZES).toEqual(Array.from({ length: 17 }, (_value, index) => index + 8))
+})
+
+it('浮层毛玻璃默认开启，切换即时投影到 html[data-popover-glass] 并持久留存', async () => {
+  unbind = bindAppearanceDom()
+  const root = document.documentElement
+  expect(root.hasAttribute('data-popover-glass')).toBe(true)
+  useAppearanceStore.getState().setPopoverGlass(false)
+  expect(root.hasAttribute('data-popover-glass')).toBe(false)
+  await useAppearanceStore.persist.rehydrate()
+  expect(useAppearanceStore.getState().popoverGlass).toBe(false)
+  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { popoverGlass: true }, version: 0 }))
+  window.dispatchEvent(new StorageEvent('storage', { key: 'cogent-appearance', storageArea: localStorage }))
+  await Promise.resolve()
+  expect(root.hasAttribute('data-popover-glass')).toBe(true)
 })
 
 it.each([

@@ -1,6 +1,7 @@
 /**
- * 设置 · 外观分区：「界面样式」（应用级：深浅色 / 主题色 / 界面字号 / 强调色）与
- * 「对话」（内容区：双字体 / 字号 / 内容主题 / 代码行号 / 换行）两组。
+ * 设置 · 外观分区：「界面样式」（应用级：深浅色 / 主题色 / 界面字号 / 强调色）、
+ * 「对话」（内容字体 / Markdown 主题）与「代码」（代码字体 / 代码字体大小 /
+ * 显示代码行号 / 长行自动换行）三组。
  * 偏好落 localStorage（appearance/theme 两个 persist store——
  * 纯渲染端视觉偏好不进 settings.json，theme store 先例定调）。
  * 对话内容主题（首个落地件，docs/技术笔记/对话内容主题.md）：下拉（内置
@@ -42,7 +43,8 @@ import {
   type ColorMode,
 } from '@/stores/appearance'
 import { FontPicker, readSystemFonts, type SystemFonts } from './FontPicker'
-import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
+import { SettingsGroup, SettingsLocateTarget, SettingsPage, SettingsRow } from './SettingsParts'
+import { SETTING_COPY } from './search/catalog'
 
 /** 明暗三档（UI 文案；system = 跟随 OS 设置） */
 const COLOR_MODES: Array<{ value: ColorMode; label: string }> = [
@@ -118,6 +120,8 @@ export function AppearanceSection() {
   const setInterfaceSkin = useAppearanceStore((s) => s.setInterfaceSkin)
   const shellOpacity = useAppearanceStore((s) => s.shellOpacity)
   const setShellOpacity = useAppearanceStore((s) => s.setShellOpacity)
+  const popoverGlass = useAppearanceStore((s) => s.popoverGlass)
+  const setPopoverGlass = useAppearanceStore((s) => s.setPopoverGlass)
   const backdropSupported = 'cogent' in window && Boolean(window.cogent.backdropSupported)
   const uiFontSize = useAppearanceStore((s) => s.uiFontSize)
   const setUiFontSize = useAppearanceStore((s) => s.setUiFontSize)
@@ -154,7 +158,11 @@ export function AppearanceSection() {
   return (
     <SettingsPage title="外观">
       <SettingsGroup label="界面样式">
-        <SettingsRow title="深色浅色" desc="应用界面的明暗模式；跟随系统时随操作系统设置切换">
+        <SettingsRow
+          searchId="appearance.color-mode"
+          title={SETTING_COPY['appearance.color-mode'].title}
+          desc={SETTING_COPY['appearance.color-mode'].desc}
+        >
           <Select
             value={colorMode}
             items={COLOR_MODES}
@@ -177,15 +185,19 @@ export function AppearanceSection() {
             </SelectContent>
           </Select>
         </SettingsRow>
-        <div className="space-y-3 px-5 py-4">
+        <SettingsLocateTarget searchId="appearance.interface-skin" className="space-y-3 px-5 py-4">
           <div>
-            <div className="text-sm font-medium">主题色</div>
-            <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">为头部和两侧栏添一点色彩，随深浅模式自动适配</div>
+            <div className="text-sm font-medium">{SETTING_COPY['appearance.interface-skin'].title}</div>
+            <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{SETTING_COPY['appearance.interface-skin'].desc}</div>
           </div>
           <InterfaceSkinPicker value={interfaceSkin} dark={isDark} onValueChange={setInterfaceSkin} />
-        </div>
+        </SettingsLocateTarget>
         {backdropSupported && (
-          <SettingsRow title="外壳不透明度" desc={`调节头部与两侧栏的透光程度，100% 时完全不透明（默认 ${DEFAULT_SHELL_OPACITY}%）`}>
+          <SettingsRow
+            searchId="appearance.shell-opacity"
+            title={SETTING_COPY['appearance.shell-opacity'].title}
+            desc={`调节头部与两侧栏的透光程度，100% 时完全不透明（默认 ${DEFAULT_SHELL_OPACITY}%）`}
+          >
             <div className="flex items-center gap-2">
               <span className="w-9 text-right text-xs text-muted-foreground tabular-nums">{shellOpacity}%</span>
               <Slider
@@ -212,7 +224,22 @@ export function AppearanceSection() {
             </div>
           </SettingsRow>
         )}
-        <SettingsRow title="界面字号" desc="统一调整界面文字，保留标题与小字层级；聊天正文沿用内容主题">
+        <SettingsRow
+          searchId="appearance.popover-glass"
+          title={SETTING_COPY['appearance.popover-glass'].title}
+          desc={SETTING_COPY['appearance.popover-glass'].desc}
+        >
+          <Switch
+            checked={popoverGlass}
+            onCheckedChange={setPopoverGlass}
+            aria-label="浮层毛玻璃"
+          />
+        </SettingsRow>
+        <SettingsRow
+          searchId="appearance.ui-font-size"
+          title={SETTING_COPY['appearance.ui-font-size'].title}
+          desc={SETTING_COPY['appearance.ui-font-size'].desc}
+        >
           <Select
             value={String(uiFontSize)}
             items={UI_FONT_SIZES.map((size) => ({ value: String(size), label: `${size} px` }))}
@@ -226,14 +253,19 @@ export function AppearanceSection() {
             </SelectContent>
           </Select>
         </SettingsRow>
-        <SettingsRow title="强调色" desc="链接、模式标识与分屏光带的点缀色">
+        <SettingsRow
+          searchId="appearance.accent"
+          title={SETTING_COPY['appearance.accent'].title}
+          desc={SETTING_COPY['appearance.accent'].desc}
+        >
           <AccentControl />
         </SettingsRow>
       </SettingsGroup>
       <SettingsGroup label="对话">
         <SettingsRow
-          title="内容字体"
-          desc="分别设置对话正文的英文和中文字体"
+          searchId="appearance.content-font"
+          title={SETTING_COPY['appearance.content-font'].title}
+          desc={SETTING_COPY['appearance.content-font'].desc}
         >
           <FontPicker
             label="内容字体"
@@ -246,52 +278,10 @@ export function AppearanceSection() {
             onSave={setContentFont}
           />
         </SettingsRow>
-        <SettingsRow title="代码字体" desc="分别设置代码块与行内代码的英文和中文字体">
-          <FontPicker
-            label="代码字体"
-            kind="code"
-            value={codeFont}
-            themeName={theme.name}
-            tokens={fontTokens}
-            systemFonts={systemFonts}
-            onOpen={loadSystemFonts}
-            onSave={setCodeFont}
-          />
-        </SettingsRow>
         <SettingsRow
-          title="代码字体大小"
-          desc="统一调整聊天代码块、工具输出和控制台代码；跟随主题时，未指定字号的代码使用 14px"
-        >
-          <Select
-            value={codeFontSize === null ? 'theme' : String(codeFontSize)}
-            items={[
-              { value: 'theme', label: FOLLOW_THEME },
-              ...CODE_FONT_SIZES.map((size) => ({ value: String(size), label: `${size} px` })),
-            ]}
-            onValueChange={(next) => {
-              // theme = 清覆盖（null）；档位 id 与档位表同源，越界不可达
-              if (next === null) return
-              setCodeFontSize(next === 'theme' ? null : Number(next))
-            }}
-          >
-            <SelectTrigger aria-label="代码字体大小" className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              <SelectGroup>
-                <SelectItem value="theme">{FOLLOW_THEME}</SelectItem>
-                {CODE_FONT_SIZES.map((size) => (
-                  <SelectItem key={size} value={String(size)}>
-                    {size} px
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-        <SettingsRow
-          title="Markdown 主题"
-          desc={importError ?? '对话内容的观感，主题包来自 Themd 主题工场'}
+          searchId="appearance.markdown-theme"
+          title={SETTING_COPY['appearance.markdown-theme'].title}
+          desc={importError ?? SETTING_COPY['appearance.markdown-theme'].desc}
         >
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -349,14 +339,72 @@ export function AppearanceSection() {
             </Button>
           </div>
         </SettingsRow>
-        <SettingsRow title="显示代码行号" desc="在对话内容的代码块左侧显示行号">
+      </SettingsGroup>
+      <SettingsGroup label="代码">
+        <SettingsRow
+          searchId="appearance.code-font"
+          title={SETTING_COPY['appearance.code-font'].title}
+          desc={SETTING_COPY['appearance.code-font'].desc}
+        >
+          <FontPicker
+            label="代码字体"
+            kind="code"
+            value={codeFont}
+            themeName={theme.name}
+            tokens={fontTokens}
+            systemFonts={systemFonts}
+            onOpen={loadSystemFonts}
+            onSave={setCodeFont}
+          />
+        </SettingsRow>
+        <SettingsRow
+          searchId="appearance.code-font-size"
+          title={SETTING_COPY['appearance.code-font-size'].title}
+          desc={SETTING_COPY['appearance.code-font-size'].desc}
+        >
+          <Select
+            value={codeFontSize === null ? 'theme' : String(codeFontSize)}
+            items={[
+              { value: 'theme', label: FOLLOW_THEME },
+              ...CODE_FONT_SIZES.map((size) => ({ value: String(size), label: `${size} px` })),
+            ]}
+            onValueChange={(next) => {
+              // theme = 清覆盖（null）；档位 id 与档位表同源，越界不可达
+              if (next === null) return
+              setCodeFontSize(next === 'theme' ? null : Number(next))
+            }}
+          >
+            <SelectTrigger aria-label="代码字体大小" className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectGroup>
+                <SelectItem value="theme">{FOLLOW_THEME}</SelectItem>
+                {CODE_FONT_SIZES.map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size} px
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+        <SettingsRow
+          searchId="appearance.code-line-numbers"
+          title={SETTING_COPY['appearance.code-line-numbers'].title}
+          desc={SETTING_COPY['appearance.code-line-numbers'].desc}
+        >
           <Switch
             checked={showLineNumbers}
             onCheckedChange={setShowLineNumbers}
             aria-label="显示代码行号"
           />
         </SettingsRow>
-        <SettingsRow title="长行自动换行" desc="代码内容过长时自动换行；关闭则横向滚动">
+        <SettingsRow
+          searchId="appearance.code-wrap"
+          title={SETTING_COPY['appearance.code-wrap'].title}
+          desc={SETTING_COPY['appearance.code-wrap'].desc}
+        >
           <Switch checked={codeWrap} onCheckedChange={setCodeWrap} aria-label="长行自动换行" />
         </SettingsRow>
       </SettingsGroup>

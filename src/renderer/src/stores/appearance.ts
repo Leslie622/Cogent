@@ -3,7 +3,7 @@
  * 与 theme store 同层定调：纯渲染端视觉偏好，不进引擎/协议/settings.json
  * （跨设备同步是真墙：引擎侧无设置同步通道）。
  * 消费点：共享 appearance-dom（明暗/皮肤/换行/强调色/字号，覆盖所有窗口）、
- * ToolCard / 轨迹与统计行（输出详细程度/过程请求详情/耗时精度）、markdown.tsx（lineNumbers / shikiTheme）、ChatTheme（isDark 选套 +
+ * ToolCard / 轨迹与统计行（输出详细程度/过程请求详情/耗时精度）、markdown.tsx（lineNumbers / shikiTheme）、TextPreview.tsx（showLineNumbers / codeWrap）、ChatTheme（isDark 选套 +
  * buildUserTokens 用户覆盖合并进编译）。
  * 持久化读取是信任边界（约定.md §1.1）：merge 校验字段形状，坏档回落默认。
  */
@@ -87,8 +87,10 @@ interface AppearanceState {
   interfaceSkin: InterfaceSkinId
   /** 主窗口外壳（头部与两侧栏）不透明度（40–100%，100% 即完全不透明） */
   shellOpacity: number
+  /** 轻量浮层（Select / 菜单 / Popover 等）毛玻璃效果（html[data-popover-glass] 门控；默认开） */
+  popoverGlass: boolean
   uiFontSize: number
-  /** 对话内容代码块行号（Streamdown lineNumbers prop；默认关 = 主流聊天惯例） */
+  /** 代码块与文件预览行号（默认开） */
   showLineNumbers: boolean
   /** 代码长行自动换行（html[data-code-wrap] 门控 → pre-wrap；默认关 = 横向滚动） */
   codeWrap: boolean
@@ -105,6 +107,7 @@ interface AppearanceState {
   setColorMode: (mode: ColorMode) => void
   setInterfaceSkin: (skin: InterfaceSkinId) => void
   setShellOpacity: (opacity: number) => void
+  setPopoverGlass: (enabled: boolean) => void
   setUiFontSize: (size: number) => void
   setShowLineNumbers: (show: boolean) => void
   setCodeWrap: (wrap: boolean) => void
@@ -164,8 +167,9 @@ export const useAppearanceStore = create<AppearanceState>()(
       colorMode: 'light',
       interfaceSkin: DEFAULT_INTERFACE_SKIN,
       shellOpacity: DEFAULT_SHELL_OPACITY,
+      popoverGlass: true,
       uiFontSize: DEFAULT_UI_FONT_SIZE,
-      showLineNumbers: false,
+      showLineNumbers: true,
       codeWrap: false,
       codeFontSize: null,
       contentFont: THEME_FONTS,
@@ -177,6 +181,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       setColorMode: (colorMode) => set({ colorMode }),
       setInterfaceSkin: (interfaceSkin) => set({ interfaceSkin }),
       setShellOpacity: (opacity) => set({ shellOpacity: clampShellOpacity(opacity) }),
+      setPopoverGlass: (popoverGlass) => set({ popoverGlass }),
       setUiFontSize: (uiFontSize) => set({ uiFontSize }),
       setShowLineNumbers: (showLineNumbers) => set({ showLineNumbers }),
       setCodeWrap: (codeWrap) => set({ codeWrap }),
@@ -205,11 +210,12 @@ export const useAppearanceStore = create<AppearanceState>()(
             raw.shellOpacity <= SHELL_OPACITY_MAX
               ? raw.shellOpacity
               : DEFAULT_SHELL_OPACITY,
+          popoverGlass: raw?.popoverGlass !== false,
           uiFontSize:
             typeof raw?.uiFontSize === 'number' && (UI_FONT_SIZES as readonly number[]).includes(raw.uiFontSize)
               ? raw.uiFontSize
               : DEFAULT_UI_FONT_SIZE,
-          showLineNumbers: raw?.showLineNumbers === true,
+          showLineNumbers: raw?.showLineNumbers !== false,
           codeWrap: raw?.codeWrap === true,
           // 字号是受控下拉写入的整数；越界/非整（手改档）按"跟随主题"处理
           codeFontSize:

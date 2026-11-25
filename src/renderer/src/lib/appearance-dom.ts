@@ -9,11 +9,12 @@ export function bindAppearanceDom(): () => void {
   // 其他平台（Win10 / macOS / Linux / 国产信创 / 关硬件加速）与子窗口保持实色渐变。
   const backdrop = window.location.hash === '' && 'cogent' in window && Boolean(window.cogent.backdropSupported)
   const apply = () => {
-    const { colorMode, interfaceSkin, shellOpacity, codeWrap, accent, uiFontSize, codeFontSize } = useAppearanceStore.getState()
+    const { colorMode, interfaceSkin, shellOpacity, popoverGlass, codeWrap, accent, uiFontSize, codeFontSize } = useAppearanceStore.getState()
     const dark = isDarkMode(colorMode, media.matches)
     root.classList.toggle('dark', dark)
     root.dataset.interfaceSkin = interfaceSkin
     root.toggleAttribute('data-backdrop', backdrop)
+    root.toggleAttribute('data-popover-glass', popoverGlass)
     const skin = interfaceSkinVariables(interfaceSkin, dark, backdrop, shellOpacity)
     root.style.setProperty('--chrome-surface', skin['--chrome-surface'])
     root.style.setProperty('--sidebar', skin['--sidebar'])
