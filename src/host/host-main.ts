@@ -137,7 +137,7 @@ async function main(): Promise<void> {
     delete: () => Promise.resolve(undefined),
     settled: () => Promise.resolve(undefined)
   }
-  const modelRuntime = await ModelRuntime.create({ credentials: emptyCredentialStore })
+  const modelRuntime = await ModelRuntime.create({ credentials: emptyCredentialStore, modelsPath: null })
   startup('恢复本地存储与会话')
 
   /** 引擎单例：凭据表 + 本地 JSON 存储 + 项目注册表 + 会话运行时（构造即恢复盘上数据） */

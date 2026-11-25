@@ -9,6 +9,7 @@ import type { ProjectSummary } from '@/env.d'
 interface ProjectState {
   projects: ProjectSummary[]
   loaded: boolean
+  loadError: string | null
   load: () => Promise<void>
   create: (name: string, cwds: string[]) => Promise<ProjectSummary>
   /** 编辑（改名 + 目录增删一次提交，project.update 全量替换语义） */
@@ -17,13 +18,29 @@ interface ProjectState {
   setPinned: (projectId: string, pinned: boolean) => Promise<void>
 }
 
+let inflightLoad: Promise<void> | null = null
+
 export const useProjectStore = create<ProjectState>((set) => ({
   projects: [],
   loaded: false,
+  loadError: null,
 
-  load: async () => {
-    const projects = await window.cogent.engineRequest('project.list', {})
-    set({ projects, loaded: true })
+  load: () => {
+    if (inflightLoad !== null) return inflightLoad
+    inflightLoad = window.cogent
+      .engineRequest('project.list', {})
+      .then(
+        (projects) => {
+          set({ projects, loaded: true, loadError: null })
+        },
+        (error: unknown) => {
+          set({ loadError: error instanceof Error ? error.message : String(error), loaded: false })
+        }
+      )
+      .finally(() => {
+        inflightLoad = null
+      })
+    return inflightLoad
   },
 
   create: async (name, cwds) => {

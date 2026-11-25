@@ -3,14 +3,20 @@
  * 左侧像素分栏使用useContentSidebarSplit；右侧工作区按像素留位/手动占满，
  * 切路由或宽窄布局均保留同一网页内容父节点。详见docs/UI布局.md。
  */
+import { lazy, Suspense } from 'react'
 import { SessionSearch } from '@/features/home/search/SessionSearch'
 import { AppHeader } from '@/features/shell/AppHeader'
 import { AppSidebar } from '@/features/shell/AppSidebar'
 import { HomeSidebar } from '@/features/home/HomeSidebar'
 import { HomeMain } from '@/features/home/HomeMain'
-import { SettingsSidebar } from '@/features/settings/SettingsSidebar'
-import { SettingsMain } from '@/features/settings/SettingsMain'
 import { SidebarResizeHandle } from '@/components/SidebarResizeHandle'
+
+const SettingsSidebar = lazy(() =>
+  import('@/features/settings/SettingsSidebar').then((m) => ({ default: m.SettingsSidebar }))
+)
+const SettingsMain = lazy(() =>
+  import('@/features/settings/SettingsMain').then((m) => ({ default: m.SettingsMain }))
+)
 import {
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
@@ -60,7 +66,9 @@ export function AppShell() {
                 {view === 'home' ? (
                   <HomeSidebar />
                 ) : view === 'settings' ? (
-                  <SettingsSidebar />
+                  <Suspense fallback={null}>
+                    <SettingsSidebar />
+                  </Suspense>
                 ) : (
                   <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
                     {VIEW_LABELS[view]}
@@ -88,7 +96,9 @@ export function AppShell() {
               {view === 'home' ? (
                 <HomeMain />
               ) : view === 'settings' ? (
-                <SettingsMain />
+                <Suspense fallback={null}>
+                  <SettingsMain />
+                </Suspense>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                   {VIEW_LABELS[view]}

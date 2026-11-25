@@ -13,8 +13,17 @@ const hash = window.location.hash
 const unbindAppearance = bindAppearanceDom()
 if (import.meta.hot) import.meta.hot.dispose(unbindAppearance)
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    {hash === '#console' ? <ConsoleApp /> : hash === '#embedded' ? <EmbeddedDemo /> : <App />}
-  </StrictMode>
-)
+const mount = () => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      {hash === '#console' ? <ConsoleApp /> : hash === '#embedded' ? <EmbeddedDemo /> : <App />}
+    </StrictMode>
+  )
+}
+
+// 主窗口先让出首帧合成提交，避免 React 初次挂载与 #startup-shell 的 GPU 动画抢同一帧。
+if (hash === '' && document.getElementById('startup-shell') !== null) {
+  requestAnimationFrame(() => requestAnimationFrame(mount))
+} else {
+  mount()
+}

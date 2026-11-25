@@ -4,9 +4,119 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cogent</title>
+    <style>
+      html[data-cogent-skip-startup] #startup-shell {
+        display: none;
+      }
+      #startup-shell {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        contain: strict;
+        isolation: isolate;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: oklch(1 0 0);
+        color: oklch(0.145 0 0);
+        will-change: opacity;
+        transform: translateZ(0);
+        transition: opacity 300ms ease-out;
+      }
+      html.dark #startup-shell {
+        background: oklch(0.145 0 0);
+        color: oklch(0.985 0 0);
+      }
+      #startup-shell[data-state='fading'] {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #startup-shell .cogent-startup-spinner {
+        width: 16px;
+        height: 16px;
+        transform-origin: center;
+        will-change: transform;
+        backface-visibility: hidden;
+        animation: cogent-startup-spin 1s linear infinite;
+      }
+      #startup-shell .cogent-startup-spinner > svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      @keyframes cogent-startup-spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #startup-shell {
+          transition: none;
+        }
+        #startup-shell .cogent-startup-spinner {
+          animation: none;
+        }
+      }
+    </style>
+    <script>
+      ;(() => {
+        const root = document.documentElement
+        const hash = window.location.hash
+        if (hash === '#console' || hash === '#embedded') {
+          root.setAttribute('data-cogent-skip-startup', '')
+          return
+        }
+        let colorMode = 'light'
+        try {
+          const raw = localStorage.getItem('cogent-appearance')
+          if (raw) {
+            const parsed = JSON.parse(raw)
+            const mode = parsed && parsed.state && parsed.state.colorMode
+            if (mode === 'dark' || mode === 'system' || mode === 'light') colorMode = mode
+          }
+        } catch {}
+        const dark =
+          colorMode === 'dark' ||
+          (colorMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        root.classList.toggle('dark', dark)
+      })()
+    </script>
   </head>
   <body class="antialiased">
     <div id="root"></div>
+    <div
+      id="startup-shell"
+      data-slot="startup-overlay"
+      data-state="loading"
+      role="status"
+      aria-busy="true"
+      aria-label="正在初始化引擎"
+    >
+      <div class="cogent-startup-spinner" aria-hidden="true">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+        </svg>
+      </div>
+    </div>
+    <script>
+      ;(() => {
+        const shell = document.getElementById('startup-shell')
+        if (shell) shell.dataset.shownAt = String(performance.now())
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

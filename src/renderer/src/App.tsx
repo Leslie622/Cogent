@@ -11,14 +11,16 @@ import { useErrorToast } from '@/hooks/use-error-toast'
 import { useScrollbarAutoHide } from '@/hooks/use-scrollbar-auto-hide'
 import { useEngineStore } from '@/stores/engine'
 import { bindEngineEvents, useChatStore } from '@/stores/chat'
+import { useProjectStore } from '@/stores/project'
 import { AppShell } from '@/features/shell/AppShell'
 import { CloseAskDialog } from '@/features/shell/CloseAskDialog'
 
-/** 引擎链路失败横幅：engine store 与 chat store 任一初载失败即出（同源：引擎不可用） */
+/** 引擎链路失败横幅：engine / chat / project store 任一初载失败即出（同源：引擎不可用） */
 function EngineFailureBanner() {
   const engineError = useEngineStore((s) => s.engineError)
   const chatError = useChatStore((s) => s.loadError)
-  const failure = engineError ?? chatError
+  const projectError = useProjectStore((s) => s.loadError)
+  const failure = engineError ?? chatError ?? projectError
   // 诊断补充：宿主侧引擎状态（失败原因/Node 版本）。getStatus 此前在 renderer
   // 零消费（空挂的声明），现在随横幅接上 —— 只在失败时查一次
   const [statusDetail, setStatusDetail] = useState<string | null>(null)
@@ -48,7 +50,11 @@ function EngineFailureBanner() {
           void (async () => {
             const status = await window.cogent.getStatus()
             if (status.state !== 'running') await window.cogent.restartHost()
-            await Promise.all([useEngineStore.getState().load(), useChatStore.getState().load()])
+            await Promise.all([
+              useEngineStore.getState().load(),
+              useChatStore.getState().load(),
+              useProjectStore.getState().load()
+            ])
             const id = useChatStore.getState().activeSessionId
             if (id) await useChatStore.getState().selectSession(id)
           })().catch(error => useEngineStore.setState({ engineError: String(error) }))
@@ -71,10 +77,11 @@ export default function App() {
     // （load 内部已把失败落 error 状态，void 不产生 unhandled rejection）
     const unbind = bindEngineEvents()
     let active = true
-    // 等待完整 load（含配置/模型读取与首个会话历史），不把中途 loaded 标志当作完成。
+    // 等待完整 load（配置/模型、项目目录与首个会话历史），Overlay 退场即可直接交互。
     void Promise.all([
       useEngineStore.getState().load(),
-      useChatStore.getState().load()
+      useChatStore.getState().load(),
+      useProjectStore.getState().load()
     ]).then(() => {
       if (active) setStartupPending(false)
     })

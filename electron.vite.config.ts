@@ -34,17 +34,37 @@ export default defineConfig({
   // host 与主进程同管线构建（产物 out/main/host.js），但运行时由独立
   // Node 拉起（自带 resources/runtime 官方 node22，三级链见
   // src/electron/main/host/runtime.ts），与 Electron 内置 Node 无关。
-  // coding-agent 与 TypeBox 合并，消除首次安装时数百个同步文件打开；pi-ai 与
-  // 厂商 SDK 保持 external，沿用同一份方言懒加载缓存。资源 URL 由上方插件保留。
+  // coding-agent、TypeBox 与纯 JS 依赖合并，消除首次安装时数百个同步文件打开；
+  // pi-ai、厂商 SDK、含原生/路径定位的包（pi-tui/codemode/telemetry/jiti/quickjs/photon）
+  // 保持 external，沿用同一份方言懒加载缓存与原生二进制路径。资源 URL 由上方插件保留。
   // mcp = 对外 MCP Server（阶段 5a）：外部 MCP 客户端 stdio spawn 的独立
   // 入口（out/main/mcp.js），与 host 同管线同 node22 —— 不经 Electron。
   main: {
     plugins: [preservePiModuleUrls()],
     build: {
       externalizeDeps: {
-        exclude: ['@earendil-works/pi-coding-agent', 'typebox'],
-        include: ['@earendil-works/pi-tui', '@earendil-works/pi-codemode', '@earendil-works/pi-telemetry',
-          'jiti', 'quickjs-wasi', '@silvia-odwyer/photon-node', 'highlight.js', 'lovely-mermaid']
+        exclude: [
+          '@earendil-works/pi-coding-agent',
+          'typebox',
+          'zod',
+          'hono',
+          '@hono/node-server',
+          'ws',
+          'diff',
+          'image-size',
+          'ignore',
+          'cross-spawn',
+          'highlight.js',
+          'lovely-mermaid'
+        ],
+        include: [
+          '@earendil-works/pi-tui',
+          '@earendil-works/pi-codemode',
+          '@earendil-works/pi-telemetry',
+          'jiti',
+          'quickjs-wasi',
+          '@silvia-odwyer/photon-node'
+        ]
       },
       rollupOptions: {
         input: {

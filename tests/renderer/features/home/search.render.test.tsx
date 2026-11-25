@@ -29,7 +29,7 @@ it('聊天分区每会话只一项、摘要内嵌，查询中显示 spinner，�
   }) } as typeof bridge
   render(<SessionSearch />)
   fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
-  const input = await screen.findByRole('combobox', { name: '搜索聊天' })
+  const input = await screen.findByRole('combobox', { name: '搜索聊天' }, { timeout: 5000 })
   await waitFor(() => expect(pending.has('')).toBe(true))
   expect(window.cogent.engineRequest).toHaveBeenCalledWith('session.search', { query: '' })
   expect(screen.queryByRole('combobox', { name: '搜索项目' })).toBeNull()

@@ -482,9 +482,9 @@ export function HomeSidebar() {
     [selectSession]
   )
 
-  // project store 初载（chat store 由 App 挂载时 load；项目此前无入口，这里补）
+  // project store 初载（App 启动已并发拉取；此处只在未加载时兜底，避免重复请求）
   useEffect(() => {
-    void loadProjects()
+    if (!useProjectStore.getState().loaded) void loadProjects()
   }, [loadProjects])
 
   // 首个项目默认展开：只在项目列表**首次落定**时补一次（ref 锁），此后展开集
