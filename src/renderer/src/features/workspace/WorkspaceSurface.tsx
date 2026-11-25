@@ -13,6 +13,7 @@ import { WORKSPACE_COLLAPSE_WIDTH, WORKSPACE_DEFAULT_WIDTH, resizeWorkspace, wor
 import { acquireFile, releaseFile, restoreFileSource } from './file-client'
 import { invalidateFileNavigators } from './file-navigator-owner'
 import { useWorkspaceRuntime, registerTabClose, releaseHeldTab, closeWorkspaceTab, cycleWorkspaceTab } from './runtime'
+import { WorkspaceAnimatingContext } from './motion'
 import { clearLegacyWorkspaceCache } from './legacy-cache'
 import type { BrowserState } from '@shared/browser'
 
@@ -77,7 +78,28 @@ export function WorkspaceSurface({ contentWidth, visible }: { contentWidth: numb
   const wasOpen = useRef(false)
   const opener = useRef<HTMLElement | null>(null)
   const isOpen = visible && !scope.collapsed && !autoCollapsed
+  const [entered, setEntered] = useState(!isOpen)
   const [present, setPresent] = useState(isOpen)
+  const [animating, setAnimating] = useState(false)
+  const prevOpen = useRef(false)
+  useLayoutEffect(() => {
+    if (entered) return
+    const frame = window.requestAnimationFrame(() => setEntered(true))
+    return () => window.cancelAnimationFrame(frame)
+  }, [entered])
+  useLayoutEffect(() => {
+    if (isOpen && !prevOpen.current) {
+      setAnimating(true)
+      prevOpen.current = true
+      const timer = window.setTimeout(() => setAnimating(false), 220)
+      return () => window.clearTimeout(timer)
+    }
+    if (!isOpen) {
+      prevOpen.current = false
+      setAnimating(false)
+    }
+    return undefined
+  }, [isOpen])
   useLayoutEffect(() => {
     if (isOpen) { setPresent(true); return }
     // 先完成裁剪收起，再隐藏查看器；内容保持原宽，不随动画逐帧换行。
@@ -145,14 +167,14 @@ export function WorkspaceSurface({ contentWidth, visible }: { contentWidth: numb
     })
     return () => { window.removeEventListener('keydown', command); offBrowser() }
   }, [visible, showError])
-  const width = workspaceWidth(contentWidth, scope.collapsed || autoCollapsed, scope.expanded, scope.width)
+  const width = entered ? workspaceWidth(contentWidth, scope.collapsed || autoCollapsed, scope.expanded, scope.width) : 0
   const contentSize = workspaceWidth(contentWidth, false, scope.expanded, scope.width)
   // 排序头与内容次序解耦，包括草稿迁移与 DownloadHold；React 始终复用同一 keyed 节点。
   const all = [...new Map([...Object.values(scopes).flatMap(s => s.tabs), ...Object.values(held)].map(tab => [tab.id, tab])).values()]
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
   const show = visible && (isOpen || present)
   const activeTab = scope.tabs.find(tab => tab.id === scope.activeId)
-  return <aside ref={root} aria-label="多标签工作区" aria-hidden={!isOpen} data-workspace data-home-tabs data-workspace-mode={scope.expanded ? 'expanded' : 'split'} inert={!isOpen} className="absolute inset-y-0 right-0 z-20 min-h-0 border-l border-border bg-background transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width, visibility: show ? 'visible' : 'hidden', pointerEvents: isOpen ? 'auto' : 'none' }}>
+  return <aside ref={root} aria-label="多标签工作区" aria-hidden={!isOpen} data-workspace data-home-tabs data-workspace-mode={scope.expanded ? 'expanded' : 'split'} inert={!isOpen} className="absolute inset-y-0 right-0 z-20 min-h-0 border-l border-border bg-background transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width, visibility: show ? 'visible' : 'hidden', pointerEvents: isOpen ? 'auto' : 'none' }} onTransitionEnd={event => { if (event.target === root.current && event.propertyName === 'width') setAnimating(false) }}>
     {isOpen && !scope.expanded && <SidebarResizeHandle key={scopeId} side="right" label="调整工作区宽度" className="absolute inset-y-0 -left-px z-30" min={WORKSPACE_COLLAPSE_WIDTH} max={Math.max(WORKSPACE_COLLAPSE_WIDTH, contentWidth - 160)} collapseThreshold={WORKSPACE_COLLAPSE_WIDTH}
       readWidth={() => root.current!.getBoundingClientRect().width}
       writeWidth={px => {
@@ -171,8 +193,10 @@ export function WorkspaceSurface({ contentWidth, visible }: { contentWidth: numb
     {show && <WorkspaceTabs tabs={scope.tabs} activeId={scope.activeId} expanded={scope.expanded} onError={showError} />}
     {error !== null && <div role="alert" className="flex items-center gap-2 border-b border-border p-2 text-xs"><span className="min-w-0 flex-1 break-words">{error}</span><Button variant="ghost" size="xs" onClick={() => setError(null)}>关闭</Button></div>}
     <div className="min-h-0 flex-1 overflow-hidden">
-      <FileWorkspacePane tabs={all.filter(tab => tab.kind === 'file' || tab.kind === 'files')} scopeId={scopeId} projectId={scope.projectId} sessionId={scopeId.startsWith('draft:') ? undefined : scopeId} grantIds={scope.grantIds} active={show && (activeTab?.kind === 'file' || activeTab?.kind === 'files')} activeTabId={scope.activeId}
-        onContextChange={({ grantIds }) => useWorkspaceStore.getState().setGrants(scopeId, grantIds)} />
+      <WorkspaceAnimatingContext.Provider value={animating}>
+        <FileWorkspacePane tabs={all.filter(tab => tab.kind === 'file' || tab.kind === 'files')} scopeId={scopeId} projectId={scope.projectId} sessionId={scopeId.startsWith('draft:') ? undefined : scopeId} grantIds={scope.grantIds} active={show && (activeTab?.kind === 'file' || activeTab?.kind === 'files')} activeTabId={scope.activeId}
+          onContextChange={({ grantIds }) => useWorkspaceStore.getState().setGrants(scopeId, grantIds)} />
+      </WorkspaceAnimatingContext.Provider>
       {all.filter(tab => tab.kind === 'start' || tab.kind === 'browser').map(tab => <WorkspacePanel key={tab.id} tab={tab} active={show && tab.scopeId === scopeId && tab.id === scope.activeId && held[tab.id] === undefined} />)}
     </div>
     </div></div>

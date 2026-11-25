@@ -18,7 +18,7 @@ interface TabBase { id: string; scopeId: string; title: string; createdAt: numbe
 export type WorkspaceTab =
   | (TabBase & { kind: 'start' })
   | (TabBase & { kind: 'files' })
-  | (TabBase & { kind: 'file'; source: FileTabSource; resourceKey: string; navigation: number; navigationMode?: 'current' })
+  | (TabBase & { kind: 'file'; source: FileTabSource; resourceKey: string; aliasKeys?: string[]; navigation: number; navigationMode?: 'current' })
   | (TabBase & { kind: 'browser'; url: string; privateGroupId?: string; history?: BrowserHistory; previewSource?: FileTabSource; favicon?: string | null; loading?: boolean })
 export interface WorkspaceScope {
   projectId?: string
@@ -135,7 +135,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     openFile: (source, scopeId) => {
       const scope = get().scopes[scopeId] ?? initialScope()
       const resourceKey = sourceKey(source)
-      const existing = scope.tabs.find(t => t.kind === 'file' && t.resourceKey === resourceKey)
+      const existing = scope.tabs.find(t => t.kind === 'file' && (t.resourceKey === resourceKey || t.aliasKeys?.includes(resourceKey) === true))
       if (existing !== undefined) { get().activate(existing.id); return existing.id }
       const tab: WorkspaceTab = { id: crypto.randomUUID(), scopeId, createdAt: Date.now(), kind: 'file', source, resourceKey, navigation: 0, title: titleFor(source.target) }
       set(state => ({ activeScopeId: scopeId, autoCollapsed: false, scopes: { ...state.scopes, [scopeId]: insert(scope, tab) } }))
@@ -164,9 +164,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       const effectiveId = existing?.id ?? id
       const { relativeTo: _relativeTo, parentSource: _parent, refs: _refs, ...origin } = tab.source.scope
       const source: FileTabSource = { scope: { ...origin, refs: [] }, target: descriptor.path, ...(descriptor.delivery === undefined ? {} : { outputTarget: descriptor.delivery.target }) }
-      const tabs = scope.tabs.filter(t => t.id !== id || existing === undefined).map(t => t.id === effectiveId && t.kind === 'file'
-        ? { ...t, title: descriptor.name, resourceKey, source, navigation: t.navigation + 1 }
-        : t)
+      const tabs = scope.tabs.filter(t => t.id !== id || existing === undefined).map(t => {
+        if (t.id !== effectiveId || t.kind !== 'file') return t
+        const aliasKeys = Array.from(new Set([...(t.aliasKeys ?? []), t.resourceKey, tab.resourceKey].filter(key => key !== resourceKey)))
+        return { ...t, title: descriptor.name, resourceKey, aliasKeys, source, navigation: t.navigation + 1 }
+      })
       set(state => ({ scopes: { ...state.scopes, [tab.scopeId]: { ...scope, tabs, activeId: scope.activeId === id ? effectiveId : scope.activeId } } }))
       return effectiveId
     },

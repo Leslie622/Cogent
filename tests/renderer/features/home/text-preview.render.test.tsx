@@ -6,7 +6,11 @@ import type { ReactNode } from 'react'
 import { parseFileTarget } from '@shared/file-target'
 import TextPreview from '@/features/home/files/TextPreview'
 
-vi.mock('@/stores/appearance', () => ({ useIsDarkMode: () => false }))
+vi.mock('@/stores/appearance', () => ({
+  useIsDarkMode: () => false,
+  useAppearanceStore: (selector: (s: { showLineNumbers: boolean; codeWrap: boolean }) => unknown) =>
+    selector({ showLineNumbers: true, codeWrap: false }),
+}))
 vi.mock('@pierre/diffs/react', async () => {
   const React = await import('react')
   return {

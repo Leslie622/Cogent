@@ -120,4 +120,16 @@ describe('多标签工作区', () => {
     expect(restored.id).not.toBe(original)
     expect(restored).toMatchObject({ kind: 'browser', url: 'https://example.com' })
   })
+  it('已打开文件被规范化后，再次点击同一链接直接激活原标签不闪现重复页', () => {
+    const store = useWorkspaceStore.getState()
+    const source = { scope: { sessionId: 'chat-a', turnId: 'turn-1', refs: [] }, target: 'demo.js' }
+    const id = store.openFile(source, 'chat-a')
+    store.identifyFile(id, 'C:/Users/u/Desktop/demo.js', {
+      fileId: 'f1', serviceId: 'svc', path: 'C:/Users/u/Desktop/demo.js', name: 'demo.js',
+      kind: 'text', mime: 'text/javascript', size: 10, version: 'v1', source: 'current-workspace'
+    })
+    const secondId = store.openFile(source, 'chat-a')
+    expect(secondId).toBe(id)
+    expect(useWorkspaceStore.getState().scopes['chat-a'].tabs).toHaveLength(1)
+  })
 })

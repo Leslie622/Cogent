@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { File, Virtualizer, type FileOptions } from '@pierre/diffs/react'
 import type { FileLocation } from '@shared/files'
-import { useIsDarkMode } from '@/stores/appearance'
+import { useAppearanceStore, useIsDarkMode } from '@/stores/appearance'
 import { useFilePreviewStore } from '@/stores/file-preview'
 import { CodeSearch } from './visual/code-search'
 import { codeDocument, codeLineAt, codeLocation, EMPTY_CODE_QUERY, findCodeMatches, type CodeSearchQuery } from './visual/code-text'
@@ -21,6 +21,8 @@ function CodeDocument({ text, name, location, tabId, active = true }: TextPrevie
   // Pierre的扩展名表不含svg；它的源码是XML，显式指定才能获得与文档源码相同的高亮。
   const file = useMemo(() => ({ name, contents: source.contents, ...(/\.svg$/i.test(name) ? { lang: 'xml' as const } : {}) }), [name, source])
   const dark = useIsDarkMode()
+  const showLineNumbers = useAppearanceStore((s) => s.showLineNumbers)
+  const codeWrap = useAppearanceStore((s) => s.codeWrap)
   const highlightName = 'cogent-code-' + useId().replace(/[^a-zA-Z0-9-]/g, '')
   const [query, setQuery] = useState<CodeSearchQuery>(() => {
     const saved = tabId === undefined ? undefined : useFilePreviewStore.getState().views[tabId]
@@ -60,21 +62,22 @@ function CodeDocument({ text, name, location, tabId, active = true }: TextPrevie
   const changeQuery = (next: CodeSearchQuery) => { setQuery(next); setMatchIndex(-1) }
   const options = useMemo<FileOptions<undefined>>(() => ({
     disableFileHeader: true,
-    disableLineNumbers: false,
-    overflow: 'wrap',
+    disableLineNumbers: !showLineNumbers,
+    overflow: codeWrap ? 'wrap' : 'scroll',
     theme: { light: 'pierre-light', dark: 'pierre-dark' },
     themeType: dark ? 'dark' : 'light',
     preferredHighlighter: 'shiki-wasm',
     tokenizeMaxLineLength: 1000,
     useTokenTransformer: false,
     onPostRender: view.postRender,
-    unsafeCSS: `:host { --diffs-gap-block: 0px; } ::highlight(${highlightName}) { background-color: Mark; color: MarkText; } ::highlight(${highlightName}-selection) { background-color: Highlight; color: HighlightText; }`
-  }), [dark, highlightName, view.postRender])
+    unsafeCSS: `:host { --diffs-gap-block: 0px; } ${codeWrap ? '' : '[data-code] { overflow-x: visible; }'} ::highlight(${highlightName}) { background-color: Mark; color: MarkText; } ::highlight(${highlightName}-selection) { background-color: Highlight; color: HighlightText; }`
+  }), [codeWrap, dark, highlightName, showLineNumbers, view.postRender])
   const style = useMemo<CSSProperties>(() => ({ colorScheme: dark ? 'dark' : 'light' }), [dark])
   const selectedLines = useMemo(() => {
     const from = Math.min(view.selection.anchor, view.selection.head), to = Math.max(view.selection.anchor, view.selection.head)
+    if (from === to && location === undefined) return undefined
     return { start: codeLineAt(source, from) + 1, end: codeLineAt(source, to > from ? to - 1 : to) + 1 }
-  }, [source, view.selection])
+  }, [location, source, view.selection])
 
   return <div className="flex h-full min-h-0 flex-col select-text" data-code-preview onKeyDown={event => {
     if (active && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); setSearchOpen(true) }
@@ -82,7 +85,7 @@ function CodeDocument({ text, name, location, tabId, active = true }: TextPrevie
     {status !== null && <p role="status" className="px-3 py-2 text-xs">{status}</p>}
     {searchOpen && active && <CodeSearch query={query} onChange={changeQuery} count={result.matches.length} index={matchIndex} truncated={result.truncated} error={result.error} onMove={move} onClose={() => setSearchOpen(false)} />}
     <div ref={view.container} className="code-typography min-h-0 flex-1">
-      <Virtualizer className="h-full overflow-auto" contentClassName="min-h-full">
+      <Virtualizer className={codeWrap ? 'h-full overflow-auto' : 'scrollbar-native h-full overflow-auto'} contentClassName={codeWrap ? 'min-h-full' : 'min-h-full w-max min-w-full'}>
         <File key={view.lineHeight} file={file} options={options} metrics={view.metrics} selectedLines={selectedLines} className="min-h-full" style={style} />
       </Virtualizer>
     </div>

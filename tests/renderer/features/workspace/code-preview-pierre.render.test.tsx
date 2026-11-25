@@ -4,7 +4,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { preloadHighlighter, VirtualizedFile, Virtualizer } from '@pierre/diffs'
 import TextPreview from '@/features/home/files/TextPreview'
 
-vi.mock('@/stores/appearance', () => ({ useIsDarkMode: () => false }))
+vi.mock('@/stores/appearance', () => ({
+  useIsDarkMode: () => false,
+  useAppearanceStore: (selector: (s: { showLineNumbers: boolean; codeWrap: boolean }) => unknown) =>
+    selector({ showLineNumbers: true, codeWrap: false }),
+}))
 
 class IntersectionObserverStub {
   static instances: IntersectionObserverStub[] = []

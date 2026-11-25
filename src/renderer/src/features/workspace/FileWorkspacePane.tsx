@@ -1,9 +1,10 @@
 /** 全局文件工作面保留每个文件的内容父树；当前scope只显示一份导航与工具行。 */
-import { Fragment, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { File, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { projectFileRoots, type FileViewRoot } from '@shared/file-views'
 import { Button } from '@/components/ui/button'
 import { Hint } from '@/components/Hint'
+import { SidebarResizeHandle } from '@/components/SidebarResizeHandle'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { FilePanel, FileToolbar } from '@/features/home/files/FilePanel'
 import { useFilePreviewStore } from '@/stores/file-preview'
@@ -28,6 +29,10 @@ const normalizedPath = (path: string): string => path.replaceAll('\\', '/').repl
 const comparedPath = (path: string): string => /^[a-z]:/i.test(path) ? path.toLowerCase() : path
 const subscribeEmpty = (): (() => void) => () => undefined
 const emptySnapshot = (): null => null
+const FILE_SIDEBAR_DEFAULT_WIDTH = 224
+const FILE_SIDEBAR_MIN_WIDTH = 140
+const FILE_SIDEBAR_MAX_WIDTH = 480
+const FILE_PREVIEW_MIN_WIDTH = 160
 
 export function fileBreadcrumbs(projectName: string | undefined, roots: FileViewRoot[], path: string, name: string): string[] {
   const normalized = normalizedPath(path), comparison = comparedPath(normalized)
@@ -47,7 +52,23 @@ export function fileBreadcrumbs(projectName: string | undefined, roots: FileView
 
 export function FileWorkspacePane({ tabs, scopeId, projectId, sessionId, grantIds, active, activeTabId, onContextChange }: FileWorkspacePaneProps) {
   const [treeOpen, setTreeOpen] = useState(true)
+  const [sidebarWidth, setSidebarWidth] = useState(FILE_SIDEBAR_DEFAULT_WIDTH)
+  const [bodyWidth, setBodyWidth] = useState(0)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const sidebarRef = useRef<HTMLDivElement>(null)
   const breadcrumbRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const node = bodyRef.current
+    if (node === null || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => setBodyWidth(node.clientWidth))
+    setBodyWidth(node.clientWidth)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+  const maxSidebarWidth = bodyWidth > 0
+    ? Math.max(FILE_SIDEBAR_MIN_WIDTH, Math.min(FILE_SIDEBAR_MAX_WIDTH, bodyWidth - FILE_PREVIEW_MIN_WIDTH))
+    : FILE_SIDEBAR_MAX_WIDTH
+  const effectiveSidebarWidth = Math.min(sidebarWidth, maxSidebarWidth)
   const hasScopeFiles = tabs.some(tab => tab.scopeId === scopeId)
   const project = useProjectStore(state => state.projects.find(project => project.id === projectId))
   // 最后逻辑tab关闭会销毁registry中的owner；常驻面板重开时必须读取新owner。
@@ -89,11 +110,31 @@ export function FileWorkspacePane({ tabs, scopeId, projectId, sessionId, grantId
   </Breadcrumb>
   return <div data-file-workspace className="flex h-full min-h-0 min-w-0 flex-col" hidden={!active} inert={!active} style={{ display: active ? 'flex' : 'none' }}>
     <FileToolbar key={file === undefined ? 'files' : file.id + ':' + preview?.generation} tabId={file?.id ?? null} active={active} leading={toggle} label={breadcrumb} onChooseFile={owner === null ? undefined : () => void chooseFile()} choosingFile={snapshot?.opening} />
-    <div data-file-workspace-body className="flex min-h-0 min-w-0 flex-1">
-      <div data-file-sidebar data-file-workspace-sidebar hidden={!treeOpen} inert={!treeOpen} className="w-56 max-w-[45%] shrink-0 border-r" style={{ display: treeOpen ? 'block' : 'none' }}>
+    <div ref={bodyRef} data-file-workspace-body className="flex min-h-0 min-w-0 flex-1">
+      <div ref={sidebarRef} data-file-sidebar data-file-workspace-sidebar hidden={!treeOpen} inert={!treeOpen} className="shrink-0 overflow-hidden" style={{ display: treeOpen ? 'block' : 'none', width: effectiveSidebarWidth }}>
         {hasScopeFiles && <FileNavigator key={scopeId} scopeId={scopeId} projectId={projectId} sessionId={sessionId} grantIds={grantIds} active={active} title={projectName} selectedPath={path} onContextChange={onContextChange}
           onOpen={(contextId, path) => { void useFilePreviewStore.getState().navigate(activeTabId!, { contextId, refs: [], workspaceScopeId: scopeId }, path) }} />}
       </div>
+      {treeOpen && (
+        <SidebarResizeHandle
+          min={FILE_SIDEBAR_MIN_WIDTH}
+          max={maxSidebarWidth}
+          label="调整文件树宽度"
+          readWidth={() => sidebarRef.current?.getBoundingClientRect().width || effectiveSidebarWidth}
+          writeWidth={(px) => {
+            if (px === 0) {
+              setTreeOpen(false)
+              return
+            }
+            if (sidebarRef.current) sidebarRef.current.style.width = `${px}px`
+          }}
+          onCommit={(px) => {
+            if (px === 0) setTreeOpen(false)
+            else setSidebarWidth(px)
+          }}
+          onReset={() => setSidebarWidth(FILE_SIDEBAR_DEFAULT_WIDTH)}
+        />
+      )}
       <div data-file-workspace-preview className="min-h-0 min-w-0 flex-1">
         {tabs.map(tab => {
           const visible = active && tab.scopeId === scopeId && tab.id === activeTabId

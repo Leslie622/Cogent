@@ -225,4 +225,27 @@ describe('文件工作面组合', () => {
     expect(fileBreadcrumbs(undefined, [], '/tmp/外部/甲.png', '甲.png')).toEqual(['/', 'tmp', '外部', '甲.png'])
     expect(fileBreadcrumbs(undefined, [], '\\\\server\\共享\\甲.png', '甲.png')).toEqual(['//server', '共享', '甲.png'])
   })
+
+  it('文件树与预览区之间支持拖拽调节宽度、双击重置与收起', () => {
+    const clientWidthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800)
+    try {
+      const scope = 'draft:resize'
+      useWorkspaceStore.getState().setScope(scope)
+      const files = useWorkspaceStore.getState().openFiles(scope)
+      const view = render(<FileWorkspacePane {...props(scope, files)} />)
+      const sidebar = view.container.querySelector<HTMLElement>('[data-file-workspace-sidebar]')!
+      expect(sidebar.style.width).toBe('224px')
+
+      const handle = screen.getByRole('separator', { name: '调整文件树宽度' })
+      fireEvent.keyDown(handle, { key: 'ArrowRight' })
+      expect(sidebar.style.width).toBe('240px')
+      fireEvent.doubleClick(handle)
+      expect(sidebar.style.width).toBe('224px')
+
+      fireEvent.click(screen.getByRole('button', { name: '收起文件树' }))
+      expect(screen.queryByRole('separator', { name: '调整文件树宽度' })).not.toBeInTheDocument()
+    } finally {
+      clientWidthSpy.mockRestore()
+    }
+  })
 })

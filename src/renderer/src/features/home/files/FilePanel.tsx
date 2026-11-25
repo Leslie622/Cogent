@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-condition -- byTab/views 为稀疏动态索引，tsconfig 未启用 noUncheckedIndexedAccess。 */
 /** 每个文件标签显式消费自己的预览和查看状态；容器显隐不再拥有全局单槽。 */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { WorkspaceAnimatingContext } from '@/features/workspace/motion'
 import { File, Image, FileText, FileSpreadsheet, Music, Video, Folder, ChevronDown, Globe, ExternalLink, X } from 'lucide-react'
 import type { FileAction, FileKind } from '@shared/files'
 import { Button } from '@/components/ui/button'
@@ -190,9 +191,16 @@ export function FileToolbar({ tabId, active, leading, label, showClose = false, 
 
 export function FilePanel({ tabId, active, showHeader = true }: { tabId: string; active: boolean; showHeader?: boolean }) {
   const preview = useFilePreviewStore((state) => state.byTab[tabId])
+  const animating = useContext(WorkspaceAnimatingContext)
+  const [renderedOnce, setRenderedOnce] = useState(false)
   useEffect(() => {
     if (active && (preview === undefined || preview.evicted)) void useFilePreviewStore.getState().loadTab(tabId)
   }, [tabId, active, preview?.evicted])
+  const readyToRender = preview !== undefined && preview.descriptor !== null && !preview.evicted && (!preview.loading || preview.document !== null) && preview.error === null
+  const showContent = readyToRender && (renderedOnce || !animating)
+  useEffect(() => {
+    if (showContent && !renderedOnce) setRenderedOnce(true)
+  }, [showContent, renderedOnce])
   if (preview === undefined) return <div className="p-3 text-sm" role="status">正在准备文件…</div>
   const file = preview.descriptor
   return <aside className="flex h-full min-h-0 min-w-0 flex-col" aria-label="文件预览" data-file-preview data-file-tab-id={tabId} data-file-delivery={file?.delivery === undefined ? 'current' : 'saved'}>
@@ -201,7 +209,7 @@ export function FilePanel({ tabId, active, showHeader = true }: { tabId: string;
     {preview.loading && <p role="status" className="p-3 text-sm">正在读取当前文件…</p>}
     {preview.evicted && !preview.loading && <div className="p-3 text-sm"><p>预览内容已回收，阅读位置仍保留。</p><Button variant="ghost" size="sm" onClick={() => void useFilePreviewStore.getState().loadTab(tabId)}>恢复预览</Button></div>}
     <div className="min-h-0 flex-1 overflow-hidden"><Suspense fallback={<p className="p-3 text-sm">正在加载查看器…</p>}>
-      {file !== null && !preview.evicted && (!preview.loading || preview.document !== null) && preview.error === null && <FileContent key={preview.generation} preview={preview} active={active} />}
+      {showContent && <FileContent key={preview.generation} preview={preview} active={active} />}
     </Suspense></div>
   </aside>
 }

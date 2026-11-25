@@ -8,19 +8,25 @@ import { useFilePreviewStore } from '@/stores/file-preview'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 const harness = vi.hoisted(() => ({
-  dark: false, mounts: 0, unmounts: 0, first: 0, last: Infinity,
+  dark: false, showLineNumbers: true, codeWrap: false, mounts: 0, unmounts: 0, first: 0, last: Infinity,
   file: null as FileContents | null,
   options: null as FileOptions<undefined> | null,
   metrics: null as VirtualFileMetrics | null,
+  selectedLines: undefined as { start: number; end: number } | undefined,
   host: null as HTMLElement | null,
   instance: { top: 0, getLineHeight: vi.fn(() => 20), reconcileHeights: vi.fn() }
 }))
-vi.mock('@/stores/appearance', () => ({ useIsDarkMode: () => harness.dark }))
+vi.mock('@/stores/appearance', () => ({
+  useIsDarkMode: () => harness.dark,
+  useAppearanceStore: (selector: (s: { showLineNumbers: boolean; codeWrap: boolean }) => unknown) =>
+    selector({ showLineNumbers: harness.showLineNumbers, codeWrap: harness.codeWrap }),
+}))
 vi.mock('@pierre/diffs/react', async () => {
   const React = await import('react')
   return {
     Virtualizer: ({ children, className, contentClassName }: { children: ReactNode; className: string; contentClassName: string }) => <div className={className}><div className={contentClassName}>{children}</div></div>,
-    File: ({ file, options, metrics, className, style }: { file: FileContents; options: FileOptions<undefined>; metrics: VirtualFileMetrics; className: string; style: CSSProperties }) => {
+    File: ({ file, options, metrics, selectedLines, className, style }: { file: FileContents; options: FileOptions<undefined>; metrics: VirtualFileMetrics; selectedLines?: { start: number; end: number }; className: string; style: CSSProperties }) => {
+      harness.selectedLines = selectedLines
       const host = React.useRef<HTMLDivElement>(null)
       React.useLayoutEffect(() => {
         harness.mounts++
@@ -92,7 +98,7 @@ describe('Pierre 源码预览宿主', () => {
     expect(view.container.querySelector('[data-code-scroll]')).toHaveAttribute('aria-label', '源码内容')
     expect(view.container.querySelector('.cm-editor')).toBeNull()
     expect(harness.file).toMatchObject({ name: 'example.py', contents: "print('中文')\n\n" })
-    expect(harness.options).toMatchObject({ preferredHighlighter: 'shiki-wasm', disableLineNumbers: false, disableFileHeader: true, overflow: 'wrap', themeType: 'light' })
+    expect(harness.options).toMatchObject({ preferredHighlighter: 'shiki-wasm', disableLineNumbers: false, disableFileHeader: true, overflow: 'scroll', themeType: 'light' })
     expect(harness.metrics?.hunkLineCount).toBe(50)
     expect(view.container.querySelector('.code-typography')).toBeInTheDocument()
     harness.dark = true
@@ -185,5 +191,19 @@ describe('Pierre 源码预览宿主', () => {
     expect(scroll.scrollTop).toBe(432)
     view.unmount()
     expect((globalThis.CSS as typeof CSS & { highlights: Map<string, unknown> }).highlights.size).toBe(0)
+  })
+
+  it('响应显示代码行号与长行自动换行设置', () => {
+    harness.showLineNumbers = true
+    harness.codeWrap = false
+    const view = render(<TextPreview text={'line 1\nline 2'} name="example.py" active />)
+    expect(harness.options).toMatchObject({ disableLineNumbers: false, overflow: 'scroll' })
+    expect(harness.selectedLines).toBeUndefined()
+
+    harness.showLineNumbers = false
+    harness.codeWrap = true
+    view.rerender(<TextPreview text={'line 1\nline 2'} name="example.py" active location={{ line: 2, column: 2 }} />)
+    expect(harness.options).toMatchObject({ disableLineNumbers: true, overflow: 'wrap' })
+    expect(harness.selectedLines).toEqual({ start: 2, end: 2 })
   })
 })

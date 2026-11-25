@@ -23,6 +23,22 @@ export function WorkspaceFrame({ visible, autoCollapsed = false, children }: { v
   const shouldActivateSurface = (visible && !scope.collapsed && !temporarilyCollapsed) || scope.tabs.length > 0 || heldCount > 0
   const [surfaceMounted, setSurfaceMounted] = useState(shouldActivateSurface)
   if (shouldActivateSurface && !surfaceMounted) setSurfaceMounted(true)
+  useEffect(() => {
+    if (!visible || surfaceMounted) return
+    let cancelled = false
+    const warmup = () => {
+      if (cancelled) return
+      void import('./WorkspaceSurface')
+      void import('../home/files/TextPreview')
+      setSurfaceMounted(true)
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(warmup, { timeout: 1200 })
+      return () => { cancelled = true; window.cancelIdleCallback(id) }
+    }
+    const timer = window.setTimeout(warmup, 600)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [visible, surfaceMounted])
   useLayoutEffect(() => { useWorkspaceStore.getState().setAutoCollapsed(autoCollapsed) }, [autoCollapsed])
   useEffect(() => { useWorkspaceStore.getState().setScope(scopeId, projectId) }, [scopeId, projectId])
   useEffect(() => {
