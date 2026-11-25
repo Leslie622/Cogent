@@ -97,7 +97,7 @@ export function AppShell() {
                 <HomeMain />
               ) : view === 'settings' ? (
                 <Suspense fallback={null}>
-                  <SettingsMain />
+                  <SettingsMain sidebarCollapsed={sidebarCollapsed} />
                 </Suspense>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

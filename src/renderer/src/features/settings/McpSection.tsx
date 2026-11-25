@@ -43,6 +43,7 @@ import { unwrapIpcError } from '@/lib/ipc'
 import { parseImport } from './mcp-import'
 import { McpServerDialog } from './McpServerDialog'
 import { useProjectScope, type ProjectScope } from '@/hooks/use-project-scope'
+import { useSettingsStore } from '@/stores/settings'
 import type { McpExposure, McpServerDef, McpServerSummary } from '@/env.d'
 import { MediaBindingsSection } from './MediaBindingsSection'
 
@@ -122,7 +123,32 @@ function ImportDialog({
 const serversCache = new Map<string, McpServerSummary[]>()
 
 export function McpSection() {
-  const scopeState = useProjectScope()
+  const baseScope = useProjectScope()
+  const locateRequest = useSettingsStore((s) => s.locateRequest)
+  const clearLocate = useSettingsStore((s) => s.clearLocate)
+
+  // 搜索定位 MCP 用户级配置项时，先切到「本机 · 用户」作用域，再由列表加载后挂载目标行消费
+  useEffect(() => {
+    if (
+      locateRequest?.section === 'connections' &&
+      locateRequest.scope === 'user' &&
+      !locateRequest.consumed &&
+      baseScope.selectValue !== 'user'
+    ) {
+      baseScope.pick('user')
+    }
+  }, [locateRequest, baseScope])
+
+  const scopeState: ProjectScope = {
+    ...baseScope,
+    pick: (value) => {
+      if (locateRequest?.section === 'connections') {
+        clearLocate(locateRequest.token)
+      }
+      baseScope.pick(value)
+    },
+  }
+
   const scopeKey = JSON.stringify([scopeState.selectValue, scopeState.projectCwd])
   return <McpScope key={scopeKey} scopeKey={scopeKey} scopeState={scopeState} />
 }

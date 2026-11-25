@@ -25,6 +25,7 @@ import { Switch } from '@/components/ui/switch'
 import { playNotifySound } from '@/lib/notify'
 import { NOTIFY_SOUND_DEFAULTS, useEngineStore, type NotifyKind, type NotifyPatch } from '@/stores/engine'
 import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
+import { SETTING_COPY, type SettingItemId } from './search/catalog'
 
 const TURN_DONE_MODES: Array<{ value: 'always' | 'never' | 'unfocused'; label: string }> = [
   { value: 'always', label: '始终' },
@@ -33,7 +34,8 @@ const TURN_DONE_MODES: Array<{ value: 'always' | 'never' | 'unfocused'; label: s
 ]
 
 /** 三类声音源行共用（kind 决定读哪个文件字段） */
-function SoundFileRow({ kind, title, desc }: { kind: NotifyKind; title: string; desc: string }) {
+function SoundFileRow({ kind, searchId }: { kind: NotifyKind; searchId: SettingItemId }) {
+  const { title, desc } = SETTING_COPY[searchId]
   const file = useEngineStore((s) => s.notify[NOTIFY_SOUND_FILE_FIELDS[kind]])
   const setNotifySoundFile = useEngineStore((s) => s.setNotifySoundFile)
   const [saving, setSaving] = useState(false)
@@ -63,7 +65,7 @@ function SoundFileRow({ kind, title, desc }: { kind: NotifyKind; title: string; 
   }
 
   return (
-    <SettingsRow title={title} desc={desc}>
+    <SettingsRow searchId={searchId} title={title} desc={desc}>
       <div className="flex items-center gap-2">
         {/* 当前声音源：自定义文件名截断显示，缺省使用随应用分发的音频。 */}
         <span className="max-w-40 truncate text-xs text-muted-foreground">{name ?? '内置提示音'}</span>
@@ -104,8 +106,9 @@ export function NotificationsSection() {
     <SettingsPage title="通知">
       <SettingsGroup label="通知">
         <SettingsRow
-          title="轮次完成通知"
-          desc="设置 Agent 完成一轮后何时提醒你（失败同样按此提醒；自己中止不提醒）"
+          searchId="notifications.turn-done"
+          title={SETTING_COPY['notifications.turn-done'].title}
+          desc={SETTING_COPY['notifications.turn-done'].desc}
         >
           <Select
             value={notify.turnDoneNotify}
@@ -129,14 +132,22 @@ export function NotificationsSection() {
             </SelectContent>
           </Select>
         </SettingsRow>
-        <SettingsRow title="权限请求通知" desc="Agent 需要授权才能继续时提醒你">
+        <SettingsRow
+          searchId="notifications.approval"
+          title={SETTING_COPY['notifications.approval'].title}
+          desc={SETTING_COPY['notifications.approval'].desc}
+        >
           <Switch
             checked={notify.approvalNotify}
             onCheckedChange={(approvalNotify) => patch({ approvalNotify })}
             aria-label="权限请求通知"
           />
         </SettingsRow>
-        <SettingsRow title="等待回答通知" desc="Agent 等待你回答问题时提醒你">
+        <SettingsRow
+          searchId="notifications.question"
+          title={SETTING_COPY['notifications.question'].title}
+          desc={SETTING_COPY['notifications.question'].desc}
+        >
           <Switch
             checked={notify.questionNotify}
             onCheckedChange={(questionNotify) => patch({ questionNotify })}
@@ -146,14 +157,22 @@ export function NotificationsSection() {
       </SettingsGroup>
 
       <SettingsGroup label="提醒方式">
-        <SettingsRow title="系统通知" desc="以系统通知（toast）呈现提醒，点击可回到窗口">
+        <SettingsRow
+          searchId="notifications.toast"
+          title={SETTING_COPY['notifications.toast'].title}
+          desc={SETTING_COPY['notifications.toast'].desc}
+        >
           <Switch
             checked={notify.toastEnabled}
             onCheckedChange={(toastEnabled) => patch({ toastEnabled })}
             aria-label="系统通知"
           />
         </SettingsRow>
-        <SettingsRow title="播放提示音" desc="以应用内提示音呈现提醒（音源在下方「提示音」组配置）">
+        <SettingsRow
+          searchId="notifications.sound-enabled"
+          title={SETTING_COPY['notifications.sound-enabled'].title}
+          desc={SETTING_COPY['notifications.sound-enabled'].desc}
+        >
           <Switch
             checked={notify.soundEnabled}
             onCheckedChange={(soundEnabled) => patch({ soundEnabled })}
@@ -163,20 +182,21 @@ export function NotificationsSection() {
         {/* Linux 无统一通知设置入口（zcode 麦克风设置同款决定），整行不渲染 */}
         {!isLinux && (
           <SettingsRow
+            searchId="notifications.system-settings"
             title={
               systemNotifyOff ? (
                 <span className="flex flex-wrap items-center gap-1.5">
-                  系统通知设置
+                  {SETTING_COPY['notifications.system-settings'].title}
                   {/* 黄牌：OS 无变更事件（快照），明确查到系统层关了才亮 */}
                   <span className="rounded bg-amber-100 px-1 py-px text-xs font-normal text-amber-700 dark:bg-amber-400/15 dark:text-amber-400">
                     系统已关闭 Cogent 通知，请到系统设置中开启
                   </span>
                 </span>
               ) : (
-                '系统通知设置'
+                SETTING_COPY['notifications.system-settings'].title
               )
             }
-            desc="在系统中配置 Cogent 的通知行为（免打扰、横幅等）"
+            desc={SETTING_COPY['notifications.system-settings'].desc}
           >
             <Button
               variant="outline"
@@ -191,8 +211,9 @@ export function NotificationsSection() {
 
       <SettingsGroup label="提示音">
         <SettingsRow
-          title="音量"
-          desc={`默认 ${Math.round(NOTIFY_SOUND_DEFAULTS.soundVolume * 100)}%，内置提示音与自定义文件共用`}
+          searchId="notifications.sound-volume"
+          title={SETTING_COPY['notifications.sound-volume'].title}
+          desc={`默认 ${Math.round(NOTIFY_SOUND_DEFAULTS.soundVolume * 100)}%，${SETTING_COPY['notifications.sound-volume'].desc}`}
         >
           <div className="flex items-center gap-2">
             <Slider
@@ -218,7 +239,11 @@ export function NotificationsSection() {
             </Hint>
           </div>
         </SettingsRow>
-        <SettingsRow title="音调" desc="默认原音，调节内置提示音的高低（自定义文件不受影响）">
+        <SettingsRow
+          searchId="notifications.sound-pitch"
+          title={SETTING_COPY['notifications.sound-pitch'].title}
+          desc={SETTING_COPY['notifications.sound-pitch'].desc}
+        >
           <div className="flex items-center gap-2">
             <Slider
               value={[notify.soundPitch]}
@@ -243,9 +268,9 @@ export function NotificationsSection() {
             </Hint>
           </div>
         </SettingsRow>
-        <SoundFileRow kind="turn-done" title="轮次完成声音" desc="轮次完成/失败时的提示音" />
-        <SoundFileRow kind="approval" title="权限请求声音" desc="等待授权时的提示音" />
-        <SoundFileRow kind="question" title="等待回答声音" desc="等待回答时的提示音" />
+        <SoundFileRow kind="turn-done" searchId="notifications.sound-turn-done" />
+        <SoundFileRow kind="approval" searchId="notifications.sound-approval" />
+        <SoundFileRow kind="question" searchId="notifications.sound-question" />
       </SettingsGroup>
     </SettingsPage>
   )

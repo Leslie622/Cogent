@@ -8,10 +8,16 @@ import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SettingsGroup, SettingsRow } from './SettingsParts'
+import type { SettingItemId } from './search/catalog'
 import { unwrapIpcError } from '@/lib/ipc'
 import { useAttachmentStore } from '@/stores/attachments'
 
 const LABELS: Record<MediaCapability, string> = { image: '图片分析', video: '视频分析', document: '文档视觉分析' }
+const SEARCH_IDS: Record<MediaCapability, SettingItemId> = {
+  image: 'connections.media-image',
+  video: 'connections.media-video',
+  document: 'connections.media-document',
+}
 const EMPTY: MediaBinding = { server: '', tool: '', pathArgument: 'path', questionArgument: 'question', formats: [] }
 
 export function MediaBindingsSection({ servers }: { servers: McpServerSummary[] }) {
@@ -52,7 +58,7 @@ export function MediaBindingsSection({ servers }: { servers: McpServerSummary[] 
   return <>
     <SettingsGroup label="附件分析工具">
       <p className="px-5 py-4 text-sm text-muted-foreground">选择图片、视频和文档的分析服务。修改后新会话生效。</p>
-      {(Object.keys(LABELS) as MediaCapability[]).map((kind) => <SettingsRow key={kind} title={LABELS[kind]}
+      {(Object.keys(LABELS) as MediaCapability[]).map((kind) => <SettingsRow key={kind} searchId={SEARCH_IDS[kind]} title={LABELS[kind]}
         desc={bindings[kind] === undefined ? '未配置' : diagnostic(bindings[kind])}>
         <Button variant="outline" size="default" onClick={() => {
           const value = bindings[kind] ?? EMPTY

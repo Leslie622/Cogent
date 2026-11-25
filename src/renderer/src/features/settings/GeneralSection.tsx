@@ -19,6 +19,7 @@ import { useAppearanceStore, type OutputVerbosity } from '@/stores/appearance'
 import type { DurationPrecision } from '@/lib/format-duration'
 import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
 import { SessionTitleSettings } from './SessionTitleSettings'
+import { SETTING_COPY } from './search/catalog'
 
 /** 发送组合键三档（keys 供 kbd 键帽渲染；label 是兜底文案） */
 const SEND_SHORTCUTS: Array<{ value: SendShortcut; label: string; keys: string[] }> = [
@@ -89,8 +90,9 @@ export function GeneralSection() {
       {/* 权限组：默认权限开关，完整访问带风险说明的行属后续件 */}
       <SettingsGroup label="权限">
         <SettingsRow
-          title="默认权限"
-          desc="开启后新会话默认以完全访问运行（写操作无需确认）；关闭则新会话默认写入前询问"
+          searchId="general.default-permission"
+          title={SETTING_COPY['general.default-permission'].title}
+          desc={SETTING_COPY['general.default-permission'].desc}
         >
           <Switch
             checked={defaultPermissionMode === 'auto'}
@@ -103,8 +105,9 @@ export function GeneralSection() {
       <SettingsGroup label="对话">
         <SessionTitleSettings />
         <SettingsRow
-          title="输出详细程度"
-          desc="简洁模式隐藏工具和思考详情，以及 token、成本等底部统计信息"
+          searchId="general.output-verbosity"
+          title={SETTING_COPY['general.output-verbosity'].title}
+          desc={SETTING_COPY['general.output-verbosity'].desc}
         >
           <Select
             value={outputVerbosity}
@@ -128,8 +131,9 @@ export function GeneralSection() {
           </Select>
         </SettingsRow>
         <SettingsRow
-          title="显示过程请求详情"
-          desc="在详细模式下显示过程中每次请求的 token、缓存、成本和耗时；不影响最终总体统计"
+          searchId="general.process-usage"
+          title={SETTING_COPY['general.process-usage'].title}
+          desc={SETTING_COPY['general.process-usage'].desc}
         >
           <Switch
             checked={showProcessUsage}
@@ -138,8 +142,9 @@ export function GeneralSection() {
           />
         </SettingsRow>
         <SettingsRow
-          title="耗时显示格式"
-          desc="耗时自动显示为秒、分秒或小时分；此设置仅控制秒位的小数精度。"
+          searchId="general.duration-precision"
+          title={SETTING_COPY['general.duration-precision'].title}
+          desc={SETTING_COPY['general.duration-precision'].desc}
         >
           <Select
             value={durationPrecision}
@@ -166,8 +171,9 @@ export function GeneralSection() {
 
       <SettingsGroup label="常规">
         <SettingsRow
-          title="发送快捷键"
-          desc="在聊天输入框中按下所选组合键发送消息，其余 Enter 组合键换行"
+          searchId="general.send-shortcut"
+          title={SETTING_COPY['general.send-shortcut'].title}
+          desc={SETTING_COPY['general.send-shortcut'].desc}
         >
           {/* shadcn Select 原生形态（base-nova 版）；w-40 布局类定行控件宽
               （约定允许），w-fit 胶囊只包文字会塌成一小条 */}
@@ -196,8 +202,9 @@ export function GeneralSection() {
           </Select>
         </SettingsRow>
         <SettingsRow
-          title="关闭窗口时"
-          desc="设置关闭最后一个窗口时的行为；最小化将隐藏到系统托盘（引擎继续运行）"
+          searchId="general.close-behavior"
+          title={SETTING_COPY['general.close-behavior'].title}
+          desc={SETTING_COPY['general.close-behavior'].desc}
         >
           <Select
             value={closeBehavior}
@@ -222,8 +229,9 @@ export function GeneralSection() {
           </Select>
         </SettingsRow>
         <SettingsRow
-          title="Chrome 硬件加速"
-          desc="关闭后可规避部分显卡或驱动导致的白屏、闪退、渲染异常。修改后需重启应用生效。"
+          searchId="general.hardware-acceleration"
+          title={SETTING_COPY['general.hardware-acceleration'].title}
+          desc={SETTING_COPY['general.hardware-acceleration'].desc}
         >
           <Switch
             checked={hardwareAcceleration}

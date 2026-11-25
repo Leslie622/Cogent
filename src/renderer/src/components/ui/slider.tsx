@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { Slider as SliderPrimitive } from "@base-ui/react/slider"
 import { cn } from "cn"
 
@@ -51,6 +52,12 @@ function Slider<Value extends number | readonly number[]>({
    *  calc(12px + …) 公式按 inset 几何推导，center 模式下定位点会偏。 */
   thumbAlignment?: SliderPrimitive.Root.Props['thumbAlignment']
 }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setReady(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+
   const _values = Array.isArray(value)
     ? value
     : Array.isArray(defaultValue)
@@ -106,7 +113,11 @@ function Slider<Value extends number | readonly number[]>({
               height，届时按 orientation 补。 */}
           <SliderPrimitive.Indicator
             data-slot="slider-range"
-            className={cn('bg-primary transition-[width] select-none data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full', fillClassName)}
+            className={cn(
+              'bg-primary select-none data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full',
+              ready && 'transition-[width]',
+              fillClassName
+            )}
           />
           {marks?.map((mark) => (
             <span
@@ -138,7 +149,10 @@ function Slider<Value extends number | readonly number[]>({
             aria-label={thumbAriaLabel}
             getAriaValueText={getThumbAriaValueText}
             onKeyDown={thumbOnKeyDown}
-            className="relative block size-3 shrink-0 rounded-full border border-ring bg-white ring-ring/50 transition-[color,outline-color,box-shadow,inset-inline-start,transform] select-none after:absolute after:-inset-2 hover:ring-3 active:ring-3 disabled:pointer-events-none disabled:opacity-50"
+            className={cn(
+              "relative block size-3 shrink-0 rounded-full border border-ring bg-white ring-ring/50 select-none after:absolute after:-inset-2 hover:ring-3 active:ring-3 disabled:pointer-events-none disabled:opacity-50",
+              ready && "transition-[color,outline-color,box-shadow,inset-inline-start,transform]"
+            )}
           />
         ))}
       </SliderPrimitive.Control>

@@ -12,7 +12,8 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { unwrapIpcError } from '@/lib/ipc'
 import type { StorageUsageResult } from '@/env.d'
-import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsParts'
+import { SettingsGroup, SettingsLocateTarget, SettingsPage, SettingsRow } from './SettingsParts'
+import { SETTING_COPY } from './search/catalog'
 import { buildDetail, buildLegend, formatBytes } from './storage-view'
 
 /** IPC / 打开错误 → 文案（失败原样呈现给用户） */
@@ -69,7 +70,7 @@ export function StorageSection() {
   return (
     <SettingsPage title="存储" desc="应用数据占用的磁盘空间与存储位置">
       <SettingsGroup label="空间占用">
-        <div className="px-5 py-4">
+        <SettingsLocateTarget searchId="storage.usage" className="px-5 py-4">
           {/* 总量行：数值右置，刷新钮贴行尾（参考稿同位 —— 重扫动作就属于这行数据） */}
           <div className="flex items-center justify-between gap-4">
             <span className="text-sm">
@@ -111,24 +112,26 @@ export function StorageSection() {
             ))}
           </div>
           {error !== null && <div className="mt-3 text-xs text-destructive">{error}</div>}
-        </div>
+        </SettingsLocateTarget>
         {/* 明细折叠：不铺内部条目清单 —— 会话转录单列 + 「其他」聚合（用户定调） */}
         {detail.length > 0 && (
           <Collapsible open={detailOpen} onOpenChange={setDetailOpen}>
             {/* 裸 button 触发（组卡行内无库形态可套，归档组头同款基础档） */}
-            <CollapsibleTrigger
-              render={
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-1.5 px-5 py-3 text-sm text-muted-foreground outline-none hover:bg-muted/50"
+            <SettingsLocateTarget searchId="storage.detail">
+              <CollapsibleTrigger
+                render={
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-1.5 px-5 py-3 text-sm text-muted-foreground outline-none hover:bg-muted/50"
+                  />
+                }
+              >
+                占用明细
+                <IconChevronDown
+                  className={`size-[13px] transition-transform ${!detailOpen ? '-rotate-90' : ''}`}
                 />
-              }
-            >
-              占用明细
-              <IconChevronDown
-                className={`size-[13px] transition-transform ${!detailOpen ? '-rotate-90' : ''}`}
-              />
-            </CollapsibleTrigger>
+              </CollapsibleTrigger>
+            </SettingsLocateTarget>
             {/* 导航变体承载 200ms 高度+透明度过渡（归档组同款）；变体内层的
                 pt-0.5 行间隙是给侧栏悬停行备的，明细卡自带 border-t 贴着触发行，
                 归零覆盖防 2px 透缝 */}
@@ -153,7 +156,8 @@ export function StorageSection() {
 
       <SettingsGroup label="数据文件夹">
         <SettingsRow
-          title="应用数据文件夹"
+          searchId="storage.data-folder"
+          title={SETTING_COPY['storage.data-folder'].title}
           desc={
             // 路径是本页最常被复制的内容：放开选择 + 等宽换行展示全文
             <span className="select-text break-all font-mono">{usage.root}</span>

@@ -201,3 +201,27 @@ it('不支持系统材质的平台隐藏外壳不透明度滑杆', () => {
   render(<AppearanceSection />)
   expect(screen.queryByRole('group', { name: '外壳不透明度' })).not.toBeInTheDocument()
 })
+
+it('代码设置独立成组，默认显示行号且不换行，重读缺省或无效值时保留默认行号', async () => {
+  useAppearanceStore.setState({ showLineNumbers: true, codeWrap: false })
+  render(<AppearanceSection />)
+  const codeHeading = screen.getByText('代码')
+  const chatHeading = screen.getByText('对话')
+  expect(chatHeading.compareDocumentPosition(codeHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  const lineNumbers = screen.getByRole('switch', { name: '显示代码行号' })
+  const wordWrap = screen.getByRole('switch', { name: '长行自动换行' })
+  expect(lineNumbers).toHaveAttribute('aria-checked', 'true')
+  expect(wordWrap).toHaveAttribute('aria-checked', 'false')
+
+  fireEvent.click(lineNumbers)
+  fireEvent.click(wordWrap)
+  expect(useAppearanceStore.getState()).toMatchObject({ showLineNumbers: false, codeWrap: true })
+
+  localStorage.setItem(storageKey, JSON.stringify({ state: { showLineNumbers: false }, version: 0 }))
+  await act(() => useAppearanceStore.persist.rehydrate())
+  expect(useAppearanceStore.getState().showLineNumbers).toBe(false)
+
+  localStorage.setItem(storageKey, JSON.stringify({ state: {}, version: 0 }))
+  await act(() => useAppearanceStore.persist.rehydrate())
+  expect(useAppearanceStore.getState().showLineNumbers).toBe(true)
+})

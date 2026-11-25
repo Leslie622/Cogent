@@ -1,21 +1,80 @@
 /**
  * 设置页通用件（件 7 定风格，所有设置分区共用）：
- *   SettingsPage  —— 详情页骨架（限宽单列 + 大标题 + 描述/工具行，zcode 对齐）
- *   SettingsHeader —— 页头块（标题/描述/工具行），页头边距是模板量，全分区一致
- *   SettingsGroup —— 组标题 + 圆角描边卡片（行间 divide-y 细分隔线）
- *   SettingsRow  —— 左标题+描述、右控件的横行（desc 可带内联链接）
- * 控件本体（Switch / 下拉 / 按钮）由各分区自行组合，通用件不锁死 ——
- * 后续分区（外观/浏览器/技能…）照此拼装即可保持同一风格，不各自手写页头
- * （2026-11-15 用户指令：详情页布局模块化；模型设置是唯一例外——master-detail
- * 自撑布局，主体卡与页头同列宽，页头同样走 SettingsHeader）。
+ *   SettingsPage         —— 详情页骨架（限宽单列 + 大标题 + 描述/工具行）
+ *   SettingsHeader       —— 页头块（标题/描述/工具行），全分区一致
+ *   SettingsGroup        —— 组标题 + 圆角描边卡片（行间 divide-y 细分隔线）
+ *   SettingsRow          —— 左标题+描述、右控件的横行（可选 searchId 接入搜索定位）
+ *   SettingsLocateTarget —— 供非标准行（如主题色、存储统计块）共用的定位与高亮容器
  */
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
+import { cn } from 'cn'
+import { useSettingsStore } from '@/stores/settings'
+import type { SettingItemId } from './search/catalog'
+
+const HIGHLIGHT_DURATION_MS = 2600
+
+export function useSettingsLocate(searchId?: SettingItemId) {
+  const ref = useRef<HTMLDivElement>(null)
+  const locateRequest = useSettingsStore((s) => s.locateRequest)
+  const consumeLocate = useSettingsStore((s) => s.consumeLocate)
+  const clearLocate = useSettingsStore((s) => s.clearLocate)
+
+  const isTarget = searchId !== undefined && locateRequest?.itemId === searchId
+  const token = isTarget ? locateRequest.token : null
+  const consumed = isTarget ? locateRequest.consumed : false
+
+  useEffect(() => {
+    if (!isTarget || token === null || consumed) return
+    const el = ref.current
+    if (el === null) return
+
+    el.scrollIntoView({ block: 'center' })
+    el.focus({ preventScroll: true })
+    consumeLocate(token)
+  }, [isTarget, token, consumed, consumeLocate])
+
+  // 定位后保持清晰提示数秒再自动淡出，避免长期停留在当前页时残留底色
+  useEffect(() => {
+    if (!isTarget || token === null) return
+    const timer = window.setTimeout(() => {
+      clearLocate(token)
+    }, HIGHLIGHT_DURATION_MS)
+    return () => window.clearTimeout(timer)
+  }, [isTarget, token, clearLocate])
+
+  return { ref, highlighted: isTarget }
+}
+
+export function SettingsLocateTarget({
+  searchId,
+  className,
+  children,
+}: {
+  searchId: SettingItemId
+  className?: string
+  children: ReactNode
+}) {
+  const { ref, highlighted } = useSettingsLocate(searchId)
+  return (
+    <div
+      ref={ref}
+      tabIndex={-1}
+      data-search-id={searchId}
+      data-search-highlighted={highlighted ? 'true' : undefined}
+      className={cn(
+        'outline-none transition-colors duration-500',
+        highlighted && 'bg-chrome-accent/[0.08] dark:bg-chrome-accent/[0.14]',
+        className,
+      )}
+    >
+      {children}
+    </div>
+  )
+}
 
 /**
  * 设置详情页骨架：所有分区共用（不各自拼头部）。单列限宽容器 + 大标题
- * （居左主标题阶）+ 可选描述行（正文阶，2026-11-20 用户指令从小字阶上调）+
- * 可选工具行（计数/动作钮，zcode MCP 页同位）。zcode 各设置页同款骨架：
- * 标题必在、描述按需、内容 = 若干 SettingsGroup 卡片垂直排。
+ * + 可选描述行 + 可选工具行。
  */
 export function SettingsPage({
   title,
@@ -36,9 +95,7 @@ export function SettingsPage({
   )
 }
 
-/** 页头块（标题/描述/工具行）单独成件：页头列位与上、左右边距是全分区
-    统一的模板量 —— 模型设置不走 SettingsPage 容器（master-detail 自撑），
-    但页头必须复用本件，切页时标题不跳位 */
+/** 页头块（标题/描述/工具行）单独成件 */
 export function SettingsHeader({
   title,
   desc,
@@ -59,10 +116,7 @@ export function SettingsHeader({
   )
 }
 
-/** 设置分组：标题（可省 —— 列表卡直接顶格）+ 可选标题行右侧动作区（zcode
-    「已安装 N … [刷新][新建]」同位）+ 卡片容器；divide-y 出行间 1px 线（首行无线）。
-    mt-8 同时承担"页头 → 第一个内容"与组间距 —— 两处统一 32px，各分区的
-    状态卡（加载/空/无匹配）也按此间距对齐，不再各自手写 */
+/** 设置分组：标题 + 可选标题行右侧动作区 + 卡片容器 */
 export function SettingsGroup({
   label,
   actions,
@@ -81,9 +135,6 @@ export function SettingsGroup({
           {actions !== undefined && <div className="flex items-center gap-1">{actions}</div>}
         </div>
       )}
-      {/* 圆角 lg 档（2026-11-20 用户定调）：与原生 Input/Button 同阶，不再用 xl 大容器档。
-          overflow-hidden：全宽行（存储页明细触发器等）hover 铺底时按卡圆角裁齐，
-          否则直角底色顶出圆角；焦点轮廓是内贴实线不受裁剪，浮层走 portal 不在裁剪面 */}
       <div className="mt-3 flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border">
         {children}
       </div>
@@ -91,19 +142,30 @@ export function SettingsGroup({
   )
 }
 
-/** 设置行：左 = 正文阶标题（可带内联徽标 → ReactNode）+ 小字阶描述（灰，
-    可换行带链接），右 = 控件 */
+/** 设置行：左 = 正文阶标题 + 小字阶描述，右 = 控件；可选 searchId 接入定位与高亮 */
 export function SettingsRow({
+  searchId,
   title,
   desc,
   children,
 }: {
+  searchId?: SettingItemId
   title: ReactNode
   desc?: ReactNode
   children: ReactNode
 }) {
+  const { ref, highlighted } = useSettingsLocate(searchId)
   return (
-    <div className="flex flex-col items-stretch gap-3 px-5 py-4 @min-[36rem]/settings:flex-row @min-[36rem]/settings:items-center @min-[36rem]/settings:gap-6">
+    <div
+      ref={ref}
+      tabIndex={searchId !== undefined ? -1 : undefined}
+      data-search-id={searchId}
+      data-search-highlighted={highlighted ? 'true' : undefined}
+      className={cn(
+        'flex flex-col items-stretch gap-3 px-5 py-4 outline-none transition-colors duration-500 @min-[36rem]/settings:flex-row @min-[36rem]/settings:items-center @min-[36rem]/settings:gap-6',
+        highlighted && 'bg-chrome-accent/[0.08] dark:bg-chrome-accent/[0.14]',
+      )}
+    >
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">{title}</div>
         {desc && (
