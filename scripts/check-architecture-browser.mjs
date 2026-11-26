@@ -20,7 +20,7 @@ const views = [
   { name: 'MCP 双轨机制', id: 'flowMcp', nodes: 9, edges: 7 },
   { name: '技能加载机制', id: 'flowSkills', nodes: 8, edges: 7 },
   { name: '钩子与扩展机制', id: 'flowHooks', nodes: 7, edges: 6 },
-  { name: '上下文压缩与转录', id: 'flowCompaction', nodes: 9, edges: 8 },
+  { name: '上下文工程与压缩转录', id: 'flowCompaction', nodes: 15, edges: 12 },
   { name: '文件边界与产物交付', id: 'flowOutputs', nodes: 8, edges: 7 },
   { name: '凭据与模型出站', id: 'flowModels', nodes: 8, edges: 9 },
 ]

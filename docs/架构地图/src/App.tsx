@@ -1,9 +1,9 @@
 /** 三栏阅读界面：左侧为「架构地图 + 专题流程」导航，中栏画布，右栏职责/契约/来源说明。 */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
-import type { ViewFilterMode } from './网格布局'
+import type { DetailMode, ViewFilterMode } from './网格布局'
 import { getEdgeDetail, moduleDetails, viewDetails, type EdgeDetail } from './模块说明'
-import { drilldownViewIds, viewGroups, viewIds, viewNames, type ViewId } from './视图'
+import { drilldownViewIds, flowCodeViewMap, viewGroups, viewIds, viewNames, type ViewId } from './视图'
 import { ArchitectureCanvas } from './components/架构画布'
 import { IconButton } from './components/图标按钮'
 import { ModulePanel } from './components/模块面板'
@@ -17,7 +17,7 @@ import {
   SunIcon,
   WorkflowIcon,
 } from './components/图标'
-import { Button, CollapsiblePanel } from './components/UI'
+import { Button, CollapsiblePanel, Separator } from './components/UI'
 
 const themeKey = 'cogent-arch-theme'
 
@@ -69,6 +69,7 @@ export function App() {
   } | null>(null)
   const [viewId, setViewId] = useState<ViewId>(initialView)
   const [filter, setFilter] = useState<ViewFilterMode>('all')
+  const [detailMode, setDetailMode] = useState<DetailMode>('logic')
   const [origin, setOrigin] = useState<{ view: ViewId; node: string | null } | null>(null)
   const [returnFocusId, setReturnFocusId] = useState<string | null>(null)
   const compact = useWindowMediaQuery('(max-width: 999px)')
@@ -194,7 +195,9 @@ export function App() {
     setRightOpen(false)
   }
 
-  const activeDetail = selectedId === null ? viewDetails[viewId] : moduleDetails[selectedId]
+  const codeViewId = flowCodeViewMap[viewId]
+  const activeViewId: ViewId = detailMode === 'code' && codeViewId !== undefined ? codeViewId : viewId
+  const activeDetail = selectedId === null ? viewDetails[activeViewId] : moduleDetails[selectedId]
   const activeEdgeDetail: EdgeDetail | null = selectedEdge === null
     ? null
     : getEdgeDetail(selectedEdge.source, selectedEdge.target)
@@ -257,10 +260,10 @@ export function App() {
         </CollapsiblePanel>
 
         <main id="main-content" className="architecture-main" aria-label="架构画布" inert={narrow && (leftOpen || rightOpen)}>
-          <h1 ref={heading} tabIndex={-1} className="sr-only">{viewNames[viewId]} · Cogent 项目地图</h1>
-          <ReactFlowProvider key={viewId}>
+          <h1 ref={heading} tabIndex={-1} className="sr-only">{viewNames[activeViewId]} · Cogent 项目地图</h1>
+          <ReactFlowProvider key={activeViewId}>
             <ArchitectureCanvas
-              viewId={viewId}
+              viewId={activeViewId}
               filter={filter}
               selectedId={selectedId}
               selectedEdgeId={selectedEdge?.id ?? null}
@@ -284,33 +287,60 @@ export function App() {
                   返回{viewNames[origin.view]}
                 </Button>
               )}
-              <span className="px-2 text-xs font-medium text-muted-foreground">{viewNames[viewId]}</span>
+              <span className="px-2 text-xs font-medium text-muted-foreground">{viewNames[activeViewId]}</span>
             </div>
 
-            <div className="flex items-center gap-1" role="group" aria-label="完成度筛选">
-              {([
-                ['all', '全部'],
-                ['implemented', '仅已实现'],
-                ['gaps', '高亮缺口'],
-              ] as const).map(([mode, label]) => (
-                <Button
-                  key={mode}
-                  variant={filter === mode ? 'secondary' : 'ghost'}
-                  size="sm"
-                  aria-pressed={filter === mode}
-                  onClick={() => {
-                    setFilter(mode)
-                    if (mode === 'implemented') {
-                      if (selectedId !== null && moduleDetails[selectedId].status === 'planned') {
-                        setSelectedId(null)
+            <div className="flex items-center gap-1.5">
+              {codeViewId !== undefined && (
+                <>
+                  <div className="flex items-center gap-1" role="group" aria-label="逻辑版与源码版切换">
+                    {([
+                      ['logic', '逻辑版'],
+                      ['code', '源码版'],
+                    ] as const).map(([mode, label]) => (
+                      <Button
+                        key={mode}
+                        variant={detailMode === mode ? 'secondary' : 'ghost'}
+                        size="sm"
+                        aria-pressed={detailMode === mode}
+                        onClick={() => {
+                          setDetailMode(mode)
+                          setSelectedId(null)
+                          setSelectedEdge(null)
+                        }}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                  <Separator orientation="vertical" className="mx-0.5 h-4" />
+                </>
+              )}
+              <div className="flex items-center gap-1" role="group" aria-label="完成度筛选">
+                {([
+                  ['all', '全部'],
+                  ['implemented', '仅已实现'],
+                  ['gaps', '高亮缺口'],
+                ] as const).map(([mode, label]) => (
+                  <Button
+                    key={mode}
+                    variant={filter === mode ? 'secondary' : 'ghost'}
+                    size="sm"
+                    aria-pressed={filter === mode}
+                    onClick={() => {
+                      setFilter(mode)
+                      if (mode === 'implemented') {
+                        if (selectedId !== null && moduleDetails[selectedId].status === 'planned') {
+                          setSelectedId(null)
+                        }
+                        setSelectedEdge(null)
                       }
-                      setSelectedEdge(null)
-                    }
-                  }}
-                >
-                  {label}
-                </Button>
-              ))}
+                    }}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
             </div>
 
             <div className="flex items-center gap-1">

@@ -8,6 +8,7 @@ import type { ViewId } from './视图'
 import { viewLayouts, type GridSlot, type ViewLayoutSpec } from './视图布局'
 
 export type ViewFilterMode = 'all' | 'implemented' | 'gaps'
+export type DetailMode = 'logic' | 'code'
 export type NodeTone = 'shell' | 'host' | 'services' | 'runtime' | 'storage' | 'flow' | 'planned' | 'external'
 
 export type ArchitectureNode = Node<{
@@ -19,6 +20,7 @@ export type ArchitectureNode = Node<{
   tone: NodeTone
   dimmed: boolean
   highlighted: boolean
+  detailMode?: DetailMode
   onReturnFocus?: () => void
   boundaryNote?: string
   stages: { label: string; x: number; width: number }[]
@@ -95,6 +97,9 @@ function estimateCardSize(id: string): { width: number; height: number } {
   const detail = moduleDetails[id]
   if (detail.features !== undefined) {
     return { width: cardWidth, height: 86 + detail.features.length * 24 }
+  }
+  if (detail.cardPoints !== undefined && detail.cardPoints.length > 0) {
+    return { width: cardWidth + 32, height: 70 + detail.cardPoints.length * 20 }
   }
   if (detail.showStatus === false) {
     return { width: cardWidth, height: 88 }
@@ -523,7 +528,16 @@ function routeAllEdges(
       const bOtherId = edges[b].source === nodeId ? edges[b].target : edges[b].source
       const aOther = boxes.get(aOtherId)!
       const bOther = boxes.get(bOtherId)!
-      return isHorizontal ? centerY(aOther) - centerY(bOther) : centerX(aOther) - centerX(bOther)
+      if (isHorizontal) {
+        const dy = centerY(aOther) - centerY(bOther)
+        if (Math.abs(dy) >= 2) return dy
+        // 同泳道多条入边汇入下方/上方目标时，让更近的一侧占内侧端口、更远的一侧占外侧端口，避免交叉。
+        const fromAbove = centerY(aOther) < centerY(box)
+        const fromLeft = centerX(aOther) < centerX(box)
+        if (fromLeft) return fromAbove ? centerX(bOther) - centerX(aOther) : centerX(aOther) - centerX(bOther)
+        return fromAbove ? centerX(aOther) - centerX(bOther) : centerX(bOther) - centerX(aOther)
+      }
+      return centerX(aOther) - centerX(bOther)
     })
 
     const spanStart = (isHorizontal ? box.y : box.x) + portCornerMargin
@@ -532,13 +546,15 @@ function routeAllEdges(
     sorted.forEach((edgeIdx, rank) => {
       const otherId = edges[edgeIdx].source === nodeId ? edges[edgeIdx].target : edges[edgeIdx].source
       const other = boxes.get(otherId)!
-      // 单条且正对中心时直接对准中心，保持直线美观。
+      // 单条且正对中心时直接对准中心；若本端是大容器且对端中心落在容器边内，直接平齐避免无谓小折角。
+      const otherCenter = isHorizontal ? centerY(other) : centerX(other)
+      const boxCenter = isHorizontal ? centerY(box) : centerX(box)
       const pos = count === 1
-        ? (isHorizontal ? centerY(box) : centerX(box))
+        ? boxCenter
         : spanStart + ((rank + 0.5) / count) * Math.max(0, spanEnd - spanStart)
-      // 若多条线中刚好有一条与对方中心同水平/同垂直，优先让该条不歪。
-      const alignedCenter = count === 1 && Math.abs((isHorizontal ? centerY(other) - centerY(box) : centerX(other) - centerX(box))) < 2
-        ? (isHorizontal ? centerY(other) : centerX(other))
+      const canSnapCompound = count === 1 && box.compound && otherCenter >= spanStart && otherCenter <= spanEnd
+      const alignedCenter = count === 1 && (Math.abs(otherCenter - boxCenter) < 2 || canSnapCompound)
+        ? otherCenter
         : pos
       const pt = sidePoint(box, side, Math.max(spanStart, Math.min(spanEnd, alignedCenter)))
       if (edges[edgeIdx].source === nodeId) exitPoints[edgeIdx] = pt
@@ -633,14 +649,17 @@ function routeAllEdges(
     } else if (sSide === 'right' && tSide === 'left') {
       const gapLeft = right(s)
       const gapRight = t.x
+      // 目标位于容器内且起点在容器外时，垂直走廊须留在容器左虚线之外，避免垂直线段紧贴虚线边框。
+      const tParent = t.parent !== null && t.parent !== s.parent ? boxes.get(t.parent) : undefined
+      const safeRight = tParent !== undefined && tParent.x > gapLeft + 24 ? tParent.x - 16 : gapRight - 8
       // 判断是否直落相邻垂直走廊，且沿路无中间障碍
-      const midXPreferred = (gapLeft + gapRight) / 2
+      const midXPreferred = Math.min((gapLeft + gapRight) / 2, safeRight - 4)
       const directVerticalFree = !verticalBlocked(pStart.y, pEnd.y, midXPreferred, nonEndpointObstacles)
       const firstLegFree = !horizontalBlocked(pStart.x, midXPreferred, pStart.y, nonEndpointObstacles)
       const secondLegFree = !horizontalBlocked(midXPreferred, pEnd.x, pEnd.y, nonEndpointObstacles)
 
       if (directVerticalFree && firstLegFree && secondLegFree) {
-        const vx = allocX(midXPreferred, Math.max(pStart.x + 8, gapLeft + 4), Math.min(pEnd.x - 8, gapRight - 4))
+        const vx = allocX(midXPreferred, Math.max(pStart.x + 8, gapLeft + 4), Math.max(gapLeft + 12, safeRight))
         points = simplifyPolyline([
           pStart,
           { x: vx, y: pStart.y },
@@ -651,10 +670,11 @@ function routeAllEdges(
         // 跨越中间列有障碍：先走起点右侧走廊到清晰的泳道间隙，再进入目标左侧走廊。
         const sSlot = slotOf(spec, s.id)
         const tSlot = slotOf(spec, t.id)
-        const exitCorridorMax = sSlot !== undefined && sSlot.col + 1 < colX.length ? colX[sSlot.col + 1] - 4 : gapRight - 4
+        const exitCorridorMax = sSlot !== undefined && sSlot.col + 1 < colX.length ? colX[sSlot.col + 1] - 4 : safeRight
         const entryCorridorMin = tSlot !== undefined && tSlot.col > 0 ? colX[tSlot.col - 1] + colWidths[tSlot.col - 1] + 4 : gapLeft + 4
         const vx1 = allocX(right(s) + 32, right(s) + 8, Math.max(right(s) + 16, exitCorridorMax))
-        const vx2 = allocX(t.x - 32, Math.min(t.x - 16, entryCorridorMin), t.x - 8)
+        const vx2Preferred = Math.min(t.x - 32, safeRight - 24)
+        const vx2 = allocX(vx2Preferred, Math.min(vx2Preferred - 8, entryCorridorMin), Math.max(entryCorridorMin + 8, safeRight))
         const targetGap = pickBestLaneGap(pStart.y, pEnd.y, laneGaps, Math.min(vx1, vx2), Math.max(vx1, vx2), nonEndpointObstacles, globalBottomY)
         const yTrack = allocY(targetGap.preferred, targetGap.min, targetGap.max)
         points = simplifyPolyline([

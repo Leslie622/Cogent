@@ -29,7 +29,7 @@ function useReturnFocus(onReturnFocus: (() => void) | undefined) {
 }
 
 export function ModuleNode({ id, data, selected }: NodeProps<ArchitectureNode>) {
-  const { icon: Icon, features, showStatus, navigateOnClick } = moduleDetails[id]
+  const { icon: Icon, features, showStatus, navigateOnClick, runtimeOwner, cardPoints } = moduleDetails[id]
   const button = useReturnFocus(data.onReturnFocus)
   return (
     <div
@@ -54,11 +54,37 @@ export function ModuleNode({ id, data, selected }: NodeProps<ArchitectureNode>) 
           </div>
           {features !== undefined ? (
             <FeatureList items={features} />
+          ) : cardPoints !== undefined && cardPoints.length > 0 ? (
+            <>
+              <ul className="pointer-events-none mt-0.5 space-y-1 text-xs leading-snug text-muted-foreground">
+                {cardPoints.map((point) => (
+                  <li key={point} className="flex items-start gap-1.5">
+                    <span className="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground/60" aria-hidden="true" />
+                    <span className="truncate">{point}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="pointer-events-none mt-1 flex h-5 items-center gap-1.5">
+                {showStatus !== false && <ImplementationBadge status={data.status} />}
+                {runtimeOwner !== undefined && (
+                  <span className="truncate rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {runtimeOwner}
+                  </span>
+                )}
+              </div>
+            </>
           ) : (
             <>
-              <p className="pointer-events-none text-xs text-muted-foreground">{data.technology}</p>
-              <div className="pointer-events-none flex h-5 items-center">
+              <p className="pointer-events-none truncate text-xs text-muted-foreground">
+                {data.technology}
+              </p>
+              <div className="pointer-events-none flex h-5 items-center gap-1.5">
                 {showStatus !== false && <ImplementationBadge status={data.status} />}
+                {runtimeOwner !== undefined && (
+                  <span className="truncate rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {runtimeOwner}
+                  </span>
+                )}
               </div>
             </>
           )}

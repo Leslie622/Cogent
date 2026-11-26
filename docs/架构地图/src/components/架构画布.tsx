@@ -86,6 +86,7 @@ export function ArchitectureCanvas({
   }
 
   function read() {
+    if (width <= 0 || height <= 0) return
     const bounds = graph.bounds
     const availableWidth = width - canvasPadding.left - canvasPadding.right
     const availableHeight = height - canvasPadding.top - canvasPadding.bottom
@@ -110,7 +111,9 @@ export function ArchitectureCanvas({
   })
 
   useEffect(() => {
-    if (initialized) position()
+    if (!initialized || width <= 0 || height <= 0) return
+    const frame = window.requestAnimationFrame(() => position())
+    return () => window.cancelAnimationFrame(frame)
   }, [selectedId, initialized, graph, width, height])
 
   function reset() {

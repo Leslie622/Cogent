@@ -33,9 +33,21 @@ export interface SourceRef {
   symbol: string
 }
 
+export interface PeerComparison {
+  repo: 'deepseek-harness' | 'zcode'
+  approach: string
+  diff: string
+}
+
 export interface ModuleDetail {
   name: string
   kind: string
+  /** 逻辑版卡片与详情上的执行归属标签（明确在哪做：如 pi 内核托管 / Cogent Host / 桌面前端）。 */
+  runtimeOwner?: string
+  /** 源码版卡片副标题（展示核心函数、钩子与模块符号）。 */
+  codeKind?: string
+  /** 画布卡片内直接呈现的精炼机制要点（让图本身讲故事，减少右侧文字堆砌）。 */
+  cardPoints?: string[]
   icon: IconComponent
   status: ImplementationStatus
   showStatus?: boolean
@@ -43,6 +55,8 @@ export interface ModuleDetail {
   summary: string
   responsibilities: string[]
   boundary: string
+  /** 开源仓同主题对照（仅基于实读源码的 deepseek-harness 与 zcode）。 */
+  comparisons?: PeerComparison[]
   sources: SourceRef[]
   navigateTo?: ViewId
   navigateOnClick?: boolean
@@ -1370,101 +1384,647 @@ export const moduleDetails: Record<string, ModuleDetail> = {
     sources: [{ path: 'docs/计划/插件座实现.md', symbol: '目标与动机' }],
   },
 
-  // ———— 专题流程 6：上下文压缩与转录 ————
-  'flow.compaction.trigger': {
-    name: '触发与溢出恢复',
-    kind: 'ctx - reserve · overflow',
-    icon: WorkflowIcon,
+  // ———— 专题流程 6a：上下文工程与压缩转录（逻辑版） ————
+  'flow.compaction.entering': {
+    name: '1. 内容进入上下文',
+    kind: '三路来源进入前先控体积',
+    runtimeOwner: 'Host + pi',
+    icon: ShieldCheckIcon,
     status: 'implemented',
-    summary: '由 pi prompt() 生命周期在占用超过上下文阈值时触发自动压缩，并内置溢出单次压缩重试闸。',
-    responsibilities: ['支持手动调用 session.compact；若当前忙碌或无可压缩历史则返回明确错误。'],
-    boundary: '压缩逻辑内置于 pi AgentSession，Cogent 不另起一套后台压缩循环。',
-    sources: [{ path: 'docs/模块/上下文压缩.md', symbol: 'pi 内置内核' }],
+    showStatus: false,
+    summary: '所有进入对话的内容分三路把关体积，避免单次大文件、巨型规则或长工具输出直接撑爆窗口。',
+    responsibilities: [
+      '附件、技能与大工具输出均采用「先给索引/头尾预览，完整原文留磁盘按需读」策略。',
+      '所有临时落盘路径仅限模型内部读取，黑盒边界对用户完全不可见。',
+    ],
+    boundary: '内置工具截断归 pi，附件与 MCP 24K 落盘及规则/技能预算归 Cogent Host。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: 'spill-policy 在 tools/post-execute 按 token 预算头尾各半保留并落盘 spillStore；规则文件随 read/edit 动态加载子目录。',
+        diff: 'Cogent 复用 pi 内置工具截断，仅在 Host 为附件与 MCP 补 24K 落盘，规则文件按绑定根加载，链路更轻。',
+      },
+      {
+        repo: 'zcode',
+        approach: 'result-serialization 默认 100KB 截断或落盘 ToolArtifactStore（2000 字符预览）；Bash 独立限 30K，指令按 sha256 推增量。',
+        diff: 'Cogent 对 MCP/附件用 24K 门槛并保留 16K+4K 头尾上下文，兼顾首轮可读性与窗口预算。',
+      },
+    ],
+    sources: [
+      { path: 'src/host/runtime/tool-spill.ts', symbol: 'spillMcpToolResult' },
+      { path: 'src/host/runtime/read-attachment.ts', symbol: 'createReadAttachmentTool' },
+      { path: 'src/host/runtime/prompts/system.ts', symbol: 'buildSystemPrompt' },
+    ],
   },
-  'flow.compaction.adapt': {
-    name: '小窗参数收敛',
-    kind: 'adaptCompactionToWindow',
+  'flow.compaction.entering.userInput': {
+    name: '用户消息与附件',
+    kind: '正文直入 · 附件按需读超 24K 落盘',
+    runtimeOwner: 'Cogent Host',
+    codeKind: 'formatAttachmentsBlock · createReadAttachmentTool',
+    cardPoints: [
+      '对话正文直接进入上下文',
+      '附件仅注元信息，按需分页读取',
+      '单次读超 24K 字自动存临时文件',
+    ],
+    icon: MonitorIcon,
+    status: 'implemented',
+    summary: '用户输入正文直接入上下文；PDF/Office/大文件只附元数据索引，由模型按需分页读取并做 24K 落盘兜底。',
+    responsibilities: [
+      '附件元数据明确标注为外部数据而非指令，且对外回复仅使用原始文件名。',
+      '目录引用仅传路径与说明，不预读整目录内容，不改变工作区写权限。',
+    ],
+    boundary: '不把原始二进制或全文直接塞进用户消息，避免首轮即吃满上下文。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: '提供跨会话 @ 引用（限 20% 窗口预算 + spill 保护），附件与图片受单请求上限保护。',
+        diff: 'Cogent 桌面端聚焦本地文件/目录附件的分页解析与落盘，暂未引入跨会话引用块。',
+      },
+      {
+        repo: 'zcode',
+        approach: '文件附件合成为伪 Read 结果并附截断提示，冷恢复优先从 durable artifact 恢复媒体。',
+        diff: 'Cogent 通过独立 read_attachment 工具分页拉取，避免冷启动时反复水合大文档。',
+      },
+    ],
+    sources: [
+      { path: 'src/host/runtime/read-attachment.ts', symbol: 'createReadAttachmentTool' },
+      { path: 'src/host/runtime/prompts/reminders.ts', symbol: 'formatAttachmentsBlock' },
+    ],
+  },
+  'flow.compaction.entering.sysRules': {
+    name: '系统规则与动态段',
+    kind: '规则 16K · 技能 20K · 稳定度排序',
+    runtimeOwner: 'Host + pi',
+    codeKind: 'buildSystemPrompt · buildDynamicSections · formatSkillsSection',
+    cardPoints: [
+      '核心规则 + AGENTS/CLAUDE (≤16K)',
+      '技能仅注清单 (≤20K)，按需读正文',
+      '动态段按稳定度排序保前缀缓存',
+    ],
+    icon: BlocksIcon,
+    status: 'implemented',
+    summary: '静态核心规则置顶常驻，项目规则与技能清单严格限预算，回合动态段按变化频率从低到高排布保护 KV 缓存。',
+    responsibilities: [
+      '每个工作区根按 AGENTS.override.md → AGENTS.md → CLAUDE.md 取首个存在文件，上限 16K 字符。',
+      '技能清单超 20K 自动降级为仅名称+路径；权限/计划/待办仅在变更时由 pi 打增量补丁。',
+    ],
+    boundary: '绝不把高频变化的待办清单放到静态前缀之前，防止整段前缀缓存失效。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: '静态 SECTION_ORDERS 与动态 CONTEXT_ORDERS 彻底分离，时间上下文 10 分钟节流，规则随读写动态发现子目录。',
+        diff: 'Cogent 借助 pi sections diff 实现回合级热刷新，结构更紧凑；规则暂仅查绑定根目录。',
+      },
+      {
+        repo: 'zcode',
+        approach: '三段式 System Prompt 双 ephemeral 断点，技能同样 20K 预算降级，指令文件按 sha256 增量推送。',
+        diff: 'Cogent 技能预算降级直接对标 zcode，并统一在中文核心契约中锚定中文回复与思考。',
+      },
+    ],
+    sources: [
+      { path: 'src/host/runtime/prompts/system.ts', symbol: 'WORKSPACE_INSTRUCTION_FILES' },
+      { path: 'src/host/runtime/prompts/sections.ts', symbol: 'buildDynamicSections' },
+      { path: 'src/host/runtime/skill-prompt.ts', symbol: 'formatSkillsSection' },
+    ],
+  },
+  'flow.compaction.entering.toolOut': {
+    name: '工具执行结果',
+    kind: '内置 50KB/2K行 · MCP 超 24K 落盘',
+    runtimeOwner: 'pi + Host',
+    codeKind: 'pi truncate · spillMcpToolResult',
+    cardPoints: [
+      '内置读/搜/终端限 50KB 或 2000 行',
+      '终端与 MCP 超 24K 自动落盘留头尾',
+      '图片块原样保留，临时路径隐藏',
+    ],
+    icon: TerminalIcon,
+    status: 'implemented',
+    summary: '工具产出在进入历史前即完成第一道截断与落盘，挡住巨型终端日志和外部 MCP 大返回体。',
+    responsibilities: [
+      '内置 read/grep/find/ls/bash/powershell 沿用 pi 2000 行 / 50KB 截断（终端超限自动流式落盘）。',
+      '外部 mcp__* 工具非错误文本超 24K 时，由 Host 落盘至 tool-outputs/v1/ 并保留头 16K + 尾 4K（代理对安全）。',
+    ],
+    boundary: '写盘失败自动降级为纯头尾截断，不阻断工具返回；绝不向用户暴露临时文件路径。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: '统一在 tools/post-execute 挂 spill-policy，按 token 预算头尾各半保留并落盘 spillStore。',
+        diff: 'Cogent 不重复包裹 pi 内置工具，只在 afterToolCall 为 MCP 补齐同等落盘保护。',
+      },
+      {
+        repo: 'zcode',
+        approach: 'result-serialization 统一预算（默认 100KB），超限落盘后仅留 2000 字符预览与文件路径。',
+        diff: 'Cogent 保留 16K+4K 头尾预览，多数场景无需再花一轮工具调用去二次读取。',
+      },
+    ],
+    sources: [
+      { path: 'src/host/runtime/tool-spill.ts', symbol: 'spillMcpToolResult' },
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+    ],
+  },
+  'flow.compaction.check': {
+    name: '2. 检查上下文水位',
+    kind: '5 维计量 · 对照预警线 · 分三路处理',
+    runtimeOwner: 'Host + 前端',
+    codeKind: 'estimateContext · piTriggerRatio · ContextIndicator',
+    cardPoints: [
+      '按 5 维核算占比，前端实时示警',
+      '对照模型真实预警线（支持手动触发）',
+      '按水位分三路：直通 / 轻度瘦身 / 摘要',
+    ],
     icon: CpuIcon,
     status: 'implemented',
-    summary: '当模型窗口较小（如 20K）时按比例收敛 reserve 与 keep，避免“提前告警却无内容可压”。',
-    responsibilities: ['keep 收敛至 min(keep, ctx/2)，reserve 收敛至 min(reserve, ctx/4)；标准大窗零改动。'],
-    boundary: '窗口未知（≤0）时不触碰 pi 原始解析参数。',
-    sources: [{ path: 'src/host/runtime/compaction.ts', symbol: 'adaptCompactionToWindow' }],
+    summary: '每轮发给模型前核算当前占用并与真实压缩预警线对照，按当前压力分流到正常直通、轻度瘦身或深度摘要。',
+    responsibilities: [
+      '以端点实报 usage 为总量真值，拆算系统提示、技能、系统/MCP 工具、对话与工具输出 5 维占比。',
+      '前端容量指示器实时显示占用、平均缓存命中率，并提供「压缩上下文」手动入口。',
+    ],
+    boundary: '估算口径只用于前端拆解与压力判断；低水位走直通路径，零改写历史。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: '按窗口 80% 与 64K 留白取小值定触发线，用独立 token 估算器在每步请求前检查压力。',
+        diff: 'Cogent 锚定 pi 原生预留值（16K，小窗自动收敛）并下发前端画同一条真实预警线，不会出现“未到线就压”。',
+      },
+      {
+        repo: 'zcode',
+        approach: '以末轮真实 usage 为基线叠加增量估算，另建完整上下文归因表拆算各来源占比。',
+        diff: 'Cogent 借鉴其多维归因思路，在前端按实报总量缩放 5 维明细，实现轻量得多。',
+      },
+    ],
+    sources: [
+      { path: 'src/host/runtime/session-prompt.ts', symbol: 'estimateContext' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'piTriggerRatio' },
+      { path: 'src/renderer/src/features/home/ContextIndicator.tsx', symbol: 'ContextIndicator' },
+    ],
   },
-  'flow.compaction.summarize': {
-    name: 'pi 摘要压缩',
-    kind: 'AgentSession · compact',
+  'flow.compaction.pass': {
+    name: '正常直通（零改动）',
+    kind: '不裁剪不摘要 · 100% 保前缀缓存',
+    runtimeOwner: 'Host + pi',
+    codeKind: '低于 computeL1PruneTrigger 跳过裁剪与压缩',
+    cardPoints: [
+      '水位 <85% 时零裁剪、零摘要',
+      '100% 保持前缀缓存命中与最低延迟',
+    ],
+    icon: ShieldCheckIcon,
+    status: 'implemented',
+    summary: '绝大多数日常轮次都走这条路：不碰历史消息、不破坏 KV 前缀缓存，直接原样进入落盘并发送给模型。',
+    responsibilities: [
+      '确保常规多轮对话享受完整的前缀缓存折扣与最快首字响应。',
+    ],
+    boundary: '绝不在低水位提前静默改写旧消息，避免缓存频繁失效。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: '常规轮次同样不修改历史，仅在达到压力阈值后才先跑工具裁剪。',
+        diff: '两边在“低水位零改写保前缀缓存”上完全一致。',
+      },
+      {
+        repo: 'zcode',
+        approach: '除 90% 压力线外，闲置超过 60 分钟（缓存已自然过期）也会主动清理旧工具结果。',
+        diff: 'Cogent 暂仅按 85% 压力线触发，策略更简单可预测。',
+      },
+    ],
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'computeL1PruneTrigger' },
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+    ],
+  },
+  'flow.compaction.prune': {
+    name: '3. 轻度瘦身（不调模型）',
+    kind: '裁旧大工具输出 · 省太少放弃',
+    runtimeOwner: 'Cogent Host → pi',
+    codeKind: 'planStaleToolResultPrunes · appendContextEdit',
+    cardPoints: [
+      '固定保护近 5 轮工具调用与报错',
+      '更早 >8K 旧输出裁为头 4K + 尾 1K',
+      '净省 <256 tokens 放弃以保缓存',
+    ],
+    icon: LayersIcon,
+    status: 'implemented',
+    summary: '快满（≥85%）但还没撞压缩线时，先由 Host 零模型费用裁短陈旧的大段工具输出；降回安全线就停，免一次有损摘要。',
+    responsibilities: [
+      '仅扫描末次压缩后的活动区，跳过报错、图片块保留，通过 pi appendContextEdit 追加覆盖记录。',
+      '若裁剪后水位仍超压缩线，再顺流升级到「4. 深度摘要压缩」。',
+    ],
+    boundary: '不覆写原消息行，界面上滑仍可见完整旧工具输出；省量不足 256 tokens 直接放弃。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: '在超阈值时把不调模型的工具裁剪（>8K 裁为头 4K+尾 1K）作为第一阶段，降回阈值就免摘要。',
+        diff: 'Cogent 采纳同款 8K / 4K+1K 裁剪尺度，并提前到 85% 压力线经 pi appendContextEdit 执行。',
+      },
+      {
+        repo: 'zcode',
+        approach: 'microcompact 保留最近 5 组、跳过报错/媒体、省 <256 tokens 放弃，但把旧工具输出整条替换成占位符。',
+        diff: 'Cogent 采纳“保 5 轮 + 256 守卫”，但留头尾 4K+1K 预览而非整条清空，减少模型重复读文件。',
+      },
+    ],
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'computeL1PruneTrigger' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'planStaleToolResultPrunes' },
+    ],
+  },
+  'flow.compaction.compacting': {
+    name: '4. 深度摘要压缩',
+    kind: 'pi 内核托管 · Host 注入中文黑盒与资产恢复',
+    runtimeOwner: 'pi 内核 + Host',
     icon: SparklesIcon,
     status: 'implemented',
-    summary: '将待摘要旧历史序列化进对话摘要提示，在保留切点后构建 compactionSummary 条目。',
-    responsibilities: ['贴合回合边界或 split-turn 切点提取上下文要点，并记入当次 summaryUsage 成本。'],
-    boundary: '完全在当轮 prompt() 周期内执行，终态仍统一收敛到唯一 agent_settled。',
+    showStatus: false,
+    summary: '轻度瘦身后仍超线、用户手动点击压缩或模型报上下文溢出时，分三步完成：收敛窗口找切点 → 生成中文结构化摘要 → 补回早期附件与目录索引。',
+    responsibilities: [
+      '压缩循环、切点与溢出单次重试闸由 pi 内核托管（决定 26），Cogent 通过官方钩子注入小窗收敛、中文黑盒指令与资产恢复。',
+    ],
+    boundary: '绝不自建第二套压缩循环；溢出恢复同一回合最多自动重试一次，防死循环扣费。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: '自研 8 节摘要 + 收缩校验，摘要请求直接复用主会话原前缀与工具声明吃热缓存。',
+        diff: 'Cogent 复用 pi 官方 compact（文本化打包 + 无缓存防续写 + 回合拆段），维护成本更低。',
+      },
+      {
+        repo: 'zcode',
+        approach: '自研 9 节摘要 + 3 次熔断，压缩后并行从磁盘重读最近 5 个活跃文件（≤50K）与计划文件。',
+        diff: 'Cogent 靠 pi 保留近 20K 原话 + 文件清单 + Host 补回附件/目录索引，避免重读大文件瞬间回填窗口。',
+      },
+    ],
     sources: [
-      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createAgentSession' },
+      { path: 'src/host/runtime/session.ts', symbol: 'compactSession' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'adaptCompactionToWindow' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'buildCompactionInstructions' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'buildShadowSessionAssetsSection' },
+    ],
+  },
+  'flow.compaction.compacting.cut': {
+    name: '① 收敛窗口与留近期',
+    kind: '小窗按比例缩预留 · 留近 20K 原话',
+    runtimeOwner: 'Host + pi',
+    codeKind: 'adaptCompactionToWindow · pi prepareCompaction',
+    cardPoints: [
+      '小窗按半窗/四分之一窗收紧预留',
+      '从尾部保留近 20K 原话不压',
+      '绝不拆散工具调用与结果配对',
+    ],
+    icon: WorkflowIcon,
+    status: 'implemented',
+    summary: '先按当前模型窗口动态收敛预留参数（解决小窗“触发却无可压”），再由 pi 从尾部划出合法保留切点。',
+    responsibilities: [
+      '标准大窗（≥64K）保持 pi 原生 16K/20K；遇单轮超长工具链切在回合中段时自动走 split-turn 拆段摘要。',
+    ],
+    boundary: '窗口未知（≤0）时不触碰 pi 原始解析参数。',
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'adaptCompactionToWindow' },
       { path: 'docs/模块/上下文压缩.md', symbol: 'Cogent 承接面' },
     ],
   },
-  'flow.compaction.autoContinue': {
-    name: '截断自动续写',
-    kind: 'AUTO_CONTINUE ≤ 3',
-    icon: RouteIcon,
+  'flow.compaction.compacting.summarize': {
+    name: '② 生成中文结构化摘要',
+    kind: '中文黑盒 + 焦点指令 · 无缓存调用',
+    runtimeOwner: 'pi 内核托管',
+    codeKind: 'session_before_compact · buildCompactionInstructions · pi compact',
+    cardPoints: [
+      '注入简体中文、黑盒静默与焦点指令',
+      '独立无缓存调用并单列摘要费用',
+      '上下文溢出内置单次压缩重试闸',
+    ],
+    icon: SparklesIcon,
     status: 'implemented',
-    summary: '针对贴线 maxTokens 输出截断且 pi 不自动恢复的场景，由 SessionManager 最多续写 3 次。',
-    responsibilities: ['在终止前确认是否达到最大续写上限，避免残缺回答提前收口。'],
-    boundary: '超过 3 次后如实交回终态，不做无限自动循环。',
-    sources: [{ path: 'src/host/runtime/session.ts', symbol: 'SessionManager' }],
-  },
-  'flow.compaction.tree': {
-    name: '保留式转录树',
-    kind: 'pi/ JSONL · append-only',
-    icon: DatabaseIcon,
-    status: 'implemented',
-    summary: '每次压缩仅追加 compaction 节点，不物理删除被摘要的旧历史分支消息。',
-    responsibilities: ['同时保留多代压缩检查点与全部原始消息，供用户上下滚动追溯。'],
-    boundary: '只许 pi 内核按回合追加写盘，业务层绝不就地覆写 JSONL。',
-    sources: [{ path: 'src/host/kernel/transcript.ts', symbol: 'readSessionBranch' }],
-  },
-  'flow.compaction.event': {
-    name: '压缩事件与预警',
-    kind: 'compaction.* · piTriggerRatio',
-    icon: GlobeIcon,
-    status: 'implemented',
-    summary: '下发 compaction.started/completed 协议事件，并随模型目录下发真实 pi 触发比例。',
-    responsibilities: ['前端 ContextIndicator 与发动机使用同一 piTriggerRatio 真值绘制预警线。'],
-    boundary: '摘要费用单独显式记账，避免隐藏 Token 消耗。',
+    summary: '在压缩前钩子中合并中文/黑盒约束与用户手动焦点指令，委托 pi 官方 compact() 把早期对话蒸馏成结构化摘要并广播折叠条。',
+    responsibilities: [
+      '摘要尾部自动附带已读/已改文件清单；摘要费用单独显式记账，不混入主回答消耗。',
+    ],
+    boundary: '模型凭据缺失时安全回落 pi 默认摘要路径，绝不导致压缩失败。',
     sources: [
-      { path: 'src/host/runtime/compaction.ts', symbol: 'piTriggerRatio' },
-      { path: 'src/host/runtime/session-models.ts', symbol: 'projectModelSummaries' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'buildCompactionInstructions' },
+      { path: 'src/host/runtime/session.ts', symbol: 'compactSession' },
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
     ],
   },
-  'flow.compaction.llmProj': {
-    name: '请求投影裁剪',
-    kind: 'convertToLlmMessages',
-    icon: LayersIcon,
+  'flow.compaction.compacting.recover': {
+    name: '③ 补回早期工作态',
+    kind: '自动恢复被折叠的附件 ID 与目录',
+    runtimeOwner: 'Cogent Host',
+    codeKind: 'buildShadowSessionAssetsSection · cogent_session_assets',
+    cardPoints: [
+      '扫描被折叠历史中的附件与目录',
+      '动态系统段自动补回精确 ID 映射',
+      '无历史附件时零开销，不伤缓存',
+    ],
+    icon: RouteIcon,
     status: 'implemented',
-    summary: '组装真实模型请求与估算上下文时，只取全量 system + 末条摘要 + 保留区后续消息。',
-    responsibilities: ['被摘要的影子区消息从发给模型的请求体中剔除，但 UI 回放保持可见。'],
-    boundary: '用既定背景前导语包裹摘要，防止模型误以为在继续闲聊检查点。',
-    sources: [{ path: 'src/host/runtime/compaction.ts', symbol: 'convertToLlmMessages' }],
+    summary: '压缩后自动从早期历史提取仍有效的附件与目录引用，经稳定动态段补回模型视野，确保压缩后仍能调 read_attachment 分页读附件。',
+    responsibilities: [
+      '与任务清单、已批准计划共用回合前动态段增量补丁，仅变更时更新。',
+    ],
+    boundary: '无压缩或早期无附件/目录时返回 null，零 token 占用。',
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'buildShadowSessionAssetsSection' },
+      { path: 'src/host/runtime/prompts/sections.ts', symbol: 'buildDynamicSections' },
+    ],
   },
-  'flow.compaction.history': {
-    name: '历史与换根回查',
-    kind: 'readSessionBranch',
+  'flow.compaction.store': {
+    name: '5. 只追加落盘真源',
+    kind: '原文、裁剪与多代摘要只增不删',
+    runtimeOwner: 'pi JSONL',
+    codeKind: 'PiSessionManager · pi/ JSONL · append-only',
+    cardPoints: [
+      '所有原文、裁剪、摘要只往尾部追加',
+      '绝不删除旧历史，支持多代压缩并存',
+    ],
     icon: DatabaseIcon,
     status: 'implemented',
-    summary: '重启加载或项目目录交接后直接读取完整 JSONL 分支恢复对话与多代压缩条。',
-    responsibilities: ['严格校验每行 JSON 完整性与会话头版本，兼容 v1 内存迁移。'],
-    boundary: '损坏行直接抛出报错，不悄悄吞掉残损历史。',
+    summary: '本地只追加 JSONL 文件是唯一真源，同时支撑「给模型的精简视图」与「给用户的完整历史」。',
+    responsibilities: [
+      '支持重启恢复、项目目录交接（换 cwd 仍锚定原转录文件）与严格逐行损坏校验。',
+    ],
+    boundary: '仅由 pi 内核顺序追加写入，Cogent 业务层绝不就地覆写 JSONL。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: 'append-only 事件日志 + Surface 替换视图（surfaceOp: replace），人类历史与模型表面分离。',
+        diff: '与 Cogent（pi JSONL 树 + compaction/context_edit 追加条目）架构同源。',
+      },
+      {
+        repo: 'zcode',
+        approach: '使用本地 SQLite（message / part / model_usage 表）持久化会话与压缩边界。',
+        diff: 'Cogent 坚持单文件 JSONL 真源（直观易排障），SQLite 只作可随时重建的派生搜索库。',
+      },
+    ],
     sources: [{ path: 'src/host/kernel/transcript.ts', symbol: 'readSessionBranch' }],
   },
-  'flow.compaction.search': {
-    name: '派生搜索索引',
-    kind: 'SessionSearchService',
+  'flow.compaction.outputs': {
+    name: '6. 两路分用（同源各看各的）',
+    kind: '模型精简出站 · 用户完整回放',
+    runtimeOwner: 'pi SDK + Host',
+    icon: LayersIcon,
+    status: 'implemented',
+    showStatus: false,
+    summary: '同一份只追加 JSONL 会话文件分出两套投影：发给模型看精简版省窗口，给界面与搜索看完整版不丢记录。',
+    responsibilities: [
+      '模型侧自动剔除已被摘要的早期历史并套用轻度裁剪，用户侧始终可完整上滑翻阅与全文检索。',
+    ],
+    boundary: '两路投影均只读消费 JSONL 真源，互不篡改彼此视图。',
+    sources: [
+      { path: 'src/host/kernel/transcript.ts', symbol: 'readPiTranscript' },
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+    ],
+  },
+  'flow.compaction.outputs.toModel': {
+    name: '发给模型（精简版）',
+    kind: '最新摘要 + 瘦身后近期对话',
+    runtimeOwner: 'pi SDK 投影',
+    codeKind: 'buildSessionProjection · convertToLlmWithBlockImages',
+    cardPoints: [
+      '只带系统提示 + 最新摘要 + 近期原话',
+      '套用轻度裁剪，叠加前缀缓存断点',
+    ],
+    icon: RouteIcon,
+    status: 'implemented',
+    summary: '下次请求模型时，由 pi SDK 剔除已被摘要的早期原文并套用轻度裁剪，输出紧凑且配对合法的请求上下文。',
+    responsibilities: [
+      '确保绝不切开 toolCall 与 toolResult 配对，并由 pi-ai 底层负责各厂商前缀缓存断点。',
+    ],
+    boundary: '真实出站投影归 pi SDK 托管；Cogent 的 convertToLlmMessages 仅用于前端估算对账。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: '从 session.deriveMessages() 派生 surface，支持 in-history 系统段/工具增量与前缀变化剥离 thinking 签名。',
+        diff: 'Cogent 通过 pi sections diff + 稳定度排序保缓存，暂未自建跨路由 thinking 签名剥离器。',
+      },
+      {
+        repo: 'zcode',
+        approach: 'provider-request-messages 统一做空思考过滤、MCS 投影、tool_result 折叠与尾消息单缓存断点。',
+        diff: 'Cogent 将多厂商协议投影与缓存断点统一委托 pi-ai，Host 层保持协议无关。',
+      },
+    ],
+    sources: [
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+      { path: 'docs/模块/上下文压缩.md', symbol: '保留式呈现' },
+    ],
+  },
+  'flow.compaction.outputs.toUser': {
+    name: '界面与搜索（完整版）',
+    kind: '保留全部历史原文 · 全文索引',
+    runtimeOwner: 'Host + Worker',
+    codeKind: 'readPiTranscript · SessionSearchService',
+    cardPoints: [
+      '聊天流完整保留原文与压缩折叠条',
+      '独立 Worker 异步建 SQLite 全文索引',
+    ],
     icon: Code2Icon,
     status: 'implemented',
-    summary: '独立 Worker 线程监控转录 revision 变化，重建本地 SQLite 全文及中文短词索引。',
-    responsibilities: ['定位命中行所属锚点，支持聊天正文精确跳转高亮。'],
-    boundary: 'Worker 同步 I/O 不阻塞 Host 主事件循环。',
+    summary: '面向用户的历史回放、换目录重载与全文搜索始终读取完整原文，不受裁剪与摘要折叠遮蔽。',
+    responsibilities: [
+      '历史折叠条自动补挂摘要费用；独立搜索 Worker 监听文件 revision 异步更新索引并支持原文跳转。',
+    ],
+    boundary: '损坏行直接报错不静默吞数据；搜索 Worker 只读派生，绝不回写转录真源。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: '人类可读历史直接读取 append-origin 原始事件流，与模型 surface 解耦。',
+        diff: 'Cogent 同为双投影设计，并补齐独立 Worker 中文短词全文搜索与精确锚点跳转。',
+      },
+      {
+        repo: 'zcode',
+        approach: '冷恢复水合器统一还原界面与模型态，并对保留段旧 usage 清零防误判。',
+        diff: 'Cogent 将 UI 全量回放（readPiTranscript）与模型投影（pi）彻底解耦，互不干扰。',
+      },
+    ],
+    sources: [
+      { path: 'src/host/kernel/transcript.ts', symbol: 'readPiTranscript' },
+      { path: 'src/host/runtime/search/service.ts', symbol: 'SessionSearchService' },
+    ],
+  },
+
+  // ———— 专题流程 6b：上下文工程（源码详细版） ————
+  'flow.compactionCode.rules': {
+    name: 'buildSystemPrompt',
+    kind: 'prompts/system.ts · 16K/20K',
+    runtimeOwner: 'Cogent Host',
+    codeKind: 'buildSystemPrompt · buildDynamicSections · formatSkillsSection',
+    icon: BlocksIcon,
+    status: 'implemented',
+    summary: '装配静态核心前缀、工作区规则（AGENTS.override.md / AGENTS.md / CLAUDE.md，16K 上限）、20K 预算技能段及稳定度排序的 7 个动态段。',
+    responsibilities: [
+      'before_agent_start 活算动态段表并交由 pi diffSystemPromptSections 做增量补丁。',
+    ],
+    boundary: '静态核心跨会话恒定，高频变化段 cogent_todos 永远置于末尾。',
+    sources: [
+      { path: 'src/host/runtime/prompts/system.ts', symbol: 'buildSystemPrompt' },
+      { path: 'src/host/runtime/prompts/sections.ts', symbol: 'buildDynamicSections' },
+      { path: 'src/host/runtime/skill-prompt.ts', symbol: 'formatSkillsSection' },
+    ],
+  },
+  'flow.compactionCode.spill': {
+    name: 'afterToolCall 落盘',
+    kind: 'spillMcpToolResult · read_attachment',
+    runtimeOwner: 'Cogent Host',
+    codeKind: 'session.agent.afterToolCall · tool-spill.ts · read-attachment.ts',
+    icon: ShieldCheckIcon,
+    status: 'implemented',
+    summary: '在 afterToolCall 拦截 mcp__* 超 24K 文本并落盘至 tool-outputs/v1/；附件解析超 24K 落盘至 attachments/v1/analysis/。',
+    responsibilities: [
+      '复用 sliceHeadSafe / sliceTailSafe 代理对安全切片，保留非文本块并注入黑盒路径提示。',
+    ],
+    boundary: '内置工具继续走 pi 原生 2000 行 / 50KB 截断，此处不重复拦截。',
+    sources: [
+      { path: 'src/host/runtime/tool-spill.ts', symbol: 'spillMcpToolResult' },
+      { path: 'src/host/runtime/read-attachment.ts', symbol: 'createReadAttachmentTool' },
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+    ],
+  },
+  'flow.compactionCode.meter': {
+    name: 'estimateContext',
+    kind: 'session-prompt.ts · piTriggerRatio',
+    runtimeOwner: 'Host + 前端',
+    codeKind: 'estimateContext · convertToLlmMessages · piTriggerRatio',
+    icon: CpuIcon,
+    status: 'implemented',
+    summary: '合成系统提示与活跃工具表（含 MCP）拆算 5 维 token 占比，并与 piTriggerRatio 一并供给前端 ContextIndicator 展示。',
+    responsibilities: [
+      '在 agent_settled 与历史 messages() 回查路径幂等现算，旧会话无新字段自动平滑回落 3 段。',
+    ],
+    boundary: 'convertToLlmMessages 仅用于估算口径，真实出站走 pi SDK 投影。',
+    sources: [
+      { path: 'src/host/runtime/session-prompt.ts', symbol: 'estimateContext' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'piTriggerRatio' },
+      { path: 'src/renderer/src/features/home/ContextIndicator.tsx', symbol: 'ContextIndicator' },
+    ],
+  },
+  'flow.compactionCode.l1': {
+    name: '工具结果裁剪钩子',
+    kind: 'planStaleToolResultPrunes',
+    runtimeOwner: 'Cogent Host',
+    codeKind: 'computeL1PruneTrigger · planStaleToolResultPrunes · onPressureCheck',
+    icon: LayersIcon,
+    status: 'implemented',
+    summary: '挂载于 before_agent_start 与 turn_end；当估算 token 达 85% 压力线时，不调模型直接规划裁剪 5 轮前的超大非错误 toolResult。',
+    responsibilities: [
+      '满足 ≥256 tokens 最小收益后逐条调用 piSessionManager.appendContextEdit 写入覆盖节点。',
+    ],
+    boundary: '低于压力线零写入，100% 保持常规轮次前缀缓存命中。',
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'planStaleToolResultPrunes' },
+      { path: 'src/host/runtime/hook-seat.ts', symbol: 'createCogentHooks' },
+    ],
+  },
+  'flow.compactionCode.adapt': {
+    name: 'adaptCompactionToWindow',
+    kind: 'getCompactionSettings 链式包裹',
+    runtimeOwner: 'Cogent Host',
+    codeKind: 'settingsManager.getCompactionSettings · adaptCompactionToWindow',
+    icon: WorkflowIcon,
+    status: 'implemented',
+    summary: '在 createPiSession 链式包裹 settingsManager.getCompactionSettings，按活模型 contextWindow 收敛 keep 与 reserve。',
+    responsibilities: [
+      'keep ≤ ctx/2，reserve ≤ ctx/4；标准大窗（≥64K）零变动，窗口未知（≤0）原样透传。',
+    ],
+    boundary: '确保同一 SettingsManager 实例同时传给 DefaultResourceLoader 与 createAgentSession。',
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'adaptCompactionToWindow' },
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+    ],
+  },
+  'flow.compactionCode.beforeCompact': {
+    name: 'session_before_compact',
+    kind: 'buildCompactionInstructions · compact',
+    runtimeOwner: 'pi 内核托管',
+    codeKind: 'createCogentHooks.beforeCompact · compact() · compactSession',
+    icon: SparklesIcon,
+    status: 'implemented',
+    summary: '拦截自动与手动压缩，合并简体中文/黑盒约束与可选 instructions，解析 modelRuntime 凭据后委托 pi 官方 compact()。',
+    responsibilities: [
+      '支持 session.compact 透传 ≤2000 字符焦点指令；凭据缺失时返回 undefined 回落 pi 默认路径。',
+    ],
+    boundary: '不自建压缩引擎，完全保留 pi 的 <conversation> 序列化、split-turn 与文件追踪。',
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'buildCompactionInstructions' },
+      { path: 'src/host/runtime/session.ts', symbol: 'compactSession' },
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+    ],
+  },
+  'flow.compactionCode.assets': {
+    name: 'cogent_session_assets',
+    kind: 'buildShadowSessionAssetsSection',
+    runtimeOwner: 'Cogent Host',
+    codeKind: 'buildShadowSessionAssetsSection · DYNAMIC_SECTION_ORDER',
+    icon: RouteIcon,
+    status: 'implemented',
+    summary: '扫描分支末条 compaction 之前的影子区 cogent.attachment-input.v1，构建紧凑附件与目录索引段注入 before_agent_start。',
+    responsibilities: [
+      '排在 cogent_outputs 之后、skills 之前，仅压缩或新增附件时由 pi sections diff 增量更新。',
+    ],
+    boundary: '无压缩或影子区无资产时返回 null（零 token 开销）。',
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'buildShadowSessionAssetsSection' },
+      { path: 'src/host/runtime/prompts/sections.ts', symbol: 'DYNAMIC_SECTION_ORDER' },
+    ],
+  },
+  'flow.compactionCode.jsonl': {
+    name: 'PiSessionManager',
+    kind: 'pi/ JSONL · append-only',
+    runtimeOwner: 'pi JSONL',
+    codeKind: 'appendMessage · appendContextEdit · appendCompaction',
+    icon: DatabaseIcon,
+    status: 'implemented',
+    summary: 'pi 会话树持久化管理器：按回合追加 message、custom、context_edit 与 compaction 条目。',
+    responsibilities: [
+      '使用独立 transcriptCwd 定位目录，项目换根不改写旧 header 与历史文件路径。',
+    ],
+    boundary: '只追加不删改，单一写者由存储租约与单 Host 进程保证。',
+    sources: [
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+      { path: 'src/host/kernel/transcript.ts', symbol: 'piSessionDir' },
+    ],
+  },
+  'flow.compactionCode.proj': {
+    name: 'buildSessionProjection',
+    kind: 'convertToLlmWithBlockImages',
+    runtimeOwner: 'pi SDK 投影',
+    codeKind: 'sessionManager.buildSessionProjection · convertToLlm',
+    icon: RouteIcon,
+    status: 'implemented',
+    summary: 'pi 每次请求前从 JSONL 树实时投影有效上下文：取最新 compaction 摘要 + firstKeptEntryId 后消息并应用 context_edit。',
+    responsibilities: [
+      '跳过影子区旧消息与非上下文 custom 条目，交由 pi-ai 附加各厂商 Prefix Cache 断点出站。',
+    ],
+    boundary: '真实模型请求唯一权威投影源，Cogent 业务层不干预其内部裁剪。',
+    sources: [
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+      { path: 'docs/模块/上下文压缩.md', symbol: '保留式呈现' },
+    ],
+  },
+  'flow.compactionCode.read': {
+    name: 'readPiTranscript',
+    kind: 'readSessionBranch · 保留式 UI',
+    runtimeOwner: 'Cogent Host',
+    codeKind: 'readPiTranscript · readSessionBranch · toChatMessages',
+    icon: DatabaseIcon,
+    status: 'implemented',
+    summary: '遍历完整分支条目（忽略 context_edit 遮蔽），把全部原文消息、多代 compaction 折叠条及 summaryUsage 投影给前端。',
+    responsibilities: [
+      '逐行校验 JSON 与版本，兼容 v1 内存迁移与换工作目录后的历史无损恢复。',
+    ],
+    boundary: '损坏行直接抛出报错，不静默丢弃历史。',
+    sources: [
+      { path: 'src/host/kernel/transcript.ts', symbol: 'readPiTranscript' },
+      { path: 'src/host/kernel/transcript.ts', symbol: 'readSessionBranch' },
+    ],
+  },
+  'flow.compactionCode.search': {
+    name: 'SessionSearchService',
+    kind: 'SQLite Worker · revision',
+    runtimeOwner: '搜索 Worker',
+    codeKind: 'SessionSearchService · SearchDatabase · locateSearchSource',
+    icon: Code2Icon,
+    status: 'implemented',
+    summary: '独立 Worker 线程按转录文件 revision 变化异步提取正文与锚点，写入本地 SQLite 全文索引库。',
+    responsibilities: [
+      '支持中文短词检索与精确消息锚点定位，损坏会话移出索引并在 issues 显式标注。',
+    ],
+    boundary: '纯只读派生索引，随时可删库重建，不阻塞 Host 主事件循环。',
     sources: [
       { path: 'src/host/runtime/search/service.ts', symbol: 'SessionSearchService' },
       { path: 'src/host/runtime/search/database.ts', symbol: 'SearchDatabase' },
@@ -2587,70 +3147,231 @@ export const edgeDetails: Record<string, EdgeDetail> = {
     sources: [{ path: 'docs/计划/插件座实现.md', symbol: '目标与动机' }],
   },
 
-  // 6. 上下文压缩与转录
-  'flow.compaction.trigger>flow.compaction.adapt': {
-    title: '触发与溢出恢复 → 小窗参数收敛',
-    kind: '阈值触发或溢出单次压缩前按窗口收敛配置',
-    contract: '当对话占用超过 ctx - reserve（或模型抛出 context overflow 触发单次压缩重试闸）进入压缩前，通过包裹的 getCompactionSettings 动态读取当前模型上下文上限。',
-    rules: ['同一回合溢出恢复仅触发一次，再次溢出如实失败避免死循环扣费。'],
+  // 6a. 上下文工程与压缩转录（逻辑版）
+  'flow.compaction.entering>flow.compaction.check': {
+    title: '1. 内容进入上下文 → 2. 检查上下文水位',
+    kind: '三路来源完成入口截断与落盘后统一核算水位',
+    contract: '用户附件、规则技能与工具输出先经过体积控制挡住单次大内容，再在发往模型前统一按 5 维口径核算占用并对照模型真实预警线。',
+    rules: ['落盘临时路径仅限模型内部 read 分页取回，绝不暴露给用户。'],
     sources: [
-      { path: 'src/host/runtime/compaction.ts', symbol: 'adaptCompactionToWindow' },
-      { path: 'docs/模块/上下文压缩.md', symbol: 'Cogent 承接面' },
+      { path: 'src/host/runtime/tool-spill.ts', symbol: 'spillMcpToolResult' },
+      { path: 'src/host/runtime/session-prompt.ts', symbol: 'estimateContext' },
     ],
   },
-  'flow.compaction.adapt>flow.compaction.summarize': {
-    title: '小窗参数收敛 → pi 摘要压缩',
-    kind: 'keep = min(keep, ctx/2) · reserve = min(reserve, ctx/4)',
-    contract: '向 pi prompt() 内部的压缩器提供自适应参数，把切点之前的对话文本化打包进 <conversation> 请求摘要模型生成压缩总结。',
-    rules: ['遇到回合中段切点时由 pi 自动执行 turn-prefix（split-turn）辅助摘要。'],
+  'flow.compaction.check>flow.compaction.pass': {
+    title: '2. 检查上下文水位 → 正常直通（零改动）',
+    kind: '当前占用未达 85% 压力线，直接进入常规发送',
+    contract: '绝大多数轮次走此分支：不做任何裁剪或摘要，历史前缀保持原样不变以吃满厂商缓存折扣。',
+    rules: ['低水位严禁静默修改旧消息。'],
     sources: [
-      { path: 'src/host/runtime/compaction.ts', symbol: 'adaptCompactionToWindow' },
-      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createAgentSession' },
-    ],
-  },
-  'flow.compaction.summarize>flow.compaction.autoContinue': {
-    title: 'pi 摘要压缩 → 截断自动续写',
-    kind: 'maxTokens 贴线截断自动接续（上限 3 次）',
-    contract: '在同次 prompt() 周期收敛前若模型输出因 maxTokens 截断且非正常完整结束，由 SessionManager 注入续写指令保持连贯，至多连续 3 次。',
-    rules: ['无论是否自动续写或触发过溢出压缩，最终仅向外界发布唯一 agent_settled 终态。'],
-    sources: [{ path: 'src/host/runtime/session.ts', symbol: 'SessionManager' }],
-  },
-  'flow.compaction.summarize>flow.compaction.tree': {
-    title: 'pi 摘要压缩 → 保留式转录树',
-    kind: '向 pi/ JSONL 尾部追加 compaction 检查点记录',
-    contract: '摘要生成完成后向会话 JSONL 写入一条包含 summary 正文、firstKeptEntryId 保留起点与摘要花销的 compaction 条目，原历史行保持不动。',
-    rules: ['保留式存储确保用户上滑随时可查压缩前完整记录，不删真源。'],
-    sources: [{ path: 'src/host/kernel/transcript.ts', symbol: 'readSessionBranch' }],
-  },
-  'flow.compaction.summarize>flow.compaction.event': {
-    title: 'pi 摘要压缩 → 压缩事件与预警',
-    kind: 'compaction_start/end 转译为协议通知并计算预警线',
-    contract: 'Host 将 pi 内核压缩起止事件转译成 compaction.started(reason) / compaction.completed(summary, tokensBefore/After, summaryUsage, summarizedUntil)，并与 piTriggerRatio 一并对齐展示预警线。',
-    rules: ['summarizedUntil 取自保留区首条原始消息时间戳，与折叠历史精准对应。'],
-    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'computeL1PruneTrigger' },
       { path: 'src/host/runtime/compaction.ts', symbol: 'piTriggerRatio' },
-      { path: 'src/host/runtime/session-models.ts', symbol: 'projectModelSummaries' },
     ],
   },
-  'flow.compaction.tree>flow.compaction.llmProj': {
-    title: '保留式转录树 → 请求投影裁剪',
-    kind: 'convertToLlmMessages 裁剪影子区',
-    contract: '构造 LLM 请求时保留全部 system 提示、末条 compactionSummary 摘要与保留区消息，截掉之前的历史对话消息。',
-    rules: ['UI 聊天流照常显示被折叠的历史内容与压缩标记，不丢上下文浏览体验。'],
-    sources: [{ path: 'src/host/runtime/compaction.ts', symbol: 'convertToLlmMessages' }],
+  'flow.compaction.check>flow.compaction.prune': {
+    title: '2. 检查上下文水位 → 3. 轻度瘦身（不调模型）',
+    kind: '达到 85% 压力线（或距阈值 2K）时先做零成本裁剪',
+    contract: '在触发有损摘要前，先检查 5 轮前超过 8K 字符的非错误工具输出，裁成头 4K + 尾 1K 释放空间。',
+    rules: ['预计总节省不足 256 tokens 时放弃裁剪，避免无谓破坏前缀缓存。'],
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'computeL1PruneTrigger' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'planStaleToolResultPrunes' },
+    ],
   },
-  'flow.compaction.tree>flow.compaction.history': {
-    title: '保留式转录树 → 历史与换根回查',
-    kind: 'readSessionBranch 全量读取还原多代压缩树',
-    contract: '打开历史会话或项目目录换根重载时从磁盘完整解析 JSONL 分支，把各代压缩条（ChatMessage.role=compaction）和旧历史原文一起还给界面。',
-    rules: ['逐行 JSON.parse 与版本校验，末尾半行不冒充完整，全行损坏直接报错。'],
+  'flow.compaction.check>flow.compaction.compacting.cut': {
+    title: '2. 检查上下文水位 → ① 收敛窗口与留近期',
+    kind: '直接越过预警线、用户手动点压缩或模型报上下文溢出',
+    contract: '跳过轻度瘦身直接进入深度摘要压缩，先按当前模型窗口大小收敛预留量并划定保留切点。',
+    rules: ['溢出恢复同一回合最多自动压缩重试一次，避免死循环扣费。'],
+    sources: [
+      { path: 'src/host/runtime/session.ts', symbol: 'compactSession' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'adaptCompactionToWindow' },
+    ],
+  },
+  'flow.compaction.prune>flow.compaction.store': {
+    title: '3. 轻度瘦身 → 5. 只追加落盘真源',
+    kind: '裁剪后水位已降回安全线，免一次模型摘要调用',
+    contract: '将工具结果裁剪覆盖记录（context_edit）追加写入 JSONL，本轮直接继续对话，无需消耗摘要费用。',
+    rules: ['仅影响模型出站投影，界面上滑仍可见原始完整工具输出。'],
+    sources: [
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'planStaleToolResultPrunes' },
+    ],
+  },
+  'flow.compaction.prune>flow.compaction.compacting.cut': {
+    title: '3. 轻度瘦身 → ① 收敛窗口与留近期',
+    kind: '轻度瘦身后占用仍超过压缩线，升级进入深度摘要',
+    contract: '旧工具输出裁剪已写入或无可裁空间但窗口仍不足，无缝升级到 pi 深度摘要压缩。',
+    rules: ['保留最近 20K 原话，绝不切开 toolCall 与 toolResult 配对。'],
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'adaptCompactionToWindow' },
+      { path: 'docs/模块/上下文压缩.md', symbol: 'pi 内置内核' },
+    ],
+  },
+  'flow.compaction.compacting.cut>flow.compaction.compacting.summarize': {
+    title: '① 收敛窗口与留近期 → ② 生成中文结构化摘要',
+    kind: '保留切点与待摘要区间就绪，进入摘要生成',
+    contract: '将切点之前的旧对话打包发给模型，合并 Cogent 简体中文/黑盒约束与可选用户焦点指令生成结构化检查点。',
+    rules: ['独立无缓存调用并单独记录 summaryUsage 费用。'],
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'buildCompactionInstructions' },
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+    ],
+  },
+  'flow.compaction.compacting.summarize>flow.compaction.compacting.recover': {
+    title: '② 生成中文结构化摘要 → ③ 补回早期工作态',
+    kind: '摘要完成后自动核查被折叠历史中的附件与目录',
+    contract: '扫描被折叠的早期历史条目，提取仍有效的附件 id 与引用目录路径，通过动态系统段补回模型视野。',
+    rules: ['无早期附件/目录时返回 null，零 token 开销。'],
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'buildShadowSessionAssetsSection' },
+      { path: 'src/host/runtime/prompts/sections.ts', symbol: 'buildDynamicSections' },
+    ],
+  },
+  'flow.compaction.pass>flow.compaction.store': {
+    title: '正常直通 → 5. 只追加落盘真源',
+    kind: '常规回合消息原样追加至会话文件',
+    contract: '不写裁剪与摘要条目，只将本轮用户与助手消息顺序追加到 JSONL 尾部。',
+    rules: ['单写者顺序追加，绝不覆写历史行。'],
     sources: [{ path: 'src/host/kernel/transcript.ts', symbol: 'readSessionBranch' }],
   },
-  'flow.compaction.tree>flow.compaction.search': {
-    title: '保留式转录树 → 派生搜索索引',
-    kind: 'revision 变化驱动独立 Worker 重建或增量替换',
-    contract: '搜索 Worker 通过 locateSearchSource 核对转录文件摘要版本（revision），发现变更时调用 loadSearchSource 只读抽取文本及锚点写入 SearchDatabase。',
-    rules: ['损坏会话从派生库移除并显式在检索 issues 列表标注不完整。'],
+  'flow.compaction.compacting.recover>flow.compaction.store': {
+    title: '③ 补回早期工作态 → 5. 只追加落盘真源',
+    kind: '摘要检查点与动态资产段顺序追加落盘并广播事件',
+    contract: '将包含摘要正文、保留起点与摘要费用的 compaction 条目追加到 JSONL 尾部，原历史行完整不动，并通知界面插入折叠条。',
+    rules: ['保留式存储确保用户随时可上滑核查压缩前完整记录。'],
+    sources: [
+      { path: 'src/host/kernel/transcript.ts', symbol: 'readSessionBranch' },
+      { path: 'src/host/runtime/session.ts', symbol: 'SessionManager' },
+    ],
+  },
+  'flow.compaction.store>flow.compaction.outputs.toModel': {
+    title: '5. 只追加落盘真源 → 发给模型（精简版）',
+    kind: '模型侧投影：最新摘要 + 瘦身后近期对话',
+    contract: '下次请求模型时由 pi SDK 自动跳过已被摘要的早期原文，套用已落盘的工具裁剪与前缀缓存断点出站。',
+    rules: ['绝不切开 toolCall 与 toolResult 配对，确保出站消息协议合法。'],
+    sources: [
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+      { path: 'docs/模块/上下文压缩.md', symbol: '保留式呈现' },
+    ],
+  },
+  'flow.compaction.store>flow.compaction.outputs.toUser': {
+    title: '5. 只追加落盘真源 → 界面与搜索（完整版）',
+    kind: '用户侧投影：完整历史回放、换目录恢复与全文搜索',
+    contract: '界面打开会话、重启或换目录时读取完整 JSONL 还原全部原文与多代压缩条；搜索 Worker 监听 revision 异步更新本地索引。',
+    rules: ['损坏行直接报错不静默吞数据；搜索索引只读派生，不回写会话真源。'],
+    sources: [
+      { path: 'src/host/kernel/transcript.ts', symbol: 'readPiTranscript' },
+      { path: 'src/host/runtime/search/service.ts', symbol: 'SessionSearchService' },
+    ],
+  },
+
+  // 6b. 上下文工程（源码详细版）
+  'flow.compactionCode.rules>flow.compactionCode.meter': {
+    title: 'buildSystemPrompt → estimateContext',
+    kind: '静态前缀、工作区规则与动态段进入系统侧估算',
+    contract: '将完整渲染的系统提示（含 <skills> 与 7 个动态段）交由 estimateContext 拆分系统提示与技能清单占比。',
+    rules: ['惰性会话未装配 pi 时通过 renderPromptWithSections 同口径回落估算。'],
+    sources: [
+      { path: 'src/host/runtime/prompts/sections.ts', symbol: 'renderPromptWithSections' },
+      { path: 'src/host/runtime/session-prompt.ts', symbol: 'estimateContext' },
+    ],
+  },
+  'flow.compactionCode.spill>flow.compactionCode.meter': {
+    title: 'afterToolCall 落盘 → estimateContext',
+    kind: '超 24K 截断落盘后的工具结果进入消息侧估算',
+    contract: 'spillMcpToolResult 与 read_attachment 限制单条消息体积后，estimateContext 单独拆出 toolResult 占比。',
+    rules: ['MCP 工具 schema 随 pi.agent.state.tools 一起计入 mcpTools 细分项。'],
+    sources: [
+      { path: 'src/host/runtime/tool-spill.ts', symbol: 'spillMcpToolResult' },
+      { path: 'src/host/runtime/session-prompt.ts', symbol: 'estimateContext' },
+    ],
+  },
+  'flow.compactionCode.meter>flow.compactionCode.l1': {
+    title: 'estimateContext → 工具结果裁剪钩子',
+    kind: '估算 token 达 85% 压力线时启动（不调模型）',
+    contract: '在 before_agent_start 与 turn_end 核对当前投影 token，达 85% 压力线后调用 planStaleToolResultPrunes 规划裁剪。',
+    rules: ['总节省 <256 tokens 直接放弃，避免无谓破坏前缀缓存。'],
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'computeL1PruneTrigger' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'planStaleToolResultPrunes' },
+    ],
+  },
+  'flow.compactionCode.meter>flow.compactionCode.adapt': {
+    title: 'estimateContext → adaptCompactionToWindow',
+    kind: '占用越过 ctx - reserve、手动调用或溢出时收敛窗口参数',
+    contract: '压缩前通过链式包裹的 getCompactionSettings 动态读取模型 contextWindow，按半窗/四分之一窗收敛 keep 与 reserve。',
+    rules: ['标准大窗（≥64K）与 pi 原生默认完全一致。'],
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'adaptCompactionToWindow' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'piTriggerRatio' },
+    ],
+  },
+  'flow.compactionCode.adapt>flow.compactionCode.beforeCompact': {
+    title: 'adaptCompactionToWindow → session_before_compact',
+    kind: '向 pi compact() 注入中文黑盒指令与用户焦点指令',
+    contract: 'createCogentHooks 的 beforeCompact 解析 modelRuntime 凭据并调用官方 compact()，返回 { compaction } 接管摘要文本质量。',
+    rules: ['凭据缺失时返回 undefined 安全回落 pi 默认摘要路径。'],
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'buildCompactionInstructions' },
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+    ],
+  },
+  'flow.compactionCode.beforeCompact>flow.compactionCode.assets': {
+    title: 'session_before_compact → cogent_session_assets',
+    kind: '压缩落盘后下一轮 before_agent_start 自动注入资产索引',
+    contract: 'buildShadowSessionAssetsSection 提取影子区历史 cogent.attachment-input.v1，经动态段恢复附件 id 与目录引用。',
+    rules: ['无压缩或影子区无资产时返回 null（零开销）。'],
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'buildShadowSessionAssetsSection' },
+      { path: 'src/host/runtime/prompts/sections.ts', symbol: 'buildDynamicSections' },
+    ],
+  },
+  'flow.compactionCode.l1>flow.compactionCode.jsonl': {
+    title: '工具结果裁剪钩子 → PiSessionManager',
+    kind: '逐条调用 appendContextEdit 写入覆盖节点',
+    contract: '以 append-only 方式向 JSONL 追加 context_edit 条目，不覆写原有 toolResult 行。',
+    rules: ['仅 LLM 投影层应用 context_edit，UI 全量回查不受遮蔽。'],
+    sources: [
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'planStaleToolResultPrunes' },
+    ],
+  },
+  'flow.compactionCode.beforeCompact>flow.compactionCode.jsonl': {
+    title: 'session_before_compact → PiSessionManager',
+    kind: '调用 appendCompaction 追加检查点与摘要费用',
+    contract: 'pi 将 summary、firstKeptEntryId、tokensBefore 与 usage 持久化为 compaction 条目，原历史行完整保留。',
+    rules: ['同步通过 compaction_end 转译广播给前端。'],
+    sources: [
+      { path: 'src/host/runtime/session.ts', symbol: 'SessionManager' },
+      { path: 'src/host/kernel/transcript.ts', symbol: 'readSessionBranch' },
+    ],
+  },
+  'flow.compactionCode.jsonl>flow.compactionCode.proj': {
+    title: 'PiSessionManager → buildSessionProjection',
+    kind: '出站请求投影：裁剪影子区并叠加 context_edit',
+    contract: '每次 LLM 请求前由 pi SDK 从会话树构建最新摘要 + 保留区消息，再经 convertToLlmWithBlockImages 转为厂商请求体。',
+    rules: ['保持 toolCall/toolResult 配对合法并应用 Prefix Cache 断点。'],
+    sources: [
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+      { path: 'docs/模块/上下文压缩.md', symbol: '保留式呈现' },
+    ],
+  },
+  'flow.compactionCode.jsonl>flow.compactionCode.read': {
+    title: 'PiSessionManager → readPiTranscript',
+    kind: '保留式全量读取：还原原文、多代压缩条与摘要费用',
+    contract: 'readSessionBranch 逐行校验 JSONL 分支，readPiTranscript 将全部消息与压缩条（附 summaryUsage）投影给聊天界面。',
+    rules: ['支持项目换根后按独立 transcriptCwd 无损回查。'],
+    sources: [
+      { path: 'src/host/kernel/transcript.ts', symbol: 'readPiTranscript' },
+      { path: 'src/host/kernel/transcript.ts', symbol: 'readSessionBranch' },
+    ],
+  },
+  'flow.compactionCode.jsonl>flow.compactionCode.search': {
+    title: 'PiSessionManager → SessionSearchService',
+    kind: 'revision 变更驱动独立 Worker 增量重建 SQLite 索引',
+    contract: '搜索 Worker 核对转录文件 revision，只读抽取文本及锚点写入 SearchDatabase，支持中文短词搜索与原文跳转。',
+    rules: ['损坏会话移出索引并在 issues 显式告警。'],
     sources: [
       { path: 'src/host/runtime/search/service.ts', symbol: 'SessionSearchService' },
       { path: 'src/host/runtime/search/database.ts', symbol: 'SearchDatabase' },
@@ -3074,22 +3795,71 @@ export const viewDetails: Record<ViewId, ModuleDetail> = {
     ],
   },
   flowCompaction: {
-    name: '上下文压缩与转录',
-    kind: '专题流程 · 自适应压缩、保留式转录与派生检索',
+    name: '上下文工程与压缩转录',
+    kind: '逻辑版 · 看图即懂全流程（顶部可切换「源码版」调用图）',
+    runtimeOwner: 'Cogent Host + pi 内核',
     icon: SparklesIcon,
     status: 'implemented',
     showStatus: false,
-    verifiedAt: '2026-11-25',
-    summary: 'pi prompt() 内置阈值与溢出单次压缩，经 Cogent 小窗收敛参数、事件与预警比例对齐、以及 append-only JSONL 保留式转录支撑长期对话与检索回查。',
+    verifiedAt: '2026-11-26',
+    summary: '入口三路控体积 → 水位检查 → 不调模型轻度瘦身 → pi 内核中文深度摘要与附件恢复 → 只追加落盘 → 给模型精简 / 给人完整。',
     responsibilities: [
-      '小窗参数按半窗/四分之一窗自适应收敛，预警线与 pi 真实触发比例完全一致。',
-      '请求投影仅折叠发往模型的影子区，原始转录分支、历史回查与派生索引全程保留完整消息。',
+      '压缩与转录由 pi 内核托管（决定 26），Cogent Host 负责入口落盘、不调模型轻度裁剪、小窗收敛、中文黑盒指令与压缩后附件恢复。',
+      '点击顶部「源码版」可切换为真实的函数、钩子与数据流工程图。',
     ],
-    boundary: '压缩驱动完全内聚于 pi；Cogent 不修改 JSONL 真源，Worker 搜索库可随时重建。',
+    boundary: '不自建第二套压缩引擎，不覆写原始 JSONL；常规低水位零改写以保全前缀缓存。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: '全链路自研：工具执行后自动头尾落盘 → 超压先不调模型裁剪旧结果 → 摘要直接复用主对话热缓存，并支持子会话隔离与子目录规则动态加载。',
+        diff: 'Cogent 不重复造轮子，把核心摘要与落盘交给 pi 托管，自己只补最值钱的 MCP 落盘与轻度裁剪，维护成本低得多；子会话隔离留待后续独立模块。',
+      },
+      {
+        repo: 'zcode',
+        approach: '全链路自研且偏重：大结果存库只留短预览、闲置/90% 双触发整条清空旧输出、压缩后自动重读最近 5 个文件，底层用 SQLite 并外挂三层长期记忆。',
+        diff: 'Cogent 吸收了其“保护最近 5 轮 + 省太少不裁 + 5 维占比”的精华，但保留头尾预览减少重读、用轻量的单文件 JSONL 落盘，长期记忆暂不强耦合。',
+      },
+    ],
     sources: [
+      { path: 'docs/计划/上下文工程实现.md', symbol: '总体方案设计' },
       { path: 'docs/模块/上下文压缩.md', symbol: 'pi 内置内核' },
-      { path: 'src/host/runtime/compaction.ts', symbol: 'adaptCompactionToWindow · convertToLlmMessages' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'planStaleToolResultPrunes · adaptCompactionToWindow' },
+      { path: 'src/host/runtime/tool-spill.ts', symbol: 'spillMcpToolResult' },
       { path: 'src/host/runtime/search/service.ts', symbol: 'SessionSearchService' },
+    ],
+  },
+  flowCompactionCode: {
+    name: '上下文工程（源码调用图）',
+    kind: '源码版 · 钩子、函数与持久化调用链（顶部可切回「逻辑版」）',
+    runtimeOwner: 'src/host · pi SDK',
+    icon: Code2Icon,
+    status: 'implemented',
+    showStatus: false,
+    verifiedAt: '2026-11-26',
+    summary: '呈现上下文工程在 Host 与 pi SDK 间的真实函数与扩展钩子调用链：buildSystemPrompt / afterToolCall → estimateContext → 轻度裁剪与深度摘要钩子 → PiSessionManager JSONL → 双投影。',
+    responsibilities: [
+      '全部 Host 干预均通过 pi 官方扩展点（before_agent_start、turn_end、session_before_compact、afterToolCall、appendContextEdit）接入。',
+      'PiSessionManager 为唯一写入者，模型出站走 buildSessionProjection，界面与搜索走只读分支回查。',
+    ],
+    boundary: '不修改 node_modules 内的 pi 源码；协议扩展保持 additive 向后兼容。',
+    comparisons: [
+      {
+        repo: 'deepseek-harness',
+        approach: '用插件框架统一拦截“工具执行后 / 每步请求前 / 请求报错后”三个节点，所有落盘、裁剪和摘要都作为独立插件挂载。',
+        diff: 'Cogent 不引入重型插件框架，直接在 Host 装配阶段用 pi 官方钩子直连，调用链一眼能追到底，改起来更轻。',
+      },
+      {
+        repo: 'zcode',
+        approach: '从压缩状态机、请求消息拼装到 SQLite 冷启动恢复全部自己手写，掌控力极细但代码体量很大。',
+        diff: 'Cogent 把底层循环、摘要切点与会话持久化全部交给 pi SDK，自家只维护最外层策略钩子，代码量少一个数量级且好跟上游升级。',
+      },
+    ],
+    sources: [
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+      { path: 'src/host/runtime/hook-seat.ts', symbol: 'createCogentHooks' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'planStaleToolResultPrunes' },
+      { path: 'src/host/runtime/tool-spill.ts', symbol: 'spillMcpToolResult' },
+      { path: 'src/host/runtime/session-prompt.ts', symbol: 'estimateContext' },
     ],
   },
   flowOutputs: {

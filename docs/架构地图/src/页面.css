@@ -212,7 +212,7 @@ code {
 .architecture-boundary-heading .ui-button { font-size: 0.8125rem; font-weight: 600; }
 .architecture-boundary-heading span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .architecture-stage { position: absolute; top: 44px; padding-bottom: 5px; border-bottom: 1px solid var(--border); font-weight: 500; color: var(--muted-foreground); pointer-events: none; }
-.architecture-boundary-note { position: absolute; left: 16px; right: 16px; bottom: 12px; }
+.architecture-boundary-note { position: absolute; left: 16px; right: 16px; bottom: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .architecture-lane-band {
   position: absolute;
   display: flex;

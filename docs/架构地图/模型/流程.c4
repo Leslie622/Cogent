@@ -115,26 +115,69 @@ model {
       nativeExt -[call]-> plugins '接管安装与启停' { #planned }
     }
 
-    // 6. 上下文压缩与转录机制
-    compaction = system '上下文压缩与转录' {
-      trigger = component '触发与溢出恢复' { technology 'ctx - reserve · overflow' }
-      adapt = component '小窗参数收敛' { technology 'adaptCompactionToWindow' }
-      summarize = component 'pi 摘要压缩' { technology 'AgentSession · compact' }
-      autoContinue = component '截断自动续写' { technology 'AUTO_CONTINUE ≤ 3' }
-      tree = component '保留式转录树' { technology 'pi/ JSONL · append-only' }
-      event = component '压缩事件与预警' { technology 'compaction.* · piTriggerRatio' }
-      llmProj = component '请求投影裁剪' { technology 'convertToLlmMessages' }
-      history = component '历史与换根回查' { technology 'readSessionBranch' }
-      search = component '派生搜索索引' { technology 'SessionSearchService' }
+    // 6a. 上下文工程与压缩转录（逻辑版：入口三路控体积 → 水位三档分流 → 轻度瘦身/深度摘要三步容器 → 落盘双视图）
+    compaction = system '上下文工程与压缩转录' {
+      entering = system '1. 内容进入上下文' {
+        technology '三路来源进入前先控体积'
+        userInput = component '用户消息与附件' { technology '正文直入 · 附件按需读超 24K 落盘' }
+        sysRules = component '系统规则与动态段' { technology '规则 16K · 技能 20K · 稳定度排序' }
+        toolOut = component '工具执行结果' { technology '内置 50KB/2K行 · MCP 超 24K 落盘' }
+      }
+      check = component '2. 检查上下文水位' { technology '5 维计量 · 对照预警线 · 分三路处理' }
+      pass = component '正常直通（零改动）' { technology '不裁剪不摘要 · 100% 保前缀缓存' }
+      prune = component '3. 轻度瘦身（不调模型）' { technology '裁旧大工具输出 · 省太少放弃' }
+      compacting = system '4. 深度摘要压缩' {
+        technology 'pi 内核托管 · Host 注入中文黑盒与资产恢复'
+        cut = component '① 收敛窗口与留近期' { technology '小窗按比例缩预留 · 留近 20K 原话' }
+        summarize = component '② 生成中文结构化摘要' { technology '中文黑盒 + 焦点指令 · 无缓存调用' }
+        recover = component '③ 补回早期工作态' { technology '自动恢复被折叠的附件 ID 与目录' }
+      }
+      store = component '5. 只追加落盘真源' { technology '原文、裁剪与多代摘要只增不删' }
+      outputs = system '6. 两路分用（同源各看各的）' {
+        technology '模型精简出站 · 用户完整回放'
+        toModel = component '发给模型（精简版）' { technology '最新摘要 + 瘦身后近期对话' }
+        toUser = component '界面与搜索（完整版）' { technology '保留全部历史原文 · 全文索引' }
+      }
 
-      trigger -[call]-> adapt '按 ctx 收敛 reserve/keep'
-      adapt -[call]-> summarize 'prompt() 生命周期内置'
-      summarize -[call]-> autoContinue 'maxTokens 截断续写'
-      summarize -[call]-> tree '写入 compaction 条目'
-      summarize -[call]-> event '广播摘要与预警比例'
-      tree -[call]-> llmProj '折叠影子区进 LLM 请求'
-      tree -[call]-> history '重拉不删旧消息'
-      tree -[call]-> search 'revision 变更重索引'
+      entering -[call]-> check '统一进入水位检查'
+      check -[call]-> pass '正常（<85%）'
+      check -[call]-> prune '快满（≥85%）'
+      check -[call]-> compacting.cut '越线 / 手动 / 溢出'
+      prune -[call]-> store '降回安全线：免摘要'
+      prune -[call]-> compacting.cut '仍超线：升级压缩'
+      compacting.cut -[call]-> compacting.summarize '切点就绪'
+      compacting.summarize -[call]-> compacting.recover '摘要完成后恢复'
+      pass -[call]-> store '原样追加'
+      compacting.recover -[call]-> store '追加摘要检查点'
+      store -[call]-> outputs.toModel '给模型看'
+      store -[call]-> outputs.toUser '给人看'
+    }
+
+    // 6b. 上下文工程与压缩转录（源码详细版：真实钩子、函数与数据流）
+    compactionCode = system '上下文工程（源码调用图）' {
+      rules = component 'buildSystemPrompt' { technology 'prompts/system.ts · 16K/20K' }
+      spill = component 'afterToolCall 落盘' { technology 'spillMcpToolResult · read_attachment' }
+      meter = component 'estimateContext' { technology 'session-prompt.ts · piTriggerRatio' }
+      l1 = component '工具结果裁剪钩子' { technology 'planStaleToolResultPrunes' }
+      adapt = component 'adaptCompactionToWindow' { technology 'getCompactionSettings 链式包裹' }
+      beforeCompact = component 'session_before_compact' { technology 'buildCompactionInstructions · compact' }
+      assets = component 'cogent_session_assets' { technology 'buildShadowSessionAssetsSection' }
+      jsonl = component 'PiSessionManager' { technology 'pi/ JSONL · append-only' }
+      proj = component 'buildSessionProjection' { technology 'convertToLlmWithBlockImages' }
+      read = component 'readPiTranscript' { technology 'readSessionBranch · 保留式 UI' }
+      search = component 'SessionSearchService' { technology 'SQLite Worker · revision' }
+
+      rules -[call]-> meter '静态/动态系统段'
+      spill -[call]-> meter '24K 落盘后消息'
+      meter -[call]-> l1 '达 85% 压力线'
+      meter -[call]-> adapt '越阈值 / 手动 / 溢出'
+      adapt -[call]-> beforeCompact '收敛 reserve/keep'
+      beforeCompact -[call]-> assets '压缩后补资产段'
+      l1 -[call]-> jsonl 'appendContextEdit'
+      beforeCompact -[call]-> jsonl 'appendCompaction'
+      jsonl -[call]-> proj '出站请求投影'
+      jsonl -[call]-> read '完整历史回查'
+      jsonl -[call]-> search 'revision 变更索引'
     }
 
     // 7. 文件边界与产物交付机制
@@ -241,8 +284,13 @@ views {
   }
 
   view flowCompaction {
-    title '上下文压缩与转录'
-    include flow.compaction.*
+    title '上下文工程与压缩转录'
+    include flow.compaction.*, flow.compaction.entering.*, flow.compaction.compacting.*, flow.compaction.outputs.*
+  }
+
+  view flowCompactionCode {
+    title '上下文工程（源码调用图）'
+    include flow.compactionCode.*
   }
 
   view flowOutputs {
