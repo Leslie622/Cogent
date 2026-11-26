@@ -29,6 +29,7 @@ import {
   wrapSystemReminder
 } from '../../../src/host/runtime/prompts'
 import { SessionInspector } from '../../../src/host/runtime/inspector'
+import { estimateContext } from '../../../src/host/runtime/session-prompt'
 import { SkillStore } from '../../../src/host/runtime/skill-store'
 
 const tempDirs: string[] = []
@@ -196,8 +197,51 @@ describe('多根技能合并与 Inspector 完整提示词观测', () => {
 
   it('PROMPT_INVENTORY 覆盖全部三层与辅助调用', () => {
     expect(PROMPT_INVENTORY.system).toContain('cogent_outputs')
+    expect(PROMPT_INVENTORY.system).toContain('cogent_session_assets')
     expect(PROMPT_INVENTORY.hostTools).toHaveLength(6)
     expect(PROMPT_INVENTORY.reminders).toContain('output_reminder')
     expect(PROMPT_INVENTORY.auxiliary).toContain('session-title')
+    expect(PROMPT_INVENTORY.auxiliary).toContain('compaction-instructions')
+  })
+
+  it('工作区规则文件按 AGENTS.override.md > AGENTS.md > CLAUDE.md 优先加载', () => {
+    const wsClaude = makeTempDir('cogent-prompt-claude-')
+    writeFileSync(join(wsClaude, 'CLAUDE.md'), 'Claude 规则正文', 'utf-8')
+    expect(buildSystemPrompt([wsClaude], [wsClaude])).toContain('Claude 规则正文')
+
+    const wsOverride = makeTempDir('cogent-prompt-override-')
+    writeFileSync(join(wsOverride, 'AGENTS.md'), '普通 AGENTS', 'utf-8')
+    writeFileSync(join(wsOverride, 'AGENTS.override.md'), '覆盖版 AGENTS', 'utf-8')
+    const rendered = buildSystemPrompt([wsOverride], [wsOverride])
+    expect(rendered).toContain('覆盖版 AGENTS')
+    expect(rendered).not.toContain('普通 AGENTS')
+  })
+
+  it('estimateContext 细拆技能、MCP 工具与工具输出占用', () => {
+    const sys = '核心系统提示\n\n<skills>\n<available_skills><skill><name>demo</name></skill></available_skills>\n</skills>'
+    const est = estimateContext(
+      [
+        { role: 'user', content: '你好', timestamp: 1 },
+        {
+          role: 'toolResult',
+          toolCallId: 'c1',
+          toolName: 'read',
+          content: [{ type: 'text', text: 'x'.repeat(400) }],
+          isError: false,
+          timestamp: 2
+        }
+      ],
+      sys,
+      [
+        { name: 'read', description: 'read file' },
+        { name: 'mcp__docs__search', description: 'search docs', parameters: { type: 'object' } }
+      ]
+    )
+    expect(est.skills).toBeGreaterThan(0)
+    expect(est.mcpTools).toBeGreaterThan(0)
+    expect(est.toolResults).toBeGreaterThan(0)
+    expect(est.systemPrompt).toBeGreaterThan(est.skills!)
+    expect(est.toolDefs).toBeGreaterThanOrEqual(est.mcpTools!)
+    expect(est.messages).toBeGreaterThan(est.toolResults!)
   })
 })

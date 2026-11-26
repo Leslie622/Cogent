@@ -21,7 +21,11 @@
  * 不把提醒永久追加到用户转录。工具/工作区长期规则仍走系统提示段。
  */
 import type { Agent, AgentMessage, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
-import type { InlineExtension } from '@earendil-works/pi-coding-agent'
+import type {
+  InlineExtension,
+  SessionBeforeCompactEvent,
+  SessionBeforeCompactResult
+} from '@earendil-works/pi-coding-agent'
 import type { ApprovalBridge } from '../kernel/pi-session-factory'
 
 /** 钩子座的注入面（pi-session-factory 装配时传入；undefined 项 = 该钩子不挂） */
@@ -33,18 +37,21 @@ export interface CogentHooksOptions {
    * （pi 段表无 null，删除靠期望侧不出现该键 —— diff 对转录回放的旧段产出
    * 补丁撤下，空墓碑语义）；返回 undefined / 空表 = 本会话无段（不碰
    * sections）。pi 对 sections「变更才追加 patch、回放按名替换」—— 活算 +
-   * diff = 回合边界热刷新（权限通告 / 技能清单 / 任务清单 / 已批准计划 共用）。
+   * diff = 回合边界热刷新（权限通告 / 技能清单 / 任务清单 / 已批准计划 / 压缩后资产 共用）。
    */
   sections?: () => Record<string, string | null> | undefined
   /** 回合前段注入完成后回传 pi 完整渲染的系统提示词（供观测控制台对齐真实发送面）。 */
   onSystemPromptRendered?: (systemPrompt: string) => void
   /** 每次请求的上下文注入；支持异步读取交付状态，返回数组整体替换 messages。 */
   context?: (messages: AgentMessage[]) => AgentMessage[] | void | Promise<AgentMessage[] | void>
+  /** 回合前与工具轮结束后执行上下文压力检查（L1 零成本工具结果裁剪）。 */
+  onPressureCheck?: () => void
+  /** L2 摘要压缩前钩子（注入中文与黑盒约束指令并委托 pi 官方 compact）。 */
+  beforeCompact?: (event: SessionBeforeCompactEvent) => Promise<SessionBeforeCompactResult | undefined>
 }
 
 /**
- * 具名内联扩展：段注入的注册地（从 pi-session-factory 的匿名工厂迁入，
- * 逻辑零改动 —— 迁移等价性由既有段相关测试钉住）。
+ * 具名内联扩展：段注入、上下文压力裁剪与压缩前指令注入的统一注册地。
  */
 export function createCogentHooks(opts: CogentHooksOptions): InlineExtension {
   return {
@@ -58,6 +65,7 @@ export function createCogentHooks(opts: CogentHooksOptions): InlineExtension {
         })
       }
       pi.on('before_agent_start', (event) => {
+        opts.onPressureCheck?.()
         const wanted = opts.sections?.()
         if (wanted !== undefined && Object.keys(wanted).length > 0) {
           const sections = { ...event.systemPromptOptions.sections }
@@ -69,6 +77,14 @@ export function createCogentHooks(opts: CogentHooksOptions): InlineExtension {
         }
         opts.onSystemPromptRendered?.(event.systemPrompt)
       })
+      if (opts.onPressureCheck !== undefined) {
+        pi.on('turn_end', () => {
+          opts.onPressureCheck?.()
+        })
+      }
+      if (opts.beforeCompact !== undefined) {
+        pi.on('session_before_compact', async (event) => opts.beforeCompact?.(event))
+      }
       if (opts.context !== undefined) {
         pi.on('context', async (event) => {
           const replaced = await opts.context?.(event.messages)

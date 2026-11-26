@@ -33,7 +33,14 @@ export function formatTokens(n: number): string {
 
 /** 明细点色灰黑阶（模块级常量同 EMPTY_MESSAGES 的稳定性考量）：行序 = 占比
     降序，最深给最大段；三档对半递减保证 6px 小点上仍可分辨 */
-const DOT_TONES = ['bg-foreground', 'bg-foreground/50', 'bg-foreground/25']
+const DOT_TONES = [
+  'bg-foreground',
+  'bg-foreground/70',
+  'bg-foreground/50',
+  'bg-foreground/35',
+  'bg-foreground/25',
+  'bg-foreground/15'
+]
 
 /**
  * 自动压缩触发线的回落值（真值随模型目录下发：ModelSummary
@@ -130,6 +137,13 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
   const contextLive = useChatStore((s) =>
     session.kind === 'chat' ? s.bySession[session.chatId]?.runtime.contextLive : undefined
   )
+  const running = useChatStore((s) =>
+    session.kind === 'chat' ? s.bySession[session.chatId]?.runtime.running === true : false
+  )
+  const compacting = useChatStore((s) =>
+    session.kind === 'chat' ? s.bySession[session.chatId]?.runtime.compacting === true : false
+  )
+  const compactNow = useChatStore((s) => s.compactNow)
   // 分母模型与 ModelMenu 同源（findActiveModel 双键）：同名模型跨 provider 收录时
   // id 单键命中错家 —— 未配 key 的收录家、或都配了 key 时目录在前的那家（后者
   // 上下文窗口大小还可能与自定义网关的那份不同，分母就错了）
@@ -225,15 +239,36 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
   // 行序对标 ZCode /context：按占比降序 + 点色随行序变浅（"越大越深"的冗余
   // 编码）。三段名次随会话生长互换属正常（工具声明固定、消息段会涨），行
   // 重排只是位置对调，键仍用 label 不闪内容
-  const breakdown = estimate
-    ? [
-        { label: '系统提示词', tokens: estimate.systemPrompt * scale },
-        { label: '系统工具', tokens: estimate.toolDefs * scale },
-        { label: '消息', tokens: estimate.messages * scale }
-      ]
+  const hasDetailedBreakdown =
+    estimate !== undefined &&
+    (estimate.skills !== undefined || estimate.mcpTools !== undefined || estimate.toolResults !== undefined)
+  const rawRows = estimate
+    ? hasDetailedBreakdown
+      ? [
+          { label: '系统提示词', tokens: Math.max(0, estimate.systemPrompt - (estimate.skills ?? 0)) * scale },
+          ...(estimate.skills !== undefined && estimate.skills > 0
+            ? [{ label: '技能清单', tokens: estimate.skills * scale }]
+            : []),
+          { label: '系统工具', tokens: Math.max(0, estimate.toolDefs - (estimate.mcpTools ?? 0)) * scale },
+          ...(estimate.mcpTools !== undefined && estimate.mcpTools > 0
+            ? [{ label: 'MCP 工具', tokens: estimate.mcpTools * scale }]
+            : []),
+          { label: '对话消息', tokens: Math.max(0, estimate.messages - (estimate.toolResults ?? 0)) * scale },
+          ...(estimate.toolResults !== undefined && estimate.toolResults > 0
+            ? [{ label: '工具输出', tokens: estimate.toolResults * scale }]
+            : [])
+        ]
+      : [
+          { label: '系统提示词', tokens: estimate.systemPrompt * scale },
+          { label: '系统工具', tokens: estimate.toolDefs * scale },
+          { label: '消息', tokens: estimate.messages * scale }
+        ]
+    : undefined
+  const breakdown = rawRows
+    ? rawRows
         .map((r) => ({ ...r, pct: (r.tokens / used) * 100 }))
         .sort((a, b) => b.tokens - a.tokens)
-        .map((r, i) => ({ ...r, dot: DOT_TONES[i] }))
+        .map((r, i) => ({ ...r, dot: DOT_TONES[Math.min(i, DOT_TONES.length - 1)] }))
     : undefined
 
   return (
@@ -288,6 +323,19 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
             <span className="text-xs font-semibold tabular-nums">
               {parseFloat((cacheHit * 100).toFixed(1))}%
             </span>
+          </div>
+        )}
+        {session.kind === 'chat' && (
+          <div className="mt-3 border-t pt-3">
+            <Button
+              variant="outline"
+              size="xs"
+              className="w-full"
+              disabled={running || compacting}
+              onClick={() => void compactNow()}
+            >
+              {compacting ? '正在压缩上下文…' : '压缩上下文'}
+            </Button>
           </div>
         )}
       </PopoverContent>

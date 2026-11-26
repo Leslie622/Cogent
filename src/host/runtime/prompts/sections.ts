@@ -44,6 +44,8 @@ export interface DynamicSectionsInput {
   skillsSection: string | null
   todosSection: string | null
   planSection: string | null
+  /** 压缩后恢复的活跃附件与目录引用索引（无压缩或无影子区资产时为 null） */
+  sessionAssetsSection?: string | null
 }
 
 /**
@@ -53,6 +55,7 @@ export interface DynamicSectionsInput {
 export function buildDynamicSections(input: DynamicSectionsInput): Record<string, string | null> {
   return {
     cogent_outputs: outputsSectionText(),
+    cogent_session_assets: input.sessionAssetsSection ?? null,
     skills: input.skillsSection,
     cogent_permission: permissionSectionText(input.permissionMode),
     cogent_plan_active: input.planEnabled ? planModeSectionText() : null,
@@ -64,6 +67,7 @@ export function buildDynamicSections(input: DynamicSectionsInput): Record<string
 /** 动态段标准顺序（供单测与可观测性对照）。 */
 export const DYNAMIC_SECTION_ORDER = [
   'cogent_outputs',
+  'cogent_session_assets',
   'skills',
   'cogent_permission',
   'cogent_plan_active',

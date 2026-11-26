@@ -627,12 +627,15 @@ export interface MessageUsage {
   contextEstimate?: ContextEstimate
 }
 
-/** 上下文明细三段估算（与 protocol ContextEstimate 镜像；见其字段注释） */
+/** 上下文明细估算（与 protocol ContextEstimate 镜像；见其字段注释） */
 export interface ContextEstimate {
   systemPrompt: number
   toolDefs: number
   messages: number
   total: number
+  skills?: number
+  mcpTools?: number
+  toolResults?: number
 }
 
 export interface ProviderSummary {

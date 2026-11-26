@@ -21,6 +21,7 @@
  */
 import { join } from 'node:path'
 import {
+  compact,
   createAgentSession,
   createMcpExtension,
   DefaultResourceLoader,
@@ -34,8 +35,17 @@ import {
   type ToolDefinition
 } from '@earendil-works/pi-coding-agent'
 import type { Agent, AgentMessage } from '@earendil-works/pi-agent-core'
+import { estimateContextTokens } from '@earendil-works/pi-ai/utils/estimate'
 import { createCogentHooks, wrapApprovalChain, wrapRequestCancellation } from '../runtime/hook-seat'
-import { adaptCompactionToWindow } from '../runtime/compaction'
+import {
+  adaptCompactionToWindow,
+  buildCompactionInstructions,
+  buildShadowSessionAssetsSection,
+  computeL1PruneTrigger,
+  convertToLlmMessages,
+  planStaleToolResultPrunes
+} from '../runtime/compaction'
+import { spillMcpToolResult } from '../runtime/tool-spill'
 import type { McpSettingsPatch } from '../runtime/mcp-config'
 import { COGENT_TOOL_NAMES, MCP_TOOL_ALLOWLIST } from '../runtime/tool-meta'
 import type { FileContext, FileReference } from '../../shared/files'
@@ -85,7 +95,7 @@ export interface PiSessionOptions {
    * 按名替换」（append-only 树安全，切换不堆积）—— 活算 + diff = 回合边界
    * 热刷新（权限通告 / 技能清单 / 任务清单 / 已批准计划 共用此机制）。
    */
-  sections?: () => Record<string, string | null>
+  sections?: (sessionAssetsSection: string | null) => Record<string, string | null>
   /** before_agent_start 段注入完成后的完整系统提示词观测回调。 */
   onSystemPromptRendered?: (systemPrompt: string) => void
   /**
@@ -176,6 +186,23 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
 
   // MCP 扩展装配材料（缺省 = 不装）：const 捕获让闭包内的窄化稳定
   const mcp = opts.mcp
+  // 闭包持有创建完成的 AgentSession，供压力检查（L1 裁剪）与压缩前钩子读取活动模型。
+  const sessionRef: { current?: AgentSession } = {}
+  const runPressureCheck = (): void => {
+    const activeModel = sessionRef.current?.model
+    if (activeModel === undefined || activeModel.contextWindow <= 0) return
+    const settings = settingsManager.getCompactionSettings(activeModel)
+    if (!settings.enabled) return
+    const l1Trigger = computeL1PruneTrigger(activeModel.contextWindow, settings.reserveTokens)
+    if (l1Trigger <= 0) return
+    const projected = piSessionManager.buildSessionProjection().messages
+    const currentTokens = estimateContextTokens(convertToLlmMessages(projected)).tokens
+    if (currentTokens < l1Trigger) return
+    const plan = planStaleToolResultPrunes(piSessionManager.getBranch())
+    for (const edit of plan.edits) {
+      piSessionManager.appendContextEdit(edit.targetId, { content: edit.content })
+    }
+  }
   const resourceLoader = new DefaultResourceLoader({
     cwd: opts.cwd,
     agentDir,
@@ -204,13 +231,54 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
             })
           ]
         : []),
-      // 钩子座（4d）：段注入（before_agent_start）等 Host 干预的具名注册地
-      // （装配形状与「审批为何不走扩展」的墙见 runtime/hook-seat.ts 头注）
-      createCogentHooks({ sections: opts.sections, onSystemPromptRendered: opts.onSystemPromptRendered, nestedApproval: opts.approval,
-        ...(opts.outputReminder !== undefined && { context: async (messages) => {
-          const reminder = await opts.outputReminder!()
-          return reminder === undefined ? undefined : [...messages, { role: 'custom', customType: 'cogent-output-reminder', content: reminder, display: false, timestamp: Date.now() }]
-        } }) }), fileHooks
+      // 钩子座（4d）：段注入（before_agent_start）、L1 压力裁剪与 L2 中文黑盒压缩委托
+      createCogentHooks({
+        sections:
+          opts.sections !== undefined
+            ? () => opts.sections!(buildShadowSessionAssetsSection(piSessionManager.getBranch()))
+            : undefined,
+        onSystemPromptRendered: opts.onSystemPromptRendered,
+        nestedApproval: opts.approval,
+        onPressureCheck: runPressureCheck,
+        beforeCompact: async (event) => {
+          const activeModel = sessionRef.current?.model
+          if (activeModel === undefined) return undefined
+          const authResult = await opts.modelRuntime.getAuth(activeModel, { signal: event.signal })
+          if (authResult === undefined) return undefined
+          const requestModel =
+            authResult.auth.baseUrl !== undefined ? { ...activeModel, baseUrl: authResult.auth.baseUrl } : activeModel
+          const rawHeaders = authResult.auth.headers
+          const headers =
+            rawHeaders !== undefined
+              ? Object.fromEntries(
+                  Object.entries(rawHeaders).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+                )
+              : undefined
+          const mergedInstructions = buildCompactionInstructions(event.customInstructions)
+          const compaction = await compact(
+            event.preparation,
+            requestModel,
+            authResult.auth.apiKey,
+            headers,
+            mergedInstructions,
+            event.signal,
+            sessionRef.current?.thinkingLevel,
+            sessionRef.current?.agent.streamFunction,
+            authResult.env,
+            settingsManager.getRetrySettings()
+          )
+          return { compaction }
+        },
+        ...(opts.outputReminder !== undefined && {
+          context: async (messages) => {
+            const reminder = await opts.outputReminder!()
+            return reminder === undefined
+              ? undefined
+              : [...messages, { role: 'custom', customType: 'cogent-output-reminder', content: reminder, display: false, timestamp: Date.now() }]
+          }
+        })
+      }),
+      fileHooks
     ]
   })
   await resourceLoader.reload()
@@ -235,6 +303,7 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     ...(opts.customTools !== undefined && { customTools: opts.customTools }),
     tools: [...COGENT_TOOL_NAMES, ...MCP_TOOL_ALLOWLIST, ...(opts.customTools?.map((t) => t.name) ?? [])]
   })
+  sessionRef.current = session
 
   // 扩展生命周期绑定（SDK 消费者必做的一步，Pi-meme session.ts:917 同款）：
   // CLI 各 mode（print/interactive/rpc-mode）在 createAgentSession 后调
@@ -253,11 +322,19 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     let result: import('@earendil-works/pi-agent-core').AfterToolCallResult | undefined
     try { result = await afterToolCall?.(context, signal) }
     catch (error) { if (context.toolCall.name === 'report_outputs') await opts.settleOutput?.(context.toolCall.id, false); throw error }
-    if (context.toolCall.name !== 'report_outputs') return result
-    const successful = !(result?.isError ?? context.isError) && !signal?.aborted
-    const receipt = await opts.settleOutput?.(context.toolCall.id, successful)
-    if (!successful) return { ...result, isError: true }
-    return receipt === undefined ? result : { ...result, ...receipt }
+    if (context.toolCall.name === 'report_outputs') {
+      const successful = !(result?.isError ?? context.isError) && !signal?.aborted
+      const receipt = await opts.settleOutput?.(context.toolCall.id, successful)
+      if (!successful) return { ...result, isError: true }
+      return receipt === undefined ? result : { ...result, ...receipt }
+    }
+    const isError = result?.isError ?? context.isError
+    if (!isError && context.toolCall.name.startsWith('mcp__')) {
+      const content = result?.content ?? context.result.content
+      const spilled = spillMcpToolResult(context.toolCall.name, content, opts.hostRoot)
+      if (spilled !== undefined) return { ...result, content: spilled.content }
+    }
+    return result
   }
 
   // 保留pi的请求准备钩子；已在启动交接时收到的取消，不再进入provider。

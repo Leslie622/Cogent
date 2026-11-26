@@ -10,7 +10,8 @@ export {
   AGENTS_MD_MAX_CHARS,
   buildCoreSystemPrompt,
   buildSystemPrompt,
-  readGitBranch
+  readGitBranch,
+  WORKSPACE_INSTRUCTION_FILES
 } from './system'
 
 export {
@@ -47,8 +48,18 @@ export {
 
 /** 全项目提示词资产清单（用于可观测对照与架构保真校验）。 */
 export const PROMPT_INVENTORY = {
-  system: ['preamble', 'cwd', 'cogent_outputs', 'skills', 'cogent_permission', 'cogent_plan_active', 'cogent_plan', 'cogent_todos'],
+  system: [
+    'preamble',
+    'cwd',
+    'cogent_outputs',
+    'cogent_session_assets',
+    'skills',
+    'cogent_permission',
+    'cogent_plan_active',
+    'cogent_plan',
+    'cogent_todos'
+  ],
   hostTools: ['report_outputs', 'read_attachment', 'todo_write', 'ask_user', 'enter_plan', 'submit_plan'],
   reminders: ['output_reminder', 'attachments_meta', 'directory_references', 'auto_continue'],
-  auxiliary: ['session-title', 'compaction-summary-prefix', 'model-connectivity-probe']
+  auxiliary: ['session-title', 'compaction-summary-prefix', 'compaction-instructions', 'model-connectivity-probe']
 } as const

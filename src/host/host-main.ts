@@ -551,14 +551,20 @@ async function main(): Promise<void> {
     return { summary: sessions.setPlanMode(p.sessionId, p.enabled) }
   }
 
-  /** session.compact 入口校验：sessionId 非空 string（手动压缩）。
+  /** session.compact 入口校验：sessionId 非空 string，可选 instructions ≤ 2000 字符（手动压缩）。
       异步 handler —— dispatch 对 handler 结果 await，Promise 拒绝转错误帧 */
   function handleSessionCompact(params: unknown) {
     const p = params as Partial<SessionCompactParams>
     if (typeof p.sessionId !== 'string' || p.sessionId.length === 0) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.compact 需要 { sessionId: string }')
     }
-    return sessions.compactSession(p.sessionId)
+    if (p.instructions !== undefined) {
+      if (typeof p.instructions !== 'string' || p.instructions.trim().length > 2000) {
+        throw new ProtocolError(RpcErrorCode.InvalidParams, 'session.compact 的 instructions 须为不超过 2000 字符的字符串')
+      }
+    }
+    const instructions = p.instructions?.trim()
+    return sessions.compactSession(p.sessionId, instructions !== undefined && instructions.length > 0 ? instructions : undefined)
   }
 
   /** session.continue 入口校验：sessionId 非空 string（手动续写）。

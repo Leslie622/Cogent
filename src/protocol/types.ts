@@ -176,16 +176,22 @@ export interface MessageUsage {
   contextEstimate?: ContextEstimate
 }
 
-/** 上下文明细三段估算（token 数；见 MessageUsage.contextEstimate） */
+/** 上下文明细估算（token 数；见 MessageUsage.contextEstimate，兼容既有 3 段并增量细拆） */
 export interface ContextEstimate {
-  /** leading system message 文本（工作区上下文 + 权限通告等） */
+  /** leading system message 文本（工作区上下文 + 权限通告 + 技能清单等） */
   systemPrompt: number
-  /** 工具 JSON schema 声明（toolsAdded，estimateToolsTokens 口径） */
+  /** 工具 JSON schema 声明总量（内置 + 宿主 + MCP） */
   toolDefs: number
   /** 其余全部消息（user/assistant/toolResult） */
   messages: number
   /** 三段之和（= estimateContextTokens().tokens，即 max_tokens 预算式里的"占用"） */
   total: number
+  /** 技能清单 `<skills>` 占用（systemPrompt 子项，缺省 = 旧估算） */
+  skills?: number
+  /** MCP 工具 schema 占用（toolDefs 子项，缺省 = 旧估算） */
+  mcpTools?: number
+  /** 工具执行输出 `toolResult` 占用（messages 子项，缺省 = 旧估算） */
+  toolResults?: number
 }
 
 /**
@@ -549,6 +555,8 @@ export interface SessionSetPlanModeResult {
  */
 export interface SessionCompactParams {
   sessionId: string
+  /** 可选焦点指令：指定压缩摘要需要重点保留的内容（≤ 2000 字符） */
+  instructions?: string
 }
 export interface SessionCompactResult {
   /** 压缩前上下文估算（与触发判定同源） */

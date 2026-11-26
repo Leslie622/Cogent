@@ -722,7 +722,7 @@ export class SessionManager implements CogentKernel {
     for (let i = projected.length - 1; i >= 0; i--) {
       const m = projected[i]
       if (m.role === 'assistant' && m.usage) {
-        m.usage = { ...m.usage, contextEstimate: estimateContext(source, systemPrompt) }
+        m.usage = { ...m.usage, contextEstimate: estimateContext(source, systemPrompt, session.pi?.agent.state.tools) }
         break
       }
     }
@@ -1226,7 +1226,7 @@ export class SessionManager implements CogentKernel {
  * 压缩进度经 compaction_start/end 事件（转译层 → compaction.started/
  * completed）。
    */
-  async compactSession(sessionId: string): Promise<{ tokensBefore: number; tokensAfter: number }> {
+  async compactSession(sessionId: string, instructions?: string): Promise<{ tokensBefore: number; tokensAfter: number }> {
     const session = this.requireSession(sessionId)
     this.assertWorkspaceAvailable(session)
     if (this.streaming.has(sessionId) || this.compacting.has(sessionId)) {
@@ -1240,7 +1240,7 @@ export class SessionManager implements CogentKernel {
         throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话已结束，压缩未启动')
       }
       if (operation.stopRequested) throw new ProtocolError(RpcErrorCode.InvalidRequest, '压缩已中止')
-      const result = await pi.compact()
+      const result = await pi.compact(instructions)
       return {
         tokensBefore: result.tokensBefore,
         // pi 的后置估算缺省（极端：无 usage 锚点）时诚实回落 before 值 ——
@@ -1721,13 +1721,14 @@ export class SessionManager implements CogentKernel {
       // 自定义段每回合活算（factory 的 before_agent_start 钩子消费）：权限
       // 通告读活 mode（运行中切档下一轮生效）；skills/todos/plan 快照无缓存
       //（UI 改动与手动改文件都下一回合生效 = 回合边界热刷新）
-      sections: () =>
+      sections: (sessionAssetsSection) =>
         buildDynamicSections({
           permissionMode: session.summary.permissionMode ?? 'ask',
           planEnabled: session.summary.planEnabled === true,
           skillsSection: formatSkillsSection(this.skillStore.snapshotMany(boundRoots).skills),
           todosSection: todosSectionText(session.todos),
-          planSection: session.plan !== undefined ? planSectionText(session.plan) : null
+          planSection: session.plan !== undefined ? planSectionText(session.plan) : null,
+          sessionAssetsSection
         }),
       onSystemPromptRendered: (rendered) => {
         session.inspector?.systemPromptRendered(rendered)
@@ -2177,7 +2178,7 @@ export class SessionManager implements CogentKernel {
           // aborted/error 也会经过 turn_end，已封存段包含被打断那轮的正文与 usage。
           // Host 给完整快照，宿主不可再补一份流式占位；相邻纯文本段按完成路径合并。
           if (streaming.usage && pi !== undefined) {
-            const estimate = estimateContext(pi.agent.state.messages, pi.systemPrompt)
+            const estimate = estimateContext(pi.agent.state.messages, pi.systemPrompt, pi.agent.state.tools)
             streaming.usage.contextEstimate = estimate
             const lastSegment = streaming.segments.at(-1)
             if (lastSegment?.usage) lastSegment.usage.contextEstimate = { ...estimate }
@@ -2204,7 +2205,8 @@ export class SessionManager implements CogentKernel {
           // 追加节），与请求组装同源；与历史回查路径（messages()）同表达式
           const estimate = estimateContext(
             session.pi?.agent.state.messages ?? [],
-            session.pi?.systemPrompt ?? this.ensureSystemPrompt(session)
+            session.pi?.systemPrompt ?? this.ensureSystemPrompt(session),
+            session.pi?.agent.state.tools
           )
           streaming.usage.contextEstimate = estimate
           const lastSegment = streaming.segments.at(-1)
