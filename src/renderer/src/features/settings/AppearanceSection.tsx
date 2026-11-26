@@ -36,6 +36,11 @@ import {
   SHELL_OPACITY_MIN,
 } from '@/lib/interface-skins'
 import {
+  DEFAULT_POPOVER_GLASS,
+  POPOVER_GLASS_MAX,
+  POPOVER_GLASS_MIN,
+} from '@/lib/popover-glass'
+import {
   CODE_FONT_SIZES,
   UI_FONT_SIZES,
   useAppearanceStore,
@@ -192,7 +197,7 @@ export function AppearanceSection() {
           </div>
           <InterfaceSkinPicker value={interfaceSkin} dark={isDark} onValueChange={setInterfaceSkin} />
         </SettingsLocateTarget>
-        {backdropSupported && (
+        {backdropSupported && !isDark && (
           <SettingsRow
             searchId="appearance.shell-opacity"
             title={SETTING_COPY['appearance.shell-opacity'].title}
@@ -227,13 +232,32 @@ export function AppearanceSection() {
         <SettingsRow
           searchId="appearance.popover-glass"
           title={SETTING_COPY['appearance.popover-glass'].title}
-          desc={SETTING_COPY['appearance.popover-glass'].desc}
+          desc={`调节下拉选择、菜单与轻量浮层的毛玻璃强度，0% 时关闭（默认 ${DEFAULT_POPOVER_GLASS}%）`}
         >
-          <Switch
-            checked={popoverGlass}
-            onCheckedChange={setPopoverGlass}
-            aria-label="浮层毛玻璃"
-          />
+          <div className="flex items-center gap-2">
+            <span className="w-9 text-right text-xs text-muted-foreground tabular-nums">{popoverGlass}%</span>
+            <Slider
+              value={[popoverGlass]}
+              min={POPOVER_GLASS_MIN}
+              max={POPOVER_GLASS_MAX}
+              step={1}
+              onValueChange={(value) => setPopoverGlass(value[0])}
+              className="w-40"
+              aria-label="浮层毛玻璃"
+              thumbAriaLabel="浮层毛玻璃"
+            />
+            <Hint tip="恢复默认毛玻璃强度">
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={popoverGlass === DEFAULT_POPOVER_GLASS}
+                onClick={() => setPopoverGlass(DEFAULT_POPOVER_GLASS)}
+                aria-label="恢复默认毛玻璃强度"
+              >
+                <IconArrowBackUp />
+              </Button>
+            </Hint>
+          </div>
         </SettingsRow>
         <SettingsRow
           searchId="appearance.ui-font-size"

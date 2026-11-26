@@ -53,8 +53,10 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --popover-glass: oklch(1 0 0 / 0.82);
+  --popover-glass: oklch(1 0 0 / 0.62);
   --popover-glass-sub: oklch(1 0 0 / 0.9);
+  --popover-glass-hover: oklch(0.145 0 0 / 0.06);
+  --popover-glass-border: oklch(0.145 0 0 / 0.08);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
@@ -120,6 +122,8 @@
   --popover-foreground: oklch(0.985 0 0);
   --popover-glass: oklch(0.205 0 0 / 0.78);
   --popover-glass-sub: oklch(0.205 0 0 / 0.88);
+  --popover-glass-hover: oklch(0.985 0 0 / 0.09);
+  --popover-glass-border: oklch(1 0 0 / 10%);
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);
@@ -637,11 +641,16 @@
 @supports (backdrop-filter: blur(1px)) {
   html[data-popover-glass] .popover-glass {
     background-color: var(--popover-glass);
-    backdrop-filter: blur(16px) saturate(1.4);
+    backdrop-filter: blur(var(--popover-glass-blur, 16px)) saturate(var(--popover-glass-saturate, 1.4));
+    /* 作用域内覆写项高亮与分隔线，使 hover 与分割线继续透光混色而不压出实色补丁 */
+    --accent: var(--popover-glass-hover);
+    --border: var(--popover-glass-border);
   }
   html[data-popover-glass] .popover-glass-sub {
     background-color: var(--popover-glass-sub);
-    backdrop-filter: blur(16px) saturate(1.4);
+    backdrop-filter: blur(var(--popover-glass-blur, 16px)) saturate(var(--popover-glass-saturate, 1.4));
+    --accent: var(--popover-glass-hover);
+    --border: var(--popover-glass-border);
   }
 }
 

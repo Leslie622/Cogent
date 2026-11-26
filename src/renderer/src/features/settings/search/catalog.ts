@@ -11,6 +11,7 @@ import { SETTINGS_GROUPS } from '../data'
 export interface SearchEnvironment {
   platform?: string
   backdropSupported?: boolean
+  dark?: boolean
 }
 
 export interface SettingItemEntry {
@@ -95,7 +96,7 @@ export const SETTING_COPY = {
   },
   'appearance.popover-glass': {
     title: '浮层毛玻璃',
-    desc: '为下拉选择、菜单与轻量浮层启用半透明毛玻璃效果',
+    desc: '调节下拉选择、菜单与轻量浮层的毛玻璃强度，0% 时关闭',
   },
   'appearance.ui-font-size': {
     title: '界面字号',
@@ -300,9 +301,9 @@ export const SETTING_ITEM_ENTRIES: readonly SettingItemEntry[] = [
   item('appearance.color-mode', 'appearance', '界面样式', ['夜间模式', '暗色模式', '日间模式', '跟随系统', 'theme'], 1),
   item('appearance.interface-skin', 'appearance', '界面样式', ['皮肤', '墨色', '薄荷', '蜜蜂', '羊皮纸', '海盐', '暮紫'], 2),
   item('appearance.shell-opacity', 'appearance', '界面样式', ['透明度', '毛玻璃', '透光', 'acrylic'], 3, {
-    isVisible: (env) => Boolean(env.backdropSupported),
+    isVisible: (env) => Boolean(env.backdropSupported) && !env.dark,
   }),
-  item('appearance.popover-glass', 'appearance', '界面样式', ['毛玻璃', '半透明', '模糊', '下拉', '菜单', '浮层', 'glass', 'blur'], 4),
+  item('appearance.popover-glass', 'appearance', '界面样式', ['毛玻璃', '半透明', '模糊', '透明度', '下拉', '菜单', '浮层', 'glass', 'blur'], 4),
   item('appearance.ui-font-size', 'appearance', '界面样式', ['字体大小', '缩放', '字号'], 5),
   item('appearance.accent', 'appearance', '界面样式', ['主题强调色', '点缀色', 'accent'], 6),
   item('appearance.content-font', 'appearance', '对话', ['字体风格', '正文字体', '中文字体', '英文字体'], 7),

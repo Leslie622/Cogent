@@ -11,7 +11,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute('style')
   media.matches = false
   media.addEventListener.mockClear()
-  useAppearanceStore.setState({ uiFontSize: 14, codeFontSize: null, colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65, popoverGlass: true, codeWrap: false, accent: 'default' })
+  useAppearanceStore.setState({ uiFontSize: 14, codeFontSize: null, colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65, popoverGlass: 60, codeWrap: false, accent: 'default' })
 })
 
 afterEach(() => {
@@ -119,18 +119,29 @@ it.each([
   expect(CODE_FONT_SIZES).toEqual(Array.from({ length: 17 }, (_value, index) => index + 8))
 })
 
-it('浮层毛玻璃默认开启，切换即时投影到 html[data-popover-glass] 并持久留存', async () => {
+it('浮层毛玻璃默认 60%，支持 0–100% 投影到 CSS 变量并兼容旧布尔持久化', async () => {
   unbind = bindAppearanceDom()
   const root = document.documentElement
   expect(root.hasAttribute('data-popover-glass')).toBe(true)
-  useAppearanceStore.getState().setPopoverGlass(false)
+  expect(root.style.getPropertyValue('--popover-glass-blur')).toBe('16px')
+  useAppearanceStore.getState().setPopoverGlass(100)
+  expect(root.style.getPropertyValue('--popover-glass-blur')).toBe('24px')
+  useAppearanceStore.getState().setPopoverGlass(0)
   expect(root.hasAttribute('data-popover-glass')).toBe(false)
+  expect(root.style.getPropertyValue('--popover-glass')).toBe('')
   await useAppearanceStore.persist.rehydrate()
-  expect(useAppearanceStore.getState().popoverGlass).toBe(false)
+  expect(useAppearanceStore.getState().popoverGlass).toBe(0)
   localStorage.setItem('cogent-appearance', JSON.stringify({ state: { popoverGlass: true }, version: 0 }))
   window.dispatchEvent(new StorageEvent('storage', { key: 'cogent-appearance', storageArea: localStorage }))
   await Promise.resolve()
+  expect(useAppearanceStore.getState().popoverGlass).toBe(60)
   expect(root.hasAttribute('data-popover-glass')).toBe(true)
+  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { popoverGlass: false }, version: 0 }))
+  await useAppearanceStore.persist.rehydrate()
+  expect(useAppearanceStore.getState().popoverGlass).toBe(0)
+  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { popoverGlass: 105 }, version: 0 }))
+  await useAppearanceStore.persist.rehydrate()
+  expect(useAppearanceStore.getState().popoverGlass).toBe(60)
 })
 
 it.each([
@@ -146,6 +157,17 @@ it.each([
   const before = document.documentElement.style.getPropertyValue('--chrome-surface')
   useAppearanceStore.getState().setShellOpacity(expected === 100 ? 50 : 100)
   expect(document.documentElement.style.getPropertyValue('--chrome-surface')).not.toBe(before)
+})
+
+it('深色模式即使支持系统材质也不启用外壳透明，切回浅色后恢复', () => {
+  vi.stubGlobal('cogent', { backdropSupported: true })
+  useAppearanceStore.setState({ colorMode: 'dark', shellOpacity: 50 })
+  unbind = bindAppearanceDom()
+  expect(document.documentElement.hasAttribute('data-backdrop')).toBe(false)
+  expect(document.documentElement.style.getPropertyValue('--sidebar')).toMatch(/^#[0-9a-f]{6}$/i)
+  useAppearanceStore.getState().setColorMode('light')
+  expect(document.documentElement.hasAttribute('data-backdrop')).toBe(true)
+  expect(document.documentElement.style.getPropertyValue('--sidebar')).toContain('rgb(')
 })
 
 it('不支持系统材质的环境不挂 data-backdrop，自动保持实色渐变', () => {

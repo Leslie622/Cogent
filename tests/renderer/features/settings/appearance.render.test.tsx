@@ -8,7 +8,7 @@ import { useAppearanceStore } from '@/stores/appearance'
 const storageKey = 'cogent-appearance'
 
 beforeEach(() => {
-  useAppearanceStore.setState({ colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65 })
+  useAppearanceStore.setState({ colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65, popoverGlass: 60 })
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
     matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
   }))
@@ -17,7 +17,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   useAppearanceStore.getState().setAccent('default')
-  useAppearanceStore.setState({ colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65 })
+  useAppearanceStore.setState({ colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65, popoverGlass: 60 })
   localStorage.removeItem(storageKey)
   vi.unstubAllGlobals()
 })
@@ -196,10 +196,33 @@ it('外壳不透明度滑杆默认禁用恢复钮，调整后显示百分比、�
   expect(reset).toBeDisabled()
 })
 
-it('不支持系统材质的平台隐藏外壳不透明度滑杆', () => {
+it('不支持系统材质的平台与深色模式隐藏外壳不透明度滑杆', () => {
   vi.stubGlobal('cogent', { backdropSupported: false })
-  render(<AppearanceSection />)
+  const { rerender } = render(<AppearanceSection />)
   expect(screen.queryByRole('group', { name: '外壳不透明度' })).not.toBeInTheDocument()
+
+  vi.stubGlobal('cogent', { backdropSupported: true })
+  act(() => useAppearanceStore.getState().setColorMode('dark'))
+  rerender(<AppearanceSection />)
+  expect(screen.queryByRole('group', { name: '外壳不透明度' })).not.toBeInTheDocument()
+})
+
+it('浮层毛玻璃滑杆支持调整百分比、0% 关闭并可恢复默认 60%', () => {
+  render(<AppearanceSection />)
+  expect(screen.getByRole('group', { name: '浮层毛玻璃' })).toBeInTheDocument()
+  const reset = screen.getByRole('button', { name: '恢复默认毛玻璃强度' })
+  expect(screen.getByText('60%')).toBeInTheDocument()
+  expect(reset).toBeDisabled()
+  act(() => useAppearanceStore.getState().setPopoverGlass(85))
+  expect(screen.getByText('85%')).toBeInTheDocument()
+  expect(reset).not.toBeDisabled()
+  expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ state: { popoverGlass: 85 } })
+  act(() => useAppearanceStore.getState().setPopoverGlass(0))
+  expect(screen.getByText('0%')).toBeInTheDocument()
+  fireEvent.click(reset)
+  expect(useAppearanceStore.getState().popoverGlass).toBe(60)
+  expect(screen.getByText('60%')).toBeInTheDocument()
+  expect(reset).toBeDisabled()
 })
 
 it('代码设置独立成组，默认显示行号且不换行，重读缺省或无效值时保留默认行号', async () => {

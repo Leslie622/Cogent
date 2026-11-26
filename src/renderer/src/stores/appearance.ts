@@ -23,6 +23,12 @@ import {
   SHELL_OPACITY_MIN,
   type InterfaceSkinId,
 } from '@/lib/interface-skins'
+import {
+  clampPopoverGlass,
+  DEFAULT_POPOVER_GLASS,
+  POPOVER_GLASS_MAX,
+  POPOVER_GLASS_MIN,
+} from '@/lib/popover-glass'
 
 export type OutputVerbosity = 'low' | 'high'
 
@@ -87,8 +93,8 @@ interface AppearanceState {
   interfaceSkin: InterfaceSkinId
   /** 主窗口外壳（头部与两侧栏）不透明度（40–100%，100% 即完全不透明） */
   shellOpacity: number
-  /** 轻量浮层（Select / 菜单 / Popover 等）毛玻璃效果（html[data-popover-glass] 门控；默认开） */
-  popoverGlass: boolean
+  /** 轻量浮层（Select / 菜单 / Popover 等）毛玻璃强度（0–100%，0% = 关闭；默认 60%） */
+  popoverGlass: number
   uiFontSize: number
   /** 代码块与文件预览行号（默认开） */
   showLineNumbers: boolean
@@ -107,7 +113,7 @@ interface AppearanceState {
   setColorMode: (mode: ColorMode) => void
   setInterfaceSkin: (skin: InterfaceSkinId) => void
   setShellOpacity: (opacity: number) => void
-  setPopoverGlass: (enabled: boolean) => void
+  setPopoverGlass: (intensity: number) => void
   setUiFontSize: (size: number) => void
   setShowLineNumbers: (show: boolean) => void
   setCodeWrap: (wrap: boolean) => void
@@ -167,7 +173,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       colorMode: 'light',
       interfaceSkin: DEFAULT_INTERFACE_SKIN,
       shellOpacity: DEFAULT_SHELL_OPACITY,
-      popoverGlass: true,
+      popoverGlass: DEFAULT_POPOVER_GLASS,
       uiFontSize: DEFAULT_UI_FONT_SIZE,
       showLineNumbers: true,
       codeWrap: false,
@@ -181,7 +187,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       setColorMode: (colorMode) => set({ colorMode }),
       setInterfaceSkin: (interfaceSkin) => set({ interfaceSkin }),
       setShellOpacity: (opacity) => set({ shellOpacity: clampShellOpacity(opacity) }),
-      setPopoverGlass: (popoverGlass) => set({ popoverGlass }),
+      setPopoverGlass: (intensity) => set({ popoverGlass: clampPopoverGlass(intensity) }),
       setUiFontSize: (uiFontSize) => set({ uiFontSize }),
       setShowLineNumbers: (showLineNumbers) => set({ showLineNumbers }),
       setCodeWrap: (codeWrap) => set({ codeWrap }),
@@ -210,7 +216,16 @@ export const useAppearanceStore = create<AppearanceState>()(
             raw.shellOpacity <= SHELL_OPACITY_MAX
               ? raw.shellOpacity
               : DEFAULT_SHELL_OPACITY,
-          popoverGlass: raw?.popoverGlass !== false,
+          // 兼容旧版布尔持久化（true→默认强度，false→0%）与当前 0–100 整数档
+          popoverGlass:
+            typeof raw?.popoverGlass === 'number' &&
+            Number.isInteger(raw.popoverGlass) &&
+            raw.popoverGlass >= POPOVER_GLASS_MIN &&
+            raw.popoverGlass <= POPOVER_GLASS_MAX
+              ? raw.popoverGlass
+              : raw?.popoverGlass === false
+                ? POPOVER_GLASS_MIN
+                : DEFAULT_POPOVER_GLASS,
           uiFontSize:
             typeof raw?.uiFontSize === 'number' && (UI_FONT_SIZES as readonly number[]).includes(raw.uiFontSize)
               ? raw.uiFontSize

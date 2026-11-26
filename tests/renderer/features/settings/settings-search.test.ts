@@ -47,6 +47,9 @@ describe('searchSettings', () => {
 
     const withBackdrop = searchSettings('外壳不透明度', { backdropSupported: true })
     expect(withBackdrop.items.some((r) => r.entry.id === 'appearance.shell-opacity')).toBe(true)
+
+    const darkWithBackdrop = searchSettings('外壳不透明度', { backdropSupported: true, dark: true })
+    expect(darkWithBackdrop.items.some((r) => r.entry.id === 'appearance.shell-opacity')).toBe(false)
   })
 
   it('splitHighlightSegments 准确切分匹配片段且不转义普通字符', () => {
