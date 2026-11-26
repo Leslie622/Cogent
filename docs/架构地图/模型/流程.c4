@@ -178,6 +178,39 @@ model {
       dialect -[call]-> remote '发送出站模型请求'
       remote -[call]-> usage 'done / error · token 费用'
     }
+
+    // 9. 提示词工程与装配机制
+    prompts = system '提示词工程与装配' {
+      core = component '静态核心契约' { technology 'buildCoreSystemPrompt · 中文/思考/黑盒' }
+      workspace = component '工作区与指令装配' { technology 'buildSystemPrompt · AGENTS.md' }
+      sections = component '回合动态段活算' { technology 'buildDynamicSections · 稳定度排序' }
+      diff = component 'pi 分段补丁与热刷新' { technology 'before_agent_start · sections diff' }
+      inspect = component '完整提示词观测' { technology 'SessionInspector.systemPromptRendered' }
+
+      piTools = component '内置与 MCP 工具集' { technology 'COGENT_TOOL_NAMES · MCP_TOOL_ALLOWLIST' }
+      hostTools = component '宿主六工具提示词' { technology 'prompts/tools.ts · 静默与负向边界' }
+      receipts = component '规范化工具回执' { technology 'outputReceipt · formatTodoResult' }
+
+      reminders = component '元提醒源与标签转义' { technology 'prompts/reminders.ts · <system-reminder>' }
+      injections = component '消息流动态注入' { technology 'context 钩子 · 附件/产物/续写' }
+      auxiliary = component '独立辅助调用提示词' { technology 'TITLE_SYSTEM_PROMPT · 探测/压缩' }
+
+      project = component '协议投影与折叠' { technology 'convertToLlm · resolveTranscript' }
+      outbound = component 'Provider 出站请求' { technology 'streamSimple · Prefix Cache' }
+
+      core -[call]-> workspace '拼装工作区'
+      workspace -[call]-> sections '静态基础段'
+      sections -[call]-> diff '写入 sections'
+      diff -[call]-> inspect '完整提示词'
+      diff -[call]-> project '系统补丁'
+      piTools -[call]-> hostTools '合并白名单'
+      hostTools -[call]-> receipts '简洁回执'
+      receipts -[call]-> project '回灌上下文'
+      reminders -[call]-> injections '标签转义'
+      injections -[call]-> project '注入消息流'
+      project -[call]-> outbound '折叠出站'
+      auxiliary -[call]-> outbound '独立调用'
+    }
   }
 }
 
@@ -220,5 +253,10 @@ views {
   view flowModels {
     title '凭据与模型出站'
     include flow.models.*
+  }
+
+  view flowPrompts {
+    title '提示词工程与装配'
+    include flow.prompts.*
   }
 }

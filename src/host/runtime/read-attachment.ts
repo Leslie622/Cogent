@@ -8,6 +8,9 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import type { AttachmentService } from './attachments'
 import { hasLocalAttachmentReader, mediaBindingIssue, type MediaBindings, type MediaCapability } from '../../shared/attachments'
 import type { ParsedAttachment, ParseRequest } from './attachment-parser'
+import { READ_ATTACHMENT_DESCRIPTION } from './prompts/tools'
+
+export { READ_ATTACHMENT_DESCRIPTION }
 
 const PARAMS = Type.Object({
   id: Type.String({ description: '用户附件的稳定 id' }),
@@ -17,7 +20,6 @@ const PARAMS = Type.Object({
   visual: Type.Optional(Type.Boolean({ description: 'PDF/Office 页面图像、扫描件、图表等视觉需求' })),
   pages: Type.Optional(Type.String({ description: '媒体分析页码，例如 1-3，传给配置的页码参数' }))
 })
-export const READ_ATTACHMENT_DESCRIPTION = '按需读取用户附件：本地提取 PDF 文字、DOCX 标题段落表格、XLSX 工作表/公式缓存、PPTX 文字备注表格及文本。图片/视频/扫描或页面视觉问题委托配置的 MCP。结果标明范围、局限与 nextCursor；未解析不能声称看过。'
 
 let activeParsers = 0
 const parserQueue: Array<{ start: () => void; cancel: () => void; signal?: AbortSignal }> = []
@@ -125,7 +127,7 @@ export function createReadAttachmentTool(options: AttachmentToolOptions): ToolDe
         const directory = join(options.hostRoot, 'attachments', 'v1', 'analysis')
         mkdirSync(directory, { recursive: true }); artifact = join(directory, `${crypto.randomUUID()}.txt`)
         writeFileSync(artifact, text); text = text.slice(0, 24_000)
-        parsed.warnings.push(`输出已截断；完整分析保存在 ${artifact}，可用 read 工具分页读取。`)
+        parsed.warnings.push(`输出已截断；完整分析保存在内部临时文件 ${artifact}（仅用于 read 分页读取，切勿将此路径暴露给用户）。`)
       }
       return result(JSON.stringify({ id: ref.id, source: parsed.source, text, warnings: parsed.warnings,
         ...(parsed.nextCursor !== undefined && { nextCursor: parsed.nextCursor }), total: parsed.total, artifact }),

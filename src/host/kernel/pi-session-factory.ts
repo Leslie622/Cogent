@@ -86,6 +86,8 @@ export interface PiSessionOptions {
    * 热刷新（权限通告 / 技能清单 / 任务清单 / 已批准计划 共用此机制）。
    */
   sections?: () => Record<string, string | null>
+  /** before_agent_start 段注入完成后的完整系统提示词观测回调。 */
+  onSystemPromptRendered?: (systemPrompt: string) => void
   /**
    * 交互座（4c）：Host 特有工具（todo_write / ask_user / submit_plan…）。
    * pi 的 customTools 配置期注入（agent-session.ts:276）—— 名称自动并入
@@ -204,7 +206,7 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
         : []),
       // 钩子座（4d）：段注入（before_agent_start）等 Host 干预的具名注册地
       // （装配形状与「审批为何不走扩展」的墙见 runtime/hook-seat.ts 头注）
-      createCogentHooks({ sections: opts.sections, nestedApproval: opts.approval,
+      createCogentHooks({ sections: opts.sections, onSystemPromptRendered: opts.onSystemPromptRendered, nestedApproval: opts.approval,
         ...(opts.outputReminder !== undefined && { context: async (messages) => {
           const reminder = await opts.outputReminder!()
           return reminder === undefined ? undefined : [...messages, { role: 'custom', customType: 'cogent-output-reminder', content: reminder, display: false, timestamp: Date.now() }]

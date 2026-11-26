@@ -368,18 +368,70 @@ export class SkillStore {
   }
 
   /**
+   * 多根工作区活快照（主根优先，按 realpath 去重）：
+   * 先加载用户级与次根，最后加载主根 `cwds[0]`（后者胜），并与各自启停覆盖合并。
+   * 单个或空根列表直接委托 `snapshot()`，零行为差异。
+   */
+  snapshotMany(cwds: readonly string[]): { skills: Skill[]; errors: string[] } {
+    if (cwds.length <= 1) return this.snapshot(cwds[0])
+    const errors: string[] = []
+    const byName = new Map<string, Skill>()
+    const realPaths = new Set<string>()
+    const userState = readStateFile(this.userStateFile, checkUserState)
+    if (userState.error !== undefined) errors.push(userState.error)
+    const userDisabled = new Set(userState.state.disabled)
+    const projectOverrides = new Map<string, boolean>()
+
+    const addDir = (dir: string, source: SkillScope): void => {
+      const { skills, diagnostics } = loadSkillsFromDir({ dir, source })
+      errors.push(...diagnosticsToErrors(diagnostics))
+      for (const skill of skills) {
+        const realPath = realpathSync(skill.filePath)
+        if (realPaths.has(realPath)) continue
+        const existing = byName.get(skill.name)
+        if (existing !== undefined) {
+          errors.push(`技能 "${skill.name}" 同名冲突：${skill.filePath} 覆盖 ${existing.filePath}`)
+        }
+        byName.set(skill.name, skill)
+        realPaths.add(realPath)
+      }
+    }
+
+    addDir(this.userEcoDir, 'user')
+    addDir(this.userDir, 'user')
+    // 逆序遍历绑定根：次根先入、主根（cwds[0]）最后入，确保主根同名技能与启停覆盖胜出
+    for (let i = cwds.length - 1; i >= 0; i--) {
+      const root = cwds[i]
+      addDir(this.projectEcoDir(root), 'project')
+      addDir(this.projectDir(root), 'project')
+      const state = readStateFile(this.projectStateFile(root), checkProjectState)
+      if (state.error !== undefined) errors.push(state.error)
+      for (const [name, enabled] of Object.entries(state.state.overrides)) {
+        projectOverrides.set(name, enabled)
+      }
+    }
+    return {
+      skills: [...byName.values()].filter((s) => SkillStore.effective(s, userDisabled, projectOverrides)),
+      errors
+    }
+  }
+
+  /**
    * `/skill:name args` 活展开（Cogent submit 路径委托，替代 pi 内建的
    * loader 静态集查找）：命中禁用技能 = 视为不存在原样透传；manualOnly
    * 技能可展开（这正是它存在的意义）。读文件失败也透传（模型看到字面
    * /skill: 名 = 可见信号），stderr 留痕一次。
    */
-  expandSkillCommand(text: string, cwd?: string): string {
+  expandSkillCommand(text: string, cwdOrRoots?: string | readonly string[]): string {
     if (!text.startsWith('/skill:')) return text
     const rest = text.slice(7)
     const spaceIndex = rest.indexOf(' ')
     const name = spaceIndex === -1 ? rest : rest.slice(0, spaceIndex)
     const args = spaceIndex === -1 ? '' : rest.slice(spaceIndex + 1).trim()
-    const skill = this.snapshot(cwd).skills.find((s) => s.name === name)
+    const snapshot = Array.isArray(cwdOrRoots)
+      ? this.snapshotMany(cwdOrRoots)
+      : this.snapshot(cwdOrRoots as string | undefined)
+    const skill = snapshot.skills.find((s) => s.name === name)
     if (skill === undefined) return text
     try {
       const content = readFileSync(skill.filePath, 'utf8')

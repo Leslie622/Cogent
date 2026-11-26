@@ -9,6 +9,7 @@ export const flowViewIds = [
   'flowCompaction',
   'flowOutputs',
   'flowModels',
+  'flowPrompts',
 ] as const
 export const viewIds = [...architectureViewIds, ...flowViewIds] as const
 
@@ -28,6 +29,7 @@ export const viewNames: Record<ViewId, string> = {
   flowCompaction: '上下文压缩与转录',
   flowOutputs: '文件边界与产物交付',
   flowModels: '凭据与模型出站',
+  flowPrompts: '提示词工程与装配',
 }
 
 export const viewGroups: readonly { title: string; ids: readonly ViewId[] }[] = [

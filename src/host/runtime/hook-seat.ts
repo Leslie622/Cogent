@@ -36,6 +36,8 @@ export interface CogentHooksOptions {
    * diff = 回合边界热刷新（权限通告 / 技能清单 / 任务清单 / 已批准计划 共用）。
    */
   sections?: () => Record<string, string | null> | undefined
+  /** 回合前段注入完成后回传 pi 完整渲染的系统提示词（供观测控制台对齐真实发送面）。 */
+  onSystemPromptRendered?: (systemPrompt: string) => void
   /** 每次请求的上下文注入；支持异步读取交付状态，返回数组整体替换 messages。 */
   context?: (messages: AgentMessage[]) => AgentMessage[] | void | Promise<AgentMessage[] | void>
 }
@@ -57,13 +59,15 @@ export function createCogentHooks(opts: CogentHooksOptions): InlineExtension {
       }
       pi.on('before_agent_start', (event) => {
         const wanted = opts.sections?.()
-        if (wanted === undefined || Object.keys(wanted).length === 0) return
-        const sections = { ...event.systemPromptOptions.sections }
-        for (const [name, text] of Object.entries(wanted)) {
-          if (text === null) delete sections[name]
-          else sections[name] = text
+        if (wanted !== undefined && Object.keys(wanted).length > 0) {
+          const sections = { ...event.systemPromptOptions.sections }
+          for (const [name, text] of Object.entries(wanted)) {
+            if (text === null) delete sections[name]
+            else sections[name] = text
+          }
+          event.systemPromptOptions.sections = sections
         }
-        event.systemPromptOptions.sections = sections
+        opts.onSystemPromptRendered?.(event.systemPrompt)
       })
       if (opts.context !== undefined) {
         pi.on('context', async (event) => {

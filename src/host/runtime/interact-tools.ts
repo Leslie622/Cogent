@@ -16,6 +16,12 @@
 import { Type } from 'typebox'
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent'
 import type { TodoItem } from '../../protocol'
+import {
+  ASK_USER_DESCRIPTION,
+  ENTER_PLAN_DESCRIPTION,
+  SUBMIT_PLAN_DESCRIPTION,
+  TODO_WRITE_DESCRIPTION
+} from './prompts/tools'
 
 // ———— todo_write（4c-1）————
 
@@ -69,15 +75,11 @@ export function todosSectionText(todos: TodoItem[]): string | null {
     '# 任务清单（当前权威状态）\n' +
     '以下是你此前用 todo_write 记录的任务清单，按它推进；状态变化时用 todo_write 提交全量更新：\n' +
     todos.map(todoLine).join('\n') +
-    (allDone ? '\n清单已全部完成：请在回复中调用 todo_write 提交空数组（todos: []）清空清单。' : '')
+    (allDone ? '\n清单已全部完成：请静默调用 todo_write 提交空数组（todos: []）清空清单，不要在回复中向用户播报清单操作。' : '')
   )
 }
 
-const TODO_DESCRIPTION =
-  '维护本会话的任务清单。每次调用提交完整清单（全量替换，不是增量 patch）：新增任务、' +
-  '开始做某项时置 in_progress、做完置 completed，一次调用可同时改多项。' +
-  '尽量保持只有一项 in_progress；全部完成时提交空数组清空清单。' +
-  '清单对你和用户都可见，用它跟踪多步骤任务的进度。'
+const TODO_DESCRIPTION = TODO_WRITE_DESCRIPTION
 
 const TODO_PARAMS = Type.Object({
   todos: Type.Array(
@@ -200,10 +202,7 @@ export function formatAskResult(questions: AskQuestion[], answers: AskAnswers, c
   return `${prefix}${pairs.join('；')}。`
 }
 
-const ASK_DESCRIPTION =
-  '当你被用户的决策卡住、无法合理继续时，向用户提出结构化问题（每问 2-4 个选项）。' +
-  '只问真正需要人拍板的事；一次性问全（最多 4 问），不要连环追问。' +
-  '选项不带「其他」—— 用户总能自由输入。非阻塞问题改在回复正文里问。'
+const ASK_DESCRIPTION = ASK_USER_DESCRIPTION
 
 const ASK_PARAMS = Type.Object({
   questions: Type.Array(
@@ -281,17 +280,7 @@ export function planSectionText(record: PlanRecord): string {
   )
 }
 
-const ENTER_PLAN_DESCRIPTION =
-  '开启计划模式（只读）：文件写入与命令执行将被拒绝，只能调研（读文件/搜索/列目录）。' +
-  '适用于非平凡的多步骤实现任务 —— 先调研并把实现方案整理成计划，再调 submit_plan 请求批准。' +
-  '纯问答、小修复、只读调研不需要开计划。'
-
 const ENTER_PLAN_PARAMS = Type.Object({})
-
-const SUBMIT_PLAN_DESCRIPTION =
-  '提交实现计划请求用户批准（只能在计划模式开启时使用）。计划必须完整放在 plan 参数：' +
-  '上下文开头、只写推荐方案、点名关键文件、含验证步骤。用户批准后自动退出计划模式（权限档保持不变）；' +
-  '拒绝时可能附修改意见（按意见修订后重新提交）。不要用普通文本或 ask_user 问"这个方案行吗" —— 那正是本工具的职责。'
 
 const SUBMIT_PLAN_PARAMS = Type.Object({
   plan: Type.String({ minLength: 1, maxLength: PLAN_MAX_CHARS, description: '完整的实现计划（markdown）' })
@@ -355,8 +344,7 @@ export function createSubmitPlanTool(
             {
               type: 'text',
               text:
-                '用户已批准你的计划，已退出计划模式，权限档保持不变。' +
-                '现在开始执行 —— 建议先用 todo_write 把计划拆成任务清单，再逐步实施。\n\n' +
+                '用户已批准你的计划，已退出计划模式，权限档保持不变。现在开始执行。\n\n' +
                 `## 已批准的计划：\n${params.plan}`
             }
           ],

@@ -6,6 +6,7 @@ import type { FileContext, FileDescriptor } from '../../../shared/files'
 import type { OutputDeclaration, OutputItem, OutputOutcome, OutputTarget, TurnOutputs } from '../../../shared/outputs'
 import { OutputStorage, OUTPUT_LIMITS } from './storage'
 import type { FileService } from '../files/reader'
+import { outputReminderText } from '../prompts/reminders'
 
 type Run = { owner: object; controller: AbortController; wrote: boolean; reminded: boolean; resume: boolean; declared: boolean; phase: 'running' | 'finalizing' | 'ready' }
 type Pending = { run: Run; doc: TurnOutputs; old: TurnOutputs | undefined; release: () => void; signal: AbortSignal }
@@ -229,7 +230,7 @@ export class OutputsService {
     if (run === undefined || !run.wrote || run.reminded) return undefined
     run.reminded = true
     if (await this.storage.load(sessionId, turnId) !== undefined) return undefined
-    return '如有需要单独交给用户的文件，请在终答前调用 report_outputs；仅修改源码或读取参考文件不必申报。'
+    return outputReminderText()
   }
   async resolve(target: OutputTarget, files: FileService, independent = false): Promise<FileDescriptor> {
     const docs = await this.get(target.sessionId, target.turnId)

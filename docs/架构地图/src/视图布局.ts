@@ -281,4 +281,29 @@ export const viewLayouts: Record<ViewId, ViewLayoutSpec> = {
       2: '设置页独立连通性探测',
     },
   },
+
+  flowPrompts: {
+    slots: {
+      'flow.prompts.core': { col: 0, lane: 0 },
+      'flow.prompts.workspace': { col: 1, lane: 0 },
+      'flow.prompts.sections': { col: 2, lane: 0 },
+      'flow.prompts.diff': { col: 3, lane: 0 },
+      'flow.prompts.inspect': { col: 4, lane: 0 },
+
+      'flow.prompts.piTools': { col: 0, lane: 1 },
+      'flow.prompts.hostTools': { col: 1, lane: 1 },
+      'flow.prompts.receipts': { col: 2, lane: 1 },
+      'flow.prompts.project': { col: 3, lane: 1 },
+      'flow.prompts.outbound': { col: 4, lane: 1 },
+
+      'flow.prompts.reminders': { col: 0, lane: 2 },
+      'flow.prompts.injections': { col: 1, lane: 2 },
+      'flow.prompts.auxiliary': { col: 3, lane: 2 },
+    },
+    laneLabels: {
+      0: '系统提示词：静态前缀 → 动态段活算与观测',
+      1: '工具提示词：声明收敛、去内部化回执与协议出站',
+      2: '消息流注入：<system-reminder> 隔离与独立辅助调用',
+    },
+  },
 }

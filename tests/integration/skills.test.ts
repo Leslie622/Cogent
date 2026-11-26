@@ -182,7 +182,7 @@ describe('技能座集成（协议方法 + 段注入 + read 闭环 + 回合热�
     const systemText = JSON.stringify((r2?.messages ?? []).filter((m) => m.role === 'system'))
     check(
       '9. 热刷新：同会话下一轮系统提示无 commit-check（生态技能仍在，段未被整掀）',
-      !systemText.includes('commit-check') && systemText.includes('eco-tool') && systemText.includes('You are Cogent'),
+      !systemText.includes('commit-check') && systemText.includes('eco-tool') && systemText.includes('你是 Cogent'),
       systemText.slice(0, 200)
     )
 

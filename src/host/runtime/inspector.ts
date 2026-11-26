@@ -145,6 +145,21 @@ export class SessionInspector {
     )
   }
 
+  /**
+   * 回合前动态段装配完成后记录真实生效的完整系统提示词（含 <cwd> 与各具名段）。
+   * 若与 runStarted 时的静态预览相同则不重复记条。
+   */
+  systemPromptRendered(systemPrompt: string): void {
+    const latest = this.summaries.findLast((entry) => entry.run === this.run && entry.kind === 'system.prompt')
+    if (latest !== undefined && this.details.get(latest.seq)?.blocks[0]?.content === systemPrompt) return
+    this.record(
+      'system.prompt',
+      `完整系统提示词（含动态段）· ${systemPrompt.length.toLocaleString()} 字符`,
+      [{ label: '长度', value: `${systemPrompt.length.toLocaleString()} 字符` }],
+      [{ name: '完整提示词全文', format: 'text', content: systemPrompt }]
+    )
+  }
+
   /** run 成功收尾（agent_end 无 errorMessage 时；streaming = 协议侧累积口径） */
   runCompleted(streaming: {
     text: string

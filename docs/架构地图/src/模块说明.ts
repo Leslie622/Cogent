@@ -1640,6 +1640,218 @@ export const moduleDetails: Record<string, ModuleDetail> = {
     boundary: '前端 ModelMenu 与设置页使用同一 Host 投影模型清单，禁止各算一套。',
     sources: [{ path: 'src/host/runtime/session-models.ts', symbol: 'projectModelSummaries' }],
   },
+
+  // ———— 专题流程 9：提示词工程与装配 ————
+  'flow.prompts.core': {
+    name: '静态核心契约',
+    kind: 'buildCoreSystemPrompt · 中文/思考/黑盒',
+    icon: ShieldCheckIcon,
+    status: 'implemented',
+    summary: '跨会话恒定的静态前缀：统一锚定默认简体中文回复与中文思考、内部黑盒静默边界、证据先行原则、Markdown 文件链接规范与工具协作总则。',
+    responsibilities: [
+      '显式约束默认中文回复及内部思考/推理语言，用户指定其他语言时按要求切换。',
+      '声明系统段、<system-reminder>、交付登记、任务清单、内部 ID 与缓存路径对用户不可见，禁止正文复述。',
+      '对齐前端 FileLink 规范，明确 Markdown 链接、#L 行号与含空格路径尖括号写法。',
+    ],
+    boundary: '置于系统提示词最前端且不含动态路径或时间，作为可复用 KV Prefix Cache 基线。',
+    sources: [
+      { path: 'src/host/runtime/prompts/system.ts', symbol: 'buildCoreSystemPrompt' },
+      { path: 'docs/技术笔记/提示词工程.md', symbol: 'Cogent 三层落点' },
+    ],
+  },
+  'flow.prompts.workspace': {
+    name: '工作区与指令装配',
+    kind: 'buildSystemPrompt · AGENTS.md',
+    icon: LayersIcon,
+    status: 'implemented',
+    summary: '在静态核心块之后追加多根工作区声明、平台/Git 分支环境信息，以及用 <workspace_instructions> 包裹的各根 AGENTS.md。',
+    responsibilities: [
+      '多根项目全部列出并标明首个为主根，避免相对路径解析歧义。',
+      'AGENTS.md 单文件上限 16,000 字符截断，并声明不可覆盖上文安全与黑盒边界。',
+    ],
+    boundary: '会话生命周期内缓存不变；空闲项目目录交接时清空重建。',
+    sources: [
+      { path: 'src/host/runtime/prompts/system.ts', symbol: 'buildSystemPrompt · AGENTS_MD_MAX_CHARS' },
+      { path: 'src/host/runtime/session-prompt.ts', symbol: 'buildSystemPrompt' },
+    ],
+  },
+  'flow.prompts.sections': {
+    name: '回合动态段活算',
+    kind: 'buildDynamicSections · 稳定度排序',
+    icon: WorkflowIcon,
+    status: 'implemented',
+    summary: '每回合按稳定度从高到低生成具名段表：cogent_outputs → skills → cogent_permission → cogent_plan_active → cogent_plan → cogent_todos。',
+    responsibilities: [
+      '将高频变化的 cogent_todos 置于最末，减少折叠回首条 system 消息时的缓存失效面积。',
+      '多根工作区经 SkillStore.snapshotMany 合并技能（主根优先、realpath 去重）。',
+    ],
+    boundary: '值为 null 即触发 pi 撤段语义，历史切换不堆积。',
+    sources: [
+      { path: 'src/host/runtime/prompts/sections.ts', symbol: 'buildDynamicSections · DYNAMIC_SECTION_ORDER' },
+      { path: 'src/host/runtime/skill-store.ts', symbol: 'snapshotMany' },
+    ],
+  },
+  'flow.prompts.diff': {
+    name: 'pi 分段补丁与热刷新',
+    kind: 'before_agent_start · sections diff',
+    icon: BlocksIcon,
+    status: 'implemented',
+    summary: '钩子座在 before_agent_start 将活算的具名段写入 event.systemPromptOptions.sections，由 pi 计算净变更补丁并完成回合边界热刷新。',
+    responsibilities: [
+      '内容无变化时不写系统补丁；切换权限、计划或任务清单下一回合立即生效。',
+      '渲染完成后通过 onSystemPromptRendered 回调把含动态段的完整系统提示词交给观测器。',
+    ],
+    boundary: '不向 agent.state.messages 手塞临时 system 消息，严格走 pi 官方扩展缝。',
+    sources: [
+      { path: 'src/host/runtime/hook-seat.ts', symbol: 'createCogentHooks · onSystemPromptRendered' },
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+    ],
+  },
+  'flow.prompts.inspect': {
+    name: '完整提示词观测',
+    kind: 'SessionInspector.systemPromptRendered',
+    icon: MonitorIcon,
+    status: 'implemented',
+    summary: '在控制台时间线记录含 <cwd> 与全部活跃动态段的完整系统提示词快照，消除静态预览与实际发送面的偏差。',
+    responsibilities: [
+      '与 runStarted 静态快照比对去重，确保动态段变化清晰可查。',
+      '未装配 pi 时的历史上下文估算复用 renderPromptWithSections 保持同口径。',
+    ],
+    boundary: '观测只读旁路，不拦截或修改出站请求。',
+    sources: [
+      { path: 'src/host/runtime/inspector.ts', symbol: 'systemPromptRendered' },
+      { path: 'src/host/runtime/prompts/sections.ts', symbol: 'renderPromptWithSections' },
+    ],
+  },
+  'flow.prompts.piTools': {
+    name: '内置与 MCP 工具集',
+    kind: 'COGENT_TOOL_NAMES · MCP_TOOL_ALLOWLIST',
+    icon: TerminalIcon,
+    status: 'implemented',
+    summary: '通过显式白名单装配 pi 内置 7 工具（按平台选 powershell/bash）与 MCP 扩展工具，上游工具 schema 保持只读不魔改。',
+    responsibilities: [
+      '工具说明由请求体 tools 字段直接承载，系统提示词仅写跨工具协作原则不重复镜像。',
+      'MCP 工具经 mcp__* 与资源三件放行并走同一审批链。',
+    ],
+    boundary: '上游 pi 内置工具描述只读，不直接修改 node_modules。',
+    sources: [{ path: 'src/host/runtime/tool-meta.ts', symbol: 'COGENT_TOOL_NAMES · MCP_TOOL_ALLOWLIST' }],
+  },
+  'flow.prompts.hostTools': {
+    name: '宿主六工具提示词',
+    kind: 'prompts/tools.ts · 静默与负向边界',
+    icon: Code2Icon,
+    status: 'implemented',
+    summary: '集中定义 report_outputs、read_attachment、todo_write、ask_user、enter_plan、submit_plan 六个宿主工具的描述与边界。',
+    responsibilities: [
+      '剔除“副本容量预算”“Host 收尾复核”等后端实现词，改为面向成品卡片的产品语义。',
+      '为 todo_write 补齐负向门槛（1-2 步简单修改不建清单），为 read_attachment 标明外部数据边界。',
+    ],
+    boundary: '保留既有工具名不变，兼容历史 JSONL 转录投影与外部测试夹具。',
+    sources: [
+      { path: 'src/host/runtime/prompts/tools.ts', symbol: 'REPORT_OUTPUTS_DESCRIPTION · TODO_WRITE_DESCRIPTION' },
+      { path: 'src/host/runtime/outputs/tool.ts', symbol: 'createReportOutputsTool' },
+      { path: 'src/host/runtime/interact-tools.ts', symbol: 'createTodoTool · createSubmitPlanTool' },
+    ],
+  },
+  'flow.prompts.receipts': {
+    name: '规范化工具回执',
+    kind: 'outputReceipt · formatTodoResult',
+    icon: SparklesIcon,
+    status: 'implemented',
+    summary: '统一收敛宿主工具返回给模型的文本回执：只传下一步决策所需的客观事实，不把内部字段灌进模型上下文。',
+    responsibilities: [
+      'report_outputs 文本回执仅列已登记路径并附静默提示，turnId/revision 保留在 details。',
+      'read_attachment 截断落盘路径明确标为内部临时文件，禁止向用户暴露。',
+    ],
+    boundary: 'UI 侧结构化数据取 details 或独立事件，不解析自然语言回执。',
+    sources: [
+      { path: 'src/host/runtime/prompts/tools.ts', symbol: 'formatReportOutputsReceipt' },
+      { path: 'src/host/runtime/outputs/tool.ts', symbol: 'outputReceipt' },
+      { path: 'src/host/runtime/read-attachment.ts', symbol: 'createReadAttachmentTool' },
+    ],
+  },
+  'flow.prompts.reminders': {
+    name: '元提醒源与标签转义',
+    kind: 'prompts/reminders.ts · <system-reminder>',
+    icon: ShieldCheckIcon,
+    status: 'implemented',
+    summary: '集中登记所有消息流元提醒来源，统一使用 <system-reminder> 包裹并中和嵌套闭合标签，防止外部数据逃逸伪造指令。',
+    responsibilities: [
+      'escapeSystemReminderTags 中和大小写变体的 </system-reminder> 闭合标签。',
+      'wrapSystemReminder 拒绝空提醒并统一标记非用户发言的静默约束。',
+    ],
+    boundary: '禁止在业务代码里向消息流散落裸中文祈使句充当用户消息。',
+    sources: [
+      { path: 'src/host/runtime/prompts/reminders.ts', symbol: 'SYSTEM_REMINDER_SOURCES · wrapSystemReminder · escapeSystemReminderTags' },
+      { path: 'src/host/runtime/prompts/index.ts', symbol: 'PROMPT_INVENTORY' },
+    ],
+  },
+  'flow.prompts.injections': {
+    name: '消息流动态注入',
+    kind: 'context 钩子 · 附件/产物/续写',
+    icon: RouteIcon,
+    status: 'implemented',
+    summary: '承接四类消息流注入：写文件后的条件产物提醒、用户附件与目录元信息块、/skill: 活展开与截断续写 [cogent:continue]。',
+    responsibilities: [
+      'outputReminderText 经 context 钩子在写后下一次请求前至多注入一次，不另起额外模型调用。',
+      '附件块明确只使用原始文件名 name，隐藏内部 UUID 与对象存储路径。',
+    ],
+    boundary: '[cogent:continue] 前缀在消息投影层隐藏，相邻续写段自动合并呈现。',
+    sources: [
+      { path: 'src/host/runtime/prompts/reminders.ts', symbol: 'outputReminderText · formatAttachmentsBlock · AUTO_CONTINUE_MESSAGE' },
+      { path: 'src/host/runtime/outputs/service.ts', symbol: 'reminder' },
+      { path: 'src/host/runtime/session.ts', symbol: 'driveRun' },
+    ],
+  },
+  'flow.prompts.auxiliary': {
+    name: '独立辅助调用提示词',
+    kind: 'TITLE_SYSTEM_PROMPT · 探测/压缩',
+    icon: BotIcon,
+    status: 'implemented',
+    summary: '独立于主 Agent 循环的轻量提示词资产：会话自动标题、模型连通性探测与上下文压缩摘要前导语，统一纳入 PROMPT_INVENTORY 治理。',
+    responsibilities: [
+      '自动标题以 JSON 源材料隔离用户输入，防指令注入且不混入主会话上下文。',
+      '压缩前导语把历史摘要框定为既定背景，避免模型把压缩事件当成聊天话题。',
+    ],
+    boundary: '独立辅助调用不装配工具集，各自拥有独立超时与用量归属。',
+    sources: [
+      { path: 'src/host/kernel/session-title.ts', symbol: 'TITLE_SYSTEM_PROMPT' },
+      { path: 'src/host/runtime/compaction.ts', symbol: 'COMPACTION_SUMMARY_PREFIX' },
+      { path: 'src/host/runtime/model-connectivity.ts', symbol: 'testModelConnectivity' },
+    ],
+  },
+  'flow.prompts.project': {
+    name: '协议投影与折叠',
+    kind: 'convertToLlm · resolveTranscript',
+    icon: CpuIcon,
+    status: 'implemented',
+    summary: 'pi 在出站前将自定义提醒消息转为标准 LLM 消息，并按端点能力（supportsMidConvoSystemMessages）决定是否将系统段补丁折叠回首条 system 消息。',
+    responsibilities: [
+      '确保系统提示词、工具声明与消息流注入在发送前收敛为合法 Provider 载荷。',
+      '配合前端稳定前缀与末尾高频动态段顺序，尽量保留可复用的缓存前缀。',
+    ],
+    boundary: '投影不改写 JSONL 持久化真源，压缩影子区在历史回查中完整保留。',
+    sources: [
+      { path: 'src/host/runtime/compaction.ts', symbol: 'convertToLlmMessages' },
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+    ],
+  },
+  'flow.prompts.outbound': {
+    name: 'Provider 出站请求',
+    kind: 'streamSimple · Prefix Cache',
+    icon: GlobeIcon,
+    status: 'implemented',
+    summary: '最终发送至各厂商端点的规范化请求体：静态前缀在前、工具声明稳定、动态提醒经 <system-reminder> 隔离，兼顾缓存命中与零内部泄露。',
+    responsibilities: [
+      '统一经 ModelRuntime 路由鉴权并由 onPayload 落入运行时控制台原始请求记录。',
+      '保障默认中文思考/回复、正文文件链接与独立产物卡片行为稳定落地。',
+    ],
+    boundary: '真实模型遵循率须结合真机对照验证，不以离线单测替代。',
+    sources: [
+      { path: 'src/host/runtime/session.ts', symbol: 'attachInspector' },
+      { path: 'docs/计划/提示词工程实现.md', symbol: '总体方案设计' },
+    ],
+  },
 }
 
 export const edgeDetails: Record<string, EdgeDetail> = {
@@ -2575,6 +2787,141 @@ export const edgeDetails: Record<string, EdgeDetail> = {
       { path: 'src/host/runtime/model-connectivity.ts', symbol: 'testModelConnectivity' },
     ],
   },
+
+  // ———— 专题流程 9：提示词工程与装配连线 ————
+  'flow.prompts.core>flow.prompts.workspace': {
+    title: '静态核心契约 → 工作区与指令装配',
+    kind: '系统提示词前缀拼接',
+    contract: '先输出跨会话恒定的静态核心块，再按会话绑定根追加工作区、环境与带标签包裹的 AGENTS.md。',
+    rules: [
+      '静态块在前保证不同工作区仍共享一致的行为与黑盒契约。',
+      'AGENTS.md 显式声明不可覆盖核心安全与黑盒沟通边界。',
+    ],
+    sources: [{ path: 'src/host/runtime/prompts/system.ts', symbol: 'buildCoreSystemPrompt · buildSystemPrompt' }],
+  },
+  'flow.prompts.workspace>flow.prompts.sections': {
+    title: '工作区与指令装配 → 回合动态段活算',
+    kind: '静态基础段与动态段衔接',
+    contract: '静态基础段经 systemPromptOverride 注入，回合动态状态改由 buildDynamicSections 每回合现算。',
+    rules: [
+      '动态段固定按稳定度排序，避免高频任务清单变动破坏前半段前缀缓存。',
+      '未装配 pi 时的历史估算复用 renderPromptWithSections 保持口径一致。',
+    ],
+    sources: [
+      { path: 'src/host/runtime/prompts/sections.ts', symbol: 'buildDynamicSections · renderPromptWithSections' },
+      { path: 'src/host/runtime/session.ts', symbol: 'buildPiSession' },
+    ],
+  },
+  'flow.prompts.sections>flow.prompts.diff': {
+    title: '回合动态段活算 → pi 分段补丁与热刷新',
+    kind: 'before_agent_start 段注入',
+    contract: '按名写入 event.systemPromptOptions.sections，null 键撤段，由 pi 计算净变更补丁。',
+    rules: [
+      '未变更的段不产生多余系统消息。',
+      '权限切换、计划开关与多根技能变更在下一回合即生效。',
+    ],
+    sources: [{ path: 'src/host/runtime/hook-seat.ts', symbol: 'createCogentHooks' }],
+  },
+  'flow.prompts.diff>flow.prompts.inspect': {
+    title: 'pi 分段补丁与热刷新 → 完整提示词观测',
+    kind: '渲染后观测回调',
+    contract: '段注入完成后读取 event.systemPrompt 并通知 SessionInspector.systemPromptRendered。',
+    rules: [
+      '控制台可查看含 <cwd> 与全部动态段的真实生效系统提示词。',
+      '与静态快照内容一致时自动去重，不刷屏时间线。',
+    ],
+    sources: [
+      { path: 'src/host/runtime/hook-seat.ts', symbol: 'onSystemPromptRendered' },
+      { path: 'src/host/runtime/inspector.ts', symbol: 'systemPromptRendered' },
+    ],
+  },
+  'flow.prompts.diff>flow.prompts.project': {
+    title: 'pi 分段补丁与热刷新 → 协议投影与折叠',
+    kind: '系统消息流转',
+    contract: 'pi 将基础段与段补丁写入会话树系统消息，再按端点能力决定是否折叠回首条 system。',
+    rules: [
+      '保留式转录树仅存净变更，历史回放确定性还原当前段状态。',
+    ],
+    sources: [{ path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' }],
+  },
+  'flow.prompts.piTools>flow.prompts.hostTools': {
+    title: '内置与 MCP 工具集 → 宿主六工具提示词',
+    kind: '统一工具白名单装配',
+    contract: 'pi 内置工具、MCP 允许列表与 6 个宿主自定义工具合并进入会话 tools 集合。',
+    rules: [
+      'customTools 名称必须同步进 tools 白名单才能被模型看见与调用。',
+    ],
+    sources: [
+      { path: 'src/host/kernel/pi-session-factory.ts', symbol: 'createPiSession' },
+      { path: 'src/host/runtime/tool-meta.ts', symbol: 'COGENT_TOOL_NAMES' },
+    ],
+  },
+  'flow.prompts.hostTools>flow.prompts.receipts': {
+    title: '宿主六工具提示词 → 规范化工具回执',
+    kind: '工具执行与结果收口',
+    contract: '宿主工具执行后只向模型返回简洁客观回执，内部标识与结构化详情留存 details。',
+    rules: [
+      'report_outputs 不向模型暴露 turnId/revision 裸 JSON，防正文复述。',
+      'read_attachment 截断暂存文件显式标为内部临时路径，禁止外泄。',
+    ],
+    sources: [
+      { path: 'src/host/runtime/prompts/tools.ts', symbol: 'formatReportOutputsReceipt' },
+      { path: 'src/host/runtime/outputs/tool.ts', symbol: 'outputReceipt' },
+    ],
+  },
+  'flow.prompts.receipts>flow.prompts.project': {
+    title: '规范化工具回执 → 协议投影与折叠',
+    kind: 'toolResult 回灌上下文',
+    contract: '工具声明与执行结果进入消息序列，由 pi 转换为各厂商对应的 tool/tool_result 结构。',
+    rules: [
+      '工具结果截断与错误文案均受黑盒规则约束，不诱导模型泄露宿主内部状态。',
+    ],
+    sources: [{ path: 'src/host/runtime/message-projection.ts', symbol: 'summarizeToolResult' }],
+  },
+  'flow.prompts.reminders>flow.prompts.injections': {
+    title: '元提醒源与标签转义 → 消息流动态注入',
+    kind: '统一封装与防逃逸',
+    contract: '所有消息流提醒与元数据块必须先经 reminders.ts 转义嵌套标签再封装输出。',
+    rules: [
+      '中和大小写变体的 </system-reminder>，杜绝外部文件名或内容逃逸标签边界。',
+      '提醒正文显式声明非用户发言且要求静默执行。',
+    ],
+    sources: [{ path: 'src/host/runtime/prompts/reminders.ts', symbol: 'wrapSystemReminder · escapeSystemReminderTags' }],
+  },
+  'flow.prompts.injections>flow.prompts.project': {
+    title: '消息流动态注入 → 协议投影与折叠',
+    kind: 'context 钩子与用户消息组装',
+    contract: '条件产物提醒经 context 钩子临时附着，附件/目录块与续写指令随消息流进入 convertToLlm。',
+    rules: [
+      '条件产物提醒不落入用户可见转录，每轮最多触发一次。',
+      '附件块隐藏内部 UUID/对象路径，续写消息保留 [cogent:continue] 供投影层隐藏。',
+    ],
+    sources: [
+      { path: 'src/host/runtime/hook-seat.ts', symbol: 'createCogentHooks' },
+      { path: 'src/host/runtime/session.ts', symbol: 'driveRun' },
+    ],
+  },
+  'flow.prompts.project>flow.prompts.outbound': {
+    title: '协议投影与折叠 → Provider 出站请求',
+    kind: '出站请求组装',
+    contract: '折叠后的 system、稳定 tools 与带边界隔离的 messages 一同发往目标模型端点。',
+    rules: [
+      '发送前经 onPayload 留存完整原始载荷供控制台核对。',
+    ],
+    sources: [{ path: 'src/host/runtime/session.ts', symbol: 'attachInspector' }],
+  },
+  'flow.prompts.auxiliary>flow.prompts.outbound': {
+    title: '独立辅助调用提示词 → Provider 出站请求',
+    kind: '旁路轻量调用',
+    contract: '会话自动标题与模型连通性探测复用 ModelRuntime 独立发请求，不污染主会话上下文。',
+    rules: [
+      '不挂主会话工具集，独立超时与取消保护。',
+    ],
+    sources: [
+      { path: 'src/host/kernel/session-title.ts', symbol: 'generateSessionTitle' },
+      { path: 'src/host/runtime/model-connectivity.ts', symbol: 'testModelConnectivity' },
+    ],
+  },
 }
 
 export function getEdgeDetail(source: string, target: string): EdgeDetail | null {
@@ -2593,7 +2940,7 @@ const baseOverview: ModuleDetail = {
   responsibilities: [
     '点击「主 UI 桌面壳」「Host 服务层」「执行能力」卡片可直接下钻内部细图，再一键返回原位置。',
     '点击任意连线可查看边界契约；顶部支持「全部 / 仅已实现 / 高亮缺口」切换，且在「仅已实现」下真正隐藏未实现规划项。',
-    '左侧栏「专题流程」提供认证、审批、MCP、技能、钩子、压缩转录、产物交付与凭据模型 8 张独立流程图。',
+    '左侧栏「专题流程」提供认证、审批、MCP、技能、钩子、压缩转录、产物交付、凭据模型与提示词工程 9 张独立流程图。',
   ],
   boundary: '本图只同步稳定架构边界与收口交付状态；过渡性内部调整不驱动改图。真实调用与进程细节见《当前架构》。',
   sources: [
@@ -2781,6 +3128,25 @@ export const viewDetails: Record<ViewId, ModuleDetail> = {
       { path: 'docs/模块/凭据与模型目录.md', symbol: '凭据链路' },
       { path: 'src/electron/main/credentials/store.ts', symbol: 'CredentialStore' },
       { path: 'src/host/runtime/model-connectivity.ts', symbol: 'testModelConnectivity' },
+    ],
+  },
+  flowPrompts: {
+    name: '提示词工程与装配',
+    kind: '专题流程 · 三层提示词治理、黑盒边界与缓存序',
+    icon: SparklesIcon,
+    status: 'implemented',
+    showStatus: false,
+    verifiedAt: '2026-11-26',
+    summary: '三条泳道呈现 Cogent 提示词的工程化管理：上层系统提示词按稳定度分层（静态中文/思考/黑盒前缀 → 多根工作区 → 动态段热刷新与完整观测），中层收敛宿主工具声明与去内部化回执，下层统一封装 <system-reminder> 隔离消息流注入并纳入独立辅助调用。',
+    responsibilities: [
+      '静态核心块统一锚定默认简体中文回复与中文思考、对外黑盒静默边界、证据先行与 Markdown 文件链接规范。',
+      '所有消息流提醒经 prompts/reminders.ts 统一封装 <system-reminder> 并中和嵌套闭合标签，彻底避免裸 user 消息导致内部话术泄露。',
+    ],
+    boundary: '上游 pi 内置工具描述保持只读不魔改；观测旁路只读记录完整渲染提示词；真机模型遵循率另行对照验证。',
+    sources: [
+      { path: 'src/host/runtime/prompts/index.ts', symbol: 'PROMPT_INVENTORY' },
+      { path: 'docs/计划/提示词工程实现.md', symbol: '总体方案设计' },
+      { path: 'docs/技术笔记/提示词工程.md', symbol: 'Cogent 三层落点' },
     ],
   },
 }
