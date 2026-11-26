@@ -73,7 +73,8 @@ export default defineConfig({
           mcp: resolve('src/host/mcp-server/main.ts'),
           'search-worker': resolve('src/host/runtime/search/worker.ts'),
           'attachment-worker': resolve('src/host/runtime/attachment-worker.ts'),
-          'file-view-worker': resolve('src/host/runtime/file-views/scan-worker.ts')
+          'file-view-worker': resolve('src/host/runtime/file-views/scan-worker.ts'),
+          'change-diff-worker': resolve('src/host/runtime/changes/diff-worker.ts')
         }
       }
     }

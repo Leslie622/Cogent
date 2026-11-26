@@ -25,7 +25,11 @@ describe('protocol/method-access', () => {
   it('未声明 httpScope 的本地方法拒绝 HTTP/WS 访问，签发接口需要 admin', () => {
     expect(httpMethodMinScope('host.shutdown')).toBeUndefined()
     expect(httpMethodMinScope('files.resolve')).toBeUndefined()
+    expect(httpMethodMinScope('changes.get')).toBeUndefined()
+    expect(httpMethodMinScope('changes.diff')).toBeUndefined()
     expect(httpMethodMinScope('attachments.draft')).toBeUndefined()
+    expect(rendererAllowedMethods().has('changes.get')).toBe(true)
+    expect(rendererAllowedMethods().has('changes.diff')).toBe(true)
     expect(httpMethodMinScope('nonexistent.method')).toBeUndefined()
     expect(httpMethodMinScope('capability.issue')).toBe('admin')
     expect(httpMethodMinScope('session.list')).toBe('readonly')

@@ -104,6 +104,7 @@ import { createReadAttachmentTool } from './read-attachment'
 import { OutputsService } from './outputs/service'
 import { createReportOutputsTool, outputReceipt } from './outputs/tool'
 import type { OutputOutcome } from '../../shared/outputs'
+import { WorkspaceChangesService } from './changes/service'
 import { asStoredSession, SESSION_COLLECTION, SESSION_FILE_VERSION, type StoredSession } from './session-storage'
 import { buildSystemPrompt, estimateContext, permissionSectionText, planModeSectionText } from './session-prompt'
 import { projectModelSummaries } from './session-models'
@@ -220,6 +221,7 @@ export class SessionManager implements CogentKernel {
     controller: AbortController; trace: TitleTrace; inspector: SessionInspector; owner: StreamingState; response?: AssistantMessage
   }>()
   readonly outputs: OutputsService
+  readonly changes: WorkspaceChangesService
   private sessions = new Map<string, Session>()
   private deletionTasks = new Map<string, Promise<void>>()
   private streaming = new Map<string, StreamingState>()
@@ -315,6 +317,7 @@ export class SessionManager implements CogentKernel {
     this.titleSettings = new SessionTitleConfig(hostRoot)
     this.attachments = new AttachmentService(hostRoot)
     this.outputs = new OutputsService(hostRoot, (doc) => this.notify('outputs.updated', doc))
+    this.changes = new WorkspaceChangesService(hostRoot, (summary) => this.notify('changes.updated', summary))
     // pi 内置全部 provider 的模型目录（UI 下拉 + submit 模型解析仍走它）；
     // pi 内核的请求路由走 modelRuntime —— custom provider 经 registerNativeProvider
     // 双注册（见 custom-providers.ts），内置 provider 的 key 经凭据 sink 进 runtime
@@ -626,6 +629,7 @@ export class SessionManager implements CogentKernel {
     const attachmentConfig = new AttachmentConfig(this.hostRoot)
     this.attachments.releaseSession(sessionId, id => attachmentConfig.references(id))
     await this.outputs.releaseSession(sessionId)
+    await this.changes.releaseSession(sessionId)
     // 标记最后移除；任一清理失败仍有可恢复入口。
     this.storage.delete(SESSION_COLLECTION, sessionId)
   }
@@ -873,6 +877,7 @@ export class SessionManager implements CogentKernel {
     this.streaming.set(sessionId, streaming)
     this.notify('run.started', { sessionId, runId, turnId: inputId, input: streaming.input! })
     this.outputs.begin(sessionId, inputId, streaming)
+    this.changes.begin(sessionId, inputId, streaming, workspace.roots)
     this.continuationBudget.set(sessionId, AUTO_CONTINUE_LIMIT)
     // 异步段的三类失败（装配炸 / prompt 前置校验拒 / 续写链异常）都收口到
     // run.failed —— run.started 已发，宿主在等终态事件，不能让拒绝裸奔
@@ -996,13 +1001,15 @@ export class SessionManager implements CogentKernel {
     if (outcome === 'aborted' && this.titleTasks.get(session.summary.id)?.owner === streaming) this.cancelTitle(session.summary.id, '首轮已停止')
     if (streaming.finalization !== undefined) return streaming.finalization
     if (!this.ownsRun(session, streaming)) return Promise.resolve()
-    if (streaming.turnId === undefined || this.outputs.finishEmpty(session.summary.id, streaming.turnId, streaming)) {
+    const outputsEmpty = streaming.turnId === undefined || this.outputs.finishEmpty(session.summary.id, streaming.turnId, streaming)
+    const changesEmpty = streaming.turnId === undefined || this.changes.finishEmpty(session.summary.id, streaming.turnId, streaming)
+    if (outputsEmpty && changesEmpty) {
       this.streaming.delete(session.summary.id)
       complete()
       return Promise.resolve()
     }
     streaming.finalization = (async () => {
-      if (streaming.turnId !== undefined) {
+      if (streaming.turnId !== undefined && !outputsEmpty) {
         try { await this.outputs.finalize(session.summary.id, streaming.turnId, streaming, outcome) }
         catch (error) {
           if (this.ownsRun(session, streaming)) {
@@ -1011,6 +1018,14 @@ export class SessionManager implements CogentKernel {
               if (saved !== undefined && this.ownsRun(session, streaming)) this.notify('outputs.updated', saved)
             } catch (readError) { process.stderr.write(`[outputs] 结算失败后回读确认版失败: ${readError instanceof Error ? readError.message : String(readError)}\n`) }
             if (this.ownsRun(session, streaming)) this.notify('outputs.error', { sessionId: session.summary.id, turnId: streaming.turnId, message: error instanceof Error ? error.message : String(error) })
+          }
+        }
+      }
+      if (streaming.turnId !== undefined && !changesEmpty) {
+        try { await this.changes.finalize(session.summary.id, streaming.turnId, streaming, outcome) }
+        catch (error) {
+          if (this.ownsRun(session, streaming)) {
+            this.notify('changes.error', { sessionId: session.summary.id, turnId: streaming.turnId, message: error instanceof Error ? error.message : String(error) })
           }
         }
       }
@@ -1153,7 +1168,10 @@ export class SessionManager implements CogentKernel {
       const userAt = projected.findLastIndex((message) => message.role === 'user')
       streaming.turnId = projected[userAt]?.turnId
       streaming.fileContext = projected[userAt]?.fileContext
-      if (streaming.turnId !== undefined) this.outputs.begin(sessionId, streaming.turnId, streaming, true)
+      if (streaming.turnId !== undefined) {
+        this.outputs.begin(sessionId, streaming.turnId, streaming, true)
+        this.changes.begin(sessionId, streaming.turnId, streaming, workspace.roots, true)
+      }
       streaming.baseSegments = projected.slice(userAt + 1).filter((message) => message.role === 'assistant')
       if (this.finishPreparingRun(session, pi, streaming)) return { ok: true, runId: streaming.runId, turnId: streaming.turnId }
       const last = pi.agent.state.messages.at(-1)
@@ -1255,6 +1273,7 @@ export class SessionManager implements CogentKernel {
       await Promise.all([...this.streaming.values()].flatMap(run => run.finalization ? [run.finalization] : []))
       await Promise.allSettled(this.deletionTasks.values())
       await this.outputs.drain()
+      await this.changes.drain()
     }
     try {
       await Promise.race([drain(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('会话退出超过 5 秒，强制收尾')), 5_000) })])
@@ -1267,6 +1286,7 @@ export class SessionManager implements CogentKernel {
     this.searchService.dispose()
     for (const sessionId of this.titleTasks.keys()) this.cancelTitle(sessionId, '引擎退出')
     this.outputs.dispose()
+    this.changes.dispose()
     for (const run of this.streaming.values()) run.attachmentPreparation?.abort()
     for (const session of this.sessions.values()) session.pi?.dispose()
     for (const sessionId of this.sessions.keys()) {
@@ -1383,6 +1403,26 @@ export class SessionManager implements CogentKernel {
    * 未返回前工具不执行（pi 官方阻塞语义）；signal abort 兜底 resolve
    * （否则中止后 Promise 永悬、run 永不结束）。
    */
+  private async prepareToolChanges(
+    session: Session,
+    toolName: string,
+    args: Record<string, unknown>,
+    signal: AbortSignal | undefined
+  ): Promise<{ block: boolean; reason?: string }> {
+    const streaming = this.streaming.get(session.summary.id)
+    if (streaming?.turnId === undefined) return { block: false }
+    if (signal?.aborted) return { block: true, reason: '已中止' }
+    const cwd = streaming.fileContext?.cwd ?? streaming.workspace.cwd
+    try {
+      await this.changes.beforeTool(session.summary.id, streaming.turnId, streaming, toolName, args, cwd, signal)
+      return { block: false }
+    } catch (error) {
+      if (signal?.aborted) return { block: true, reason: '已中止' }
+      process.stderr.write(`[changes] 写前捕获失败（${toolName}）: ${error instanceof Error ? error.message : String(error)}\n`)
+      return { block: false }
+    }
+  }
+
   private decideApproval(
     session: Session,
     toolName: string,
@@ -1407,7 +1447,7 @@ export class SessionManager implements CogentKernel {
     const mode = session.summary.permissionMode ?? 'ask'
     if (mode === 'auto') {
       audit.approvalDecided({ toolName, verdict: 'auto' })
-      return Promise.resolve({ block: false })
+      return this.prepareToolChanges(session, toolName, args, signal)
     }
     // 写类根内判定（软边界瘦身为"规则适用域"）：越界与否不再决定放拦，
     // 只决定 ask 是否可吃「始终允许」规则 —— 信任记忆的范围 = 根内写
@@ -1421,19 +1461,19 @@ export class SessionManager implements CogentKernel {
     // exec 等风险类照旧走询问（落到下方 ask 流程）
     if (mode === 'autonomous' && (kind === 'write' || kind === 'edit')) {
       audit.approvalDecided({ toolName, verdict: 'autonomous' })
-      return Promise.resolve({ block: false })
+      return this.prepareToolChanges(session, toolName, args, signal)
     }
     // 写类只匹配覆盖本次目标的已授权根，新增根不会沿用旧根的规则。
     if (roots.length > 0 && withinRoots && this.approvals.allows(isFileWrite ? targetRoots : roots, kind)) {
       audit.approvalDecided({ toolName, verdict: 'always-workspace' })
-      return Promise.resolve({ block: false })
+      return this.prepareToolChanges(session, toolName, args, signal)
     }
     // 弹审批面板并挂起（无超时 —— 用户不点就一直等，宿主输入框变停止
     // 钮可 abort；signal abort 兜底 resolve）
     const requestId = `appr-${crypto.randomUUID()}`
     const sessionId = session.summary.id
     const summary = meta !== undefined ? meta.summarize(args) : `${toolName}(?)`
-    return new Promise((resolve) => {
+    return new Promise<{ block: boolean; reason?: string }>((resolve) => {
       // 先登记再发事件：respondApproval 走这张表找 resolver，时序上不存在
       // 「事件未到、respond 先行」的窗口（宿主是收到事件才可能裁决）
       this.pendingApprovals.set(requestId, { sessionId, kind, toolName, callId, summary, ruleRoots: roots, withinRoots, resolve })
@@ -1454,7 +1494,7 @@ export class SessionManager implements CogentKernel {
           resolve({ block: true, reason: '已中止' })
         }
       })
-    })
+    }).then((verdict) => verdict.block ? verdict : this.prepareToolChanges(session, toolName, args, signal))
   }
 
   /** 某会话的全部挂起审批以 block 收尾（删除/退出兜底；abort 走 signal listener） */

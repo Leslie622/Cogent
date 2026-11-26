@@ -85,6 +85,7 @@ import { FileService } from './runtime/files/reader'
 import { FileViewsService } from './runtime/file-views/service'
 import { fileViewHandlers } from './runtime/file-views/handlers'
 import { outputHandlers } from './runtime/outputs/handlers'
+import { changeHandlers } from './runtime/changes/handlers'
 import { fileHandlers } from './runtime/files/handlers'
 import { prepareDirectoryReferences } from './runtime/directory-references'
 
@@ -796,6 +797,7 @@ async function main(): Promise<void> {
     ...fileHandlers(files),
     ...fileViewHandlers(fileViews),
     ...outputHandlers(sessions.outputs, files, (sessionId) => { sessions.fileContext(sessionId) }),
+    ...changeHandlers(sessions.changes, (sessionId) => { sessions.fileContext(sessionId) }),
     ...attachmentHandlers(sessions.attachments, new AttachmentConfig(STORAGE_ROOT)),
     ['session.list', () => sessions.list()],
     ['session.search', handleSessionSearch],

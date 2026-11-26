@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-const ENTRIES = ['host', 'mcp', 'attachment-worker', 'search-worker', 'file-view-worker']
+const ENTRIES = ['host', 'mcp', 'attachment-worker', 'search-worker', 'file-view-worker', 'change-diff-worker']
   .map((name) => join('out', 'main', `${name}.js`))
 const SOURCE_ROOTS = ['src/host', 'src/electron', 'src/shared', 'src/protocol']
 const BUILD_INPUTS = ['electron.vite.config.ts', 'package.json', 'package-lock.json', 'scripts/pdf-assets.ts', 'scripts/preview-licenses.ts']

@@ -22,6 +22,7 @@ import { join } from 'node:path'
 process.env.PI_CODING_AGENT_DIR ??= join(process.env.COGENT_HOME || join(homedir(), '.cogent'), 'pi')
 process.env.COGENT_SEARCH_WORKER ??= join(import.meta.dirname, 'search-worker.js')
 process.env.COGENT_ATTACHMENT_WORKER ??= join(import.meta.dirname, 'attachment-worker.js')
+process.env.COGENT_CHANGE_DIFF_WORKER ??= join(import.meta.dirname, 'change-diff-worker.js')
 
 // 必须在动态 import 前留痕：依赖模块求值卡住时，host-main 的任何日志都还执行不到。
 process.stderr.write(`[startup] +${Math.round(process.uptime() * 1000)}ms 加载 Host 模块（node ${process.version}）\n`)

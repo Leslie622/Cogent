@@ -13,6 +13,7 @@
  */
 import type {
   AttachmentMethods,
+  ChangeMethods,
   DefaultsMethods,
   FileContext,
   FileInternalMethods,
@@ -23,6 +24,7 @@ import type {
   SessionDefaults,
   SessionSearchMethods,
   SessionTitleMethods,
+  TurnChangesSummary,
   TurnOutputs
 } from './domains'
 /** 协议版本：语义承诺 = 帧格式与既有 method 语义不变，新增能力走可选字段/新 method */
@@ -1053,7 +1055,7 @@ export interface CapabilityIssueResult {
 /**
  * method 注册表：键名即线上协议。新增 method = 在此加一行 + 服务端加 handler。
  */
-export interface ProtocolMethods extends DefaultsMethods, AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, FileViewHostMethods, SessionTitleMethods, SessionSearchMethods {
+export interface ProtocolMethods extends DefaultsMethods, AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, ChangeMethods, FileViewHostMethods, SessionTitleMethods, SessionSearchMethods {
   'host.shutdown': { params: Record<string, never>; result: { ok: true } }
   'providers.custom.get': { params: Record<string, never>; result: ProvidersCustomSyncParams }
   initialize: { params: InitializeParams; result: InitializeResult }
@@ -1123,6 +1125,8 @@ export interface ProtocolEvents {
   'message.source': { sessionId: string; turnId: string; role: 'user' | 'assistant'; sourceId: string }
   'outputs.updated': TurnOutputs
   'outputs.error': { sessionId: string; turnId: string; message: string }
+  'changes.updated': TurnChangesSummary
+  'changes.error': { sessionId: string; turnId: string; message: string }
   'files.invalidated': Record<string, never>
   'run.started': { sessionId: string; turnId?: string; runId?: string; input?: { text: string; timestamp: number } }
   'run.completed': {

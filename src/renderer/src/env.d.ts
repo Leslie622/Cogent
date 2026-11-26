@@ -15,6 +15,7 @@ type DefaultsResults = { [K in keyof DefaultsMethods]: DefaultsMethods[K]['resul
 import type { AttachmentMethods, AttachmentRef, DirectoryRef } from '@shared/attachments'
 import type { FileMethods, FileContext, FileReference, FileActionRequest } from '@shared/files'
 import type { OutputMethods, TurnOutputs } from '@shared/outputs'
+import type { ChangeMethods, TurnChangesSummary } from '@shared/changes'
 import type { FileViewMethods } from '@shared/file-views'
 import type { RendererSettingsPatch } from '@shared/ipc'
 import type { BrowserMethods, BrowserEvent } from '@shared/browser'
@@ -27,6 +28,8 @@ type TitleParams = { [K in keyof SessionTitleMethods]: SessionTitleMethods[K]['p
 type TitleResults = { [K in keyof SessionTitleMethods]: SessionTitleMethods[K]['result'] }
 type OutputParams = { [K in keyof OutputMethods]: OutputMethods[K]['params'] }
 type OutputResults = { [K in keyof OutputMethods]: OutputMethods[K]['result'] }
+type ChangeParams = { [K in keyof ChangeMethods]: ChangeMethods[K]['params'] }
+type ChangeResults = { [K in keyof ChangeMethods]: ChangeMethods[K]['result'] }
 type FileParams = { [K in keyof FileMethods]: FileMethods[K]['params'] }
 type FileResults = { [K in keyof FileMethods]: FileMethods[K]['result'] }
 type AttachmentParams = { [K in keyof AttachmentMethods]: AttachmentMethods[K]['params'] }
@@ -144,6 +147,7 @@ export type EngineMethod =
   | keyof SessionSearchMethods
   | keyof SessionTitleMethods
   | keyof OutputMethods
+  | keyof ChangeMethods
   | keyof FileMethods
   | keyof AttachmentMethods
   | 'session.list'
@@ -267,7 +271,7 @@ export interface ProjectSummary {
 }
 
 /** 与 protocol/types.ts 对应 method 的参数形状（renderer 侧镜像声明） */
-export interface EngineMethodParams extends DefaultsParams, AttachmentParams, FileParams, OutputParams, TitleParams, SearchParams {
+export interface EngineMethodParams extends DefaultsParams, AttachmentParams, FileParams, OutputParams, ChangeParams, TitleParams, SearchParams {
   'session.list': Record<string, never>
   'session.create': { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode; planEnabled?: boolean }
   'session.delete': { sessionId: string }
@@ -310,7 +314,7 @@ export interface TodoItem {
 }
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
-export interface EngineMethodResult extends DefaultsResults, AttachmentResults, FileResults, OutputResults, TitleResults, SearchResults {
+export interface EngineMethodResult extends DefaultsResults, AttachmentResults, FileResults, OutputResults, ChangeResults, TitleResults, SearchResults {
   'session.list': SessionSummary[]
   'session.create': SessionSummary
   'session.delete': { deleted: boolean; cleanupPending?: boolean; cleanupError?: string }
@@ -412,6 +416,8 @@ type EngineEventBody =
   | { method: 'message.source'; params: { sessionId: string; turnId: string; role: 'user' | 'assistant'; sourceId: string } }
   | { method: 'outputs.updated'; params: TurnOutputs }
   | { method: 'outputs.error'; params: { sessionId: string; turnId: string; message: string } }
+  | { method: 'changes.updated'; params: TurnChangesSummary }
+  | { method: 'changes.error'; params: { sessionId: string; turnId: string; message: string } }
   | { method: 'files.invalidated'; params: Record<string, never> }
   | { method: 'run.started'; params: { sessionId: string; turnId?: string; runId?: string; input?: { text: string; timestamp: number } } }
   | {

@@ -243,6 +243,74 @@ export interface OutputMethods {
   'outputs.resolve': { params: OutputTarget; result: FileDescriptor }
 }
 
+// ———— 本轮改动列表 ————
+
+export type ChangeKind =
+  | 'added'
+  | 'modified'
+  | 'deleted'
+  | 'renamed'
+  | 'type-changed'
+  | 'mode-changed'
+  | 'eol-or-encoding'
+export type ChangeCoverage = 'complete' | 'tools-only' | 'partial'
+export type ChangeOutcome = 'completed' | 'aborted' | 'error'
+export interface TurnChangeItem {
+  changeId: string
+  path: string
+  absolutePath: string
+  oldPath?: string
+  oldAbsolutePath?: string
+  kind: ChangeKind
+  added: number | null
+  deleted: number | null
+  binary?: boolean
+  oversized?: boolean
+  outsideWorkspace?: boolean
+  source: 'workspace' | 'tool' | 'merged'
+  reason?: string
+}
+export interface TurnChangesSummary {
+  version: 1
+  sessionId: string
+  turnId: string
+  revision: number
+  state: 'running' | 'finalizing' | 'ready' | 'interrupted'
+  coverage: ChangeCoverage
+  totalAdded: number
+  totalDeleted: number
+  incompleteCount: number
+  items: TurnChangeItem[]
+  warnings: string[]
+  outcome?: ChangeOutcome
+}
+export interface TurnFileDiff {
+  sessionId: string
+  turnId: string
+  revision: number
+  changeId: string
+  path: string
+  absolutePath: string
+  oldPath?: string
+  kind: ChangeKind
+  added: number | null
+  deleted: number | null
+  status: 'text' | 'binary' | 'oversized' | 'unreadable' | 'timeout' | 'non-text-change' | 'unavailable'
+  reason?: string
+  beforeExists: boolean
+  afterExists: boolean
+  beforeText?: string
+  afterText?: string
+  beforeEncoding?: string
+  afterEncoding?: string
+  beforeSize?: number
+  afterSize?: number
+}
+export interface ChangeMethods {
+  'changes.get': { params: { sessionId: string; turnId?: string }; result: TurnChangesSummary[] }
+  'changes.diff': { params: { sessionId: string; turnId: string; revision: number; changeId: string }; result: TurnFileDiff }
+}
+
 // ———— 文件视图 ————
 
 export interface FileViewRoot { id: string; path: string; name: string; kind: 'file' | 'directory'; grantId?: string }

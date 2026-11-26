@@ -98,6 +98,8 @@ export const METHOD_ACCESS = {
   'files.actionTarget': { rendererAllowed: false },
   'outputs.get': { rendererAllowed: true },
   'outputs.resolve': { rendererAllowed: true },
+  'changes.get': { rendererAllowed: true },
+  'changes.diff': { rendererAllowed: true },
 
   // ———— 文件视图（走 fileViews 专属 IPC，不经通用代理或 HTTP） ————
   'fileViews.closeContext': { rendererAllowed: false },

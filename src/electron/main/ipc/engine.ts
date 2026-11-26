@@ -33,7 +33,7 @@ export function registerEngineIpc(deps: IpcDeps): void {
       throw new Error(`engine:request 非法调用：params 必须是对象`)
     }
     const method = payload.method as keyof ProtocolMethods
-    if (method.startsWith('files.') || method.startsWith('outputs.')) requireFileWindow(event, deps)
+    if (method.startsWith('files.') || method.startsWith('outputs.') || method.startsWith('changes.')) requireFileWindow(event, deps)
     return host.request(method, params)
   })
 
