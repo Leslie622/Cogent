@@ -25,7 +25,10 @@ describe('产物状态水合', () => {
   it('历史未返回前收到新事件，新快照优先；消息增量不会让历史产物整批丢失', async () => {
     useChatStore.setState({ bySession: {} })
     let finish!: (docs: TurnOutputs[]) => void
-    request.mockImplementation((method) => method === 'session.messages' ? Promise.resolve({ messages: [] }) : new Promise((resolve) => { finish = resolve }))
+    request.mockImplementation((method) =>
+      method === 'session.messages' ? Promise.resolve({ messages: [] })
+        : method === 'changes.get' ? Promise.resolve([])
+        : new Promise((resolve) => { finish = resolve }))
     const select = useChatStore.getState().selectSession('s1')
     await vi.waitFor(() => expect(finish).toBeDefined())
     emit({ method: 'outputs.updated', params: { ...doc, revision: 4, state: 'running' } })
@@ -37,7 +40,10 @@ describe('产物状态水合', () => {
   it('旧桶历史在同名桶重建后返回也不能借身份写入', async () => {
     useChatStore.setState({ bySession: {} })
     let finish!: (docs: TurnOutputs[]) => void
-    request.mockImplementation((method) => method === 'session.messages' ? Promise.resolve({ messages: [] }) : new Promise((resolve) => { finish = resolve }))
+    request.mockImplementation((method) =>
+      method === 'session.messages' ? Promise.resolve({ messages: [] })
+        : method === 'changes.get' ? Promise.resolve([])
+        : new Promise((resolve) => { finish = resolve }))
     const select = useChatStore.getState().selectSession('s1')
     await vi.waitFor(() => expect(finish).toBeDefined())
     useChatStore.setState({ bySession: { s1: emptyBucket() } })
@@ -51,6 +57,7 @@ describe('产物状态水合', () => {
     request.mockImplementation((method) => method === 'session.list'
       ? Promise.resolve([{ id: 's1', title: '原聊天', createdAt: 0, updatedAt: 0 }])
       : method === 'session.messages' ? Promise.resolve({ messages: [] })
+      : method === 'changes.get' ? Promise.resolve([])
       : new Promise((resolve) => { finish = resolve }))
     await useChatStore.getState().load()
     expect(useHomeStore.getState().session).toEqual({ kind: 'chat', chatId: 's1' })

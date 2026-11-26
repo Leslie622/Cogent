@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core'
 import { SortableContext, useSortable, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ChevronsDown, Expand, File, Folder, Globe, LoaderCircle, Minimize2, PanelRightClose, Plus, Search, X } from 'lucide-react'
+import { ChevronsDown, Expand, File, FileDiff, Folder, Globe, LoaderCircle, Minimize2, PanelRightClose, Plus, Search, X } from 'lucide-react'
 import { Tabs, TabsItem, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Hint } from '@/components/Hint'
@@ -18,7 +18,7 @@ import { closeWorkspaceTab, closeWorkspaceTabs } from './runtime'
 import { useFilePreviewStore } from '@/stores/file-preview'
 
 function TabIcon({ tab }: { tab: WorkspaceTab }) {
-  const Icon = tab.kind === 'browser' ? Globe : tab.kind === 'files' ? Folder : File
+  const Icon = tab.kind === 'browser' ? Globe : tab.kind === 'files' ? Folder : tab.kind === 'diff' ? FileDiff : File
   return tab.kind === 'browser' && tab.loading ? <LoaderCircle className="size-4 animate-spin" /> : tab.kind === 'browser' && tab.favicon != null && /^data:image\/(?:png|jpeg|gif|webp|x-icon|vnd.microsoft.icon);base64,/.test(tab.favicon) ? <img src={tab.favicon} alt="" className="size-4" /> : <Icon className="size-4" />
 }
 

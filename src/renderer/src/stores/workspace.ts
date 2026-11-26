@@ -19,6 +19,7 @@ export type WorkspaceTab =
   | (TabBase & { kind: 'start' })
   | (TabBase & { kind: 'files' })
   | (TabBase & { kind: 'file'; source: FileTabSource; resourceKey: string; aliasKeys?: string[]; navigation: number; navigationMode?: 'current' })
+  | (TabBase & { kind: 'diff'; sessionId: string; turnId: string; changeId: string; path: string; absolutePath: string; revision: number })
   | (TabBase & { kind: 'browser'; url: string; privateGroupId?: string; history?: BrowserHistory; previewSource?: FileTabSource; favicon?: string | null; loading?: boolean })
 export interface WorkspaceScope {
   projectId?: string
@@ -41,6 +42,7 @@ export interface WorkspaceState {
   openBrowser: (url?: string, privateGroupId?: string, scopeId?: string, background?: boolean) => string
   openPreview: (source: FileTabSource) => string
   openFile: (source: FileTabSource, scopeId: string) => string
+  openDiff: (params: { sessionId: string; turnId: string; changeId: string; path: string; absolutePath: string; revision: number }, scopeId?: string) => string
   navigateFile: (id: string, source: FileTabSource) => boolean
   identifyFile: (id: string, canonicalKey: string, descriptor: FileDescriptor) => string
   updateBrowser: (id: string, patch: { title?: string; url?: string; history?: BrowserHistory; previewSource?: FileTabSource; favicon?: string | null; loading?: boolean }) => void
@@ -138,6 +140,43 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       const existing = scope.tabs.find(t => t.kind === 'file' && (t.resourceKey === resourceKey || t.aliasKeys?.includes(resourceKey) === true))
       if (existing !== undefined) { get().activate(existing.id); return existing.id }
       const tab: WorkspaceTab = { id: crypto.randomUUID(), scopeId, createdAt: Date.now(), kind: 'file', source, resourceKey, navigation: 0, title: titleFor(source.target) }
+      set(state => ({ activeScopeId: scopeId, autoCollapsed: false, scopes: { ...state.scopes, [scopeId]: insert(scope, tab) } }))
+      return tab.id
+    },
+    openDiff: (params, scopeId = params.sessionId) => {
+      const scope = get().scopes[scopeId] ?? initialScope()
+      const existing = scope.tabs.find(
+        (t): t is Extract<WorkspaceTab, { kind: 'diff' }> =>
+          t.kind === 'diff' && t.sessionId === params.sessionId && t.turnId === params.turnId && t.changeId === params.changeId
+      )
+      if (existing !== undefined) {
+        if (existing.revision < params.revision) {
+          set(state => ({
+            scopes: {
+              ...state.scopes,
+              [scopeId]: {
+                ...state.scopes[scopeId],
+                tabs: state.scopes[scopeId].tabs.map(t => t.id === existing.id && t.kind === 'diff' ? { ...t, revision: params.revision, path: params.path, absolutePath: params.absolutePath } : t)
+              }
+            }
+          }))
+        }
+        get().activate(existing.id)
+        return existing.id
+      }
+      const tab: WorkspaceTab = {
+        id: crypto.randomUUID(),
+        scopeId,
+        createdAt: Date.now(),
+        kind: 'diff',
+        title: titleFor(params.path),
+        sessionId: params.sessionId,
+        turnId: params.turnId,
+        changeId: params.changeId,
+        path: params.path,
+        absolutePath: params.absolutePath,
+        revision: params.revision
+      }
       set(state => ({ activeScopeId: scopeId, autoCollapsed: false, scopes: { ...state.scopes, [scopeId]: insert(scope, tab) } }))
       return tab.id
     },

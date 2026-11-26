@@ -27,6 +27,7 @@ import { MessageRow, UsageLine } from './MessageRow'
 import { ApprovalCard } from './ApprovalCard'
 import { CompactionBar, PrunedBar } from './CompactionBar'
 import { OutputCards } from './files/OutputCards'
+import { TurnChangesBar } from './files/TurnChangesBar'
 import { useChatStore } from '@/stores/chat'
 
 /** 回合（一问一答 + 其间全部过程项）；user 缺省 = 无提问头组（历史投影尾部
@@ -324,7 +325,7 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
     return turn.user !== undefined ? (
       <><MessageScrollerItem messageId={turn.user.id}>
         <MessageRow message={turn.user} />
-      </MessageScrollerItem><OutputCards /></>
+      </MessageScrollerItem><OutputCards /><TurnChangesBar /></>
     ) : null
   }
   // 段身份（渲染 key）：assistant 正文段用回合内段序数 —— live 占位的 id 是
@@ -376,6 +377,7 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
           </div>
         )}
         <OutputCards />
+        <TurnChangesBar />
         <div data-slot="live-working-line-source">
           <WorkingLine startTs={turn.user?.timestamp ?? turn.startedAt ?? Date.now()} stopping={stopping} />
         </div>
@@ -408,6 +410,7 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
           )}
         </div>
         <OutputCards />
+        <TurnChangesBar />
         <UsageLine usage={answerOriginal?.usage} durationMs={answerOriginal?.durationMs} />
       </>
     )
@@ -441,6 +444,7 @@ function TurnGroupBody({ turn, phase, stopping = false }: { turn: ChatTurn; phas
         )}
       </div>
       <OutputCards />
+      <TurnChangesBar />
       <UsageLine
         usage={sumUsage(turn.items)}
         durationMs={sumDurationMs(turn.items)}

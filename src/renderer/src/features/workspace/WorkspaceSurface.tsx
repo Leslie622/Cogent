@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-condition -- 动态索引可能不存在；未开启 noUncheckedIndexedAccess，仍需运行期边界检查。 */
 /** AppShell 常驻的唯一内容父节点；切会话、路由与布局只改变可见性。 */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Button } from '@/components/ui/button'
 import { SidebarResizeHandle } from '@/components/SidebarResizeHandle'
 import { useWorkspaceStore, EMPTY_WORKSPACE, type WorkspaceTab } from '@/stores/workspace'
@@ -16,6 +16,7 @@ import { useWorkspaceRuntime, registerTabClose, releaseHeldTab, closeWorkspaceTa
 import { WorkspaceAnimatingContext } from './motion'
 import { clearLegacyWorkspaceCache } from './legacy-cache'
 import type { BrowserState } from '@shared/browser'
+const DiffPreview = lazy(() => import('@/features/home/files/DiffPreview'))
 
 function BrowserOwnedPane({ tab, active }: { tab: Extract<WorkspaceTab, { kind: 'browser' }>; active: boolean }) {
   const [previewLeaseId, setPreviewLeaseId] = useState<string | undefined>()
@@ -58,11 +59,17 @@ function BrowserOwnedPane({ tab, active }: { tab: Extract<WorkspaceTab, { kind: 
     onReleased={() => releaseHeldTab(tab.id)} /></div>
   </div>
 }
-function WorkspacePanel({ tab, active }: { tab: Extract<WorkspaceTab, { kind: 'start' | 'browser' }>; active: boolean }) {
+function WorkspacePanel({ tab, active }: { tab: Extract<WorkspaceTab, { kind: 'start' | 'browser' | 'diff' }>; active: boolean }) {
   const [visited, setVisited] = useState(active)
   useEffect(() => { if (active) setVisited(true) }, [active])
   return <section id={'workspace-panel-' + tab.id} role="tabpanel" aria-labelledby={'workspace-tab-' + tab.id} hidden={!active} inert={!active} data-workspace-panel={tab.id} data-tab-kind={tab.kind} className="h-full min-h-0" style={{ display: active ? 'block' : 'none' }}>
-    {(active || visited) && (tab.kind === 'start' ? active ? <WorkspaceLauncher /> : null : <BrowserOwnedPane tab={tab} active={active} />)}
+    {(active || visited) && (
+      tab.kind === 'start'
+        ? (active ? <WorkspaceLauncher /> : null)
+        : tab.kind === 'diff'
+          ? <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">正在加载差异视图…</p>}><DiffPreview tab={tab} active={active} /></Suspense>
+          : <BrowserOwnedPane tab={tab} active={active} />
+    )}
   </section>
 }
 export function WorkspaceSurface({ contentWidth, visible }: { contentWidth: number; visible: boolean }) {
@@ -197,7 +204,7 @@ export function WorkspaceSurface({ contentWidth, visible }: { contentWidth: numb
         <FileWorkspacePane tabs={all.filter(tab => tab.kind === 'file' || tab.kind === 'files')} scopeId={scopeId} projectId={scope.projectId} sessionId={scopeId.startsWith('draft:') ? undefined : scopeId} grantIds={scope.grantIds} active={show && (activeTab?.kind === 'file' || activeTab?.kind === 'files')} activeTabId={scope.activeId}
           onContextChange={({ grantIds }) => useWorkspaceStore.getState().setGrants(scopeId, grantIds)} />
       </WorkspaceAnimatingContext.Provider>
-      {all.filter(tab => tab.kind === 'start' || tab.kind === 'browser').map(tab => <WorkspacePanel key={tab.id} tab={tab} active={show && tab.scopeId === scopeId && tab.id === scope.activeId && held[tab.id] === undefined} />)}
+      {all.filter(tab => tab.kind === 'start' || tab.kind === 'browser' || tab.kind === 'diff').map(tab => <WorkspacePanel key={tab.id} tab={tab} active={show && tab.scopeId === scopeId && tab.id === scope.activeId && held[tab.id] === undefined} />)}
     </div>
     </div></div>
   </aside>

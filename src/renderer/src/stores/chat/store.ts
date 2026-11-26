@@ -61,6 +61,8 @@ export function emptyBucket(): SessionBucket {
     owner: {},
     outputs: {},
     outputErrors: {},
+    changes: {},
+    changeErrors: {},
     messages: [],
     turnOutcomes: {},
     todos: [],
@@ -204,6 +206,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         })
       } catch (error) {
         set((state) => state.bySession[sessionId]?.owner !== bucket.owner ? state : patchBucket(state, sessionId, (b) => ({ ...b, outputErrors: { ...b.outputErrors, history: error instanceof Error ? error.message : String(error) } })))
+      } })()
+      // 本轮改动历史与正文加载解耦，按 revision 单调合并不覆盖运行期实时事件。
+      void (async () => { try {
+        const changes = await window.cogent.engineRequest('changes.get', { sessionId })
+        set((state) => {
+          const current = state.bySession[sessionId]
+          if (current === undefined || current.owner !== bucket.owner) return state
+          const merged = { ...current.changes }
+          for (const doc of changes) if ((merged[doc.turnId]?.revision ?? 0) < doc.revision) merged[doc.turnId] = doc
+          return patchBucket(state, sessionId, (b) => ({ ...b, changes: merged }))
+        })
+      } catch (error) {
+        set((state) => state.bySession[sessionId]?.owner !== bucket.owner ? state : patchBucket(state, sessionId, (b) => ({ ...b, changeErrors: { ...b.changeErrors, history: error instanceof Error ? error.message : String(error) } })))
       } })()
     }
   },

@@ -56,6 +56,22 @@ export function bindEngineEvents(): () => void {
         useChatStore.setState((state) => state.bySession[sessionId] === undefined ? state : patchBucket(state, sessionId, (b) => ({ ...b, outputErrors: { ...b.outputErrors, [turnId]: message } })))
         return
       }
+      case 'changes.updated': {
+        const doc = event.params
+        useChatStore.setState((state) => {
+          const bucket = state.bySession[doc.sessionId]
+          if (bucket === undefined || (bucket.changes[doc.turnId]?.revision ?? 0) > doc.revision) return state
+          const changeErrors = { ...bucket.changeErrors }
+          delete changeErrors[doc.turnId]
+          return patchBucket(state, doc.sessionId, (b) => ({ ...b, changes: { ...b.changes, [doc.turnId]: doc }, changeErrors }))
+        })
+        return
+      }
+      case 'changes.error': {
+        const { sessionId, turnId, message } = event.params
+        useChatStore.setState((state) => state.bySession[sessionId] === undefined ? state : patchBucket(state, sessionId, (b) => ({ ...b, changeErrors: { ...b.changeErrors, [turnId]: message } })))
+        return
+      }
       case 'message.source': {
         const { sessionId, turnId, role, sourceId } = event.params
         useChatStore.setState((state) => {

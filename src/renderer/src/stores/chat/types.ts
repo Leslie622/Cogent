@@ -168,6 +168,8 @@ export interface SessionBucket {
   owner: object
   outputs: Partial<Record<string, import('@shared/outputs').TurnOutputs>>
   outputErrors: Partial<Record<string, string>>
+  changes: Partial<Record<string, import('@shared/changes').TurnChangesSummary>>
+  changeErrors: Partial<Record<string, string>>
   /** 消息流（含流式中的 assistant 占位与工具卡行） */
   messages: MessageItem[]
   /** 已加载消息的user.id -> 已知终态；后续提交不能把旧回合重标为完成。 */
