@@ -87,7 +87,7 @@ describe('总览结构与状态筛选', () => {
   it('局部稳定性：同一视图在非相关列加节点不影响左侧主干坐标', () => {
     const base = projectLayout(views.flowAuth)
     // 克隆视图并在末尾第 7 列新增一个节点，验证前 6 列坐标纹丝不动。
-    const baseLeft = ['flow.auth.stdio', 'flow.auth.http', 'flow.auth.ticket', 'flow.auth.verify'].map((id) => ({
+    const baseLeft = ['flow.auth.entries.stdio', 'flow.auth.entries.http', 'flow.auth.ticket', 'flow.auth.verify'].map((id) => ({
       id,
       box: base.nodeBounds.get(id)!,
     }))

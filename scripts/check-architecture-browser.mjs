@@ -15,14 +15,15 @@ const views = [
   { name: 'Host 服务层', id: 'services', nodes: 9, edges: 3 },
   { name: '执行能力', id: 'capabilities', nodes: 11, edges: 2 },
   { name: '数据与存储', id: 'storage', nodes: 15, edges: 9 },
-  { name: '身份验证与权限', id: 'flowAuth', nodes: 11, edges: 12 },
-  { name: '消息与审批闭环', id: 'flowApproval', nodes: 10, edges: 10 },
-  { name: 'MCP 双轨机制', id: 'flowMcp', nodes: 9, edges: 7 },
-  { name: '技能加载机制', id: 'flowSkills', nodes: 8, edges: 7 },
-  { name: '钩子与扩展机制', id: 'flowHooks', nodes: 7, edges: 6 },
+  { name: '身份验证与权限', id: 'flowAuth', nodes: 12, edges: 12 },
+  { name: '消息与审批闭环', id: 'flowApproval', nodes: 11, edges: 12 },
+  { name: 'MCP 双轨机制', id: 'flowMcp', nodes: 12, edges: 9 },
+  { name: '技能加载机制', id: 'flowSkills', nodes: 9, edges: 6 },
+  { name: '钩子与扩展机制', id: 'flowHooks', nodes: 12, edges: 8 },
   { name: '上下文工程与压缩转录', id: 'flowCompaction', nodes: 15, edges: 12 },
-  { name: '文件边界与产物交付', id: 'flowOutputs', nodes: 8, edges: 7 },
-  { name: '凭据与模型出站', id: 'flowModels', nodes: 8, edges: 9 },
+  { name: '文件边界与产物交付', id: 'flowOutputs', nodes: 11, edges: 7 },
+  { name: '凭据与模型出站', id: 'flowModels', nodes: 11, edges: 11 },
+  { name: '提示词工程与装配', id: 'flowPrompts', nodes: 13, edges: 9 },
 ]
 
 await mkdir(output, { recursive: true })
@@ -99,8 +100,8 @@ try {
     await reset()
   }
 
-  // 1. 验证三栏基础布局与左侧双分组导航（5 架构视图 + 8 专题流程 = 13 项）
-  assert.equal(await nav.getByRole('button').count(), 13)
+  // 1. 验证三栏基础布局与左侧双分组导航（5 架构视图 + 9 专题流程 = 14 项）
+  assert.equal(await nav.getByRole('button').count(), 14)
   const left = await page.getByRole('complementary', { name: '架构目录' }).boundingBox()
   const center = await page.locator('.architecture-canvas').boundingBox()
   const right = await panel.boundingBox()
@@ -154,11 +155,11 @@ try {
   await page.getByRole('button', { name: '返回架构总览', exact: true }).click()
   await panel.getByRole('heading', { name: '主 UI 桌面壳', exact: true }).waitFor()
 
-  // 点击节点 → 来源页签 → 验证复制路径按钮且无 GitHub 外链
+  // 点击节点 → 源码页签 → 验证复制路径按钮且无 GitHub 外链
   await fitDiagram()
   await page.getByRole('button', { name: '查看PiSdkKernel', exact: true }).click()
   await panel.getByRole('heading', { name: 'PiSdkKernel', exact: true }).waitFor()
-  await panel.getByRole('tab', { name: '来源', exact: true }).click()
+  await panel.getByRole('tab', { name: '源码', exact: true }).click()
   assert.equal(await panel.locator('a[href*="github.com"]').count(), 0)
   const copySourceButton = panel.getByRole('button', { name: '复制路径 src/host/kernel/pi-session-factory.ts', exact: true })
   await copySourceButton.waitFor()
