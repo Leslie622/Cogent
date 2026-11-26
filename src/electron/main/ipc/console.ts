@@ -14,12 +14,15 @@ import { registerTrustedContents } from './trusted'
 import { handleTrusted } from './trusted'
 import { join } from 'node:path'
 import { BrowserWindow, shell } from 'electron'
+import { getAppDisplayName } from '../../../shared/brand'
 import { IPC } from '../../../shared/ipc'
+import { resolveExistingIconPath } from '../app-paths'
 
 /** 控制台窗口引用；null = 未开（单例，见文件头） */
 let consoleWindow: BrowserWindow | null = null
 
 function createConsoleWindow(): void {
+  const windowIcon = resolveExistingIconPath('window')
   consoleWindow = new BrowserWindow({
     width: 1080,
     height: 720,
@@ -27,7 +30,8 @@ function createConsoleWindow(): void {
     minHeight: 520,
     show: false,
     autoHideMenuBar: true,
-    title: 'Cogent 控制台',
+    title: `${getAppDisplayName()} 控制台`,
+    ...(windowIcon !== null ? { icon: windowIcon } : {}),
     frame: false,
     webPreferences: {
       // 与主窗口同配置：CJS preload 开 sandbox + 恒开 contextIsolation +

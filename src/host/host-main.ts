@@ -29,6 +29,7 @@ import { createInterface } from 'node:readline'
 import { homedir } from 'node:os'
 import { validateTitleSettings } from './runtime/session-title-config'
 import { join } from 'node:path'
+import { getStorageDirName } from '../shared/brand'
 import {
   PROTOCOL_VERSION,
   ProtocolError,
@@ -96,7 +97,7 @@ import { prepareDirectoryReferences } from './runtime/directory-references'
  * PI_CODING_AGENT_DIR 的归位不在这 —— 那行赋值在 pi 加载之后才执行、对
  * tools-manager 的 TOOLS_DIR 冻结无效，已上移到入口 index.ts（wrapper）。
  */
-const STORAGE_ROOT = process.env.COGENT_HOME || join(homedir(), '.cogent')
+const STORAGE_ROOT = process.env.COGENT_HOME || join(homedir(), getStorageDirName())
 
 /**
  * 生态兼容根（~/.agents）：zcode 等工具装技能的中立目录，技能座只读发现

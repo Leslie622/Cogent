@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useEngineStore } from '@/stores/engine'
+import { getAppDisplayName } from '@shared/brand'
 
 export function CloseAskDialog() {
   const [open, setOpen] = useState(false)
@@ -44,7 +45,7 @@ export function CloseAskDialog() {
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>关闭 Cogent？</DialogTitle>
+          <DialogTitle>关闭 {getAppDisplayName()}？</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
           「最小化」将保留在系统托盘（引擎继续运行），「退出」将结束应用。

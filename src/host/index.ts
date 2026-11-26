@@ -13,13 +13,14 @@
  */
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { getStorageDirName } from '../shared/brand'
 
 // pi 域 env 归位：pi 内部走 getAgentDir() 的
 // 直读点（fd/rg 管理目录 getBinDir、models.json 兜底路径等）默认指
 // ~/.pi/agent —— 统一重定向到 <root>/pi：Host 保持 ~/.cogent 唯一写者
 // （存储归属见 docs/模块/工作区与项目.md），也不污染/不偷读用户自装 pi CLI 的域。??= 尊重外部显式
 // 覆盖（冒烟测试 / 并存调试）
-process.env.PI_CODING_AGENT_DIR ??= join(process.env.COGENT_HOME || join(homedir(), '.cogent'), 'pi')
+process.env.PI_CODING_AGENT_DIR ??= join(process.env.COGENT_HOME || join(homedir(), getStorageDirName()), 'pi')
 process.env.COGENT_SEARCH_WORKER ??= join(import.meta.dirname, 'search-worker.js')
 process.env.COGENT_ATTACHMENT_WORKER ??= join(import.meta.dirname, 'attachment-worker.js')
 process.env.COGENT_CHANGE_DIFF_WORKER ??= join(import.meta.dirname, 'change-diff-worker.js')

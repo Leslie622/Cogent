@@ -29,6 +29,23 @@ function preservePiModuleUrls(): Plugin {
   }
 }
 
+const brandAppName = process.env.COGENT_APP_NAME?.trim() || 'Cogent'
+const brandStorageDir = process.env.COGENT_STORAGE_DIR?.trim() || '.cogent'
+const brandDefine = {
+  __COGENT_APP_NAME__: JSON.stringify(brandAppName),
+  __COGENT_STORAGE_DIR__: JSON.stringify(brandStorageDir)
+}
+
+function brandHtmlTitle(name: string): Plugin {
+  const escaped = name.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  return {
+    name: 'cogent:brand-html-title',
+    transformIndexHtml(html) {
+      return html.replace('<title>Cogent</title>', `<title>${escaped}</title>`)
+    }
+  }
+}
+
 export default defineConfig({
   // main 双入口：index = Electron 主进程；host = Host（独立 Node 引擎进程）。
   // host 与主进程同管线构建（产物 out/main/host.js），但运行时由独立
@@ -40,6 +57,7 @@ export default defineConfig({
   // mcp = 对外 MCP Server（阶段 5a）：外部 MCP 客户端 stdio spawn 的独立
   // 入口（out/main/mcp.js），与 host 同管线同 node22 —— 不经 Electron。
   main: {
+    define: brandDefine,
     plugins: [preservePiModuleUrls()],
     build: {
       externalizeDeps: {
@@ -99,12 +117,13 @@ export default defineConfig({
     }
   },
   renderer: {
+    define: brandDefine,
     resolve: {
       alias: {
         '@': resolve('src/renderer/src'),
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [react(), tailwindcss(), pdfAssets(), previewLicenses()]
+    plugins: [react(), tailwindcss(), pdfAssets(), previewLicenses(), brandHtmlTitle(brandAppName)]
   }
 })

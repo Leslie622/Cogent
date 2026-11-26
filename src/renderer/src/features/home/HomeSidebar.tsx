@@ -16,6 +16,7 @@
  * 动作钮 absolute 贴其右 —— 避免 button 嵌 button（非法结构）。
  */
 import { useSearchStore } from '@/stores/search'
+import { getAppDisplayName } from '@shared/brand'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -610,7 +611,7 @@ export function HomeSidebar() {
     <div className="flex h-full flex-col">
       {/* 头部：路由标题（首页 = 应用名）+ 搜索钮（行为空位） */}
       <div className="flex h-12 shrink-0 items-center justify-between pl-4 pr-2.5">
-        <span className="text-base font-semibold">Cogent</span>
+        <span className="text-base font-semibold">{getAppDisplayName()}</span>
         <Hint tip={<span className="flex items-center gap-2">搜索<KbdGroup><Kbd>Ctrl</Kbd>+<Kbd>K</Kbd></KbdGroup></span>} side="bottom">
           <Button
             variant="ghost-soft"

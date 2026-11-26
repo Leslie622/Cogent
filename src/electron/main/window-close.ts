@@ -16,8 +16,10 @@
  *   asking    询问弹窗在开（防重入：连点关闭钮不重弹，cancel 复位）
  */
 import { handleTrusted } from './ipc/trusted'
-import { app, BrowserWindow, Menu, Tray } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, Tray, type NativeImage } from 'electron'
+import { getAppDisplayName } from '../../shared/brand'
 import { IPC, type WindowCloseAnswer } from '../../shared/ipc'
+import { resolveExistingIconPath } from './app-paths'
 import { readSettingsFile } from './ipc/settings'
 
 let quitting = false
@@ -40,27 +42,38 @@ export function restoreMainWindow(): void {
 
 /**
  * 托盘常驻（幂等）：minimize 档的后手 —— hide 后任务栏图标消失，没有托盘
- * 用户就再也找不到窗口。图标取可执行文件自身（app.getFileIcon）：dev =
- * electron.exe 图标、打包后自动是应用图标，零资源依赖；正式 logo 资源
- * 落地后此处一行替换。
+ * 用户就再也找不到窗口。优先读取随包图标资源（Linux ELF 无内嵌图标，必须走此路），
+ * 缺失时回退可执行文件自身（app.getFileIcon）。
  */
 export function ensureTray(): void {
   if (tray) return
+  const appName = getAppDisplayName()
+  const mountTray = (icon: NativeImage): void => {
+    // async 窗口期内 ensureTray 可能被再次调到 —— 成功回调里二次判空挡住重入
+    if (tray) return
+    tray = new Tray(icon)
+    tray.setToolTip(appName)
+    // Windows 惯例：左键点击恢复窗口，右键出菜单
+    tray.on('click', restoreMainWindow)
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: `打开 ${appName}`, click: restoreMainWindow },
+        { label: '退出', click: quitApp }
+      ])
+    )
+  }
+
+  const localIconPath = resolveExistingIconPath('tray')
+  if (localIconPath !== null) {
+    const icon = nativeImage.createFromPath(localIconPath)
+    if (!icon.isEmpty()) {
+      mountTray(icon)
+      return
+    }
+  }
+
   void app.getFileIcon(process.execPath).then(
-    (icon) => {
-      // async 窗口期内 ensureTray 可能被再次调到 —— 成功回调里二次判空挡住重入
-      if (tray) return
-      tray = new Tray(icon)
-      tray.setToolTip('Cogent')
-      // Windows 惯例：左键点击恢复窗口，右键出菜单
-      tray.on('click', restoreMainWindow)
-      tray.setContextMenu(
-        Menu.buildFromTemplate([
-          { label: '打开 Cogent', click: restoreMainWindow },
-          { label: '退出', click: quitApp }
-        ])
-      )
-    },
+    mountTray,
     // 外部边界（OS 取图标）失败留痕：托盘缺位时 minimize 档窗口藏起来找不回，
     // 日志是排障唯一线索
     (error: unknown) => console.error('[main] tray icon unavailable:', error)

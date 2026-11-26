@@ -5,6 +5,8 @@ import { release } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, shell, type WebContents } from 'electron'
+import { getAppDisplayName } from '../../shared/brand'
+import { resolveExistingIconPath, resolveUnpackedMainEntry } from './app-paths'
 import { HostManager } from './host/manager'
 import { refreshMcpAccessFile } from './host/mcp-access'
 import { resolveEngineNode } from './host/runtime'
@@ -58,6 +60,7 @@ let mainWindow: BrowserWindow | null = null
 let host: HostManager | null = null
 
 function createWindow(): void {
+  const windowIcon = resolveExistingIconPath('window')
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 730,
@@ -65,7 +68,8 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    title: 'Cogent',
+    title: getAppDisplayName(),
+    ...(windowIcon !== null ? { icon: windowIcon } : {}),
     // 无边框：系统标题栏去掉，由 renderer 自绘头部（拖拽区 + 窗口控制按钮，
     // 窗口控制走 ipc/window.ts；头部视觉按 UI 设计方针逐件重写）。
     frame: false,
@@ -184,7 +188,7 @@ if (!app.requestSingleInstanceLock()) {
     // 引擎按"无 key"启动 —— 用户重输 key 后经 credentials:set 即时推送）
     const engineNodeBin = resolveEngineNode()
     host = new HostManager({
-      entryPath: join(import.meta.dirname, 'host.js'),
+      entryPath: resolveUnpackedMainEntry('host.js'),
       nodeBin: engineNodeBin,
       beforeSend: checkCurrentCaller,
       readCredentials: () => credentialStore.readAll(),
@@ -202,7 +206,7 @@ if (!app.requestSingleInstanceLock()) {
     // 壳与引擎解耦：引擎起不来（缺 Node / 版本不符）不阻塞窗口，状态经 app:status
     // 暴露给 UI 呈现（preload.getStatus）。fire-and-forget 是刻意为之（void 标记）。
     const startedHost = host
-    void startedHost.start().then(
+    const hostStartPromise = startedHost.start().then(
       // bin 来源一并打出：三级链是否吃到自带 node，dev 一眼可判（不再靠版本号倒推）
       () => {
         console.log(
@@ -216,6 +220,30 @@ if (!app.requestSingleInstanceLock()) {
     )
 
     createWindow()
+
+    // 打包产物隔离冒烟钩子：验证 Host 就绪、renderer 挂载且 preload IPC 可通后触发标准关窗退出
+    if (process.env.COGENT_SMOKE_EXIT_ON_READY === '1' && mainWindow !== null) {
+      const smokeWin = mainWindow
+      void Promise.all([
+        hostStartPromise,
+        new Promise<void>((resolveLoad) => {
+          if (!smokeWin.webContents.isLoadingMainFrame()) resolveLoad()
+          else smokeWin.webContents.once('did-finish-load', () => resolveLoad())
+        })
+      ])
+        .then(async () => {
+          const sessions: unknown = await smokeWin.webContents.executeJavaScript(
+            'window.cogent.engineRequest("session.list", {})'
+          )
+          if (!Array.isArray(sessions)) throw new Error('preload session.list 未返回数组')
+          console.log(`[smoke] preload ok (sessions=${sessions.length})`)
+          smokeWin.close()
+        })
+        .catch((error: unknown) => {
+          console.error('[smoke] failed:', error)
+          app.exit(1)
+        })
+    }
 
     // 托盘常驻（不限 minimize 档）：应用开着就可见可退出 —— minimize 档更是
     // 窗口藏起来的唯一找回入口；幂等，重复调用无害

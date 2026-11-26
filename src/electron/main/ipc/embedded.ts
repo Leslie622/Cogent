@@ -11,11 +11,14 @@ import { registerTrustedContents } from './trusted'
 import { handleTrusted } from './trusted'
 import { join } from 'node:path'
 import { BrowserWindow, shell } from 'electron'
+import { getAppDisplayName } from '../../../shared/brand'
 import { IPC } from '../../../shared/ipc'
+import { resolveExistingIconPath } from '../app-paths'
 
 let embeddedWindow: BrowserWindow | null = null
 
 function createEmbeddedWindow(): void {
+  const windowIcon = resolveExistingIconPath('window')
   embeddedWindow = new BrowserWindow({
     width: 980,
     height: 680,
@@ -23,7 +26,8 @@ function createEmbeddedWindow(): void {
     minHeight: 480,
     show: false,
     autoHideMenuBar: true,
-    title: 'Cogent 内嵌页面 demo',
+    title: `${getAppDisplayName()} 内嵌页面 demo`,
+    ...(windowIcon !== null ? { icon: windowIcon } : {}),
     webPreferences: {
       // 宿主容器配置：webviewTag 是放 <webview> 的前提（Electron 默认关）；
       // CJS 主 preload 在 sandbox 运行（与主窗口一致）。guest 的硬化

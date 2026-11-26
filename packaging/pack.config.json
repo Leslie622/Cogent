@@ -1,0 +1,77 @@
+{
+  "active": "cogent",
+  "outputDir": "dist",
+  "targets": {
+    "windows": {
+      "formats": ["nsis"],
+      "arch": ["x64"]
+    },
+    "linux": {
+      "formats": ["deb"],
+      "arch": ["x64", "arm64"]
+    }
+  },
+  "wsl": {
+    "enabled": true,
+    "workspace": "~/cogent-pack",
+    "builderCacheDir": "~/cogent-pack-builder"
+  },
+  "mirrors": {
+    "electron": "https://npmmirror.com/mirrors/electron/",
+    "nodeDist": "https://npmmirror.com/mirrors/node"
+  },
+  "packaging": {
+    "asar": true,
+    "compression": "normal",
+    "electronLanguages": ["en-US", "zh-CN"],
+    "excludeOptionalDeps": ["@napi-rs/canvas", "@napi-rs/canvas-*"],
+    "extraExternalRoots": [],
+    "extraPrunePatterns": []
+  },
+  "projects": {
+    "cogent": {
+      "id": "com.cogent.desktop",
+      "name": "Cogent",
+      "executableName": "cogent",
+      "debPackageName": "cogent",
+      "version": "0.1.0",
+      "description": "Cogent — 本地优先桌面 Agent 客户端",
+      "homepage": "https://cogent.example.com",
+      "author": {
+        "name": "Cogent",
+        "email": "dev@cogent.example.com"
+      },
+      "iconDir": "packaging/icons/cogent",
+      "storageDirName": ".cogent",
+      "nsis": {
+        "oneClick": false,
+        "perMachine": false,
+        "allowToChangeInstallationDirectory": true,
+        "createDesktopShortcut": true,
+        "createStartMenuShortcut": true
+      },
+      "deb": {
+        "section": "devel",
+        "category": "Development",
+        "maintainer": "Cogent <dev@cogent.example.com>",
+        "depends": [
+          "libgtk-3-0",
+          "libnotify4",
+          "libnss3",
+          "libxss1",
+          "libxtst6",
+          "xdg-utils",
+          "libatspi2.0-0",
+          "libuuid1",
+          "libsecret-1-0",
+          "libgbm1",
+          "libasound2 | libasound2t64"
+        ],
+        "executableArgs": [],
+        "afterInstall": "packaging/linux/after-install.sh",
+        "afterRemove": "packaging/linux/after-remove.sh"
+      },
+      "extraResources": []
+    }
+  }
+}

@@ -14,9 +14,10 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { getStorageDirName } from '../../shared/brand'
 
 export function storageRoot(): string {
-  return process.env.COGENT_HOME || join(homedir(), '.cogent')
+  return process.env.COGENT_HOME || join(homedir(), getStorageDirName())
 }
 
 /**

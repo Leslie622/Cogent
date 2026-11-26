@@ -13,6 +13,7 @@
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { getStorageDirName } from '../../shared/brand'
 
 /** 凭据文件里 main 写入的形状（信任边界：磁盘文件，形状校验后使用） */
 export interface McpAccess {
@@ -24,7 +25,7 @@ export interface McpAccess {
 /** 凭据文件路径：默认与 settings.json 同根（~/.cogent），env 覆写供测试 */
 export function accessFilePath(): string {
   if (process.env.COGENT_MCP_ACCESS_FILE) return process.env.COGENT_MCP_ACCESS_FILE
-  return join(process.env.COGENT_HOME || join(homedir(), '.cogent'), 'mcp-access.json')
+  return join(process.env.COGENT_HOME || join(homedir(), getStorageDirName()), 'mcp-access.json')
 }
 
 /**

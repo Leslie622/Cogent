@@ -27,6 +27,7 @@ const electron = vi.hoisted(() => {
 })
 
 vi.mock('electron', () => ({
+  app: { isPackaged: false },
   BrowserWindow: vi.fn(function () { return electron.createWindow() }),
   ipcMain: { handle: electron.handle },
   shell: { openExternal: vi.fn() }

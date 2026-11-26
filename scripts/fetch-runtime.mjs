@@ -32,6 +32,17 @@ const MIRROR = process.env.NODE_DIST_MIRROR ?? 'https://nodejs.org/dist'
 const FORCE = process.argv.includes('--force')
 const repoRoot = path.resolve(fileURLToPath(import.meta.url), '../..')
 
+function readFlag(name) {
+  const idx = process.argv.indexOf(name)
+  if (idx >= 0 && idx + 1 < process.argv.length) return process.argv[idx + 1]
+  const prefix = `${name}=`
+  const hit = process.argv.find((arg) => arg.startsWith(prefix))
+  return hit ? hit.slice(prefix.length) : undefined
+}
+
+const targetPlatform = readFlag('--platform') ?? process.platform
+const targetArch = readFlag('--arch') ?? process.arch
+
 /** 平台 → node 官方归档名片段；与 runtime.ts 的 bundledPlatformDir 目录名对齐 */
 function platformDir(platform, arch) {
   if (platform === 'win32' && arch === 'x64') return 'win-x64'
@@ -56,26 +67,27 @@ async function sha256(file) {
   return hash.digest('hex')
 }
 
-const dir = platformDir(process.platform, process.arch)
-const windows = process.platform === 'win32'
+const dir = platformDir(targetPlatform, targetArch)
+const windowsTarget = targetPlatform === 'win32'
+const windowsHost = process.platform === 'win32'
 const destination = path.join(repoRoot, 'resources', 'runtime', dir)
-const executableName = windows ? 'node.exe' : 'node'
+const executableName = windowsTarget ? 'node.exe' : 'node'
 const executable = path.join(destination, 'bin', executableName)
 const license = path.join(destination, 'LICENSE')
 const manifest = path.join(destination, 'runtime.json')
-const distribution = `node-v${NODE_VERSION}-${windows ? 'win' : 'linux'}-${process.arch}`
-const archiveName = `${distribution}.${windows ? 'zip' : 'tar.gz'}`
+const distribution = `node-v${NODE_VERSION}-${windowsTarget ? 'win' : 'linux'}-${targetArch}`
+const archiveName = `${distribution}.${windowsTarget ? 'zip' : 'tar.gz'}`
 const sha256Pattern = /^[a-f\d]{64}$/
 
 async function installationComplete() {
   try {
     const installed = JSON.parse(await readFile(manifest, 'utf8'))
     if (installed === null || installed.nodeVersion !== NODE_VERSION ||
-        installed.platform !== process.platform || installed.arch !== process.arch ||
+        installed.platform !== targetPlatform || installed.arch !== targetArch ||
         installed.archive !== archiveName || !sha256Pattern.test(installed.sha256)) return false
     const [exeInfo, licenseInfo] = await Promise.all([stat(executable), stat(license)])
     if (!exeInfo.isFile() || exeInfo.size === 0 || !licenseInfo.isFile() || licenseInfo.size === 0 ||
-        (!windows && (exeInfo.mode & 0o111) === 0)) return false
+        (!windowsHost && !windowsTarget && (exeInfo.mode & 0o111) === 0)) return false
     const [executableHash, licenseHash] = await Promise.all([sha256(executable), sha256(license)])
     return executableHash === installed.executableSha256 && licenseHash === installed.licenseSha256
   } catch (error) {
@@ -111,11 +123,11 @@ try {
     throw new Error(`SHA256 校验失败：期望 ${expected}，实际 ${actual}`)
   }
 
-  // win 上显式用系统自带 bsdtar（System32\tar.exe，win10 1809+ 标配，可解 zip）：
+  // win 上显式用系统自带 bsdtar（System32\tar.exe，win10 1809+ 标配，可解 zip 与 tar.gz）：
   // PATH 里可能排在前的是 Git Bash 的 MSYS GNU tar，它把 "C:\..." 当 host:path
   // 远程语法，报 "Cannot connect to C: resolve failed"
   const tarBin =
-    process.platform === 'win32' ? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar'
+    windowsHost ? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar'
   execFileSync(tarBin, ['-xf', archive, '-C', scratch], { windowsHide: true })
   const runtimeParent = path.dirname(destination)
   await mkdir(runtimeParent, { recursive: true })
@@ -124,12 +136,12 @@ try {
     const stagedExecutable = path.join(staging, executableName)
     const stagedLicense = path.join(staging, 'LICENSE')
     const stagedManifest = path.join(staging, 'runtime.json')
-    await copyFile(path.join(scratch, distribution, windows ? 'node.exe' : 'bin/node'), stagedExecutable)
-    if (!windows) await chmod(stagedExecutable, 0o755)
+    await copyFile(path.join(scratch, distribution, windowsTarget ? 'node.exe' : 'bin/node'), stagedExecutable)
+    if (!windowsHost && !windowsTarget) await chmod(stagedExecutable, 0o755)
     await copyFile(path.join(scratch, distribution, 'LICENSE'), stagedLicense)
     const [executableSha256, licenseSha256] = await Promise.all([sha256(stagedExecutable), sha256(stagedLicense)])
     await writeFile(stagedManifest, JSON.stringify({
-      nodeVersion: NODE_VERSION, platform: process.platform, arch: process.arch,
+      nodeVersion: NODE_VERSION, platform: targetPlatform, arch: targetArch,
       archive: archiveName, sha256: expected, executableSha256, licenseSha256
     }, null, 2))
     await mkdir(path.dirname(executable), { recursive: true })
