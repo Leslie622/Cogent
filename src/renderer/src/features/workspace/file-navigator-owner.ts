@@ -68,6 +68,27 @@ export const NAVIGATOR_ROOT = 'workspace-file-navigation'
 const EMPTY_IDS: string[] = []
 const ROOT_ITEM: NavigatorItem = { id: NAVIGATOR_ROOT, type: 'root', root: { id: NAVIGATOR_ROOT, path: '', name: '文件', kind: 'directory' } }
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error)
+
+export function normalizeNavigatorPath(value: string): string {
+  const slashed = value.replaceAll('\\', '/')
+  return slashed === '/' ? '/' : slashed.replace(/\/+$/, '')
+}
+
+export function navigatorPathKey(value: string): string {
+  const normalized = normalizeNavigatorPath(value)
+  return /^[a-z]:/i.test(normalized) ? normalized.toLowerCase() : normalized
+}
+
+export function sameNavigatorPath(a?: string, b?: string): boolean {
+  return a !== undefined && b !== undefined && navigatorPathKey(a) === navigatorPathKey(b)
+}
+
+function isSameOrInsidePath(parent: string, target: string): boolean {
+  const parentKey = navigatorPathKey(parent)
+  const targetKey = navigatorPathKey(target)
+  if (parentKey === targetKey) return true
+  return parentKey === '/' ? targetKey.startsWith('/') : targetKey.startsWith(parentKey + '/')
+}
 const controlId = (directoryId: string): string => `navigation-control:${directoryId}`
 const emptySearch = (): NavigatorSearch => ({
   entries: [], status: 'idle', complete: false, paused: false, truncated: false,
@@ -91,6 +112,7 @@ export class FileNavigatorOwner {
   private searchCursors = new Map<number, string | undefined>()
   private lastSearchPage: { pageIndex: number; cursor?: string } | null = null
   private directoryEvents = new Map<string, number>()
+  private directoryLoads = new Map<string, Promise<void>>()
   private snapshot: NavigatorSnapshot = {
     context: null, opening: false, error: null, notice: null, nodes: new Map(), roots: [],
     directories: new Map(), expandedItems: [], focusedItem: null, query: '',
@@ -225,7 +247,11 @@ export class FileNavigatorOwner {
   async loadDirectory(id: string, refresh = false): Promise<void> {
     const context = this.snapshot.context
     const previous = this.snapshot.directories.get(id)
-    if (context === null || previous === undefined || (!refresh && previous.status === 'loading')) return
+    if (context === null || previous === undefined) return
+    if (!refresh && previous.status === 'loading') {
+      await this.directoryLoads.get(id)
+      return
+    }
     refresh ||= previous.dirty
     if (!refresh && previous.complete) return
     const operationId = crypto.randomUUID()
@@ -233,23 +259,93 @@ export class FileNavigatorOwner {
     const epoch = this.epoch
     const entries = refresh ? [] : previous.entries
     this.writeDirectory(id, { ...previous, entries, status: 'loading', error: null, operationId, dirty: false })
+    const task = (async () => {
+      try {
+        const result = await this.request('fileViews.listDirectory', {
+          contextId: context.contextId, directoryId: id, limit: 200, operationId,
+          ...(!refresh && previous.nextCursor !== undefined && { cursor: previous.nextCursor }),
+          ...(refresh && { refresh: true })
+        })
+        if (this.disposed || epoch !== this.epoch || this.snapshot.directories.get(id)?.operationId !== operationId) return
+        const ids = [...new Set([...entries, ...result.entries.map((entry) => entry.id)])]
+        this.writeDirectory(id, {
+          entries: ids, rows: [], status: 'ready', complete: result.complete,
+          nextCursor: result.nextCursor, truncated: result.truncated, warning: result.warning,
+          error: null, operationId: null, generation: result.generation, dirty: false
+        }, result.entries)
+      } catch (error) {
+        if (epoch !== this.epoch || this.snapshot.directories.get(id)?.operationId !== operationId) return
+        this.writeDirectory(id, { ...previous, entries, status: 'error', error: message(error), operationId: null })
+      }
+    })()
+    this.directoryLoads.set(id, task)
     try {
-      const result = await this.request('fileViews.listDirectory', {
-        contextId: context.contextId, directoryId: id, limit: 200, operationId,
-        ...(!refresh && previous.nextCursor !== undefined && { cursor: previous.nextCursor }),
-        ...(refresh && { refresh: true })
-      })
-      if (this.disposed || epoch !== this.epoch || this.snapshot.directories.get(id)?.operationId !== operationId) return
-      const ids = [...new Set([...entries, ...result.entries.map((entry) => entry.id)])]
-      this.writeDirectory(id, {
-        entries: ids, rows: [], status: 'ready', complete: result.complete,
-        nextCursor: result.nextCursor, truncated: result.truncated, warning: result.warning,
-        error: null, operationId: null, generation: result.generation, dirty: false
-      }, result.entries)
-    } catch (error) {
-      if (epoch !== this.epoch || this.snapshot.directories.get(id)?.operationId !== operationId) return
-      this.writeDirectory(id, { ...previous, entries, status: 'error', error: message(error), operationId: null })
+      await task
+    } finally {
+      if (this.directoryLoads.get(id) === task) this.directoryLoads.delete(id)
     }
+  }
+
+  private isStale(epoch: number, contextId: string): boolean {
+    return this.disposed || this.epoch !== epoch || this.snapshot.context?.contextId !== contextId
+  }
+
+  async revealPath(targetPath: string): Promise<string | null> {
+    if (this.snapshot.context === null && this.initialRequest !== null) {
+      await this.initialRequest
+    }
+    const contextId = this.snapshot.context?.contextId
+    if (this.disposed || contextId === undefined || this.snapshot.roots.length === 0) return null
+    const epoch = this.epoch
+    const candidates = this.snapshot.roots
+      .map((id) => this.snapshot.nodes.get(id))
+      .filter((item): item is Extract<NavigatorItem, { type: 'root' }> =>
+        item?.type === 'root' && item.root.kind === 'directory' && isSameOrInsidePath(item.root.path, targetPath)
+      )
+      .sort((a, b) => normalizeNavigatorPath(b.root.path).length - normalizeNavigatorPath(a.root.path).length)
+    if (candidates.length === 0) return null
+    if (sameNavigatorPath(candidates[0].root.path, targetPath)) {
+      if (this.snapshot.focusedItem !== candidates[0].id) this.update({ focusedItem: candidates[0].id })
+      return candidates[0].id
+    }
+
+    let currentId = candidates[0].id
+    for (let depth = 0; depth < 64; depth++) {
+      if (!this.snapshot.expandedItems.includes(currentId)) {
+        this.update({ expandedItems: [...this.snapshot.expandedItems, currentId] })
+      }
+      let directory = this.snapshot.directories.get(currentId)
+      if (directory === undefined) return null
+      if (directory.status === 'loading') {
+        await this.directoryLoads.get(currentId)
+      } else if (directory.status === 'idle' || directory.dirty) {
+        await this.loadDirectory(currentId)
+      }
+      if (this.isStale(epoch, contextId)) return null
+      directory = this.snapshot.directories.get(currentId)
+      if (directory === undefined) return null
+
+      let matchId: string | undefined
+      let nextDirId: string | undefined
+      for (const entryId of directory.entries) {
+        const node = this.snapshot.nodes.get(entryId)
+        if (node?.type !== 'entry') continue
+        if (sameNavigatorPath(node.entry.path, targetPath)) {
+          matchId = node.id
+          break
+        }
+        if (node.entry.kind === 'directory' && node.entry.blockedReason === undefined && isSameOrInsidePath(node.entry.path, targetPath)) {
+          nextDirId = node.id
+        }
+      }
+      if (matchId !== undefined) {
+        if (this.snapshot.focusedItem !== matchId) this.update({ focusedItem: matchId })
+        return matchId
+      }
+      if (nextDirId === undefined) return null
+      currentId = nextDirId
+    }
+    return null
   }
 
   refresh = async (): Promise<void> => {

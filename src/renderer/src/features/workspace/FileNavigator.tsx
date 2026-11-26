@@ -16,7 +16,7 @@ import { FileIcon } from '@/components/FileIcon'
 import { cn } from '@/lib/utils'
 import { useProjectStore } from '@/stores/project'
 import {
-  getFileNavigatorOwner, NAVIGATOR_ROOT,
+  getFileNavigatorOwner, NAVIGATOR_ROOT, sameNavigatorPath,
   type FileNavigatorOwner, type NavigatorItem, type NavigatorSnapshot
 } from './file-navigator-owner'
 
@@ -94,8 +94,23 @@ function FileTree({ owner, snapshot, onOpen, selectedPath }: {
     initialRect: { width: 280, height: 400 }
   })
   scrollToIndex.current = (index) => virtualizer.scrollToIndex(index, { align: 'auto' })
+  const scrolledKey = useRef<string | undefined>(undefined)
+  const selectedIndex = useMemo(
+    () => (selectedPath === undefined ? -1 : items.findIndex((item) => sameNavigatorPath(itemPath(item.getItemData()), selectedPath))),
+    [items, selectedPath]
+  )
+  useEffect(() => {
+    if (selectedPath === undefined) {
+      scrolledKey.current = undefined
+      return
+    }
+    if (selectedIndex >= 0 && scrolledKey.current !== selectedPath) {
+      scrolledKey.current = selectedPath
+      virtualizer.scrollToIndex(selectedIndex, { align: 'auto' })
+    }
+  }, [selectedIndex, selectedPath, virtualizer])
   return (
-    <div ref={viewport} className="min-h-0 flex-1 overflow-auto" data-testid="file-navigator-tree-scroll">
+    <div ref={viewport} className="min-h-0 flex-1 overflow-auto px-2 pb-2" data-testid="file-navigator-tree-scroll">
       <div
         {...tree.getContainerProps('项目文件') as HTMLAttributes<HTMLDivElement>}
         className="relative min-w-full"
@@ -112,14 +127,15 @@ function FileTree({ owner, snapshot, onOpen, selectedPath }: {
           // getProps 的 ref 必须在卸载前捕获；被回收的虚拟项不能在 ref(null) 时再次读取元数据。
           const props = item.getProps() as HTMLAttributes<HTMLDivElement> & RefAttributes<HTMLDivElement>
           const folder = itemFolder(data)
+          const activeItem = sameNavigatorPath(itemPath(data), selectedPath)
           return (
             <Hint key={item.getId()} tip={<span className="break-all">{itemPath(data) ?? itemLabel(data)}</span>} side="right"><div
               {...props}
               ref={props.ref}
               data-focused={item.isFocused()}
-              aria-current={itemPath(data) === selectedPath ? 'page' : undefined}
+              aria-current={activeItem ? 'page' : undefined}
               className={cn(
-                'absolute inset-x-0 flex h-8 min-w-0 cursor-default items-center gap-1.5 rounded-md pr-2 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-[focused=true]:bg-accent',
+                'absolute inset-x-0 flex h-8 min-w-0 cursor-default items-center gap-1.5 rounded-md pr-2 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-[focused=true]:bg-accent aria-[current=page]:bg-accent aria-[current=page]:font-medium aria-[current=page]:text-accent-foreground',
                 data.type === 'control' && 'text-muted-foreground'
               )}
               style={{ transform: `translateY(${row.start}px)`, paddingLeft: `${8 + item.getItemMeta().level * 14}px` }}
@@ -166,7 +182,7 @@ function SearchResults({ owner, snapshot, onOpen }: {
           {virtualizer.getVirtualItems().map((row) => {
             const entry = search.entries.at(row.index)
             if (entry === undefined) return null
-            return <div key={entry.id} role="listitem" className="absolute inset-x-0 px-1" style={{ transform: `translateY(${row.start}px)` }}>
+            return <div key={entry.id} role="listitem" className="absolute inset-x-0 px-2" style={{ transform: `translateY(${row.start}px)` }}>
               <Hint tip={<span className="break-all">{entry.path}</span>} side="right"><Button variant="ghost" className="w-full justify-start" onClick={() => openEntry(entry)}>
                 {entry.kind === 'directory' ? <Folder /> : <FileIcon path={entry.path} />}
                 <span className="flex min-w-0 flex-1 flex-col items-start"><span className="max-w-full truncate">{entry.name}</span><span className="max-w-full truncate text-xs text-muted-foreground">{entry.relativePath}</span></span>
@@ -193,6 +209,14 @@ export function FileNavigator({ scopeId, projectId, sessionId, grantIds, active 
   const contextCallback = useRef(onContextChange)
   contextCallback.current = onContextChange
   useEffect(() => { void owner.initialize() }, [owner])
+  const revealedTarget = useRef<string>('')
+  useEffect(() => {
+    if (!active || selectedPath === undefined || snapshot.context === null || snapshot.roots.length === 0 || snapshot.query.trim() !== '') return
+    const key = `${snapshot.context.contextId}:${selectedPath}`
+    if (revealedTarget.current === key) return
+    revealedTarget.current = key
+    void owner.revealPath(selectedPath)
+  }, [active, owner, selectedPath, snapshot.context, snapshot.query, snapshot.roots.length])
   useEffect(() => {
     if (snapshot.context !== null) contextCallback.current?.({ contextId: snapshot.context.contextId, grantIds: snapshot.context.grantIds })
   }, [snapshot.context])

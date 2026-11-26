@@ -104,4 +104,23 @@ describe('文件导航视图', () => {
     expect(onOpen).not.toHaveBeenCalled()
     expect(engineRequest).not.toHaveBeenCalled()
   })
+
+  it('传入子目录 selectedPath 时自动展开父目录并激活高亮目标文件', async () => {
+    const scopeId = 'reveal-nested-file'
+    scopes.push(scopeId)
+    const assetsDir: FileViewEntry = { id: 'dir-assets', rootId: 'root', path: 'C:/项目/assets', relativePath: 'assets', name: 'assets', kind: 'directory', symlink: false }
+    const binFile: FileViewEntry = { id: 'file-big', rootId: 'root', path: 'C:/项目/assets/big.bin', relativePath: 'assets/big.bin', name: 'big.bin', kind: 'file', symlink: false }
+    const request = vi.fn((method: string, params: { directoryId?: string }) => Promise.resolve(
+      method === 'fileViews.openContext'
+        ? context
+        : method === 'fileViews.listDirectory'
+          ? { entries: params.directoryId === 'dir-assets' ? [binFile] : [assetsDir], generation: 1, complete: true, truncated: false }
+          : { ok: true }
+    ))
+    window.cogent = { fileViewsRequest: request, onEngineEvent: () => () => undefined } as unknown as typeof window.cogent
+    render(<FileNavigator scopeId={scopeId} projectId="project" selectedPath="c:\项目\assets\big.bin" onOpen={vi.fn()} />)
+    const target = await screen.findByRole('treeitem', { name: 'big.bin' })
+    expect(target).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('treeitem', { name: 'assets' })).toHaveAttribute('aria-expanded', 'true')
+  })
 })
