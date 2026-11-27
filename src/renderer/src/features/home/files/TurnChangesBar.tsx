@@ -1,25 +1,16 @@
 /** 回合尾部本轮改动列表：汇总净变化文件与行数，点击条目在右侧工作区打开冻结 Diff。 */
 import { useContext, useState } from 'react'
 import { ChevronRight, ExternalLink, FileDiff, FolderOpen } from 'lucide-react'
-import type { ChangeKind, TurnChangeItem } from '@shared/changes'
+import type { TurnChangeItem } from '@shared/changes'
 import { FileIcon } from '@/components/FileIcon'
 import { Badge } from '@/components/ui/badge'
+import { ChangeKindBadge } from '@/components/ui/change-kind-badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Hint } from '@/components/Hint'
 import { useChatStore } from '@/stores/chat'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { FileLinkContext } from './FileLink'
-
-const KIND_LABEL: Record<ChangeKind, string> = {
-  added: '新增',
-  modified: '修改',
-  deleted: '删除',
-  renamed: '重命名',
-  'type-changed': '类型',
-  'mode-changed': '权限',
-  'eol-or-encoding': '编码'
-}
 
 export function TurnChangesBar() {
   const scope = useContext(FileLinkContext)
@@ -78,9 +69,9 @@ export function TurnChangesBar() {
               <span className="text-red-600 dark:text-red-400">-{doc.totalDeleted}</span>
             </span>
           )}
-          {(doc.coverage !== 'complete' || doc.incompleteCount > 0) && (
+          {(doc.coverage === 'partial' || doc.incompleteCount > 0) && (
             <Badge variant="outline" size="sm" className="shrink-0 rounded-md">
-              {doc.coverage === 'tools-only' ? '仅文件工具' : doc.coverage === 'partial' ? '部分统计' : `${doc.incompleteCount} 项未统计`}
+              {doc.coverage === 'partial' ? '部分统计' : `${doc.incompleteCount} 项未统计`}
             </Badge>
           )}
         </CollapsibleTrigger>
@@ -113,9 +104,7 @@ export function TurnChangesBar() {
                         {item.oldPath !== undefined ? `${item.oldPath} → ${item.path}` : item.path}
                       </span>
                     </Hint>
-                    <Badge variant="secondary" size="sm" className="shrink-0 rounded-md">
-                      {KIND_LABEL[item.kind]}
-                    </Badge>
+                    <ChangeKindBadge kind={item.kind} />
                     <span className="flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums">
                       {item.added !== null && item.deleted !== null ? (
                         <>

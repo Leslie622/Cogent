@@ -118,6 +118,8 @@ describe('TurnChangesBar & DiffPreview', () => {
     expect(screen.getByText('src/app.ts')).toBeVisible()
     expect(screen.getByText('assets/logo.png')).toBeVisible()
     expect(screen.getByText('—')).toBeVisible()
+    expect(screen.getByRole('button', { name: /^src\/app\.ts\s*修改/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^assets\/logo\.png\s*新增/ })).toBeInTheDocument()
 
     // 点击条目在工作区打开 diff 标签并去重
     fireEvent.click(screen.getByRole('button', { name: /^src\/app\.ts/ }))

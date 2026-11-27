@@ -36,6 +36,9 @@ const READ_ONLY_TOOLS = new Set([
 
 const FILE_TOOLS = new Set(['write', 'edit'])
 const key = (sessionId: string, turnId: string) => `${sessionId}/${turnId}`
+/** 早期版本把"未绑定工作区"当警告落盘；它是会话的正常配置，读取时剔除，避免历史卡片继续展示。 */
+const RETIRED_WARNINGS = new Set(['未绑定工作区目录，仅追踪文件工具改动'])
+const presentableWarnings = (warnings: string[]) => warnings.filter((warning) => !RETIRED_WARNINGS.has(warning))
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 interface RunState {
@@ -159,12 +162,8 @@ export class WorkspaceChangesService {
       run.roots = normalized.roots
       run.warnings.push(...normalized.warnings)
       if (normalized.roots.length === 0) {
-        run.coverage = 'tools-only'
-        if (run.rawRoots.length === 0) {
-          run.warnings.push('未绑定工作区目录，仅追踪文件工具改动')
-        } else {
-          run.coverage = 'partial'
-        }
+        // 未绑定根是会话的正常配置而非异常，只记录 coverage 供内部判断，不产生面向用户的警告。
+        run.coverage = run.rawRoots.length === 0 ? 'tools-only' : 'partial'
       }
       const used = await this.storage.sessionBlobBytes(run.sessionId)
       run.remainingSessionBudget = Math.max(0, CHANGE_LIMITS.sessionBlobBudget - used)
@@ -618,14 +617,15 @@ export class WorkspaceChangesService {
             ...doc.summary,
             revision: doc.summary.revision + 1,
             state: 'interrupted',
-            warnings: Array.from(new Set([...doc.summary.warnings, '上次运行中断，未冻结终态快照']))
+            warnings: Array.from(new Set([...presentableWarnings(doc.summary.warnings), '上次运行中断，未冻结终态快照']))
           },
           baseline: undefined
         }
         await this.storage.commit(interrupted, AbortSignal.any([lifetime.signal, AbortSignal.timeout(5_000)]))
         result.push(interrupted.summary)
       } else {
-        result.push(doc.summary)
+        const warnings = presentableWarnings(doc.summary.warnings)
+        result.push(warnings.length === doc.summary.warnings.length ? doc.summary : { ...doc.summary, warnings })
       }
     }
     await this.collectSessionBlobs(sessionId).catch((error: unknown) => {
