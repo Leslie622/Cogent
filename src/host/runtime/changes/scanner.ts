@@ -17,9 +17,10 @@ export interface ScanResult {
   entries: ScannedEntry[]
   coverage: Exclude<ChangeCoverage, 'tools-only'>
   warnings: string[]
+  incompleteDirs: string[]
 }
 
-const isInside = (root: string, target: string): boolean => {
+export const isInside = (root: string, target: string): boolean => {
   const part = relative(root, target)
   return part === '' || (!isAbsolute(part) && part !== '..' && !part.startsWith('..' + sep))
 }
@@ -74,72 +75,171 @@ export function formatChangePath(
 export async function scanWorkspaceRoots(
   roots: readonly NormalizedRoot[],
   hostRoot: string,
-  capture: (absolutePath: string) => Promise<SnapshotSide>,
-  signal: AbortSignal
+  capture: (absolutePath: string, signal: AbortSignal) => Promise<SnapshotSide>,
+  cancelSignal: AbortSignal,
+  timeoutMs = CHANGE_LIMITS.scanTimeoutMs
 ): Promise<ScanResult> {
   const entries: ScannedEntry[] = []
   const warnings: string[] = []
   let coverage: Exclude<ChangeCoverage, 'tools-only'> = 'complete'
   const hostCanon = canonicalPath(resolve(hostRoot))
   const seenFiles = new Set<string>()
-  const queue: Array<{ root: NormalizedRoot; dir: string; isRoot: boolean }> = roots.map((root) => ({
+  const incompleteDirs = new Set<string>()
+  const activeDirs = new Map<string, { pending: number; truncated: boolean }>()
+  const queue: Array<{ root: NormalizedRoot; dir: string; dirCanon: string; isRoot: boolean }> = roots.map((root) => ({
     root,
     dir: root.path,
+    dirCanon: canonicalPath(root.path),
     isRoot: true
   }))
+  const fileQueue: Array<{ childPath: string; childCanon: string; parentCanon: string }> = []
+  const inFlight = new Set<Promise<void>>()
 
-  const isAborted = (): boolean => signal.aborted
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  const scanSignal = AbortSignal.any([cancelSignal, timeoutSignal])
+  const isTimedOut = (): boolean => timeoutSignal.aborted
+  let reservedFiles = 0
+  let stoppedReason: 'none' | 'timeout' | 'limit' = 'none'
 
-  while (queue.length > 0) {
-    if (isAborted()) {
-      coverage = 'partial'
-      warnings.push('工作区扫描超时或被取消，改动清单可能不完整')
-      break
+  const dispatchAvailable = (): void => {
+    while (fileQueue.length > 0 && inFlight.size < CHANGE_LIMITS.concurrency && !isTimedOut()) {
+      cancelSignal.throwIfAborted()
+      const item = fileQueue.shift()!
+      const p = (async () => {
+        try {
+          const side = await capture(item.childPath, scanSignal)
+          if (side.kind !== 'absent') {
+            if (side.kind === 'unknown' || (side.kind === 'file' && side.unreadable !== undefined)) {
+              coverage = 'partial'
+            }
+            entries.push({ canonical: item.childCanon, absolutePath: item.childPath, side })
+          }
+          const dirState = activeDirs.get(item.parentCanon)
+          if (dirState !== undefined) {
+            dirState.pending--
+            if (dirState.pending === 0 && !dirState.truncated) {
+              activeDirs.delete(item.parentCanon)
+            }
+          }
+        } catch (error) {
+          if (cancelSignal.aborted) throw error
+          if (isTimedOut()) {
+            stoppedReason = 'timeout'
+            return
+          }
+          throw error
+        }
+      })().finally(() => {
+        inFlight.delete(p)
+      })
+      inFlight.add(p)
     }
-    if (entries.length >= CHANGE_LIMITS.maxFiles) {
-      coverage = 'partial'
-      warnings.push(`工作区文件数超过 ${CHANGE_LIMITS.maxFiles.toLocaleString()} 上限，改动清单不完整`)
-      break
-    }
-    const current = queue.shift()!
-    if (isInside(hostCanon, canonicalPath(current.dir))) continue
-
-    let dirents: Dirent[]
-    try {
-      dirents = await readdir(current.dir, { withFileTypes: true })
-    } catch (error) {
-      coverage = 'partial'
-      warnings.push(`无法读取目录 ${current.dir}：${error instanceof Error ? error.message : String(error)}`)
-      continue
-    }
-
-    if (!current.isRoot && dirents.some((d) => d.name === '.git')) {
-      warnings.push(`跳过嵌套 Git 仓库目录：${relative(current.root.path, current.dir).split(sep).join('/')}`)
-      continue
-    }
-
-    for (const dirent of dirents) {
-      if (isAborted() || entries.length >= CHANGE_LIMITS.maxFiles) break
-      const childPath = join(current.dir, dirent.name)
-      const childCanon = canonicalPath(childPath)
-      if (isInside(hostCanon, childCanon)) continue
-
-      if (dirent.isDirectory()) {
-        if (EXCLUDED_DIRS.has(dirent.name)) continue
-        queue.push({ root: current.root, dir: childPath, isRoot: false })
-        continue
-      }
-
-      if (seenFiles.has(childCanon)) continue
-      seenFiles.add(childCanon)
-      const side = await capture(childPath)
-      if (side.kind === 'absent') continue
-      if (side.kind === 'unknown' || (side.kind === 'file' && side.unreadable !== undefined)) {
-        coverage = 'partial'
-      }
-      entries.push({ canonical: childCanon, absolutePath: childPath, side })
+    if (isTimedOut() && stoppedReason === 'none') {
+      stoppedReason = 'timeout'
     }
   }
 
-  return { entries, coverage, warnings }
+  while (!isTimedOut() && ((stoppedReason === 'none' && queue.length > 0) || fileQueue.length > 0 || inFlight.size > 0)) {
+    cancelSignal.throwIfAborted()
+    if (isTimedOut()) {
+      stoppedReason = 'timeout'
+      break
+    }
+
+    while (fileQueue.length === 0 && queue.length > 0 && stoppedReason === 'none') {
+      cancelSignal.throwIfAborted()
+      if (isTimedOut()) {
+        stoppedReason = 'timeout'
+        break
+      }
+      if (reservedFiles >= CHANGE_LIMITS.maxFiles) {
+        stoppedReason = 'limit'
+        break
+      }
+      const current = queue.shift()!
+      if (isInside(hostCanon, current.dirCanon)) continue
+
+      let dirents: Dirent[]
+      try {
+        dirents = await readdir(current.dir, { withFileTypes: true })
+      } catch (error) {
+        coverage = 'partial'
+        warnings.push(`无法读取目录 ${current.dir}：${error instanceof Error ? error.message : String(error)}`)
+        incompleteDirs.add(current.dirCanon)
+        continue
+      }
+
+      cancelSignal.throwIfAborted()
+      if (isTimedOut()) {
+        incompleteDirs.add(current.dirCanon)
+        stoppedReason = 'timeout'
+        break
+      }
+
+      if (!current.isRoot && dirents.some((d) => d.name === '.git')) {
+        warnings.push(`跳过嵌套 Git 仓库目录：${relative(current.root.path, current.dir).split(sep).join('/')}`)
+        incompleteDirs.add(current.dirCanon)
+        continue
+      }
+
+      let dirPending = 0
+      let dirTruncated = false
+      for (const dirent of dirents) {
+        const childPath = join(current.dir, dirent.name)
+        const childCanon = canonicalPath(childPath)
+        if (isInside(hostCanon, childCanon)) continue
+
+        if (dirent.isDirectory()) {
+          if (EXCLUDED_DIRS.has(dirent.name)) continue
+          queue.push({ root: current.root, dir: childPath, dirCanon: childCanon, isRoot: false })
+          continue
+        }
+
+        if (seenFiles.has(childCanon)) continue
+        if (reservedFiles >= CHANGE_LIMITS.maxFiles) {
+          dirTruncated = true
+          stoppedReason = 'limit'
+          break
+        }
+        seenFiles.add(childCanon)
+        reservedFiles++
+        dirPending++
+        fileQueue.push({ childPath, childCanon, parentCanon: current.dirCanon })
+      }
+      if (dirPending > 0 || dirTruncated) {
+        activeDirs.set(current.dirCanon, { pending: dirPending, truncated: dirTruncated })
+      }
+    }
+
+    dispatchAvailable()
+    if (isTimedOut()) {
+      stoppedReason = 'timeout'
+      break
+    }
+    if (inFlight.size > 0 && (inFlight.size >= CHANGE_LIMITS.concurrency || (fileQueue.length === 0 && (queue.length === 0 || stoppedReason === 'limit')))) {
+      await Promise.race(inFlight)
+    }
+  }
+
+  if (inFlight.size > 0) {
+    await Promise.allSettled(inFlight)
+  }
+  cancelSignal.throwIfAborted()
+
+  if (isTimedOut() || stoppedReason === 'timeout') {
+    coverage = 'partial'
+    warnings.push('工作区扫描超时或被取消，改动清单可能不完整')
+  } else if (stoppedReason === 'limit') {
+    coverage = 'partial'
+    warnings.push(`工作区文件数超过 ${CHANGE_LIMITS.maxFiles.toLocaleString()} 上限，改动清单不完整`)
+  }
+
+  for (const dirCanon of activeDirs.keys()) {
+    incompleteDirs.add(dirCanon)
+  }
+  for (const item of queue) {
+    incompleteDirs.add(item.dirCanon)
+  }
+
+  return { entries, coverage, warnings, incompleteDirs: [...incompleteDirs] }
 }

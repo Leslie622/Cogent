@@ -8,6 +8,7 @@ import { computeDiffStat } from '../../../src/host/runtime/changes/diff-core'
 import { InProcessDiffCalculator } from '../../../src/host/runtime/changes/diff-client'
 import { changeHandlers } from '../../../src/host/runtime/changes/handlers'
 import { WorkspaceChangesService } from '../../../src/host/runtime/changes/service'
+import { CHANGE_LIMITS, canonicalPath } from '../../../src/host/runtime/changes/types'
 import type { TurnChangesSummary } from '../../../src/shared/changes'
 
 const dirs: string[] = []
@@ -193,5 +194,79 @@ describe('WorkspaceChangesService', () => {
     const list = await (handlers.get('changes.get')!({ sessionId: 's2', turnId: 't1' }) as Promise<TurnChangesSummary[]>)
     expect(list[0].turnId).toBe('t1')
     await expect(readFile(join(ws, 'story.txt'), 'utf8')).resolves.toBe('v0\n')
+  })
+
+  it('起点工作区扫描超时或超限时，终点扫描到的未纳入基线既有文件不会误判为新增', async () => {
+    const { ws, service } = await setup()
+    await writeFile(join(ws, 'AGENTS.md'), 'old\n')
+    await mkdir(join(ws, 'scanned-dir'), { recursive: true })
+    await writeFile(join(ws, 'scanned-dir', 'keep.txt'), 'keep\n')
+    await mkdir(join(ws, 'out', 'nested'), { recursive: true })
+    await writeFile(join(ws, 'out', 'nested', 'license.txt'), 'MIT\n')
+    await writeFile(join(ws, 'out', 'bundle.js'), 'console.log(0)\n')
+
+    const origScan = service.storage.captureSide.bind(service.storage)
+    const outCanon = canonicalPath(join(ws, 'out'))
+    let scanPhase: 'before' | 'after' = 'before'
+    const originalTimeout = CHANGE_LIMITS.scanTimeoutMs
+    ;(CHANGE_LIMITS as { scanTimeoutMs: number }).scanTimeoutMs = 25
+    try {
+      const captureSpy = vi.spyOn(service.storage, 'captureSide').mockImplementation(async (sid, targetPath, budget, signal, statCache) => {
+        if (scanPhase === 'before' && canonicalPath(targetPath).startsWith(outCanon)) {
+          await new Promise((r) => setTimeout(r, 60))
+        }
+        return origScan(sid, targetPath, budget, signal, statCache)
+      })
+
+      const owner = {}
+      service.begin('s-timeout', 't1', owner, [ws])
+      await service.beforeTool('s-timeout', 't1', owner, 'powershell', { command: 'echo ok' }, ws)
+      expect(captureSpy).toHaveBeenCalled()
+
+      // 真实改动 AGENTS.md，并在已扫描完的目录下新建文件；out/ 下的既有文件原封不动
+      await writeFile(join(ws, 'AGENTS.md'), 'old\nnew\n')
+      await writeFile(join(ws, 'scanned-dir', 'created.txt'), 'brand new\n')
+
+      scanPhase = 'after'
+      ;(CHANGE_LIMITS as { scanTimeoutMs: number }).scanTimeoutMs = 5_000
+      await service.finalize('s-timeout', 't1', owner, 'completed')
+
+      const [summary] = await service.get('s-timeout', 't1')
+      expect(summary.coverage).toBe('partial')
+      expect(summary.warnings.some((w) => w.includes('超时'))).toBe(true)
+      expect(summary.items.some((i) => i.path.startsWith('out/'))).toBe(false)
+      expect(summary.items.map((i) => i.path)).toEqual(['AGENTS.md', 'scanned-dir/created.txt'])
+    } finally {
+      ;(CHANGE_LIMITS as { scanTimeoutMs: number }).scanTimeoutMs = originalTimeout
+    }
+  })
+
+  it('起点工作区扫描触发 maxFiles 上限时，终点多扫出的既有文件不会误判为新增', async () => {
+    const { ws, service } = await setup()
+    await writeFile(join(ws, 'a.txt'), 'v1\n')
+    await mkdir(join(ws, 'z-later'), { recursive: true })
+    await writeFile(join(ws, 'z-later', 'existing-1.txt'), 'e1\n')
+    await writeFile(join(ws, 'z-later', 'existing-2.txt'), 'e2\n')
+
+    // 临时将 maxFiles 限制为 1，模拟起点因超限未进入 z-later
+    const originalMax = CHANGE_LIMITS.maxFiles
+    ;(CHANGE_LIMITS as { maxFiles: number }).maxFiles = 1
+    try {
+      const owner = {}
+      service.begin('s-limit', 't1', owner, [ws])
+      await service.beforeTool('s-limit', 't1', owner, 'powershell', { command: 'echo ok' }, ws)
+
+      await writeFile(join(ws, 'a.txt'), 'v1\nv2\n')
+      // 模拟终点放宽（或删掉前置文件后终点多扫到 z-later）
+      ;(CHANGE_LIMITS as { maxFiles: number }).maxFiles = 100
+      await service.finalize('s-limit', 't1', owner, 'completed')
+
+      const [summary] = await service.get('s-limit', 't1')
+      expect(summary.coverage).toBe('partial')
+      expect(summary.warnings.some((w) => w.includes('上限'))).toBe(true)
+      expect(summary.items.map((i) => i.path)).toEqual(['a.txt'])
+    } finally {
+      ;(CHANGE_LIMITS as { maxFiles: number }).maxFiles = originalMax
+    }
   })
 })

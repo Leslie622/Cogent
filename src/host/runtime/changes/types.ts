@@ -2,7 +2,7 @@
 import type { ChangeCoverage, TurnChangeItem, TurnChangesSummary } from '../../../shared/changes'
 
 export const CHANGE_LIMITS = {
-  concurrency: 2,
+  concurrency: 8,
   maxFiles: 20_000,
   maxFileBytes: 20 * 1024 ** 2,
   maxHashBytes: 100 * 1024 ** 2,

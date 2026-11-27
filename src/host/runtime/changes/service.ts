@@ -1,6 +1,6 @@
 /** 本轮改动列表 Host 服务：预约回合、审批放行后按需捕获、收尾净差结算、按需读取与会话隔离清理。 */
 import { createHash } from 'node:crypto'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import type { ChangeCoverage, ChangeKind, ChangeOutcome, TurnChangeItem, TurnChangesSummary, TurnFileDiff } from '../../../shared/changes'
 import { resolveToolFilePath } from '../files/paths'
 import { createDefaultDiffCalculator, type DiffCalculator } from './diff-client'
@@ -51,12 +51,22 @@ interface RunState {
   coverage: ChangeCoverage
   warnings: string[]
   baseline: Map<string, BaselineEntry>
+  baselineIncompleteDirs: Set<string>
   observedTools: Set<string>
   remainingTurnBudget: number
   remainingSessionBudget: number
   previousDoc?: TurnChangesDocument
   phase: 'running' | 'finalizing' | 'ready'
   queue: Promise<void>
+}
+
+function isUnderDirSet(targetCanon: string, dirSet: Set<string>): boolean {
+  if (dirSet.size === 0) return false
+  let cur = targetCanon
+  for (let parent = dirname(cur); ; cur = parent, parent = dirname(cur)) {
+    if (dirSet.has(cur)) return true
+    if (parent === cur) return false
+  }
 }
 
 function sameSide(a: SnapshotSide, b: SnapshotSide): boolean {
@@ -111,6 +121,7 @@ export class WorkspaceChangesService {
       coverage: roots.length > 0 ? 'complete' : 'tools-only',
       warnings: [],
       baseline: new Map(),
+      baselineIncompleteDirs: new Set(),
       observedTools: new Set(),
       remainingTurnBudget: CHANGE_LIMITS.turnBlobBudget,
       remainingSessionBudget: CHANGE_LIMITS.sessionBlobBudget,
@@ -236,13 +247,16 @@ export class WorkspaceChangesService {
       run.workspaceScanned = true
       if (run.roots!.length === 0) return
 
-      const scanSignal = AbortSignal.any([combined, AbortSignal.timeout(CHANGE_LIMITS.scanTimeoutMs)])
       const scan = await scanWorkspaceRoots(
         run.roots!,
         this.hostRoot,
-        (path) => this.captureInto(run, path, scanSignal),
-        scanSignal
+        (path, scanSignal) => this.captureInto(run, path, scanSignal),
+        combined,
+        CHANGE_LIMITS.scanTimeoutMs
       )
+      for (const dir of scan.incompleteDirs) {
+        run.baselineIncompleteDirs.add(dir)
+      }
       for (const entry of scan.entries) {
         if (!run.baseline.has(entry.canonical)) {
           run.baseline.set(entry.canonical, {
@@ -314,12 +328,12 @@ export class WorkspaceChangesService {
 
         const afterMap = new Map<string, { absolutePath: string; side: SnapshotSide; source: 'workspace' | 'tool' }>()
         if (run.workspaceScanned && run.roots!.length > 0) {
-          const scanSignal = AbortSignal.any([signal, AbortSignal.timeout(CHANGE_LIMITS.scanTimeoutMs)])
           const scan = await scanWorkspaceRoots(
             run.roots!,
             this.hostRoot,
-            (path) => this.captureInto(run, path, scanSignal),
-            scanSignal
+            (path, scanSignal) => this.captureInto(run, path, scanSignal),
+            signal,
+            CHANGE_LIMITS.scanTimeoutMs
           )
           if (scan.coverage === 'partial') run.coverage = 'partial'
           run.warnings.push(...scan.warnings)
@@ -328,16 +342,37 @@ export class WorkspaceChangesService {
           }
         }
 
-        for (const canon of new Set([...run.baseline.keys(), ...run.observedTools])) {
-          if (afterMap.has(canon)) continue
+        // 先补采被文件工具直接触及的路径，再核对未被终点扫描覆盖的基线文件，超时则诚实标 partial。
+        const missingTargets = [
+          ...[...run.observedTools].filter((canon) => !afterMap.has(canon)),
+          ...[...run.baseline.keys()].filter((canon) => !afterMap.has(canon) && !run.observedTools.has(canon))
+        ]
+        const isFinalizeAborted = (): boolean => signal.aborted
+        for (const canon of missingTargets) {
+          if (isFinalizeAborted()) {
+            if (run.controller.signal.aborted) signal.throwIfAborted()
+            run.coverage = 'partial'
+            run.warnings.push('收尾补采超时，部分基线文件未完成终点核对')
+            break
+          }
           const base = run.baseline.get(canon)
           const abs = base?.absolutePath ?? canon
-          const side = await this.captureInto(run, abs, signal)
-          afterMap.set(canon, {
-            absolutePath: abs,
-            side,
-            source: base?.source ?? 'tool'
-          })
+          try {
+            const side = await this.captureInto(run, abs, signal)
+            afterMap.set(canon, {
+              absolutePath: abs,
+              side,
+              source: base?.source ?? 'tool'
+            })
+          } catch (error) {
+            if (run.controller.signal.aborted) throw error
+            if (isFinalizeAborted()) {
+              run.coverage = 'partial'
+              run.warnings.push('收尾补采超时，部分基线文件未完成终点核对')
+              break
+            }
+            throw error
+          }
         }
 
         const rawEntries = await this.buildEntries(run, afterMap, signal)
@@ -393,6 +428,15 @@ export class WorkspaceChangesService {
       signal.throwIfAborted()
       const base = run.baseline.get(canon)
       const afterEntry = afterMap.get(canon)
+      // 起点未扫到该目录时未知 before，不能把既有文件误判为新增；终点未补采时未知 after，不能误判为删除。
+      if (base === undefined && afterEntry !== undefined && !run.observedTools.has(canon) && run.workspaceScanned && isUnderDirSet(canon, run.baselineIncompleteDirs)) {
+        run.coverage = 'partial'
+        continue
+      }
+      if (base !== undefined && afterEntry === undefined) {
+        run.coverage = 'partial'
+        continue
+      }
       const before: SnapshotSide = base?.side ?? { kind: 'absent' }
       const after: SnapshotSide = afterEntry?.side ?? { kind: 'absent' }
       if (sameSide(before, after)) continue

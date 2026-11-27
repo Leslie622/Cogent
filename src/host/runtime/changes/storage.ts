@@ -1,7 +1,7 @@
 /** 本轮改动列表受管存储：按会话分域保存 CAS 原始字节与回合 manifest，受限并发与原子提交。 */
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { lstat, mkdir, open, readdir, readFile, readlink, realpath, rename, rm, stat } from 'node:fs/promises'
+import { lstat, mkdir, open, readdir, readFile, readlink, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import {
@@ -74,13 +74,23 @@ const documentSchema = z.object({
   }).optional()
 })
 
-const signature = (s: { dev: number; ino: number; size: number; mtimeMs: number; ctimeMs: number }) =>
-  `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`
+const sameStat = (
+  a: { dev: number; ino: number; size: number; mtimeMs: number; ctimeMs: number },
+  b: { dev: number; ino: number; size: number; mtimeMs: number; ctimeMs: number }
+): boolean =>
+  a.ino === b.ino &&
+  a.size === b.size &&
+  a.mtimeMs === b.mtimeMs &&
+  a.ctimeMs === b.ctimeMs &&
+  (a.dev === b.dev || (process.platform === 'win32' && (a.dev === 0 || b.dev === 0)))
+
+const INLINE_HASH_BYTES = 1024 * 1024
 
 export class ChangeStorage {
   readonly root: string
   private activeIo = 0
   private waiters: Array<() => void> = []
+  private ensuredDirs = new Map<string, Set<string>>()
 
   constructor(hostRoot: string) {
     this.root = join(hostRoot, 'changes', 'v1')
@@ -186,7 +196,7 @@ export class ChangeStorage {
     const saveAllowed = info.size <= CHANGE_LIMITS.maxFileBytes && info.size <= remainingBudget
     const cacheKey = canonicalPath(targetPath)
     const cached = statCache?.get(cacheKey)
-    if (cached !== undefined && signature(cached) === signature(info)) {
+    if (cached !== undefined && sameStat(cached, info)) {
       if (!saveAllowed) {
         return {
           side: { kind: 'file', sha256: cached.sha256, size: info.size, mode: info.mode, saved: false, oversized: true },
@@ -207,6 +217,17 @@ export class ChangeStorage {
     }
 
     return this.withSlot(signal, () => this.captureFile(sessionId, targetPath, remainingBudget, signal, statCache))
+  }
+
+  private async ensureDir(sessionId: string, dirPath: string): Promise<void> {
+    let dirs = this.ensuredDirs.get(sessionId)
+    if (dirs === undefined) {
+      dirs = new Set()
+      this.ensuredDirs.set(sessionId, dirs)
+    }
+    if (dirs.has(dirPath)) return
+    await mkdir(dirPath, { recursive: true })
+    dirs.add(dirPath)
   }
 
   private async captureFile(
@@ -248,66 +269,104 @@ export class ChangeStorage {
           }
         }
         const saveBlob = before.size <= CHANGE_LIMITS.maxFileBytes && before.size <= remainingBudget
-        const hash = createHash('sha256')
-        let dest: Awaited<ReturnType<typeof open>> | undefined
-        if (saveBlob) {
-          await mkdir(tmpDir, { recursive: true })
-          tmpFile = join(tmpDir, `${randomUUID()}.tmp`)
-          dest = await open(tmpFile, 'w')
-        }
         let offset = 0
-        try {
-          const buffer = Buffer.allocUnsafe(256 * 1024)
+        let sha256: string
+        let bytesWritten = 0
+
+        if (before.size <= INLINE_HASH_BYTES) {
+          const buf = Buffer.allocUnsafe(before.size)
           while (offset < before.size) {
             signal.throwIfAborted()
-            const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, before.size - offset), offset)
+            const { bytesRead } = await handle.read(buf, offset, before.size - offset, offset)
             if (bytesRead === 0) break
-            const block = buffer.subarray(0, bytesRead)
-            hash.update(block)
-            if (dest !== undefined) {
-              let written = 0
-              while (written < block.length) {
-                signal.throwIfAborted()
-                const part = await dest.write(block, written, block.length - written)
-                if (part.bytesWritten === 0) throw new Error('写入快照对象未取得进展')
-                written += part.bytesWritten
-              }
-            }
             offset += bytesRead
           }
           signal.throwIfAborted()
           const afterHandle = await handle.stat()
           const afterLink = await lstat(targetPath)
-          if (offset !== before.size || signature(before) !== signature(afterHandle) || signature(before) !== signature(afterLink)) {
-            if (dest !== undefined) await dest.close().catch(() => {})
-            dest = undefined
-            if (tmpFile !== undefined) await rm(tmpFile, { force: true }).catch(() => {})
-            tmpFile = undefined
+          if (offset !== before.size || !sameStat(before, afterHandle) || !sameStat(before, afterLink)) {
             if (attempt === 0) continue
             return { side: { kind: 'unknown', reason: '文件在快照期间持续变化' }, bytesWritten: 0 }
           }
-          if (dest !== undefined) await dest.sync()
-        } finally {
-          if (dest !== undefined) await dest.close().catch(() => {})
-        }
-
-        const sha256 = hash.digest('hex')
-        let bytesWritten = 0
-        if (saveBlob && tmpFile !== undefined) {
-          const destPath = this.blobPath(sessionId, sha256)
-          await mkdir(join(this.blobsDir(sessionId), sha256.slice(0, 2)), { recursive: true })
-          if (existsSync(destPath)) {
-            await rm(tmpFile, { force: true }).catch(() => {})
-          } else {
-            try {
-              await rename(tmpFile, destPath)
-              bytesWritten = offset
-            } catch {
-              if (existsSync(destPath)) await rm(tmpFile, { force: true }).catch(() => {})
-              else throw new Error('提交快照对象失败')
+          sha256 = createHash('sha256').update(buf).digest('hex')
+          if (saveBlob) {
+            const destPath = this.blobPath(sessionId, sha256)
+            if (!existsSync(destPath)) {
+              const prefixDir = join(this.blobsDir(sessionId), sha256.slice(0, 2))
+              await Promise.all([this.ensureDir(sessionId, tmpDir), this.ensureDir(sessionId, prefixDir)])
+              signal.throwIfAborted()
+              tmpFile = join(tmpDir, `${randomUUID()}.tmp`)
+              await writeFile(tmpFile, buf)
+              signal.throwIfAborted()
+              try {
+                await rename(tmpFile, destPath)
+                bytesWritten = offset
+              } catch {
+                if (existsSync(destPath)) await rm(tmpFile, { force: true }).catch(() => {})
+                else throw new Error('提交快照对象失败')
+              }
+              tmpFile = undefined
             }
           }
-          tmpFile = undefined
+        } else {
+          const hash = createHash('sha256')
+          let dest: Awaited<ReturnType<typeof open>> | undefined
+          if (saveBlob) {
+            await this.ensureDir(sessionId, tmpDir)
+            tmpFile = join(tmpDir, `${randomUUID()}.tmp`)
+            dest = await open(tmpFile, 'w')
+          }
+          try {
+            const buffer = Buffer.allocUnsafe(256 * 1024)
+            while (offset < before.size) {
+              signal.throwIfAborted()
+              const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, before.size - offset), offset)
+              if (bytesRead === 0) break
+              const block = buffer.subarray(0, bytesRead)
+              hash.update(block)
+              if (dest !== undefined) {
+                let written = 0
+                while (written < block.length) {
+                  signal.throwIfAborted()
+                  const part = await dest.write(block, written, block.length - written)
+                  if (part.bytesWritten === 0) throw new Error('写入快照对象未取得进展')
+                  written += part.bytesWritten
+                }
+              }
+              offset += bytesRead
+            }
+            signal.throwIfAborted()
+            const afterHandle = await handle.stat()
+            const afterLink = await lstat(targetPath)
+            if (offset !== before.size || !sameStat(before, afterHandle) || !sameStat(before, afterLink)) {
+              if (dest !== undefined) await dest.close().catch(() => {})
+              dest = undefined
+              if (tmpFile !== undefined) await rm(tmpFile, { force: true }).catch(() => {})
+              tmpFile = undefined
+              if (attempt === 0) continue
+              return { side: { kind: 'unknown', reason: '文件在快照期间持续变化' }, bytesWritten: 0 }
+            }
+          } finally {
+            if (dest !== undefined) await dest.close().catch(() => {})
+          }
+
+          sha256 = hash.digest('hex')
+          if (saveBlob && tmpFile !== undefined) {
+            const destPath = this.blobPath(sessionId, sha256)
+            if (existsSync(destPath)) {
+              await rm(tmpFile, { force: true }).catch(() => {})
+            } else {
+              await this.ensureDir(sessionId, join(this.blobsDir(sessionId), sha256.slice(0, 2)))
+              try {
+                await rename(tmpFile, destPath)
+                bytesWritten = offset
+              } catch {
+                if (existsSync(destPath)) await rm(tmpFile, { force: true }).catch(() => {})
+                else throw new Error('提交快照对象失败')
+              }
+            }
+            tmpFile = undefined
+          }
         }
         statCache?.set(canonicalPath(targetPath), {
           dev: before.dev,
@@ -471,9 +530,11 @@ export class ChangeStorage {
       if (remaining === 0) await rm(this.managed(dir), { recursive: true, force: true }).catch(() => {})
     }
     await rm(this.managed(join(this.sessionPath(sessionId), 'tmp')), { recursive: true, force: true }).catch(() => {})
+    this.ensuredDirs.delete(sessionId)
   }
 
   async removeSession(sessionId: string): Promise<void> {
+    this.ensuredDirs.delete(sessionId)
     await rm(this.managed(this.sessionPath(sessionId)), { recursive: true, force: true })
   }
 }
