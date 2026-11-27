@@ -1,6 +1,7 @@
 /** Markdown 的本地图片同样按 id 有界读取；不让 file:// 或外部资源绕过文件服务。 */
 import { useContext, useEffect, useState } from 'react'
 import { FILE_LIMITS } from '@shared/files'
+import { formatFileSystemError } from '@shared/file-errors'
 import { FileLink, FileLinkContext } from './FileLink'
 import { acquireFile, releaseFile, cancelFileOperation } from '@/features/workspace/file-client'
 export function FileImage({ target, alt }: { target: string; alt: string }) {
@@ -44,7 +45,7 @@ export function FileImage({ target, alt }: { target: string; alt: string }) {
       setUrl(objectUrl)
       setError(null)
     })().catch((error: unknown) => {
-      if (isActive()) setError(error instanceof Error ? error.message : String(error))
+      if (isActive()) setError(formatFileSystemError(error, 'file'))
     })
     return () => {
       controller.abort()

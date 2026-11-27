@@ -2,10 +2,12 @@
 /** 每个文件标签显式消费自己的预览和查看状态；容器显隐不再拥有全局单槽。 */
 import { lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { WorkspaceAnimatingContext } from '@/features/workspace/motion'
-import { File, Image, FileText, FileSpreadsheet, Music, Video, Folder, ChevronDown, Globe, ExternalLink, X } from 'lucide-react'
+import { File, Image, FileText, FileSpreadsheet, FileX, Music, Video, Folder, ChevronDown, Globe, ExternalLink, X } from 'lucide-react'
 import type { FileAction, FileKind } from '@shared/files'
+import { formatFileSystemError } from '@shared/file-errors'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
+import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Hint } from '@/components/Hint'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
@@ -129,11 +131,11 @@ export function FileToolbar({ tabId, active, leading, label, showClose = false, 
     setActionError(null); setStatus(null)
     try {
       await window.cogent.fileViewsRequest('fileViews.action', { leaseId: preview!.leaseId!, action, location: file!.location })
-    } catch (error) { setActionError(error instanceof Error ? error.message : String(error)) }
+    } catch (error) { setActionError(formatFileSystemError(error, 'file')) }
   }
   const copy = async (): Promise<void> => {
     try { await navigator.clipboard.writeText(file!.delivery?.sourcePath ?? file!.path); setStatus('已复制路径') }
-    catch (error) { setActionError(error instanceof Error ? error.message : String(error)) }
+    catch (error) { setActionError(formatFileSystemError(error, 'file')) }
   }
   const html = file !== null && /\.html?$/i.test(file.name)
   const openHtml = (): void => {
@@ -167,7 +169,7 @@ export function FileToolbar({ tabId, active, leading, label, showClose = false, 
               <DropdownMenuItem disabled={!canAct || file?.kind === 'directory'} onClick={() => void action('save')}>另存为</DropdownMenuItem>
               <DropdownMenuItem disabled={!canAct} onClick={() => void action('editor')}>{file?.delivery === undefined ? '编辑器打开' : '编辑当前原文件'}</DropdownMenuItem>
             </>}
-            <DropdownMenuItem onClick={() => { void window.cogent.configureFileEditor().catch((error: unknown) => setActionError(error instanceof Error ? error.message : String(error))) }}>配置编辑器…</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { void window.cogent.configureFileEditor().catch((error: unknown) => setActionError(formatFileSystemError(error, 'file'))) }}>配置编辑器…</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </ButtonGroup>}
@@ -205,11 +207,21 @@ export function FilePanel({ tabId, active, showHeader = true }: { tabId: string;
   const file = preview.descriptor
   return <aside className="flex h-full min-h-0 min-w-0 flex-col" aria-label="文件预览" data-file-preview data-file-tab-id={tabId} data-file-delivery={file?.delivery === undefined ? 'current' : 'saved'}>
     {showHeader && <FileToolbar tabId={tabId} active={active} />}
-    {preview.error !== null && <p role="alert" className="break-words p-3 text-sm">{preview.error}</p>}
+    {preview.error !== null && (
+      <Empty role="alert" className="p-6">
+        <EmptyHeader>
+          <EmptyMedia variant="icon"><FileX aria-hidden="true" /></EmptyMedia>
+          <EmptyTitle className="break-words">{preview.error}</EmptyTitle>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button variant="outline" size="sm" onClick={() => void useFilePreviewStore.getState().loadTab(tabId, true)}>重新加载</Button>
+        </EmptyContent>
+      </Empty>
+    )}
     {preview.loading && <p role="status" className="p-3 text-sm">正在读取当前文件…</p>}
     {preview.evicted && !preview.loading && <div className="p-3 text-sm"><p>预览内容已回收，阅读位置仍保留。</p><Button variant="ghost" size="sm" onClick={() => void useFilePreviewStore.getState().loadTab(tabId)}>恢复预览</Button></div>}
-    <div className="min-h-0 flex-1 overflow-hidden"><Suspense fallback={<p className="p-3 text-sm">正在加载查看器…</p>}>
+    {preview.error === null && <div className="min-h-0 flex-1 overflow-hidden"><Suspense fallback={<p className="p-3 text-sm">正在加载查看器…</p>}>
       {showContent && <FileContent key={preview.generation} preview={preview} active={active} />}
-    </Suspense></div>
+    </Suspense></div>}
   </aside>
 }

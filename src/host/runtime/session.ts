@@ -181,6 +181,7 @@ interface StreamingState {
   fileContext?: FileContext
   fileReferences: Map<string, FileReference[]>
   attachmentInput?: { inputId: string; text: string; attachments: AttachmentRef[]; directories?: DirectoryRef[]; bound: boolean }
+  skillInput?: { text: string; skills?: Array<{ name: string }>; command?: { name: 'init' }; expandedBlocks: string[]; bound: boolean }
   images?: import('@earendil-works/pi-ai').ImageContent[]
   attachmentPreparation?: AbortController
   messageId: string
@@ -209,6 +210,15 @@ interface StreamingState {
   /** 模型 id（末轮记录） */
   model?: string
 }
+
+/** 内置 /init 命令展开提示词：引导 Agent 检查当前工作区并生成或更新 AGENTS.md */
+const INIT_COMMAND_PROMPT = [
+  '请检查当前工作区根目录的目录结构、技术栈、依赖配置、构建/测试命令和核心代码约定，在工作区根目录创建或更新 `AGENTS.md`。',
+  '要求：',
+  '1. 内容基于实际读取到的文件事实，不编造不存在的命令或路径。',
+  '2. 保持精炼、结构清晰，重点包含：项目概览、目录入口、常用开发/检查/测试命令、代码与协作约定。',
+  '3. 若 `AGENTS.md` 已存在，在保留原有有效约定的基础上做增量更新与纠偏。'
+].join('\n')
 
 /** 首条消息截断为会话标题的长度上限 */
 const TITLE_MAX_CHARS = 24
@@ -822,8 +832,18 @@ export class SessionManager implements CogentKernel {
    * "受理→agent_settled 终态"全程，比 pi 的 isStreaming 更宽（后者在 pi 内聚
    * 恢复/续写链的 run 间隙会瞬时为 false，查它会放双 prompt 进同一个链）。
    */
-  submit(sessionId: string, text: string, model?: string, thinkingLevel?: string, provider?: string,
-    attachmentIds: string[] = [], inputId: string = crypto.randomUUID(), directories: DirectoryRef[] = []): { runId: string; turnId: string } {
+  submit(
+    sessionId: string,
+    text: string,
+    model?: string,
+    thinkingLevel?: string,
+    provider?: string,
+    attachmentIds: string[] = [],
+    inputId: string = crypto.randomUUID(),
+    directories: DirectoryRef[] = [],
+    skills: string[] = [],
+    command?: { name: 'init' }
+  ): { runId: string; turnId: string } {
     const session = this.requireSession(sessionId)
     this.assertWorkspaceAvailable(session)
     const workspace = this.captureWorkspace(session)
@@ -838,6 +858,10 @@ export class SessionManager implements CogentKernel {
       // 文案不带 sessionId（渲染层 lastError 直出给用户看；定位信息走日志）
       throw new ProtocolError(RpcErrorCode.InvalidRequest, '会话正在回复中，请先停止或等待完成')
     }
+    if (command?.name === 'init' && workspace.roots.length === 0) {
+      throw new ProtocolError(RpcErrorCode.InvalidRequest, '/init 需要先绑定项目或工作区目录')
+    }
+    const expandedSkillBlocks = this.skillStore.expandSkillsByName(skills, workspace.roots)
     let target: Model<Api> | undefined
     if (model) {
       // provider 双键限定优先：同名模型会被多家目录收录（azure 目录也有
@@ -858,7 +882,12 @@ export class SessionManager implements CogentKernel {
     ) ?? []).some((message) => message.role === 'user')
     if (firstInput) session.autoTitle = 'attempted'
     if (firstInput && !previousInput && session.summary.titleManual !== true) {
-      session.summary.title = (text.trim() || [...attachments, ...directories].map((a) => a.name).join('、')).slice(0, TITLE_MAX_CHARS) || session.summary.title
+      const entityFallback = [
+        ...(command !== undefined ? [`/${command.name}`] : []),
+        ...skills.map((name) => `$${name}`),
+        ...[...attachments, ...directories].map((a) => a.name)
+      ].join('、')
+      session.summary.title = (text.trim() || entityFallback).slice(0, TITLE_MAX_CHARS) || session.summary.title
     }
     session.summary.updatedAt = Date.now()
     let titleSaved = false
@@ -889,10 +918,27 @@ export class SessionManager implements CogentKernel {
     }
     const titlePolicy = this.titleSettings.get()
     if (firstInput && !previousInput && titleSaved && titlePolicy.enabled && session.summary.titleManual !== true) {
-      streaming.titleInput = { text: Array.from([text, ...attachments.map((item) => item.name), ...directories.map((item) => item.name)].join('\n')).slice(0, 4_000).join('') }
+      streaming.titleInput = {
+        text: Array.from([
+          text,
+          ...(command !== undefined ? [`/${command.name}`] : []),
+          ...skills.map((name) => `$${name}`),
+          ...attachments.map((item) => item.name),
+          ...directories.map((item) => item.name)
+        ].join('\n')).slice(0, 4_000).join('')
+      }
     }
     if (attachments.length > 0 || directories.length > 0) streaming.attachmentInput = { inputId, text, attachments,
       ...(directories.length > 0 && { directories }), bound: false }
+    if (skills.length > 0 || command !== undefined) {
+      streaming.skillInput = {
+        text,
+        ...(skills.length > 0 && { skills: skills.map((name) => ({ name })) }),
+        ...(command !== undefined && { command }),
+        expandedBlocks: expandedSkillBlocks,
+        bound: false
+      }
+    }
     this.streaming.set(sessionId, streaming)
     this.notify('run.started', { sessionId, runId, turnId: inputId, input: streaming.input! })
     this.outputs.begin(sessionId, inputId, streaming)
@@ -951,9 +997,20 @@ export class SessionManager implements CogentKernel {
       pi.setThinkingLevel(thinkingLevel as ThinkingLevel)
     }
     // /skill: 活展开：pi 内建展开查 loader 静态集（agent-session.ts:2319），
-    // 与段落钩子的回合热刷新会脱节 —— 统一由 skillStore 用活快照展开
+    // 与段落钩子的回合热刷新会脱节 —— 统一由 skillStore 用活快照展开；
+    // 若提交携带结构化技能/命令实体，则优先按结构化块组装，不对正文做纯文本触发解析。
     if (this.finishPreparingRun(session, pi, streaming)) return
-    let prompt = this.skillStore.expandSkillCommand(text, this.workspaceRoots(session))
+    let prompt: string
+    if (streaming.skillInput !== undefined) {
+      const parts = [
+        ...streaming.skillInput.expandedBlocks,
+        ...(streaming.skillInput.command?.name === 'init' ? [INIT_COMMAND_PROMPT] : []),
+        ...(text.trim().length > 0 ? [text] : [])
+      ]
+      prompt = parts.join('\n\n')
+    } else {
+      prompt = this.skillStore.expandSkillCommand(text, this.workspaceRoots(session))
+    }
     if (streaming.attachmentInput !== undefined) {
       const refs = streaming.attachmentInput.attachments
       const controller = new AbortController()
@@ -1710,10 +1767,33 @@ export class SessionManager implements CogentKernel {
         this.persist(sessionId)
         this.startTitle(session, run)
         const input = run.attachmentInput
-        if (input === undefined || input.bound) return { fileContext }
-        input.bound = true
-        return { fileContext, attachment: { version: 1, inputId: input.inputId, text: input.text, attachments: input.attachments,
-          ...(input.directories !== undefined && { directories: input.directories }) } }
+        const skillIn = run.skillInput
+        const attachment =
+          input !== undefined && !input.bound
+            ? ((input.bound = true),
+              {
+                version: 1 as const,
+                inputId: input.inputId,
+                text: input.text,
+                attachments: input.attachments,
+                ...(input.directories !== undefined && { directories: input.directories })
+              })
+            : undefined
+        const skillInput =
+          skillIn !== undefined && !skillIn.bound
+            ? ((skillIn.bound = true),
+              {
+                version: 1 as const,
+                text: skillIn.text,
+                ...(skillIn.skills !== undefined && { skills: skillIn.skills }),
+                ...(skillIn.command !== undefined && { command: skillIn.command })
+              })
+            : undefined
+        return {
+          fileContext,
+          ...(attachment !== undefined && { attachment }),
+          ...(skillInput !== undefined && { skillInput })
+        }
       },
       onFileReferences: (callId, refs) => { this.streaming.get(sessionId)?.fileReferences.set(callId, refs) },
       modelRuntime: this.modelRuntime,

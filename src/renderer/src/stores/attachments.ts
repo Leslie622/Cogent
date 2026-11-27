@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { ATTACHMENT_LIMITS, attachmentAdmissionIssue, attachmentMime, isAttachmentRef, isDirectoryRef,
   type AttachmentMetadata, type AttachmentRef, type AttachmentRejection, type MediaBindings, type DirectoryRef } from '@shared/attachments'
 import { unwrapIpcError } from '@/lib/ipc'
+import { isComposerEntity, type ComposerEntity } from '@/features/home/composer/types'
 
 export interface DraftAttachment {
   key: string
@@ -15,8 +16,16 @@ export interface DraftAttachment {
   error?: string
   progress?: number
 }
-export interface Draft { text: string; items: DraftAttachment[]; loaded: boolean; error: string | null; edit: number; rejections?: AttachmentRejection[] }
-export const EMPTY_DRAFT: Draft = { text: '', items: [], loaded: false, error: null, edit: 0 }
+export interface Draft {
+  text: string
+  entities: ComposerEntity[]
+  items: DraftAttachment[]
+  loaded: boolean
+  error: string | null
+  edit: number
+  rejections?: AttachmentRejection[]
+}
+export const EMPTY_DRAFT: Draft = { text: '', entities: [], items: [], loaded: false, error: null, edit: 0 }
 export function chatDraftId(sessionId: string): string { return localStorage.getItem(`cogent.chat-draft.${sessionId}`) ?? `chat-${sessionId}` }
 export function bindChatDraft(sessionId: string, draftId: string): void { localStorage.setItem(`cogent.chat-draft.${sessionId}`, draftId) }
 type Source = File | string
@@ -29,13 +38,21 @@ const timers = new Map<string, ReturnType<typeof setTimeout>>()
 const submissions = new Map<string, symbol>()
 const journalKey = (id: string): string => `cogent.attachment-draft.${id}`
 
-function readJournal(id: string): { text: string; items: DraftAttachment[] } | undefined {
+function readJournal(id: string): { text: string; entities: ComposerEntity[]; items: DraftAttachment[] } | undefined {
   const text = localStorage.getItem(journalKey(id))
   if (text === null) return undefined
   const raw: unknown = JSON.parse(text)
   if (typeof raw !== 'object' || raw === null) throw new Error('草稿恢复日志损坏')
-  const journal = raw as { version?: unknown; text?: unknown; items?: unknown }
-  if (journal.version !== 1 || typeof journal.text !== 'string' || !Array.isArray(journal.items)) throw new Error('草稿恢复日志形状不合法')
+  const journal = raw as { version?: unknown; text?: unknown; entities?: unknown; items?: unknown }
+  if ((journal.version !== 1 && journal.version !== 2) || typeof journal.text !== 'string' || !Array.isArray(journal.items)) {
+    throw new Error('草稿恢复日志形状不合法')
+  }
+  const entities: ComposerEntity[] =
+    journal.version === 2 && journal.entities !== undefined
+      ? Array.isArray(journal.entities) && journal.entities.every(isComposerEntity)
+        ? journal.entities
+        : (() => { throw new Error('草稿实体元数据损坏') })()
+      : []
   const items = journal.items.map((value: unknown): DraftAttachment => {
     if (typeof value !== 'object' || value === null) throw new Error('草稿附件形状不合法')
     const item = value as Partial<DraftAttachment>
@@ -47,7 +64,7 @@ function readJournal(id: string): { text: string; items: DraftAttachment[] } | u
       status: incomplete ? 'error' : 'ready',
       ...(incomplete && { error: '上次导入未完成，请重新选择原文件' }) }
   })
-  return { text: journal.text, items }
+  return { text: journal.text, entities, items }
 }
 
 interface DraftState {
@@ -55,6 +72,8 @@ interface DraftState {
   media: MediaBindings
   load: (id: string) => Promise<void>
   setText: (id: string, text: string) => void
+  setContent: (id: string, text: string, entities: ComposerEntity[]) => void
+  clearContent: (id: string) => void
   add: (id: string, files: Source[]) => void
   remove: (id: string, key: string) => void
   retry: (id: string, key: string) => void
@@ -89,7 +108,12 @@ function refuse(id: string, key: string, info: AttachmentMetadata, reason: strin
 function save(id: string): void {
   const current = useAttachmentStore.getState().drafts[id]!
   // Host 写入是异步 IPC；同步小日志封住关窗/进程退出前尚未确认的窗口。
-  const journal = JSON.stringify({ version: 1, text: current.text, items: current.items.map(({ key, name, size, ref, directory }) => ({ key, name, size, ref, directory })) })
+  const journal = JSON.stringify({
+    version: 2,
+    text: current.text,
+    entities: current.entities,
+    items: current.items.map(({ key, name, size, ref, directory }) => ({ key, name, size, ref, directory }))
+  })
   try { localStorage.setItem(journalKey(id), journal) }
   catch (error) { patch(id, (d) => ({ ...d, error: `草稿恢复日志写入失败：${unwrapIpcError(error)}` })) }
   const old = timers.get(id); if (old !== undefined) clearTimeout(old)
@@ -212,7 +236,7 @@ export const useAttachmentStore = create<DraftState>((set, get) => ({
           catch (cause) { item.status = 'error'; item.error = `附件不可用：${unwrapIpcError(cause)}` }
         }))
         if (!ownsLoad()) return
-        patch(id, () => ({ text: journal?.text ?? draft.text, items, loaded: true, error: null, edit: 0 }))
+        patch(id, () => ({ text: journal?.text ?? draft.text, entities: journal?.entities ?? [], items, loaded: true, error: null, edit: 0 }))
         set({ media })
         if (journal !== undefined) save(id)
       } catch (error) {
@@ -224,6 +248,8 @@ export const useAttachmentStore = create<DraftState>((set, get) => ({
     loading.set(id, promise); return promise
   },
   setText: (id, text) => { patch(id, (d) => ({ ...d, text, edit: d.edit + 1 })); save(id) },
+  setContent: (id, text, entities) => { patch(id, (d) => ({ ...d, text, entities, edit: d.edit + 1 })); save(id) },
+  clearContent: (id) => { patch(id, (d) => ({ ...d, text: '', entities: [], edit: d.edit + 1 })); save(id) },
   add: (id, files) => {
     const draft = get().drafts[id]!
     const added: DraftAttachment[] = []
@@ -278,8 +304,13 @@ export const useAttachmentStore = create<DraftState>((set, get) => ({
     submissions.delete(id)
     const keys = new Set(snapshot.items.map((i) => i.key))
     keys.forEach((key) => sources.delete(key))
-    patch(id, (d) => ({ ...d, text: d.edit === snapshot.edit ? '' : d.text, items: d.items.filter((i) => !keys.has(i.key)),
-      rejections: d.rejections === snapshot.rejections ? [] : d.rejections }))
+    patch(id, (d) => ({
+      ...d,
+      text: d.edit === snapshot.edit ? '' : d.text,
+      entities: d.edit === snapshot.edit ? [] : d.entities,
+      items: d.items.filter((i) => !keys.has(i.key)),
+      rejections: d.rejections === snapshot.rejections ? [] : d.rejections
+    }))
     save(id)
     return true
   }

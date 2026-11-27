@@ -9,6 +9,7 @@ import { acquireFile, releaseFile, cancelFileOperation } from '@/features/worksp
 import { useWorkspaceStore } from './workspace'
 import { getFileNavigatorOwner } from '@/features/workspace/file-navigator-owner'
 import type { FileViewMethods } from '@shared/file-views'
+import { formatFileSystemError } from '@shared/file-errors'
 
 export interface Preview {
   tabId: string; leaseId: string | null
@@ -41,7 +42,7 @@ interface PreviewState {
   trim: (budget?: number) => void
 }
 let generation = 0
-const reason = (error: unknown) => error instanceof Error ? error.message : String(error)
+const reason = (error: unknown) => formatFileSystemError(error, 'file')
 const blank = (tabId: string, scope: FileLinkScope, rawTarget: string, outputTarget?: OutputTarget): Preview => ({
   tabId, scope, rawTarget, outputTarget, leaseId: null, operationId: crypto.randomUUID(), generation: ++generation,
   descriptor: null, loading: true, error: null, text: null, encoding: null, url: null, document: null,

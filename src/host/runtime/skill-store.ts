@@ -417,6 +417,38 @@ export class SkillStore {
   }
 
   /**
+   * 按名活展开多个技能实体（结构化 agent.submit.skills 专用）：
+   * 任一指定技能不存在或已禁用时显式抛 InvalidParams，绝不静默丢弃；
+   * 读文件失败也显式报错，保证所选实体与送入模型的指令严格一致。
+   */
+  expandSkillsByName(names: readonly string[], cwdOrRoots?: string | readonly string[]): string[] {
+    if (names.length === 0) return []
+    const snapshot = Array.isArray(cwdOrRoots)
+      ? this.snapshotMany(cwdOrRoots)
+      : this.snapshot(cwdOrRoots as string | undefined)
+    const byName = new Map(snapshot.skills.map((skill) => [skill.name, skill]))
+    const blocks: string[] = []
+    for (const name of names) {
+      const skill = byName.get(name)
+      if (skill === undefined) {
+        throw new ProtocolError(RpcErrorCode.InvalidParams, `技能 "${name}" 不存在或已禁用`)
+      }
+      let content: string
+      try {
+        content = readFileSync(skill.filePath, 'utf8')
+      } catch (error) {
+        throw new ProtocolError(
+          RpcErrorCode.InvalidParams,
+          `读取技能 "${name}" 失败：${error instanceof Error ? error.message : String(error)}`
+        )
+      }
+      const body = stripFrontmatter(content).trim()
+      blocks.push(`<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`)
+    }
+    return blocks
+  }
+
+  /**
    * `/skill:name args` 活展开（Cogent submit 路径委托，替代 pi 内建的
    * loader 静态集查找）：命中禁用技能 = 视为不存在原样透传；manualOnly
    * 技能可展开（这正是它存在的意义）。读文件失败也透传（模型看到字面

@@ -5,6 +5,7 @@ import { watch, type FSWatcher } from 'node:fs'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import type { FileDescriptor } from '../../../shared/files'
+import { toUserFileError } from '../../../shared/file-errors'
 import { fileViewPreviewSensitivePath, projectFileRoots, type FileViewContext, type FileViewDirectory, type FileViewHostMethods, type FileViewLease, type FileViewPreviewPolicy, type FileViewRead, type FileViewRoot, type FileViewSearch, type FileViewSource } from '../../../shared/file-views'
 import type { FileService } from '../files/reader'
 import type { OutputsService } from '../outputs/service'
@@ -54,7 +55,15 @@ export class FileViewsService {
     const checked: ScanRoot[] = []
     for (const root of roots) {
       if (!isAbsolute(root.path)) throw new Error('文件根必须是绝对路径')
-      const path = resolve(root.path); const realPath = await realpath(path); const info = await stat(realPath)
+      const path = resolve(root.path)
+      let realPath: string
+      let info: Awaited<ReturnType<typeof stat>>
+      try {
+        realPath = await realpath(path)
+        info = await stat(realPath)
+      } catch (error) {
+        throw toUserFileError(error, root.kind === 'file' ? 'file' : 'directory')
+      }
       if (!info.isDirectory() && !info.isFile()) throw new Error('文件根必须是普通文件或目录')
       checked.push({ ...root, id: randomUUID(), path, name: root.name || basename(path), kind: info.isDirectory() ? 'directory' : 'file', realPath })
     }
@@ -240,7 +249,7 @@ export class FileViewsService {
       else {
         const base = dirname((await this.files.previewTarget({ sessionId: ownerId, fileId: descriptor.fileId })).path)
         const target = resolve(policy?.root.realPath ?? base, relativePath)
-        const expected = policy === undefined ? await realpath(target) : await this.checkPreviewPath(policy, target)
+        const expected = policy === undefined ? await realpath(target).catch((error) => { throw toUserFileError(error, 'file') }) : await this.checkPreviewPath(policy, target)
         if (policy === undefined && (!within(base, target) || !within(base, expected))) throw new Error('网页资源超出 HTML 所在目录')
         child = await this.files.registerPath(ownerId, target, undefined, undefined, {}, false, true)
         try {
@@ -254,8 +263,11 @@ export class FileViewsService {
     } finally { parent.holds--; this.finishLease(parent) }
   }
   private async checkPreviewPath(policy: FileViewPreviewPolicy, target: string): Promise<string> {
-    if (await realpath(policy.root.path) !== policy.root.realPath || !within(policy.root.realPath, target)) throw new Error('网页资源根已变化或路径越界')
-    const actual = await realpath(target)
+    let rootReal: string
+    try { rootReal = await realpath(policy.root.path) } catch (error) { throw toUserFileError(error, 'directory') }
+    if (rootReal !== policy.root.realPath || !within(policy.root.realPath, target)) throw new Error('网页资源根已变化或路径越界')
+    let actual: string
+    try { actual = await realpath(target) } catch (error) { throw toUserFileError(error, 'file') }
     if (!within(policy.root.realPath, actual) || policy.blockedRoots.some(root => within(root, actual)) || fileViewPreviewSensitivePath(actual) || fileViewPreviewSensitivePath(target)) throw new Error('网页资源位于受保护目录或敏感文件')
     return actual
   }

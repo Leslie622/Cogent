@@ -5,6 +5,7 @@ import { copyFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { basename, isAbsolute } from 'node:path'
 import { FILE_VIEWS_CHANNEL, FILE_VIEW_FORWARD_METHODS, type FileViewOpenResult, type FileViewRoot } from '../../../shared/file-views'
+import { toUserFileError } from '../../../shared/file-errors'
 import { fileViewObject, fileViewString } from '../../../host/runtime/file-views/handlers'
 import { FileViewGrants } from '../file-views/grants'
 import { storageRoot } from '../storage-root'
@@ -92,7 +93,7 @@ export function registerFileViewsIpc(deps: IpcDeps): void {
         const selected = await active(dialog.showSaveDialog(win, { title: '另存文件', defaultPath: target.name }))
         if (selected.canceled) return { canceled: true }
         const checked = await active(deps.host.request('fileViews.actionTarget', { windowId, windowEpoch, leaseId }))
-        await active(copyFile(checked.path, selected.filePath)); return { canceled: false }
+        await active(copyFile(checked.path, selected.filePath).catch((error) => { throw toUserFileError(error, 'file') })); return { canceled: false }
       }
       if (readSettingsFile().fileEditor === undefined) {
         const selected = await active(dialog.showOpenDialog(win, { title: '选择 VS Code 或 Cursor 的可执行文件', properties: ['openFile'] }))

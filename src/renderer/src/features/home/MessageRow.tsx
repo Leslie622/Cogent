@@ -21,6 +21,7 @@ import { CompactionBar } from './CompactionBar'
 import type { MessageUsage } from '@/env.d'
 import type { AttachmentRef, DirectoryRef } from '@shared/attachments'
 import { AttachmentCards } from './AttachmentCards'
+import { EntityChip } from './composer/ComposerEntityNode'
 
 /** 消息的最小渲染形状（chat store 的 ChatMessage，props 单向传入；会话视图
     件 —— ConversationIndex 等 —— 共享，经 HomeChat 再导出）。role 含
@@ -31,6 +32,8 @@ export type MessageLike = {
   sources?: import('@shared/session-search').MessageSource[]
   attachments?: AttachmentRef[]
   directories?: DirectoryRef[]
+  skills?: Array<{ name: string }>
+  command?: { name: 'init' }
   id: string
   role: 'user' | 'assistant' | 'compaction'
   content: string
@@ -108,6 +111,8 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
     return <CompactionBar message={message} />
   }
   if (message.role === 'user') {
+    const hasEntities =
+      message.command !== undefined || (message.skills !== undefined && message.skills.length > 0)
     return (
       <Message align="end" data-search-message={message.id}>
         <MessageContent>
@@ -115,8 +120,14 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
             ...(message.attachments ?? []).map((ref) => ({ key: ref.id, name: ref.name, size: ref.size, ref, status: 'ready' as const })),
             ...(message.directories ?? []).map((directory) => ({ key: `directory:${directory.path}`, name: directory.name, size: 0, directory, status: 'ready' as const }))
           ]} />}
-          {message.content !== '' && <Bubble variant="muted" align="end">
-            <BubbleContent data-search-body className="content-typography">{message.content}</BubbleContent>
+          {(message.content !== '' || hasEntities) && <Bubble variant="muted" align="end">
+            <BubbleContent data-search-body className="content-typography flex flex-wrap items-baseline gap-1.5">
+              {message.command !== undefined && <EntityChip kind="command" name={message.command.name} />}
+              {message.skills?.map((skill) => (
+                <EntityChip key={skill.name} kind="skill" name={skill.name} />
+              ))}
+              {message.content !== '' && <span className="whitespace-pre-wrap">{message.content}</span>}
+            </BubbleContent>
           </Bubble>}
           <MessageFooter className="gap-1 px-0">
             {/* 时间戳是 chrome：select-none（气泡正文保持可选，zcode 时间戳同款） */}

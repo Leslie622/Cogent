@@ -9,7 +9,8 @@
  * 用法：node tests/run-tests.mjs <vitest 参数…>（如 run / --watch）。
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
 
@@ -46,6 +47,22 @@ if (target === null) {
   process.exit(1)
 }
 
-const result = spawnSync(target, [vitestEntry, ...process.argv.slice(2)], { stdio: 'inherit', shell: false })
+/** 沙箱环境常把 TEMP/TMP 放在以 `.` 开头的隐藏目录（如 `.t3`），会触发网页预览敏感目录守卫；
+ *  仅在检测到隐藏目录段时为测试子进程重定向到仓库内 gitignored 的 `tmp/test-temp`，不放宽产品安全守卫。 */
+function hasHiddenSegment(dir) {
+  return typeof dir === 'string' && dir.split(/[\\/]+/).some((seg) => seg.startsWith('.') && seg !== '.' && seg !== '..')
+}
+
+const env = { ...process.env }
+const currentTemp = env.TEMP || env.TMP || env.TMPDIR || tmpdir()
+if (hasHiddenSegment(currentTemp)) {
+  const safeTemp = join(process.cwd(), 'tmp', 'test-temp')
+  mkdirSync(safeTemp, { recursive: true })
+  env.TEMP = safeTemp
+  env.TMP = safeTemp
+  env.TMPDIR = safeTemp
+}
+
+const result = spawnSync(target, [vitestEntry, ...process.argv.slice(2)], { stdio: 'inherit', shell: false, env })
 if (result.error) console.error(`[run-tests] 无法启动测试 Node ${target}: ${result.error.message}`)
 process.exit(result.status ?? 1)

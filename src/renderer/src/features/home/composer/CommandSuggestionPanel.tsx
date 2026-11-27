@@ -1,0 +1,218 @@
+/**
+ * 输入区上方的命令 / 技能候选浮层（毛玻璃材质 + 分组排布 + 键盘导航）。
+ * `/` 显示「命令」与「技能」两组；`$`/`￥` 专显「技能」。
+ */
+import { useEffect, useRef } from 'react'
+import { ArrowDownIcon, ArrowUpIcon, CornerDownLeftIcon } from 'lucide-react'
+import { IconInfoCircle, IconTerminal2, IconWand } from '@tabler/icons-react'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
+import { cn } from '@/lib/utils'
+import type { ComposerSuggestionItem, TriggerKind } from './types'
+
+interface CommandSuggestionPanelProps {
+  triggerKind: TriggerKind
+  items: readonly ComposerSuggestionItem[]
+  selectedIndex: number
+  selectionSource?: 'keyboard' | 'pointer'
+  loading?: boolean
+  onSelectIndex: (index: number) => void
+  onPick: (item: ComposerSuggestionItem) => void
+}
+
+export function CommandSuggestionPanel({
+  triggerKind,
+  items,
+  selectedIndex,
+  selectionSource = 'keyboard',
+  loading = false,
+  onSelectIndex,
+  onPick
+}: CommandSuggestionPanelProps) {
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const activeRef = useRef<HTMLButtonElement | null>(null)
+
+  const commandItems: Array<{ item: ComposerSuggestionItem; index: number }> = []
+  const skillItems: Array<{ item: ComposerSuggestionItem; index: number }> = []
+  items.forEach((item, index) => {
+    if (item.group === 'command') commandItems.push({ item, index })
+    else skillItems.push({ item, index })
+  })
+
+  const showGroupHeaders = triggerKind === '/' && (commandItems.length > 0 || skillItems.length > 0)
+
+  useEffect(() => {
+    // 鼠标悬停切换高亮不触发自动滚动，避免光标移到边缘行时列表突然跳动
+    if (selectionSource !== 'keyboard') return
+    const container = scrollRef.current
+    const active = activeRef.current
+    if (container === null || active === null) return
+
+    // 有吸顶分组标题时为顶部预留标题高度，避免上移选中项被标题遮挡
+    const topPadding = showGroupHeaders ? 34 : 6
+    const bottomPadding = 6
+    const containerRect = container.getBoundingClientRect()
+    const activeRect = active.getBoundingClientRect()
+    const topDelta = activeRect.top - containerRect.top - topPadding
+    const bottomDelta = activeRect.bottom - containerRect.bottom + bottomPadding
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const behavior: ScrollBehavior = reducedMotion ? 'auto' : 'smooth'
+
+    if (topDelta < 0) {
+      container.scrollTo({ top: Math.max(0, container.scrollTop + topDelta), behavior })
+    } else if (bottomDelta > 0) {
+      container.scrollTo({ top: container.scrollTop + bottomDelta, behavior })
+    }
+  }, [selectedIndex, selectionSource, items.length, showGroupHeaders])
+
+  const footerText = triggerKind === '$' ? '输入内容以搜索技能' : '输入内容以搜索命令或技能'
+
+  const renderRow = (item: ComposerSuggestionItem, index: number) => {
+    const active = index === selectedIndex
+    const isSkill = item.group === 'skill'
+    return (
+      <button
+        key={item.id}
+        ref={active ? activeRef : undefined}
+        type="button"
+        role="option"
+        aria-selected={active}
+        data-suggestion-item={item.id}
+        onMouseEnter={() => onSelectIndex(index)}
+        onMouseDown={(event) => {
+          // 阻止点击浮层抢走编辑器焦点，确保原子节点插在当前选区
+          event.preventDefault()
+          onPick(item)
+        }}
+        className={cn(
+          'group flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors duration-100',
+          active
+            ? 'bg-foreground/[0.075] text-foreground dark:bg-white/[0.10]'
+            : 'text-foreground/90 hover:bg-foreground/[0.045] dark:hover:bg-white/[0.06]'
+        )}
+      >
+        <span
+          className={cn(
+            'flex size-6 shrink-0 items-center justify-center rounded-lg border transition-colors',
+            isSkill
+              ? 'border-violet-500/20 bg-violet-500/10 text-violet-600 dark:border-violet-400/25 dark:bg-violet-400/15 dark:text-violet-300'
+              : 'border-border/60 bg-background/60 text-foreground/80 dark:border-white/10 dark:bg-white/[0.06]'
+          )}
+        >
+          {isSkill ? <IconWand className="size-3.5" /> : <IconTerminal2 className="size-3.5" />}
+        </span>
+
+        <div className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span
+            className={cn(
+              'shrink-0 text-sm font-medium tracking-[-0.01em]',
+              !isSkill && 'font-mono'
+            )}
+          >
+            {item.label}
+          </span>
+          {item.argumentHint !== undefined && (
+            <span className="shrink-0 font-mono text-xs text-muted-foreground/75">
+              {item.argumentHint}
+            </span>
+          )}
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {item.description}
+          </span>
+        </div>
+
+        {item.badge !== undefined && (
+          <span
+            className={cn(
+              'shrink-0 rounded-md px-1.5 py-0.5 text-xs leading-none font-medium',
+              item.badge === '单独发送'
+                ? 'bg-amber-500/12 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300'
+                : 'bg-foreground/[0.055] text-muted-foreground dark:bg-white/[0.08]'
+            )}
+          >
+            {item.badge}
+          </span>
+        )}
+      </button>
+    )
+  }
+
+  return (
+    <div
+      role="listbox"
+      aria-label={triggerKind === '$' ? '技能候选列表' : '命令与技能候选列表'}
+      data-composer-suggestion-panel
+      className={cn(
+        'absolute right-0 bottom-full left-0 z-30 mb-2 overflow-hidden rounded-2xl',
+        'border border-border/65 bg-popover/75 backdrop-blur-xl backdrop-saturate-150',
+        'ring-1 ring-inset ring-white/30 dark:border-white/12 dark:bg-popover/70 dark:ring-white/10',
+        'shadow-[0_14px_40px_-10px_rgba(0,0,0,0.16)] dark:shadow-[0_18px_48px_-10px_rgba(0,0,0,0.55)]',
+        'animate-in fade-in-0 slide-in-from-bottom-1 duration-150'
+      )}
+    >
+      <div ref={scrollRef} className="max-h-72 overflow-y-auto scroll-smooth px-1.5 pb-1.5">
+        {items.length === 0 ? (
+          <div className="px-3 py-5 text-center text-xs text-muted-foreground">
+            {loading
+              ? '正在加载可用技能…'
+              : triggerKind === '$'
+                ? '没有匹配的已启用技能'
+                : '没有匹配的命令或技能'}
+          </div>
+        ) : (
+          <div className={cn('flex flex-col gap-1', !showGroupHeaders && 'pt-1.5')}>
+            {commandItems.length > 0 && (
+              <div className="flex flex-col gap-0.5">
+                {showGroupHeaders && (
+                  <div className="sticky top-0 z-10 -mx-1.5 bg-popover/85 px-4 py-1.5 text-xs font-medium text-muted-foreground/90 backdrop-blur-md select-none dark:bg-popover/80">
+                    命令
+                  </div>
+                )}
+                {commandItems.map(({ item, index }) => renderRow(item, index))}
+              </div>
+            )}
+
+            {skillItems.length > 0 && (
+              <div className="flex flex-col gap-0.5">
+                {showGroupHeaders && (
+                  <div
+                    className={cn(
+                      'sticky top-0 z-10 -mx-1.5 bg-popover/85 px-4 py-1.5 text-xs font-medium text-muted-foreground/90 backdrop-blur-md select-none dark:bg-popover/80',
+                      commandItems.length > 0 && 'border-t border-border/40'
+                    )}
+                  >
+                    技能
+                  </div>
+                )}
+                {skillItems.map(({ item, index }) => renderRow(item, index))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between gap-3 border-t border-border/45 bg-background/35 px-3 py-2 text-xs text-muted-foreground select-none dark:border-white/10 dark:bg-black/15">
+        <span className="flex min-w-0 items-center gap-1.5 truncate">
+          <IconInfoCircle className="size-3.5 shrink-0 opacity-75" />
+          <span className="truncate">{footerText}</span>
+        </span>
+        <div className="hidden shrink-0 items-center gap-3.5 sm:flex">
+          <span className="inline-flex items-center gap-1.5">
+            <KbdGroup>
+              <Kbd aria-label="上移"><ArrowUpIcon /></Kbd>
+              <Kbd aria-label="下移"><ArrowDownIcon /></Kbd>
+            </KbdGroup>
+            <span>选择</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Kbd aria-label="回车"><CornerDownLeftIcon /></Kbd>
+            <span>确认</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Kbd>Esc</Kbd>
+            <span>关闭</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -51,9 +51,9 @@ import { COGENT_TOOL_NAMES, MCP_TOOL_ALLOWLIST } from '../runtime/tool-meta'
 import type { FileContext, FileReference } from '../../shared/files'
 import { toolFileReferences } from '../runtime/files/paths'
 
-import { PI_AGENT_DIR_NAME, piSessionDir, type AttachmentInput } from './transcript'
+import { PI_AGENT_DIR_NAME, piSessionDir, type AttachmentInput, type SkillInput } from './transcript'
 export { readPiTranscript, PI_AGENT_DIR_NAME } from './transcript'
-export type { AttachmentMessage, CompactionBarSource } from './transcript'
+export type { AttachmentMessage, CompactionBarSource, SkillInput } from './transcript'
 
 /**
  * 审批桥：判定与挂起语义住在 session.ts（mode 活值/规则表/北向请求都在那）。
@@ -74,7 +74,11 @@ export interface ApprovalBridge {
 export interface PiSessionOptions {
   /** appendMessage 返回后才有真实条目 id；公开 message_end 尚早于持久化。 */
   onMessageCommitted?: (message: AgentMessage, entryId: string) => void
-  onUserEntry?: (entryId: string, cwd: string) => { attachment?: Omit<AttachmentInput, 'userEntryId'>; fileContext?: FileContext } | undefined
+  onUserEntry?: (entryId: string, cwd: string) => {
+    attachment?: Omit<AttachmentInput, 'userEntryId'>
+    skillInput?: Omit<SkillInput, 'userEntryId'>
+    fileContext?: FileContext
+  } | undefined
   onFileReferences?: (callId: string, refs: FileReference[]) => void
   /** 本次工作主根（工具、配置和项目发现）；转录目录由独立锚点决定。 */
   cwd: string
@@ -148,6 +152,7 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     if (message.role === 'user') {
       const input = opts.onUserEntry?.(id, opts.cwd)
       if (input?.attachment !== undefined) piSessionManager.appendCustomEntry('cogent.attachment-input.v1', { ...input.attachment, userEntryId: id })
+      if (input?.skillInput !== undefined) piSessionManager.appendCustomEntry('cogent.skill-input.v1', { ...input.skillInput, userEntryId: id })
       if (input?.fileContext !== undefined) piSessionManager.appendCustomEntry('cogent.file-context.v1', input.fileContext)
     }
     opts.onMessageCommitted?.(message, id)

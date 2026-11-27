@@ -251,4 +251,10 @@ describe('文件导航数据所有者', () => {
       await releaseFileNavigatorScope('bound-session')
     }
   })
+
+  it('目录打开失败时剥离 IPC 外壳并翻译裸 ENOENT 报错', async () => {
+    const { owner } = setup(() => Promise.reject(new Error("Error invoking remote method 'fileViews:request': Error: ENOENT: no such file or directory, realpath 'C:\\missing-dir'")))
+    await owner.initialize()
+    expect(owner.getSnapshot().error).toBe('目录不存在或已被移除')
+  })
 })

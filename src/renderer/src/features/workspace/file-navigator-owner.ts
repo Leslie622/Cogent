@@ -1,5 +1,6 @@
 /** 文件导航的数据所有者；目录分页与取消留在这里，树库只读取同步快照。 */
 import { projectFileRoots, type FileViewContext, type FileViewEntry, type FileViewMethods, type FileViewRoot } from '@shared/file-views'
+import { formatFileSystemError } from '@shared/file-errors'
 import { useProjectStore } from '@/stores/project'
 
 export type FileNavigatorRequest = <M extends keyof FileViewMethods>(
@@ -67,7 +68,7 @@ export interface NavigatorSnapshot {
 export const NAVIGATOR_ROOT = 'workspace-file-navigation'
 const EMPTY_IDS: string[] = []
 const ROOT_ITEM: NavigatorItem = { id: NAVIGATOR_ROOT, type: 'root', root: { id: NAVIGATOR_ROOT, path: '', name: '文件', kind: 'directory' } }
-const message = (error: unknown): string => error instanceof Error ? error.message : String(error)
+const message = (error: unknown): string => formatFileSystemError(error, 'directory')
 
 export function normalizeNavigatorPath(value: string): string {
   const slashed = value.replaceAll('\\', '/')

@@ -3,6 +3,7 @@ import { useId, useRef, useState, type ReactElement } from 'react'
 import { IconCheck, IconCopy, IconDownload, IconExternalLink, IconEye, IconFolder, IconPencil } from '@tabler/icons-react'
 import type { FileAction, FileKind } from '@shared/files'
 import type { FileViewLease } from '@shared/file-views'
+import { formatFileSystemError } from '@shared/file-errors'
 import { acquireFile, releaseFile } from '@/features/workspace/file-client'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -10,7 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { FileActionErrorDialog } from './FileActionErrorDialog'
 import type { FileLinkScope } from './FileLink'
 
-const reason = (error: unknown) => error instanceof Error ? error.message : String(error)
+const reason = (error: unknown) => formatFileSystemError(error, 'file')
 
 export function FileLinkActions({ scope, target, title, children, onPreview }: {
   scope: FileLinkScope; target: string; title?: string; children: ReactElement; onPreview: () => void

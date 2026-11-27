@@ -166,17 +166,22 @@ export function toChatMessages(messages: Array<AttachmentMessage | CompactionBar
       // 续写注入的指令消息（R6③）：不单独成泡 —— 跳过它让截断段与续写段
       // 在投影里相邻，由下方 assistant 分支合并（保真在转录，聚合在投影）
       if (text.startsWith(AUTO_CONTINUE_PREFIX)) continue
+      const attach = (message as AttachmentMessage).attachmentInput
+      const skillIn = (message as AttachmentMessage).skillInput
+      const displayText = attach?.text ?? skillIn?.text ?? text
       result.push({
         // 位置式 id（同 assistant 的 a-N 手法）：timestamp 在同一毫秒内可撞
         // （React key 重复），投影位置在单写者下稳定且跨加载不变
         id: `u-${result.length}`,
-        sources: message.sourceId === undefined ? undefined : [{ id: message.sourceId, start: 0, end: (message.attachmentInput?.text ?? text).length }],
+        sources: message.sourceId === undefined ? undefined : [{ id: message.sourceId, start: 0, end: displayText.length }],
         role: 'user',
         turnId: message.fileContext?.turnId,
         fileContext: message.fileContext,
-        content: (message as AttachmentMessage).attachmentInput?.text ?? text,
-        ...((message as AttachmentMessage).attachmentInput !== undefined && { attachments: (message as AttachmentMessage).attachmentInput!.attachments }),
-        ...((message as AttachmentMessage).attachmentInput?.directories !== undefined && { directories: (message as AttachmentMessage).attachmentInput!.directories }),
+        content: displayText,
+        ...(attach !== undefined && { attachments: attach.attachments }),
+        ...(attach?.directories !== undefined && { directories: attach.directories }),
+        ...(skillIn?.skills !== undefined && skillIn.skills.length > 0 && { skills: skillIn.skills }),
+        ...(skillIn?.command !== undefined && { command: skillIn.command }),
         timestamp: message.timestamp
       })
     } else if (message.role === 'assistant') {

@@ -282,7 +282,7 @@ export interface EngineMethodParams extends DefaultsParams, AttachmentParams, Fi
   'session.listArchived': Record<string, never>
   'session.setPermission': { sessionId: string; mode: PermissionMode }
   'session.setPlanMode': { sessionId: string; enabled: boolean }
-  'session.compact': { sessionId: string }
+  'session.compact': { sessionId: string; instructions?: string }
   'session.continue': { sessionId: string }
   'project.list': Record<string, never>
   'project.create': { name: string; cwds: string[] }
@@ -290,7 +290,18 @@ export interface EngineMethodParams extends DefaultsParams, AttachmentParams, Fi
   'project.update': { projectId: string; name: string; cwds: string[] }
   'project.delete': { projectId: string }
   'project.setPinned': { projectId: string; pinned: boolean }
-  'agent.submit': { sessionId: string; text: string; model?: string; provider?: string; thinkingLevel?: string; attachmentIds?: string[]; inputId?: string; directories?: DirectoryRef[] }
+  'agent.submit': {
+    sessionId: string
+    text: string
+    model?: string
+    provider?: string
+    thinkingLevel?: string
+    attachmentIds?: string[]
+    inputId?: string
+    directories?: DirectoryRef[]
+    skills?: string[]
+    command?: { name: 'init' }
+  }
   'agent.abort': { sessionId: string }
   'credentials.list': Record<string, never>
   'models.list': Record<string, never>
@@ -558,6 +569,8 @@ export interface ChatMessage {
   fileContext?: FileContext
   attachments?: AttachmentRef[]
   directories?: DirectoryRef[]
+  skills?: Array<{ name: string }>
+  command?: { name: 'init' }
   id: string
   role: 'user' | 'assistant' | 'compaction'
   /**

@@ -121,4 +121,10 @@ describe('文件预览所有权', () => {
     expect(useFilePreviewStore.getState().views[id].scrollTop).toBe(345)
     expect(request).not.toHaveBeenCalledWith('fileViews.release', { leaseId: 'lease-1' })
   })
+
+  it('底层 IPC/ENOENT 报错不直出界面，翻译为产品化提示', async () => {
+    request.mockRejectedValue(new Error("Error invoking remote method 'fileViews:request': Error: ENOENT: no such file or directory, realpath 'C:\\missing\\a.txt'"))
+    await useFilePreviewStore.getState().open(scope, 'a.txt')
+    expect(useFilePreviewStore.getState().current?.error).toBe('文件不存在或已被移除')
+  })
 })

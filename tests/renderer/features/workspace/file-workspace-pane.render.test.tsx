@@ -248,4 +248,28 @@ describe('文件工作面组合', () => {
       clientWidthSpy.mockRestore()
     }
   })
+
+  it('长路径面包屑支持鼠标滚轮与左键拖动横向滚动', () => {
+    const scope = 'ordinary-wheel-drag'
+    useWorkspaceStore.getState().setScope(scope)
+    const id = seed(scope, 'interrupt-test.txt', 'C:/Users/41631/manual-test/notes')
+    const scrollWidthSpy = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(1200)
+    try {
+      render(<FileWorkspacePane {...props(scope, id)} projectId={undefined} />)
+      const breadcrumb = screen.getByRole('navigation', { name: '文件位置' })
+      expect(breadcrumb.scrollLeft).toBe(1200)
+
+      fireEvent.wheel(breadcrumb, { deltaY: -200 })
+      expect(breadcrumb.scrollLeft).toBe(1000)
+
+      fireEvent.pointerDown(breadcrumb, { button: 0, pointerId: 1, clientX: 100, pointerType: 'mouse' })
+      fireEvent.pointerMove(breadcrumb, { pointerId: 1, clientX: 160 })
+      expect(breadcrumb).toHaveAttribute('data-dragging')
+      expect(breadcrumb.scrollLeft).toBe(940)
+      fireEvent.pointerUp(breadcrumb, { pointerId: 1, clientX: 160 })
+      expect(breadcrumb).not.toHaveAttribute('data-dragging')
+    } finally {
+      scrollWidthSpy.mockRestore()
+    }
+  })
 })

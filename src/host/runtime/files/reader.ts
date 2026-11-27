@@ -12,6 +12,7 @@ import type {
   FileKind
 } from '../../../shared/files'
 import { FILE_LIMITS } from '../../../shared/files'
+import { toUserFileError } from '../../../shared/file-errors'
 import { resolveFileTarget } from './paths'
 import { parseInWorker } from '../read-attachment'
 
@@ -130,8 +131,14 @@ export class FileService {
     target: { location?: FileDescriptor['location']; locationWarning?: string } = {}, saved = true, independent = false): Promise<FileDescriptor> {
     this.origin(sessionId, turnId)
     const alias = path
-    const real = await realpath(alias)
-    const info = await stat(real)
+    let real: string
+    let info: Awaited<ReturnType<typeof stat>>
+    try {
+      real = await realpath(alias)
+      info = await stat(real)
+    } catch (error) {
+      throw toUserFileError(error, 'path')
+    }
     if (!info.isFile() && !info.isDirectory()) throw new Error('仅支持普通文件和目录')
     const extension = extname(real).toLowerCase()
     const [kind, mime] = info.isDirectory()
@@ -174,13 +181,24 @@ export class FileService {
     const entry = this.entries.get(handle.fileId)
     if (entry === undefined || entry.sessionId !== handle.sessionId)
       throw new Error('文件标识已失效，请重新点击文件链接')
-    if ((await realpath(entry.alias)) !== entry.real)
+    let actual: string
+    try {
+      actual = await realpath(entry.alias)
+    } catch (error) {
+      throw toUserFileError(error, 'path')
+    }
+    if (actual !== entry.real)
       throw new Error('符号链接目标已变化，请重新点击文件链接')
     return entry
   }
   async actionTarget(handle: FileHandle) {
     const entry = await this.checked(handle)
-    const info = await stat(entry.real)
+    let info: Awaited<ReturnType<typeof stat>>
+    try {
+      info = await stat(entry.real)
+    } catch (error) {
+      throw toUserFileError(error, 'path')
+    }
     if (!info.isFile() && !info.isDirectory()) throw new Error('目标已经不是普通文件或目录')
     return {
       path: entry.delivery === undefined ? entry.real : await entry.delivery.actionTarget(),
@@ -191,7 +209,13 @@ export class FileService {
   /** 受管网页预览只在 Host 内取规范路径；外部仍通过有版本的分片读取。 */
   async previewTarget(handle: FileHandle) {
     const entry = await this.checked(handle)
-    if (version(await stat(entry.real)) !== entry.descriptor.version) throw new Error('文件已变化，请重新加载')
+    let info: Awaited<ReturnType<typeof stat>>
+    try {
+      info = await stat(entry.real)
+    } catch (error) {
+      throw toUserFileError(error, 'file')
+    }
+    if (version(info) !== entry.descriptor.version) throw new Error('文件已变化，请重新加载')
     return { path: entry.real, version: entry.descriptor.version }
   }
 
@@ -212,12 +236,24 @@ export class FileService {
     try {
       operation.controller.signal.throwIfAborted()
       const entry = await this.checked(read)
-      if (version(await stat(entry.real)) !== read.version)
+      let beforeInfo: Awaited<ReturnType<typeof stat>>
+      try {
+        beforeInfo = await stat(entry.real)
+      } catch (error) {
+        throw toUserFileError(error, 'file')
+      }
+      if (version(beforeInfo) !== read.version)
         throw new Error('文件已变化，请重新加载')
       const result = await work(entry, operation.controller.signal)
       operation.controller.signal.throwIfAborted()
       await this.checked(read)
-      if (version(await stat(entry.real)) !== read.version)
+      let afterInfo: Awaited<ReturnType<typeof stat>>
+      try {
+        afterInfo = await stat(entry.real)
+      } catch (error) {
+        throw toUserFileError(error, 'file')
+      }
+      if (version(afterInfo) !== read.version)
         throw new Error('文件在读取期间发生变化，请重新加载')
       return result
     } finally {
@@ -256,7 +292,12 @@ export class FileService {
     offset: number,
     length: number
   ): Promise<Buffer> {
-    const file = await open(entry.real, 'r')
+    let file: Awaited<ReturnType<typeof open>>
+    try {
+      file = await open(entry.real, 'r')
+    } catch (error) {
+      throw toUserFileError(error, 'file')
+    }
     try {
       const info = await file.stat()
       if (!info.isFile() || version(info) !== expected) throw new Error('文件已变化，请重新加载')
@@ -265,6 +306,8 @@ export class FileService {
       if (version(await file.stat()) !== expected)
         throw new Error('文件在读取期间发生变化，请重新加载')
       return buffer.subarray(0, bytesRead)
+    } catch (error) {
+      throw toUserFileError(error, 'file')
     } finally {
       await file.close()
     }

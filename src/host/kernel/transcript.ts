@@ -64,7 +64,21 @@ export interface AttachmentInput {
   attachments: AttachmentRef[]
   directories?: DirectoryRef[]
 }
-export type AttachmentMessage = AgentMessage & { sourceId?: string; attachmentInput?: AttachmentInput; fileContext?: FileContext; toolFileRefs?: Record<string, FileReference[]> }
+/** 结构化技能/命令实体的呈现元数据；用户气泡仅显示实体与原始正文，不泄露展开后的 SKILL.md 全文。 */
+export interface SkillInput {
+  version: 1
+  userEntryId: string
+  text: string
+  skills?: Array<{ name: string }>
+  command?: { name: 'init' }
+}
+export type AttachmentMessage = AgentMessage & {
+  sourceId?: string
+  attachmentInput?: AttachmentInput
+  skillInput?: SkillInput
+  fileContext?: FileContext
+  toolFileRefs?: Record<string, FileReference[]>
+}
 
 /**
  * 投影源里的压缩条：pi 的 CompactionSummaryMessage 不带 usage
@@ -109,6 +123,7 @@ export function readPiTranscript(cwd: string, hostRoot: string, sessionId: strin
   const messages: AttachmentMessage[] = []
   const branch = readSessionBranch(file, cwd, sessionId)
   const inputs = new Map<string, AttachmentInput>()
+  const skillInputs = new Map<string, SkillInput>()
   const contexts = new Map<string, FileContext>()
   const references: Record<string, FileReference[]> = {}
   for (const entry of branch) {
@@ -132,14 +147,34 @@ export function readPiTranscript(cwd: string, hostRoot: string, sessionId: strin
         (data.directories !== undefined && (!Array.isArray(data.directories) || !data.directories.every(isDirectoryRef)))) throw new Error('附件消息元数据损坏')
       inputs.set(data.userEntryId, data as AttachmentInput)
     }
+    if (entry.type === 'custom' && entry.customType === 'cogent.skill-input.v1') {
+      const data = entry.data as Partial<Record<keyof SkillInput, unknown>>
+      if (
+        data.version !== 1 ||
+        typeof data.userEntryId !== 'string' ||
+        typeof data.text !== 'string' ||
+        (data.skills !== undefined && (!Array.isArray(data.skills) || !data.skills.every((item: unknown) => typeof item === 'object' && item !== null && 'name' in item && typeof item.name === 'string'))) ||
+        (data.command !== undefined && (typeof data.command !== 'object' || data.command === null || !('name' in data.command) || data.command.name !== 'init'))
+      ) {
+        throw new Error('技能与命令消息元数据损坏')
+      }
+      skillInputs.set(data.userEntryId, data as unknown as SkillInput)
+    }
   }
   let context: FileContext | undefined
   for (const entry of branch) {
     if (entry.type === 'message') {
       const input = inputs.get(entry.id)
+      const skillInput = skillInputs.get(entry.id)
       if (entry.message.role === 'user') context = contexts.get(entry.id) ?? (typeof entry.message.content === 'string' && entry.message.content.startsWith('[cogent:continue]') ? context : undefined)
-      messages.push({ ...entry.message, sourceId: entry.id, ...(input !== undefined && { attachmentInput: input }),
-        ...(context !== undefined && { fileContext: context }), toolFileRefs: references })
+      messages.push({
+        ...entry.message,
+        sourceId: entry.id,
+        ...(input !== undefined && { attachmentInput: input }),
+        ...(skillInput !== undefined && { skillInput }),
+        ...(context !== undefined && { fileContext: context }),
+        toolFileRefs: references
+      })
     } else if (entry.type === 'compaction') {
       const bar: CompactionBarSource = {
         role: 'compactionSummary',

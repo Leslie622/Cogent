@@ -455,6 +455,22 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
 })
 
 describe('HomeChat 提交回包与输入区身份', () => {
+  const activeDraftId = (): string => {
+    const current = useHomeStore.getState().session
+    return current.kind === 'chat'
+      ? (localStorage.getItem(`cogent.chat-draft.${current.chatId}`) ?? `chat-${current.chatId}`)
+      : `new-${current.draftId ?? 'default'}`
+  }
+  const typeText = (text: string): void => {
+    act(() => {
+      useAttachmentStore.getState().setContent(activeDraftId(), text, [])
+    })
+  }
+  const clickSend = (): void => {
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+  }
+  const composerInput = (): HTMLElement => screen.getByRole('textbox', { name: '聊天输入框' })
+
   it('新聊天物化后沿用原草稿，受理期间继续输入也不丢字', async () => {
     settleInitialRun()
     const draftId = 'new-materializing'
@@ -464,12 +480,12 @@ describe('HomeChat 提交回包与输入区身份', () => {
     const pending = new Promise<string | false>((resolve) => { finish = resolve })
     useChatStore.setState({ submit: () => { useChatStore.setState({ activeSessionId: 'materialized' }); return pending } })
     render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
-    const input = screen.getByPlaceholderText('随心输入')
-    fireEvent.change(input, { target: { value: '第一次发送' } }); fireEvent.keyDown(input, { key: 'Enter' })
-    fireEvent.change(input, { target: { value: '发送后继续写' } })
+    typeText('第一次发送')
+    clickSend()
+    typeText('发送后继续写')
     await act(async () => { finish('materialized'); await Promise.resolve() })
     expect(useHomeStore.getState().session).toEqual({ kind: 'chat', chatId: 'materialized' })
-    expect(screen.getByPlaceholderText('随心输入')).toHaveValue('发送后继续写')
+    expect(composerInput().textContent).toBe('发送后继续写')
     expect(localStorage.getItem('cogent.chat-draft.materialized')).toBe(draftId)
   })
   function pendingSubmission() {
@@ -491,64 +507,60 @@ describe('HomeChat 提交回包与输入区身份', () => {
   it.each(['resolved', 'rejected'] as const)('停止后旧submit %s 不清掉用户后来重新编辑的同文草稿', async (settlement) => {
     settleInitialRun()
     render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
-    const input = screen.getByPlaceholderText('随心输入')
-    fireEvent.change(input, { target: { value: '本次问题' } })
+    typeText('本次问题')
     const old = pendingSubmission()
-    fireEvent.keyDown(input, { key: 'Enter' })
+    clickSend()
     expect(engineRequest).toHaveBeenCalledWith('agent.submit', expect.objectContaining({ text: '本次问题' }))
     act(() => { emit({ method: 'run.failed', params: { sessionId: SID, reason: 'aborted', message: '已停止' } }) })
-    fireEvent.change(input, { target: { value: '另一个草稿' } })
-    fireEvent.change(input, { target: { value: '本次问题' } })
+    typeText('另一个草稿')
+    typeText('本次问题')
     await act(async () => {
       if (settlement === 'resolved') old.resolve({ accepted: true })
       else old.reject(new Error('过期提交拒绝'))
       await Promise.resolve()
     })
-    expect(input).toHaveValue('本次问题')
+    expect(composerInput().textContent).toBe('本次问题')
     expect(screen.getByText('已停止')).toBeInTheDocument()
   })
 
   it('旧submit成功不能把用户已切换的新聊天视图翻回旧会话', async () => {
     settleInitialRun()
     render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
-    const input = screen.getByPlaceholderText('随心输入')
-    fireEvent.change(input, { target: { value: '旧会话问题' } })
+    typeText('旧会话问题')
     const old = pendingSubmission()
-    fireEvent.keyDown(input, { key: 'Enter' })
+    clickSend()
     act(() => {
       emit({ method: 'run.failed', params: { sessionId: SID, reason: 'aborted', message: '已停止' } })
       useHomeStore.setState({ session: { kind: 'new' } })
     })
     await act(async () => { old.resolve({ accepted: true }); await Promise.resolve() })
     expect(useHomeStore.getState().session.kind).toBe('new')
-    expect(screen.getByPlaceholderText('随心输入')).toHaveValue('')
+    expect(composerInput().textContent).toBe('')
   })
 
   it('同文重发的新请求仍在途时，旧成功回包不能提前清新请求草稿', async () => {
     settleInitialRun()
     render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
-    const input = screen.getByPlaceholderText('随心输入')
-    fireEvent.change(input, { target: { value: '同一个问题' } })
+    typeText('同一个问题')
     const first = pendingSubmission()
-    fireEvent.keyDown(input, { key: 'Enter' })
+    clickSend()
     act(() => { emit({ method: 'run.failed', params: { sessionId: SID, reason: 'aborted', message: '已停止' } }) })
     const second = pendingSubmission()
-    fireEvent.keyDown(input, { key: 'Enter' })
+    clickSend()
     await act(async () => { first.resolve({ accepted: true }); await Promise.resolve() })
-    expect(input).toHaveValue('同一个问题')
+    expect(composerInput().textContent).toBe('同一个问题')
     await act(async () => { second.resolve({ accepted: true }); await Promise.resolve() })
-    expect(input).toHaveValue('')
+    expect(composerInput().textContent).toBe('')
   })
 
   it('当次submit受理会清原草稿，当次拒绝保留原文供重试', async () => {
     settleInitialRun()
     render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
-    const input = screen.getByPlaceholderText('随心输入')
-    fireEvent.change(input, { target: { value: '可重试问题' } })
+    typeText('可重试问题')
     engineRequest.mockRejectedValueOnce(new Error('本次提交失败'))
-    await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); await Promise.resolve() })
-    expect(input).toHaveValue('可重试问题')
-    await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); await Promise.resolve() })
-    expect(input).toHaveValue('')
+    await act(async () => { clickSend(); await Promise.resolve() })
+    expect(composerInput().textContent).toBe('可重试问题')
+    await act(async () => { clickSend(); await Promise.resolve() })
+    expect(composerInput().textContent).toBe('')
   })
 })

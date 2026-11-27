@@ -323,7 +323,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
   },
 
-  submit: async (text, model, thinkingLevel, provider, attachments = [], directories = []) => {
+  submit: async (text, model, thinkingLevel, provider, attachments = [], directories = [], skills = [], command) => {
     // 会话物化条件：**新聊天视图态优先于 activeSessionId**。
     // startNewChat 只翻视图态不清 activeSessionId —— 只看 id 会把"新聊天"里的
     // 首条消息落进残留的旧会话（权限暂存位随之被绕过：新聊天切自主，发消息后
@@ -350,6 +350,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       content: text,
       ...(attachments.length > 0 && { attachments }),
       ...(directories.length > 0 && { directories }),
+      ...(skills.length > 0 && { skills: skills.map((name) => ({ name })) }),
+      ...(command !== undefined && { command }),
       timestamp: Date.now()
     }
     set((state) =>
@@ -372,10 +374,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // provider 随 model 下发：同名模型被多家目录收录（azure 也收录 deepseek-v4-pro），
     // 只传 id 引擎全局查找有歧义（详见 protocol AgentSubmitParams.provider 注释）
     try {
-      await window.cogent.engineRequest('agent.submit', { sessionId, text, model, thinkingLevel, provider,
+      await window.cogent.engineRequest('agent.submit', {
+        sessionId,
+        text,
+        model,
+        thinkingLevel,
+        provider,
         ...(attachments.length > 0 && { attachmentIds: attachments.map((a) => a.id) }),
         inputId: userMessage.id,
-        ...(directories.length > 0 && { directories }) })
+        ...(directories.length > 0 && { directories }),
+        ...(skills.length > 0 && { skills }),
+        ...(command !== undefined && { command })
+      })
       return sessionId
     } catch (error) {
       // IPC回包晚于终态/新run/删桶时，旧请求没有队列、消息或输入区的回写权。
@@ -488,11 +498,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  compactNow: async () => {
+  compactNow: async (instructions) => {
     const sessionId = get().activeSessionId
     if (sessionId === null) return
+    const trimmed = instructions?.trim()
     try {
-      await window.cogent.engineRequest('session.compact', { sessionId })
+      await window.cogent.engineRequest('session.compact', {
+        sessionId,
+        ...(trimmed !== undefined && trimmed.length > 0 && { instructions: trimmed })
+      })
       // 成功的折叠条/回落走既有 compaction 事件路径（completed 做列表手术）
     } catch (error) {
       // 无可压缩/引擎拒绝：手动动作要明确结果 —— 落会话错误条

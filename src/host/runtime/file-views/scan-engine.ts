@@ -5,6 +5,7 @@ import type { Dir } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import ignore from 'ignore'
 import type { FileViewDirectory, FileViewEntry, FileViewRoot, FileViewSearch } from '../../../shared/file-views'
+import { formatFileSystemError, toUserFileError } from '../../../shared/file-errors'
 
 export interface ScanRoot extends FileViewRoot { realPath: string }
 export type ScanRequest =
@@ -26,14 +27,20 @@ export function pathFor(roots: ScanRoot[], id: string): { root: ScanRoot; path: 
   return { root, path }
 }
 export async function checkedPath(root: ScanRoot, path: string): Promise<string> {
-  if (!within(root.path, path) || await realpath(root.path) !== root.realPath) throw new Error('授权根已变化，请重新选择')
-  const actual = await realpath(path)
+  let rootReal: string
+  try { rootReal = await realpath(root.path) } catch (error) { throw toUserFileError(error, root.kind === 'file' ? 'file' : 'directory') }
+  if (!within(root.path, path) || rootReal !== root.realPath) throw new Error('授权根已变化，请重新选择')
+  let actual: string
+  try { actual = await realpath(path) } catch (error) { throw toUserFileError(error, 'path') }
   if (!within(root.realPath, actual)) throw new Error('符号链接超出授权根')
   return actual
 }
 const collator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
 const sortEntries = (a: FileViewEntry, b: FileViewEntry) => Number(b.kind === 'directory') - Number(a.kind === 'directory') || collator.compare(a.name, b.name) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
-const identity = async (path: string) => { const info = await stat(path); return `${info.dev}:${info.ino}:${info.mtimeMs}:${info.ctimeMs}` }
+const identity = async (path: string) => {
+  try { const info = await stat(path); return `${info.dev}:${info.ino}:${info.mtimeMs}:${info.ctimeMs}` }
+  catch (error) { throw toUserFileError(error, 'path') }
+}
 interface Snapshot { id: string; contextId: string; directoryId: string; path: string; root: ScanRoot; identity: string; entries: FileViewEntry[]; bytes: number; truncated: boolean; generation: number; touched: number }
 type Rules = Array<{ base: string; matcher: ReturnType<typeof ignore> }>
 interface PendingDirectory { root: ScanRoot; path: string; rules: Rules }
@@ -46,7 +53,7 @@ export class FileScanEngine {
     let blockedReason: string | undefined
     if (symlink) {
       try { directory = (await stat(await checkedPath(root, path))).isDirectory() }
-      catch (error) { blockedReason = error instanceof Error ? error.message : String(error) }
+      catch (error) { blockedReason = formatFileSystemError(error, 'path') }
     }
     const part = relative(root.path, path)
     return { id: entryId(root.id, part), rootId: root.id, path, relativePath: part.split(sep).join('/'), name: basename(path), kind: directory ? 'directory' : 'file', symlink, ...(blockedReason === undefined ? {} : { blockedReason }) }
@@ -89,7 +96,8 @@ export class FileScanEngine {
       const { root, path } = pathFor(request.roots, request.directoryId)
       await checkedPath(root, path)
       const before = await identity(path)
-      const dir = await opendir(path)
+      let dir: Dir
+      try { dir = await opendir(path) } catch (error) { throw toUserFileError(error, 'directory') }
       const entries: FileViewEntry[] = []
       let bytes = 0; let truncated = false
       try {

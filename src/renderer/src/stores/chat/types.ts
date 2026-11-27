@@ -222,7 +222,16 @@ export interface ChatState {
   rename: (sessionId: string, title: string) => Promise<void>
   archive: (sessionId: string, archived: boolean) => Promise<void>
   /** true = 引擎受理；false = 旧调用已失效，输入区不执行成功后续；当次拒绝仍抛错 */
-  submit: (text: string, model?: string, thinkingLevel?: string, provider?: string, attachments?: AttachmentRef[], directories?: DirectoryRef[]) => Promise<string | false>
+  submit: (
+    text: string,
+    model?: string,
+    thinkingLevel?: string,
+    provider?: string,
+    attachments?: AttachmentRef[],
+    directories?: DirectoryRef[],
+    skills?: string[],
+    command?: { name: 'init' }
+  ) => Promise<string | false>
   abort: () => Promise<void>
   /** 审批裁决（专属 IPC 通道）：先收面板/落痕迹行（乐观），引擎侧竞态失败不回滚；
       options.message = 拒绝附言（「告诉模型接下来怎么做」），options.always =
@@ -237,7 +246,6 @@ export interface ChatState {
   /** 手动续写（截断动作条）：注入引擎侧续写指令再跑 —— 无用户
       泡（指令消息在引擎投影层并入相邻段），乐观置运行态，事件流照常驱动 */
   continueGeneration: () => Promise<void>
-  /** 手动压缩（截断动作条的腾地方向）：session.compact，折叠条/回落由既有
-      compaction 事件路径呈现；失败落会话错误条（手动动作要明确结果） */
-  compactNow: () => Promise<void>
+  /** 手动压缩（截断动作条或 /compact 命令）：session.compact，支持可选压缩说明 */
+  compactNow: (instructions?: string) => Promise<void>
 }

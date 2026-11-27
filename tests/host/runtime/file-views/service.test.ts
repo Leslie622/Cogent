@@ -299,4 +299,10 @@ describe('多标签文件资源', () => {
     expect(() => handlers.get('fileViews.acquire')!({ windowId: 2, operationId: 'op', source: { kind: 'exec', path: 'calc' } })).toThrow('来源')
     expect(() => handlers.get('fileViews.readChunk')!({ windowId: 2, leaseId: 'x', version: 'v', operationId: 'op', offset: 0, length: 1024 ** 2 })).toThrow('范围')
   })
+  it('不存在的目录或文件返回友好中文提示，不暴露裸 ENOENT 与真实路径', async () => {
+    const f = await fixture()
+    const missingDir = join(f.root, 'deleted-dir')
+    await expect(f.service.registerContext(1, 'session', [{ id: 'missing', path: missingDir, name: 'deleted-dir', kind: 'directory' }])).rejects.toThrow('目录不存在或已被移除')
+    await expect(f.service.acquire(1, { kind: 'session', sessionId: 'session', rawTarget: './deleted-file.txt' }, 'missing-file')).rejects.toThrow('文件或目录不存在或已被移除')
+  })
 })

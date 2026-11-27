@@ -6,10 +6,11 @@ import {
   type ItemInstance, type TreeInstance
 } from '@headless-tree/core'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ChevronDown, ChevronRight, Folder, FolderOpen, LoaderCircle, RefreshCw, Search, Square, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, FolderOpen, FolderX, LoaderCircle, RefreshCw, Search, Square, X } from 'lucide-react'
 import type { FileViewContext, FileViewEntry } from '@shared/file-views'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
 import { Hint } from '@/components/Hint'
 import { FileIcon } from '@/components/FileIcon'
@@ -241,12 +242,31 @@ export function FileNavigator({ scopeId, projectId, sessionId, grantIds, active 
         {snapshot.roots.length > 0 && <Hint tip="刷新文件"><Button variant="ghost" size="icon-xs" aria-label="刷新文件" disabled={snapshot.opening} onClick={() => void owner.refresh()}><RefreshCw /></Button></Hint>}
       </div>
       {snapshot.query.trim() !== '' && <label className="flex items-center gap-1.5 px-2 pb-2 text-xs"><Checkbox checked={snapshot.includeIgnored} onCheckedChange={owner.setIncludeIgnored} />包含忽略项</label>}
-      {snapshot.error !== null && <div role="alert" className="px-2 py-2 text-sm">{snapshot.error}<Button variant="ghost" size="xs" onClick={() => void owner.openContext()}>重试</Button></div>}
       {snapshot.notice !== null && <div role="status" className="px-2 py-2 text-xs text-muted-foreground">{snapshot.notice}</div>}
-      {snapshot.opening && snapshot.context === null ? <div role="status" className="flex items-center justify-center gap-2 p-4 text-sm"><LoaderCircle className="size-4 animate-spin" />正在打开文件导航…</div>
-        : snapshot.context !== null && snapshot.roots.length === 0 ? <div className="flex flex-col items-center gap-2 p-4 text-center text-sm text-muted-foreground"><FolderOpen aria-hidden="true" className="size-5" /><p>当前目录为空</p></div>
-          : snapshot.query.trim() !== '' ? <SearchResults owner={owner} snapshot={snapshot} onOpen={onOpen} />
-            : <FileTree owner={owner} snapshot={snapshot} onOpen={onOpen} selectedPath={selectedPath} />}
+      {snapshot.error !== null ? (
+        <Empty role="alert" className="p-4">
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><FolderX aria-hidden="true" /></EmptyMedia>
+            <EmptyTitle className="break-words">{snapshot.error}</EmptyTitle>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button variant="outline" size="xs" onClick={() => void owner.openContext()}>重试</Button>
+          </EmptyContent>
+        </Empty>
+      ) : snapshot.opening && snapshot.context === null ? (
+        <div role="status" className="flex flex-1 items-center justify-center gap-2 p-4 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />正在打开文件导航…</div>
+      ) : snapshot.context !== null && snapshot.roots.length === 0 ? (
+        <Empty className="p-4">
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><FolderOpen aria-hidden="true" /></EmptyMedia>
+            <EmptyDescription>当前目录为空</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : snapshot.query.trim() !== '' ? (
+        <SearchResults owner={owner} snapshot={snapshot} onOpen={onOpen} />
+      ) : (
+        <FileTree owner={owner} snapshot={snapshot} onOpen={onOpen} selectedPath={selectedPath} />
+      )}
     </section>
   )
 }

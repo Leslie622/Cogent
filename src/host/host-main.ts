@@ -433,7 +433,18 @@ async function main(): Promise<void> {
       thinkingLevel 值域与协议 ThinkingLevelWithOff 对齐（satisfies 钉住，防白名单与
       枚举漂移）——'off' 是 pi 原生档（关闭思考），漏收它会把滑杆默认档拒之门外 */
   function handleAgentSubmit(params: unknown) {
-    const p = params as Partial<{ sessionId: unknown; text: unknown; model: unknown; provider: unknown; thinkingLevel: unknown; attachmentIds: unknown; inputId: unknown; directories: unknown }>
+    const p = params as Partial<{
+      sessionId: unknown
+      text: unknown
+      model: unknown
+      provider: unknown
+      thinkingLevel: unknown
+      attachmentIds: unknown
+      inputId: unknown
+      directories: unknown
+      skills: unknown
+      command: unknown
+    }>
     const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const satisfies readonly ThinkingLevelWithOff[]
     if (typeof p.sessionId !== 'string' || p.sessionId.length === 0 || typeof p.text !== 'string') {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'agent.submit 需要 { sessionId: string, text: string }')
@@ -458,11 +469,34 @@ async function main(): Promise<void> {
     if (p.attachmentIds !== undefined && (!Array.isArray(p.attachmentIds) ||
       !p.attachmentIds.every((id) => typeof id === 'string' && /^[a-f0-9-]{36}$/.test(id)))) throw new Error('attachmentIds 不合法')
     if (p.inputId !== undefined && (typeof p.inputId !== 'string' || p.inputId.length > 100)) throw new Error('inputId 不合法')
+    let skills: string[] = []
+    if (p.skills !== undefined) {
+      if (
+        !Array.isArray(p.skills) ||
+        !p.skills.every((name): name is string => typeof name === 'string' && name.length > 0 && name.length <= 64)
+      ) {
+        throw new ProtocolError(RpcErrorCode.InvalidParams, 'agent.submit 的 skills 必须是非空字符串数组')
+      }
+      skills = [...new Set(p.skills)]
+    }
+    let command: { name: 'init' } | undefined
+    if (p.command !== undefined) {
+      if (typeof p.command !== 'object' || p.command === null || (p.command as { name?: unknown }).name !== 'init') {
+        throw new ProtocolError(RpcErrorCode.InvalidParams, 'agent.submit 的 command 仅支持 { name: "init" }')
+      }
+      command = { name: 'init' }
+    }
     const directories = p.directories === undefined ? [] : prepareDirectoryReferences(p.directories)
-    if (p.text.trim().length === 0 && (p.attachmentIds === undefined || p.attachmentIds.length === 0) && directories.length === 0) {
+    if (
+      p.text.trim().length === 0 &&
+      (p.attachmentIds === undefined || p.attachmentIds.length === 0) &&
+      directories.length === 0 &&
+      skills.length === 0 &&
+      command === undefined
+    ) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, '正文和附件不能同时为空')
     }
-    const run = sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel, p.provider, p.attachmentIds, p.inputId, directories)
+    const run = sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel, p.provider, p.attachmentIds, p.inputId, directories, skills, command)
     return { accepted: true as const, ...run }
   }
 

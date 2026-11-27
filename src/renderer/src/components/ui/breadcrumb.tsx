@@ -4,11 +4,13 @@ import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import { cn } from "cn"
 import { ChevronRightIcon, MoreHorizontalIcon } from "lucide-react"
-import { useHorizontalScrollFade } from "@/hooks/use-horizontal-scroll-fade"
+import { useHorizontalScrollFade, useHorizontalScrollPan } from "@/hooks/use-horizontal-scroll-fade"
 
 function Breadcrumb({ className, variant = "default", ref, children, ...props }: React.ComponentProps<"nav"> & { variant?: "default" | "scroll" }) {
   const viewport = React.useRef<HTMLElement>(null)
-  useHorizontalScrollFade(viewport, variant === "scroll", children)
+  const scrollable = variant === "scroll"
+  useHorizontalScrollFade(viewport, scrollable, children)
+  useHorizontalScrollPan(viewport, scrollable)
   return useRender({
     defaultTagName: "nav",
     ref: [viewport, ref ?? null],
@@ -16,7 +18,10 @@ function Breadcrumb({ className, variant = "default", ref, children, ...props }:
       "aria-label": "breadcrumb",
       "data-slot": "breadcrumb",
       "data-variant": variant,
-      className: cn(variant === "scroll" && "scroll-fade-x scroll-fade-edges overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", className),
+      className: cn(
+        scrollable && "scroll-fade-x scroll-fade-edges overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&[data-scroll-left]:not([data-dragging])]:cursor-grab [&[data-scroll-right]:not([data-dragging])]:cursor-grab data-[dragging]:cursor-grabbing data-[dragging]:**:cursor-grabbing data-[dragging]:select-none",
+        className
+      ),
       children,
       ...props,
     },

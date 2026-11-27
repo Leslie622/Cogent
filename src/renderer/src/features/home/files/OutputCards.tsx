@@ -2,6 +2,7 @@
 import { useContext, useState } from 'react'
 import { AppWindow, ChevronDown, Copy, Download, Eye, FolderOpen, Pencil } from 'lucide-react'
 import type { OutputItem, OutputTarget, TurnOutputs } from '@shared/outputs'
+import { formatFileSystemError } from '@shared/file-errors'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
@@ -25,7 +26,7 @@ function OutputCard({ doc, item }: { doc: TurnOutputs; item: OutputItem }) {
       const lease = await acquireFile({ sessionId: doc.sessionId, refs: [] }, item.sourcePath, crypto.randomUUID(), { ...target, version: action === 'reveal' || action === 'editor' ? 'current' : 'delivery' })
       try { await window.cogent.fileViewsRequest('fileViews.action', { leaseId: lease.leaseId, action }) }
       finally { await releaseFile(lease.leaseId) }
-    } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
+    } catch (error) { setError(formatFileSystemError(error, 'file')) }
   }
   const type = item.name.includes('.') ? item.name.split('.').at(-1)!.toUpperCase() : '文件'
   return <>
@@ -48,7 +49,7 @@ function OutputCard({ doc, item }: { doc: TurnOutputs; item: OutputItem }) {
                 <DropdownMenuItem onClick={() => open('current')}><Eye />预览当前原文件</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => void action('editor')}><Pencil />编辑当前原文件</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => void action('reveal')}><FolderOpen />在原目录定位</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => void navigator.clipboard.writeText(item.sourcePath).catch((error: unknown) => setError(error instanceof Error ? error.message : String(error)))}><Copy />复制原文件路径</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void navigator.clipboard.writeText(item.sourcePath).catch((error: unknown) => setError(formatFileSystemError(error, 'file')))}><Copy />复制原文件路径</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </ButtonGroup>

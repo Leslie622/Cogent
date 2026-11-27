@@ -234,6 +234,14 @@ export interface ToolCallRecord {
  * 工具循环落地 —— 段化投影，见 run.completed.messages 注释）；
  * 完整块结构化（phase/签名透传等）仍是路线第 1 项，届时继续以 optional 字段扩展。
  */
+export interface SubmittedSkillRef {
+  name: string
+}
+
+export interface SubmittedCommandRef {
+  name: 'init'
+}
+
 export interface ChatMessage {
   /** 来源与 UI key 分离；续写合并时区间一同平移。 */
   sources?: import('../shared/session-search').MessageSource[]
@@ -241,6 +249,10 @@ export interface ChatMessage {
   fileContext?: FileContext
   attachments?: import('../shared/attachments').AttachmentRef[]
   directories?: import('../shared/attachments').DirectoryRef[]
+  /** 本条用户消息显式携带的技能实体（仅呈现元数据，正文不含展开后的 SKILL.md） */
+  skills?: SubmittedSkillRef[]
+  /** 本条用户消息显式携带的内置 Prompt 命令实体 */
+  command?: SubmittedCommandRef
   id: string
   /**
    * role 'compaction'（additive）= 上下文压缩折叠条：
@@ -352,6 +364,10 @@ export interface InitializeResult {
 export interface AgentSubmitParams {
   attachmentIds?: string[]
   directories?: import('../shared/attachments').DirectoryRef[]
+  /** 随消息显式选中的技能实体名列表（按输入序，由 Host 活快照展开） */
+  skills?: string[]
+  /** 随消息显式选中的内置 Prompt 型命令实体 */
+  command?: SubmittedCommandRef
   inputId?: string
   sessionId: string
   text: string

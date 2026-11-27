@@ -198,4 +198,22 @@ describe('SkillStore', () => {
     )
     expect(store.expandSkillCommand('/skill:manual')).toContain('手动态正文')
   })
+
+  it('expandSkillsByName：按名活展开多枚技能；禁用或不存在显式报错', () => {
+    const root = newRoot()
+    const ws = join(root, 'ws')
+    const store = new SkillStore(root, join(root, 'agents'))
+    store.save('user', undefined, 'alpha', '技能 A', '正文 A')
+    store.save('user', undefined, 'beta', '技能 B', '正文 B')
+    const blocks = store.expandSkillsByName(['alpha', 'beta'], [ws])
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]).toContain('<skill name="alpha"')
+    expect(blocks[0]).toContain('正文 A')
+    expect(blocks[1]).toContain('<skill name="beta"')
+    expect(blocks[1]).toContain('正文 B')
+
+    store.setEnabled('user', undefined, 'beta', 'disabled')
+    expect(() => store.expandSkillsByName(['beta'], [ws])).toThrow(/不存在或已禁用/)
+    expect(() => store.expandSkillsByName(['missing'], [ws])).toThrow(/不存在或已禁用/)
+  })
 })

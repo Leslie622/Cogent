@@ -35,7 +35,6 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import {
   InputGroup,
   InputGroupAddon,
-  InputGroupTextarea,
 } from '@/components/ui/input-group'
 import {
   MessageScroller,
@@ -81,6 +80,11 @@ import { ContextIndicator } from './ContextIndicator'
 import { useChatTheme } from './ChatTheme'
 import type { MessageLike } from './MessageRow'
 import { groupTurns, TurnGroup, type TurnPhase } from './TurnGroup'
+import { RenameChatDialog } from './RenameChatDialog'
+import { useUiStore } from '@/stores/ui'
+import { ComposerLexicalEditor, type LocalSlashAction } from './composer/ComposerLexicalEditor'
+import { prepareComposerSubmission } from './composer/commands'
+import { ENTITY_SENTINEL, type ComposerEntity } from './composer/types'
 
 // ConversationIndex/ModelMenu 经本文件取消息渲染形状 —— 再导出保持既有导入路径
 export type { MessageLike } from './MessageRow'
@@ -343,22 +347,32 @@ function ChatComposer({
   draftId,
   draft,
   value,
-  onValueChange
+  entities,
+  onContentChange,
+  onRequestRename
 }: {
   session: HomeSession
   draftId: string
   draft: Draft
   value: string
-  onValueChange: (next: string) => void
+  entities: readonly ComposerEntity[]
+  onContentChange: (nextText: string, nextEntities: ComposerEntity[]) => void
+  onRequestRename: () => void
 }) {
   // 草稿仓持有提交身份与编辑代次；输入区因审批卸载也不丢提交后的新编辑。
-  const setValue = onValueChange
   const running = useChatStore(selectRunning)
+  const compacting = useChatStore(selectCompacting)
+  const truncated = useChatStore(selectTruncated)
+  const hasMessages = useChatStore((s) => {
+    if (session.kind !== 'chat') return false
+    return (s.bySession[session.chatId]?.messages.length ?? 0) > 0
+  })
   const submit = useChatStore((s) => s.submit)
   const abort = useChatStore((s) => s.abort)
   const sendShortcut = useEngineStore((s) => s.sendShortcut)
   const activeModelId = useEngineStore((s) => s.activeModelId)
   const thinkingLevel = useEngineStore((s) => s.thinkingLevel)
+  const [commandError, setCommandError] = useState<string | null>(null)
   // 活动模型的 provider：双键查找（findActiveModel）。id 单键两处撞车 —— 全集里
   // 撞未配 key 的收录家（azure 也收录 deepseek-v4-pro），可用集里撞同名可用家
   // （zai 目录与自定义网关都有 glm-5.3，都配了 key 时永远命中目录在前那份，
@@ -396,9 +410,63 @@ function ChatComposer({
   const cwdBasename =
     primaryCwd !== undefined ? (primaryCwd.split(/[\\/]/).filter(Boolean).at(-1) ?? primaryCwd) : undefined
 
+  const commandContext = useMemo(
+    () => ({
+      isExistingSession: session.kind === 'chat',
+      hasMessages,
+      running,
+      compacting,
+      truncated,
+      hasWorkspace: primaryCwd !== undefined
+    }),
+    [session.kind, hasMessages, running, compacting, truncated, primaryCwd]
+  )
+
+  const executeLocalAction = (action: LocalSlashAction): void => {
+    setCommandError(null)
+    if (action === 'plan') {
+      if (session.kind === 'new') useHomeStore.getState().updateNewChat({ planEnabled: true })
+      else void useChatStore.getState().setPlanMode(session.chatId, true)
+      return
+    }
+    if (action === 'new') {
+      useHomeStore.getState().startNewChat()
+      return
+    }
+    if (action === 'settings') {
+      useUiStore.getState().setView('settings')
+      return
+    }
+    if (action === 'rename') {
+      onRequestRename()
+      return
+    }
+    const mode = action === 'mode-ask' ? 'ask' : action === 'mode-auto' ? 'auto' : 'autonomous'
+    if (session.kind === 'new') useHomeStore.getState().updateNewChat({ permissionMode: mode })
+    else void useChatStore.getState().setPermission(session.chatId, mode)
+  }
+
+  const hasSubmittableContent =
+    value.replaceAll(ENTITY_SENTINEL, '').trim().length > 0 || entities.length > 0 || items.length > 0
+
   const send = () => {
-    const text = value.trim()
-    if ((!text && items.length === 0) || running || blocked) return
+    if (running || blocked) return
+    const prepared = prepareComposerSubmission(value, entities, items.length)
+    if (prepared.kind === 'empty') return
+    if (prepared.kind === 'error') {
+      setCommandError(prepared.message)
+      return
+    }
+    setCommandError(null)
+    if (prepared.kind === 'standalone') {
+      useAttachmentStore.getState().clearContent(draftId)
+      if (prepared.name === 'compact') {
+        void useChatStore.getState().compactNow(prepared.instructions)
+      } else {
+        void useChatStore.getState().continueGeneration()
+      }
+      return
+    }
     const token = useAttachmentStore.getState().startSubmission(draftId)
     const view = useHomeStore.getState().session
     // submit 可能要先按需建会话（空列表着陆页直发，chat store 内物化）——必须
@@ -407,9 +475,16 @@ function ChatComposer({
     // submit 失败（引擎不可用）会 rethrow，此时输入框保留原文供改后重发
     void (async () => {
       try {
-        const acceptedSessionId = await submit(text, activeModelId, thinkingLevel, activeProvider,
-          items.flatMap((item) => item.ref === undefined ? [] : [item.ref]),
-          items.flatMap((item) => item.directory === undefined ? [] : [item.directory]))
+        const acceptedSessionId = await submit(
+          prepared.text,
+          activeModelId,
+          thinkingLevel,
+          activeProvider,
+          items.flatMap((item) => (item.ref === undefined ? [] : [item.ref])),
+          items.flatMap((item) => (item.directory === undefined ? [] : [item.directory])),
+          prepared.skills,
+          prepared.command
+        )
         if (acceptedSessionId === false) return
         const consumed = useAttachmentStore.getState().consume(draftId, draft, token)
         if (!consumed) return
@@ -464,37 +539,29 @@ function ChatComposer({
         )}
 
         {/* 输入卡盖住信息条下沿，圆角与阴影由原语的 composer 档统一维护。 */}
-        <InputGroup variant="composer">
+        <InputGroup variant="composer" className="relative">
           {items.length > 0 && <InputGroupAddon align="block-start" className="w-full px-4 pt-3">
             <AttachmentCards items={items}
               onRemove={(key) => useAttachmentStore.getState().remove(draftId, key)}
               onRetry={(key) => useAttachmentStore.getState().retry(draftId, key)} />
           </InputGroupAddon>}
-          <InputGroupTextarea
-            value={value}
+          <ComposerLexicalEditor
+            draftId={draftId}
+            text={value}
+            entities={entities}
             disabled={!draft.loaded}
-            onPaste={(event) => {
-              const data = event.clipboardData
-              const text = data.getData('text/plain')
-              // 表格的 HTML/位图并存时保留可编辑文字；截图只有图像时接附件。
-              if (text !== '' && /<table[\s>]/i.test(data.getData('text/html'))) return
-              const files = Array.from(data.files)
-              if (files.length > 0) { event.preventDefault(); add(files); return }
-              if (text === '' || data.getData('text/uri-list').split(/\r?\n/).some((line) => line.startsWith('file://')) || data.types.includes('Files')) {
-                event.preventDefault()
-                void window.cogent.clipboardFiles().then(add, reportError)
-              }
+            placeholder="随心输入，输入 / 使用命令，输入 $ 使用技能"
+            sendShortcut={sendShortcut}
+            primaryCwd={primaryCwd}
+            commandContext={commandContext}
+            onChange={(nextText, nextEntities) => {
+              if (commandError !== null) setCommandError(null)
+              onContentChange(nextText, nextEntities)
             }}
-            onChange={(event) => setValue(event.target.value)}
-            onKeyDown={(event) => {
-              // 发送组合键按「发送快捷键」设置分流（isSendKey 内含 IME 保护）
-              if (isSendKey(event, sendShortcut)) {
-                event.preventDefault()
-                send()
-              }
-            }}
-            placeholder="随心输入"
-            className="content-typography max-h-52 px-4 pt-5 pb-2 placeholder:text-placeholder"
+            onSend={send}
+            onExecuteAction={executeLocalAction}
+            onPasteFiles={add}
+            onPasteError={reportError}
           />
           {/* gap-1：工具行三块（+ / 权限钮 / 计划 chip）紧凑（2026-11-16 用户
               定调，曾 gap-2 偏松）；分隔线自身 mx 已归零由本 gap 接管间距 */}
@@ -533,7 +600,7 @@ function ChatComposer({
                        本身就不派发 click */
                     className="size-7 cursor-pointer bg-foreground/85 hover:bg-foreground disabled:pointer-events-auto disabled:cursor-not-allowed disabled:hover:bg-foreground/85"
                     aria-label={sendLabel}
-                    disabled={blocked || (!value.trim() && items.length === 0)}
+                    disabled={blocked || !hasSubmittableContent}
                     onClick={send}
                   >
                     <IconArrowUp className="size-3.5" />
@@ -542,6 +609,11 @@ function ChatComposer({
               )}
             </div>
           </InputGroupAddon>
+          {commandError !== null && (
+            <InputGroupAddon align="block-end" role="alert" className="px-4 pb-2.5 text-xs text-destructive">
+              {commandError}
+            </InputGroupAddon>
+          )}
           {draft.error !== null && <InputGroupAddon align="block-end" role="alert">{draft.error}
             {!draft.loaded && <Button variant="ghost" size="xs" onClick={() => void useAttachmentStore.getState().load(draftId)}>重试恢复</Button>}
           </InputGroupAddon>}
@@ -597,6 +669,10 @@ export function HomeChat({
   const hasPendingPlan = useChatStore(
     (s) => (s.bySession[s.activeSessionId ?? '']?.pendingPlans.length ?? 0) > 0
   )
+  const activeSessionSummary = useChatStore((s) =>
+    session.kind === 'chat' ? s.sessions.find((x) => x.id === session.chatId) : undefined
+  )
+  const [renaming, setRenaming] = useState(false)
   const draftId = session.kind === 'chat' ? chatDraftId(session.chatId) : `new-${session.draftId ?? 'default'}`
   const draft = useAttachmentStore((s) => s.drafts[draftId] ?? EMPTY_DRAFT)
   useEffect(() => { void useAttachmentStore.getState().load(draftId) }, [draftId])
@@ -644,9 +720,22 @@ export function HomeChat({
         ) : hasPendingQuestion ? (
           <QuestionPanel />
         ) : (
-          <ChatComposer session={session} draftId={draftId} draft={draft} value={draft.text} onValueChange={(text) => useAttachmentStore.getState().setText(draftId, text)} />
+          <ChatComposer
+            session={session}
+            draftId={draftId}
+            draft={draft}
+            value={draft.text}
+            entities={draft.entities}
+            onContentChange={(text, entities) => useAttachmentStore.getState().setContent(draftId, text, entities)}
+            onRequestRename={() => {
+              if (activeSessionSummary !== undefined) setRenaming(true)
+            }}
+          />
         )}
       </MessageScrollerProvider>
+      {renaming && activeSessionSummary !== undefined && (
+        <RenameChatDialog chat={activeSessionSummary} onClose={() => setRenaming(false)} />
+      )}
     </div>
   )
 }
