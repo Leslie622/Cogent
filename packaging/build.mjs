@@ -195,6 +195,14 @@ function createBuilderConfig({
     extraResources.push({ from: join(iconDirAbs, 'tray.ico'), to: 'icons/tray.ico' })
     extraResources.push({ from: join(iconDirAbs, 'icon.ico'), to: 'icons/icon.ico' })
   }
+  const bundledSkillsDir = join(REPO_ROOT, 'resources', 'skills')
+  if (existsSync(bundledSkillsDir)) {
+    extraResources.push({
+      from: wslMode ? 'resources/skills' : bundledSkillsDir,
+      to: 'skills',
+      filter: ['**/*']
+    })
+  }
   for (const extra of projectConfig.extraResources) {
     extraResources.push({
       from: resolve(REPO_ROOT, extra.from),
@@ -362,6 +370,10 @@ function buildDebViaWsl({
     cpSync(join(REPO_ROOT, 'resources', 'runtime', runtimeDirKey), join(wslStageDir, 'resources', 'runtime', runtimeDirKey), {
       recursive: true
     })
+  }
+  const bundledSkillsSrc = join(REPO_ROOT, 'resources', 'skills')
+  if (existsSync(bundledSkillsSrc)) {
+    cpSync(bundledSkillsSrc, join(wslStageDir, 'resources', 'skills'), { recursive: true })
   }
   mkdirSync(join(wslStageDir, 'linux'), { recursive: true })
   if (projectConfig.deb.afterInstall) {
