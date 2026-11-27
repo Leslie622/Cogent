@@ -23,7 +23,7 @@ export type ComposerEntity =
       id: string
       kind: 'skill'
       name: string
-      scope: 'user' | 'project'
+      scope: 'user' | 'project' | 'bundled'
       eco?: boolean
     }
   | {
@@ -81,7 +81,7 @@ export interface ComposerSuggestionItem {
   keywords: readonly string[]
   payload:
     | { kind: 'command'; command: SlashCommandDef }
-    | { kind: 'skill'; name: string; scope: 'user' | 'project'; eco?: boolean }
+    | { kind: 'skill'; name: string; scope: 'user' | 'project' | 'bundled'; eco?: boolean }
 }
 
 export function isComposerEntity(value: unknown): value is ComposerEntity {
@@ -92,7 +92,7 @@ export function isComposerEntity(value: unknown): value is ComposerEntity {
     return (
       typeof item.name === 'string' &&
       item.name.length > 0 &&
-      (item.scope === 'user' || item.scope === 'project') &&
+      (item.scope === 'user' || item.scope === 'project' || item.scope === 'bundled') &&
       (item.eco === undefined || typeof item.eco === 'boolean')
     )
   }

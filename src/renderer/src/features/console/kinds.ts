@@ -7,6 +7,7 @@ import type { ComponentType } from 'react'
 import {
   IconApi,
   IconArrowsExchange,
+  IconBook,
   IconCircleCheck,
   IconCircleX,
   IconFileText,
@@ -130,6 +131,12 @@ export const KINDS: Record<InspectEntryKind, KindPresentation> = {
     layer: 'tool',
     label: '审批 · 裁决',
     explain: '审批判定落地：可能是档位/计划开关/工作区规则的自动裁决（放行也留痕），也可能是你对面板的点击，或停止/收尾的中止。read 类不经审批域，不产生审批条目。',
+  },
+  'skill.loaded': {
+    icon: IconBook,
+    layer: 'tool',
+    label: '技能 · 加载',
+    explain: '模型通过专用 skill 工具按需加载技能，或用户通过 $/ /skill: 显式展开技能正文进入本轮上下文（已完成变量替换与长度护栏）。',
   },
 }
 

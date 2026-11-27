@@ -17,6 +17,7 @@ export type ToolDisplayStatus = 'running' | 'ok' | 'error' | 'blocked'
 const KIND_LABELS: Record<string, string> = {
   read: '读取',
   read_attachment: '附件',
+  skill: '技能',
   write: '写入',
   edit: '编辑',
   grep: '搜索',

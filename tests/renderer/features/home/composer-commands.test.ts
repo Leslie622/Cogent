@@ -48,15 +48,18 @@ describe('buildCommandSuggestions', () => {
 })
 
 describe('buildSkillSuggestions', () => {
-  it('仅保留已启用技能并标注项目/用户/生态徽标', () => {
+  it('仅保留已启用且 userInvocable 非 false 技能，标注项目/用户/生态/内置徽标并带 argumentHint', () => {
     const items = buildSkillSuggestions([
-      { name: 'a', description: '项目技能', scope: 'project', path: '/a', baseDir: '/', manualOnly: false, enabled: true, userDisabled: false },
+      { name: 'a', description: '项目技能', scope: 'project', path: '/a', baseDir: '/', manualOnly: false, enabled: true, userDisabled: false, argumentHint: '[目标]' },
       { name: 'b', description: '禁用技能', scope: 'user', path: '/b', baseDir: '/', manualOnly: false, enabled: false, userDisabled: true },
-      { name: 'c', description: '生态技能', scope: 'user', path: '/c', baseDir: '/', manualOnly: true, enabled: true, userDisabled: false, eco: true }
+      { name: 'c', description: '生态技能', scope: 'user', path: '/c', baseDir: '/', manualOnly: true, enabled: true, userDisabled: false, eco: true },
+      { name: 'd', description: '仅模型技能', scope: 'user', path: '/d', baseDir: '/', manualOnly: false, userInvocable: false, enabled: true, userDisabled: false },
+      { name: 'e', description: '内置技能', scope: 'bundled', origin: 'bundled', path: '/e', baseDir: '/', manualOnly: false, enabled: true, userDisabled: false }
     ])
-    expect(items.map((x) => ({ label: x.label, badge: x.badge }))).toEqual([
-      { label: 'a', badge: '项目' },
-      { label: 'c', badge: '生态' }
+    expect(items.map((x) => ({ label: x.label, badge: x.badge, argumentHint: x.argumentHint }))).toEqual([
+      { label: 'a', badge: '项目', argumentHint: '[目标]' },
+      { label: 'c', badge: '生态', argumentHint: undefined },
+      { label: 'e', badge: '内置', argumentHint: undefined }
     ])
   })
 })

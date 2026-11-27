@@ -4,7 +4,7 @@ import { askUserSummary, diffCount, mcpDisplayName, parseToolSummary, toolKindLa
 
 describe('toolKindLabel', () => {
   it.each([
-    ['read', '读取'], ['read_attachment', '附件'], ['write', '写入'], ['edit', '编辑'],
+    ['read', '读取'], ['read_attachment', '附件'], ['skill', '技能'], ['write', '写入'], ['edit', '编辑'],
     ['find', '搜索'], ['grep', '搜索'], ['glob', '搜索'], ['ls', '目录'],
     ['powershell', '终端'], ['bash', '终端'], ['todo_write', '待办'], ['ask_user', '提问'],
     ['enter_plan', '计划'], ['submit_plan', '计划'],

@@ -1,18 +1,26 @@
 /**
- * 设置 · 技能分区（阶段 4b-2）：数据真源 = 引擎的技能目录
- * （~/.cogent/skills 用户级 + <工作区>/.cogent/skills 项目级）与两级启停
- * 状态文件（skills.* 经 engine:request 通用代理 —— 引擎独占写者，无壳侧
- * 双写）。与 MCP 座的关键差异：① 技能是被动文本 → 项目级**允许定义**
- * （同名项目胜）；② 段落钩子每回合活算 → 变更**下一回合生效**（无需
- * 新会话，含手放文件）。开关两档：本机·用户写 user 名单；项目档写项目
- * overrides（可禁 user 技能 / 重启用 user 已禁，重置 = inherit 回落）。
- * 作用域下拉 = 本机·用户 + 全部项目（useProjectScope，默认跟随活跃会话
- * 归属项目，可任意切换浏览）。搜索 = 本地过滤（名称 / 描述）。
+ * 设置 · 技能分区（docs/模块/技能座.md & docs/计划/技能座升级实现.md）：
+ * 数据真源 = 引擎的多源技能目录（bundled 内置 + 用户/项目 .cogent/.agents/.claude
+ * + 向上祖先至 .git）与两级启停状态文件（skills.* 经 engine:request 通用代理，
+ * 导入/导出/打开目录经主进程受信任特权 IPC 直达 Host，不让 renderer 传任意本机路径）。
+ *
+ * 关键特性：
+ * - 回合边界热刷新：编辑、启停、导入均在下一回合生效；
+ * - 无损编辑：保存时保留既有 SKILL.md 的 license/compatibility/metadata/allowed-tools 等字段；
+ * - 完整管理面：新建、编辑/只读查看、目录与 .zip 导入（含冲突覆盖确认）、导出 .zip、
+ *   一键打开技能目录、附带文件（scripts/references/assets）清单展示与高级调用设置。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   IconArrowBackUp,
   IconBook,
+  IconChevronDown,
+  IconChevronRight,
+  IconDownload,
+  IconEye,
+  IconFileZip,
+  IconFolderOpen,
+  IconFolderPlus,
   IconPencil,
   IconPlus,
   IconRefresh,
@@ -37,20 +45,39 @@ import { ScopeMenu } from './ScopeMenu'
 import { BADGE, FIELD_GAP, FIELD_LABEL } from './models-recipes'
 import { unwrapIpcError } from '@/lib/ipc'
 import { useProjectScope, type ProjectScope } from '@/hooks/use-project-scope'
-import type { SkillSummary } from '@/env.d'
+import type { SkillOrigin, SkillScope, SkillSummary } from '@/env.d'
 
-/** 编辑弹窗的回填载荷（skills.read 取回；新增传 null） */
+/** 编辑/查看弹窗载荷（skills.read 回填；新增传 null） */
 interface SkillDraft {
+  name: string
+  scope: SkillScope
+  description: string
+  body: string
+  whenToUse: string
+  manualOnly: boolean
+  userInvocable: boolean
+  argumentHint: string
+  license?: string
+  compatibility?: string
+  allowedTools?: string[]
+  unsupportedRuntime?: 'context-fork'
+  resourceFiles: string[]
+  readonly: boolean
+}
+
+interface SkillSaveInput {
   name: string
   description: string
   body: string
+  whenToUse: string
+  manualOnly: boolean
+  userInvocable: boolean
+  argumentHint: string
 }
 
 /**
- * 表单就地校验（2026-11-15 用户反馈：非法输入应弹窗内提示，而非关弹窗后
- * 页面底部裸报引擎错误）—— 规则是引擎 skills.save 入口（skill-store
- * validateName/validateDescription，pi 同源）的 UI 镜像，就地拦下可预期
- * 非法省一轮往返；引擎仍是权威，未镜像到的规则由保存失败回灌弹窗兜底。
+ * 表单就地校验 —— 规则是引擎 skills.save 入口（skill-store validateSkillName/
+ * validateDescription）的 UI 镜像，引擎仍是权威校验层。
  */
 function draftError(name: string, description: string): string | null {
   if (name.length === 0) return '名称必填（小写字母 / 数字 / 连字符）'
@@ -58,59 +85,99 @@ function draftError(name: string, description: string): string | null {
   if (!/^[a-z0-9-]+$/.test(name)) return '名称：只能是小写字母、数字、连字符'
   if (name.startsWith('-') || name.endsWith('-')) return '名称：不能以连字符开头或结尾'
   if (name.includes('--')) return '名称：不能含连续连字符'
-  if (description.length === 0) return '描述必填（模型按它判断何时用这个技能）'
+  if (description.length === 0) return '描述必填（模型按它判断何时调用技能）'
   if (description.length > 1024) return `描述：超过 1024 字符（${description.length}）`
   return null
 }
 
-/**
- * 新增/编辑弹窗：name（编辑锁）+ description + 正文 Markdown。frontmatter
- * 由引擎生成（防手写错），这里只编辑业务字段；值域校验在引擎 skills.save
- * 入口（名字字符规则 / 描述长度），失败原样呈现。
- */
+function originBadgeLabel(origin: SkillOrigin | undefined, eco: boolean | undefined): string | null {
+  if (origin === 'bundled') return '内置'
+  if (origin === 'claude') return '生态 · .claude'
+  if (origin === 'agents') return '生态 · .agents'
+  if (origin === 'custom') return '自定义目录'
+  if (eco) return '生态目录'
+  return null
+}
+
+/** 新增/编辑/只读查看弹窗 */
 function SkillDialog({
   open,
   initial,
   saving,
   saveError,
   onClose,
-  onSave
+  onSave,
+  onReveal
 }: {
   open: boolean
   initial: SkillDraft | null
   saving: boolean
-  /** 引擎保存失败的回灌文案（弹窗保持开，就近展示） */
   saveError: string | null
   onClose: () => void
-  onSave: (draft: SkillDraft) => void
+  onSave: (draft: SkillSaveInput) => void
+  onReveal?: (name: string, scope: SkillScope) => void
 }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [body, setBody] = useState('')
+  const [whenToUse, setWhenToUse] = useState('')
+  const [manualOnly, setManualOnly] = useState(false)
+  const [userInvocable, setUserInvocable] = useState(true)
+  const [argumentHint, setArgumentHint] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  const readonly = initial?.readonly === true
 
   useEffect(() => {
     if (!open) return
     setName(initial?.name ?? '')
     setDescription(initial?.description ?? '')
     setBody(initial?.body ?? '')
+    setWhenToUse(initial?.whenToUse ?? '')
+    setManualOnly(initial?.manualOnly ?? false)
+    setUserInvocable(initial?.userInvocable ?? true)
+    setArgumentHint(initial?.argumentHint ?? '')
+    setShowAdvanced(
+      initial !== null &&
+        (initial.whenToUse.length > 0 ||
+          initial.manualOnly ||
+          !initial.userInvocable ||
+          initial.argumentHint.length > 0 ||
+          initial.resourceFiles.length > 0 ||
+          initial.allowedTools !== undefined ||
+          initial.license !== undefined ||
+          initial.compatibility !== undefined ||
+          initial.unsupportedRuntime !== undefined)
+    )
     setFormError(null)
   }, [open, initial])
 
   const save = (): void => {
+    if (readonly) return
     const error = draftError(name.trim(), description.trim())
     if (error !== null) {
       setFormError(error)
       return
     }
-    onSave({ name: name.trim(), description: description.trim(), body })
+    onSave({
+      name: name.trim(),
+      description: description.trim(),
+      body,
+      whenToUse: whenToUse.trim(),
+      manualOnly,
+      userInvocable,
+      argumentHint: argumentHint.trim()
+    })
   }
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{initial !== null ? '编辑技能' : '新建技能'}</DialogTitle>
+          <DialogTitle>
+            {initial === null ? '新建技能' : readonly ? `查看技能 · ${initial.name}` : '编辑技能'}
+          </DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
           <div>
@@ -124,23 +191,131 @@ function SkillDialog({
             />
           </div>
           <div className={FIELD_GAP}>
-            <div className={FIELD_LABEL}>描述（何时用这个技能）</div>
+            <div className={FIELD_LABEL}>描述（模型按它决定何时调用 skill 工具）</div>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="如 提交前的检查清单与顺序"
+              disabled={readonly}
               className="mt-1.5"
             />
           </div>
           <div className={FIELD_GAP}>
-            <div className={FIELD_LABEL}>正文（Markdown 指令，frontmatter 由引擎生成）</div>
+            <div className={FIELD_LABEL}>正文（Markdown 指令；支持 ${'{COGENT_SKILL_DIR}'} 与 $ARGUMENTS，保存时无损保留其他 frontmatter）</div>
             <Textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder={'1. …\n2. …'}
               rows={10}
+              disabled={readonly}
               className="mt-1.5 font-mono text-xs"
             />
+          </div>
+
+          <div className="rounded-lg border border-border">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="flex w-full items-center justify-between px-3.5 py-2.5 text-left text-xs font-medium text-foreground hover:bg-accent/40"
+            >
+              <span>高级设置与附带文件</span>
+              {showAdvanced ? (
+                <IconChevronDown className="size-4 text-muted-foreground" />
+              ) : (
+                <IconChevronRight className="size-4 text-muted-foreground" />
+              )}
+            </button>
+            {showAdvanced && (
+              <div className="flex flex-col gap-3.5 border-t border-border px-3.5 py-3">
+                <div>
+                  <div className={FIELD_LABEL}>触发场景补充（when_to_use，可选）</div>
+                  <Input
+                    value={whenToUse}
+                    onChange={(e) => setWhenToUse(e.target.value)}
+                    placeholder="如 当用户要求代码审查、提交检查时"
+                    disabled={readonly}
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <div className={FIELD_LABEL}>参数提示（argument-hint，可选，输入框面板显示）</div>
+                  <Input
+                    value={argumentHint}
+                    onChange={(e) => setArgumentHint(e.target.value)}
+                    placeholder="如 [目标目录或文件路径]"
+                    disabled={readonly}
+                    className="mt-1.5"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium">仅手动调用（disable-model-invocation）</div>
+                    <div className="text-xs text-muted-foreground">开启后不进模型自动清单，只能由用户经 $ / /skill: 触发</div>
+                  </div>
+                  <Switch checked={manualOnly} disabled={readonly} onCheckedChange={setManualOnly} aria-label="仅手动调用" />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium">允许在输入框面板选择（user-invocable）</div>
+                    <div className="text-xs text-muted-foreground">关闭后仅由模型按清单自主调用，不显示在 $ / 候选面板</div>
+                  </div>
+                  <Switch checked={userInvocable} disabled={readonly} onCheckedChange={setUserInvocable} aria-label="允许输入框面板选择" />
+                </div>
+
+                {initial?.unsupportedRuntime === 'context-fork' && (
+                  <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    该技能声明了 <span className="font-mono">context: fork</span>（独立子会话执行），待子会话座就绪前将在主会话中执行。
+                  </div>
+                )}
+
+                {(initial?.license !== undefined || initial?.compatibility !== undefined || initial?.allowedTools !== undefined) && (
+                  <div className="flex flex-col gap-1.5 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                    {initial.license !== undefined && <div>许可协议：{initial.license}</div>}
+                    {initial.compatibility !== undefined && <div>兼容性声明：{initial.compatibility}</div>}
+                    {initial.allowedTools !== undefined && (
+                      <div>
+                        声明工具（allowed-tools，仅静态保留展示，审批统一走 Cogent 规则）：
+                        <span className="ml-1 font-mono text-foreground">{initial.allowedTools.join(', ')}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {initial !== null && (
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className={FIELD_LABEL}>
+                        附带文件（{initial.resourceFiles.length} 个）
+                      </span>
+                      {onReveal !== undefined && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onReveal(initial.name, initial.scope)}
+                        >
+                          <IconFolderOpen className="size-3.5" />
+                          打开目录
+                        </Button>
+                      )}
+                    </div>
+                    {initial.resourceFiles.length === 0 ? (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        暂无附带文件。可将 scripts/、references/、assets/ 放入技能目录中。
+                      </div>
+                    ) : (
+                      <div className="mt-1.5 max-h-28 overflow-y-auto rounded-md border border-border bg-muted/20 px-2.5 py-1.5 font-mono text-xs text-muted-foreground">
+                        {initial.resourceFiles.map((file) => (
+                          <div key={file} className="truncate py-0.5">
+                            {file}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         {(formError ?? saveError) !== null && (
@@ -148,49 +323,42 @@ function SkillDialog({
         )}
         <DialogFooter>
           <Button variant="ghost" size="default" disabled={saving} onClick={onClose}>
-            取消
+            {readonly ? '关闭' : '取消'}
           </Button>
-          <Button size="default" disabled={saving} onClick={save}>
-            {saving ? '保存中…' : '保存'}
-          </Button>
+          {!readonly && (
+            <Button size="default" disabled={saving} onClick={save}>
+              {saving ? '保存中…' : '保存'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
 
-/** 列表缓存（模块级，按作用域键）：分区切换 = 组件重挂载，本地 state 归零
-    会让页面先塌成加载卡、IPC 往返回来再弹起。命中缓存先渲染旧值、后台照常
-    刷新（stale-while-revalidate），仅首访出加载卡 —— 与 McpSection 同款 */
+/** 列表缓存（模块级，按作用域键）：避免切分区重挂载塌成加载卡 */
 const skillsCache = new Map<string, SkillSummary[]>()
 
 export function SkillSection() {
   const scopeState = useProjectScope()
   const scopeKey = JSON.stringify([scopeState.selectValue, scopeState.projectCwd])
-  return <SkillScope key={scopeKey} scopeKey={scopeKey} scopeState={scopeState} />
+  return <SkillScopeView key={scopeKey} scopeKey={scopeKey} scopeState={scopeState} />
 }
 
-/** 编辑正文与保存同属一个作用域实例，项目换根按新作用域读取。 */
-function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeKey: string }) {
-  /** null = 加载中（仅该作用域首次访问、缓存未命中时短暂出现） */
+function SkillScopeView({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeKey: string }) {
   const [skills, setSkills] = useState<SkillSummary[] | null>(() => skillsCache.get(scopeKey) ?? null)
   const [fileErrors, setFileErrors] = useState<string[]>([])
   const [actionError, setActionError] = useState<string | null>(null)
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
-  /** 引擎保存失败的回灌文案（弹窗保持开就近展示；成功/重开即清） */
   const [saveError, setSaveError] = useState<string | null>(null)
-  /** null = 新增；编辑态 = skills.read 取回的回填载荷 */
   const [editing, setEditing] = useState<SkillDraft | null>(null)
   const [query, setQuery] = useState('')
   const active = useRef(false)
   const latestRead = useRef<symbol | null>(null)
   const latestEdit = useRef<symbol | null>(null)
 
-  /**
-   * 作用域选择：本机·用户 / 任一项目（默认跟随活跃会话归属的项目，
-   * 手动挑过即固定）；项目档 cwd = 该项目主根 cwds[0]
-   */
   const { scope, projectCwd } = scopeState
 
   const refresh = useCallback(async () => {
@@ -211,20 +379,28 @@ function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeK
   useLayoutEffect(() => {
     active.current = true
     void refresh()
-    return () => { active.current = false; latestRead.current = null; latestEdit.current = null }
+    return () => {
+      active.current = false
+      latestRead.current = null
+      latestEdit.current = null
+    }
   }, [refresh])
 
-  /** 同一作用域内保留就地错误，离开后仍能看到该次保存的结果。 */
-  const runAction = async (call: () => Promise<unknown>, savingDialog = false): Promise<void> => {
+  const runAction = async (
+    call: () => Promise<string | void>,
+    savingDialog = false
+  ): Promise<void> => {
     setBusy(true)
     if (savingDialog) setSaveError(null)
+    setActionNotice(null)
     try {
-      await call()
+      const notice = await call()
       if (scope === 'user') skillsCache.clear()
       else skillsCache.delete(scopeKey)
       if (active.current) {
         if (savingDialog) setDialogOpen(false)
         setActionError(null)
+        if (typeof notice === 'string' && notice.length > 0) setActionNotice(notice)
         await refresh()
       }
     } catch (error) {
@@ -244,8 +420,7 @@ function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeK
     setDialogOpen(true)
   }
 
-  /** 编辑：先 skills.read 取正文回填（list 不带 body），失败原地报错不开弹窗 */
-  const openEdit = (s: SkillSummary): void => {
+  const openEditOrView = (s: SkillSummary): void => {
     const edit = Symbol(s.name)
     latestEdit.current = edit
     void (async () => {
@@ -256,7 +431,23 @@ function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeK
           ...(scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
         })
         if (latestEdit.current !== edit) return
-        setEditing({ name: s.name, description: r.description, body: r.body })
+        const isReadonly = s.readonly === true || s.eco === true || s.scope === 'bundled' || (!userScope && s.scope !== 'project')
+        setEditing({
+          name: s.name,
+          scope: s.scope,
+          description: r.description,
+          body: r.body,
+          whenToUse: r.whenToUse ?? '',
+          manualOnly: r.manualOnly === true,
+          userInvocable: r.userInvocable !== false,
+          argumentHint: r.argumentHint ?? '',
+          license: r.license,
+          compatibility: r.compatibility,
+          allowedTools: r.allowedTools,
+          unsupportedRuntime: r.unsupportedRuntime,
+          resourceFiles: r.resourceFiles ?? [],
+          readonly: isReadonly
+        })
         setSaveError(null)
         setDialogOpen(true)
       } catch (error) {
@@ -265,54 +456,123 @@ function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeK
     })()
   }
 
-  /**
-   * 弹窗保存：**成功才关弹窗**，失败文案回灌弹窗内就近展示（2026-11-15
-   * 用户反馈：非法输入关弹窗后在页面底部裸报引擎错误 = 反馈位置错位）。
-   * 前端镜像规则已拦下可预期非法，这里的失败 = 引擎权威校验的兜底通道。
-   */
-  const saveFromDialog = (draft: SkillDraft): void => {
-    void runAction(() => window.cogent.engineRequest('skills.save', {
-      scope,
-      name: draft.name,
-      description: draft.description,
-      body: draft.body,
-      ...(scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
-    }), true)
+  const saveFromDialog = (draft: SkillSaveInput): void => {
+    const prev = editing
+    const includeWhenToUse =
+      prev !== null ? draft.whenToUse !== prev.whenToUse : draft.whenToUse.length > 0
+    const includeManualOnly =
+      prev !== null ? draft.manualOnly !== prev.manualOnly : draft.manualOnly
+    const includeUserInvocable =
+      prev !== null ? draft.userInvocable !== prev.userInvocable : !draft.userInvocable
+    const includeArgumentHint =
+      prev !== null ? draft.argumentHint !== prev.argumentHint : draft.argumentHint.length > 0
+    void runAction(async () => {
+      await window.cogent.engineRequest('skills.save', {
+        scope,
+        name: draft.name,
+        description: draft.description,
+        body: draft.body,
+        ...(includeWhenToUse && { whenToUse: draft.whenToUse }),
+        ...(includeManualOnly && { manualOnly: draft.manualOnly }),
+        ...(includeUserInvocable && { userInvocable: draft.userInvocable }),
+        ...(includeArgumentHint && { argumentHint: draft.argumentHint }),
+        ...(scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
+      })
+    }, true)
   }
 
-  /** 开关：user 档写禁用名单；project 档写 overrides（对任何行 —— 覆盖按名） */
   const toggle = (s: SkillSummary, enabled: boolean): void => {
-    void runAction(() =>
-      window.cogent.engineRequest('skills.setEnabled', {
+    void runAction(async () => {
+      await window.cogent.engineRequest('skills.setEnabled', {
         scope,
         name: s.name,
         value: enabled ? 'enabled' : 'disabled',
         ...(scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
       })
-    )
+    })
   }
 
   const resetOverride = (s: SkillSummary): void => {
     if (projectCwd === undefined) return
-    void runAction(() =>
-      window.cogent.engineRequest('skills.setEnabled', { scope: 'project', cwd: projectCwd, name: s.name, value: 'inherit' })
-    )
+    void runAction(async () => {
+      await window.cogent.engineRequest('skills.setEnabled', {
+        scope: 'project',
+        cwd: projectCwd,
+        name: s.name,
+        value: 'inherit'
+      })
+    })
   }
 
   const remove = (s: SkillSummary): void => {
-    void runAction(() =>
-      window.cogent.engineRequest('skills.delete', {
+    void runAction(async () => {
+      await window.cogent.engineRequest('skills.delete', {
         scope: s.scope,
         name: s.name,
         ...(s.scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
       })
-    )
+    })
+  }
+
+  const importSkills = (kind: 'directory' | 'zip', overwrite = false): void => {
+    void runAction(async () => {
+      const result = await window.cogent.importSkills({
+        scope,
+        kind,
+        overwrite,
+        ...(scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
+      })
+      if (result.canceled) return
+      const parts = [`已导入 ${result.imported.length} 枚技能：${result.imported.join('、')}`]
+      if (result.skipped.length > 0) parts.push(`已跳过同名：${result.skipped.join('、')}`)
+      return parts.join('；')
+    })
+  }
+
+  const exportSkill = (s: SkillSummary): void => {
+    void (async () => {
+      setActionError(null)
+      setActionNotice(null)
+      try {
+        const res = await window.cogent.exportSkill({
+          scope: s.scope,
+          name: s.name,
+          ...(scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
+        })
+        if (!res.canceled && active.current) setActionNotice(`已导出技能「${s.name}」为 .zip`)
+      } catch (error) {
+        if (active.current) setActionError(unwrapIpcError(error))
+      }
+    })()
+  }
+
+  const revealDir = (name: string, targetScope: SkillScope): void => {
+    void (async () => {
+      setActionError(null)
+      try {
+        await window.cogent.revealSkillDir({
+          scope: targetScope,
+          name,
+          ...(scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
+        })
+      } catch (error) {
+        if (active.current) setActionError(unwrapIpcError(error))
+      }
+    })()
   }
 
   const userScope = scope === 'user'
   const count = skills?.length ?? 0
   const q = query.trim().toLowerCase()
-  const visible = q === '' ? (skills ?? []) : (skills ?? []).filter((s) => `${s.name} ${s.description}`.toLowerCase().includes(q))
+  const visible =
+    q === ''
+      ? (skills ?? [])
+      : (skills ?? []).filter((s) =>
+          `${s.name} ${s.description} ${s.whenToUse ?? ''}`.toLowerCase().includes(q)
+        )
+
+  const cogentApi = window.cogent as Partial<typeof window.cogent> | undefined
+  const canImportExport = typeof cogentApi?.importSkills === 'function'
 
   return (
     <SettingsPage
@@ -320,7 +580,6 @@ function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeK
       toolbar={
         <>
           <ScopeMenu state={scopeState} />
-          {/* 总计数（zcode 同位：竖分隔线 + 「技能 N」） */}
           <div className="h-4 w-px bg-border" />
           <div className="text-sm">
             技能 <span className="text-muted-foreground">{count}</span>
@@ -344,8 +603,22 @@ function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeK
         userScope ? (
           <div className="mt-8 flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-12 text-center">
             <div className="text-sm font-medium">还没有技能</div>
-            <div className="text-xs text-muted-foreground">新建一枚，或把 SKILL.md 技能包放进 ~/.cogent/skills（自动发现）。</div>
-            <div className="mt-2 flex items-center gap-2">
+            <div className="text-xs text-muted-foreground">
+              新建、导入本地技能目录或 .zip 包，或把技能放进 ~/.cogent/skills、~/.agents/skills、~/.claude/skills（自动发现）。
+            </div>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+              {canImportExport && (
+                <>
+                  <Button variant="outline" size="default" disabled={busy} onClick={() => importSkills('directory')}>
+                    <IconFolderPlus className="size-4" />
+                    导入目录
+                  </Button>
+                  <Button variant="outline" size="default" disabled={busy} onClick={() => importSkills('zip')}>
+                    <IconFileZip className="size-4" />
+                    导入 ZIP
+                  </Button>
+                </>
+              )}
               <Button size="default" disabled={busy} onClick={openCreate}>
                 <IconPlus className="size-4" />
                 新建技能
@@ -353,8 +626,28 @@ function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeK
             </div>
           </div>
         ) : (
-          <div className="mt-8 rounded-lg border border-dashed border-border px-6 py-10 text-center text-xs text-muted-foreground">
-            该项目还没有技能 —— 可在本页新建（写入项目 .cogent/skills），或依赖用户级技能。
+          <div className="mt-8 flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-10 text-center">
+            <div className="text-xs text-muted-foreground">
+              该项目还没有技能 —— 可在本页新建或导入（写入项目 .cogent/skills），或依赖用户级与内置技能。
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {canImportExport && (
+                <>
+                  <Button variant="outline" size="default" disabled={busy} onClick={() => importSkills('directory')}>
+                    <IconFolderPlus className="size-4" />
+                    导入目录
+                  </Button>
+                  <Button variant="outline" size="default" disabled={busy} onClick={() => importSkills('zip')}>
+                    <IconFileZip className="size-4" />
+                    导入 ZIP
+                  </Button>
+                </>
+              )}
+              <Button size="default" disabled={busy} onClick={openCreate}>
+                <IconPlus className="size-4" />
+                新建技能
+              </Button>
+            </div>
           </div>
         )
       ) : visible.length === 0 ? (
@@ -369,6 +662,18 @@ function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeK
               <Button variant="outline" size="default" disabled={busy} onClick={() => void refresh()} aria-label="刷新">
                 <IconRefresh className="size-4" />
               </Button>
+              {canImportExport && (
+                <>
+                  <Button variant="outline" size="default" disabled={busy} onClick={() => importSkills('directory')}>
+                    <IconFolderPlus className="size-4" />
+                    导入目录
+                  </Button>
+                  <Button variant="outline" size="default" disabled={busy} onClick={() => importSkills('zip')}>
+                    <IconFileZip className="size-4" />
+                    导入 ZIP
+                  </Button>
+                </>
+              )}
               <Button size="default" disabled={busy} onClick={openCreate}>
                 <IconPlus className="size-4" />
                 新建
@@ -376,61 +681,121 @@ function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeK
             </>
           }
         >
-          {visible.map((s) => (
-            <div key={s.name} className="flex items-center gap-4 px-5 py-4">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
-                <IconBook className="size-[18px] text-muted-foreground" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium">{s.name}</span>
-                  {!s.enabled && <span className={BADGE}>已禁用</span>}
-                  {s.manualOnly && <span className={BADGE}>手动调用</span>}
-                  {s.eco && <span className={BADGE}>生态目录</span>}
-                  {!userScope && s.scope === 'project' && <span className={BADGE}>项目定义</span>}
-                  {s.override !== undefined && <span className={BADGE}>项目覆盖</span>}
+          {visible.map((s) => {
+            const originTag = originBadgeLabel(s.origin, s.eco)
+            const isWritable =
+              s.readonly !== true &&
+              s.eco !== true &&
+              s.scope !== 'bundled' &&
+              (userScope || s.scope === 'project')
+
+            return (
+              <div key={`${s.scope}:${s.name}`} className="flex items-center gap-4 px-5 py-4">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
+                  <IconBook className="size-[18px] text-muted-foreground" />
                 </div>
-                {/* 描述行截断时悬停看全文（Hint = shadcn Tooltip；原 title 是
-                    路径但行显描述，语义错位已纠正 —— 路径在编辑弹窗看） */}
-                <Hint tip={s.description} side="top">
-                  <div className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground">
-                    {s.description}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-medium">{s.name}</span>
+                    {!s.enabled && <span className={BADGE}>已禁用</span>}
+                    {s.manualOnly && <span className={BADGE}>仅手动</span>}
+                    {s.userInvocable === false && <span className={BADGE}>仅模型</span>}
+                    {originTag !== null && <span className={BADGE}>{originTag}</span>}
+                    {!userScope && s.scope === 'project' && <span className={BADGE}>项目定义</span>}
+                    {s.override !== undefined && <span className={BADGE}>项目覆盖</span>}
+                    {s.resourceCount !== undefined && s.resourceCount > 0 && (
+                      <span className={BADGE}>{s.resourceCount} 个附带文件</span>
+                    )}
+                    {s.unsupportedRuntime === 'context-fork' && <span className={BADGE}>主会话兼容</span>}
                   </div>
-                </Hint>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <Switch
-                  checked={s.enabled}
-                  disabled={busy}
-                  onCheckedChange={(checked: boolean) => toggle(s, checked)}
-                  aria-label={`${s.name} 启用`}
-                />
-                {/* 生态目录条目（.agents，zcode 等工具装的）只读：启停可用，编辑/删除归原工具 */}
-                {(userScope || s.scope === 'project') && !s.eco ? (
-                  <>
-                    <Button variant="ghost" size="default" disabled={busy} onClick={() => openEdit(s)} aria-label={`编辑 ${s.name}`}>
-                      <IconPencil className="size-4" />
-                    </Button>
-                    <Button variant="ghost" size="default" disabled={busy} onClick={() => remove(s)} aria-label={`删除 ${s.name}`}>
-                      <IconTrash className="size-4" />
-                    </Button>
-                  </>
-                ) : null}
-                {!userScope && s.override !== undefined && (
-                  /* 项目档专属：清除覆盖（inherit = 回落用户级求值） */
-                  <Button
-                    variant="ghost"
-                    size="default"
+                  <Hint tip={s.whenToUse !== undefined ? `${s.description}\n触发场景：${s.whenToUse}` : s.description} side="top">
+                    <div className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground">
+                      {s.description}
+                    </div>
+                  </Hint>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Switch
+                    checked={s.enabled}
                     disabled={busy}
-                    onClick={() => resetOverride(s)}
-                    aria-label={`重置 ${s.name} 的项目覆盖`}
-                  >
-                    <IconArrowBackUp className="size-4" />
-                  </Button>
-                )}
+                    onCheckedChange={(checked: boolean) => toggle(s, checked)}
+                    aria-label={`${s.name} 启用`}
+                  />
+                  {canImportExport && (
+                    <>
+                      <Hint tip="打开技能目录" side="top">
+                        <Button
+                          variant="ghost"
+                          size="default"
+                          disabled={busy}
+                          onClick={() => revealDir(s.name, s.scope)}
+                          aria-label={`打开 ${s.name} 目录`}
+                        >
+                          <IconFolderOpen className="size-4" />
+                        </Button>
+                      </Hint>
+                      <Hint tip="导出为 .zip" side="top">
+                        <Button
+                          variant="ghost"
+                          size="default"
+                          disabled={busy}
+                          onClick={() => exportSkill(s)}
+                          aria-label={`导出 ${s.name}`}
+                        >
+                          <IconDownload className="size-4" />
+                        </Button>
+                      </Hint>
+                    </>
+                  )}
+                  {isWritable ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="default"
+                        disabled={busy}
+                        onClick={() => openEditOrView(s)}
+                        aria-label={`编辑 ${s.name}`}
+                      >
+                        <IconPencil className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="default"
+                        disabled={busy}
+                        onClick={() => remove(s)}
+                        aria-label={`删除 ${s.name}`}
+                      >
+                        <IconTrash className="size-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <Hint tip="查看技能正文与附带文件" side="top">
+                      <Button
+                        variant="ghost"
+                        size="default"
+                        disabled={busy}
+                        onClick={() => openEditOrView(s)}
+                        aria-label={`查看 ${s.name}`}
+                      >
+                        <IconEye className="size-4" />
+                      </Button>
+                    </Hint>
+                  )}
+                  {!userScope && s.override !== undefined && (
+                    <Button
+                      variant="ghost"
+                      size="default"
+                      disabled={busy}
+                      onClick={() => resetOverride(s)}
+                      aria-label={`重置 ${s.name} 的项目覆盖`}
+                    >
+                      <IconArrowBackUp className="size-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </SettingsGroup>
       )}
 
@@ -444,9 +809,25 @@ function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeK
         </SettingsGroup>
       )}
 
+      {actionNotice !== null && (
+        <div role="status" className="mt-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-foreground">
+          {actionNotice}
+        </div>
+      )}
+
       {actionError !== null && (
-        <div role="alert" className="mt-4 rounded-lg border border-destructive/30 px-4 py-3 text-sm text-destructive">
-          {actionError}
+        <div role="alert" className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 px-4 py-3 text-sm text-destructive">
+          <span className="min-w-0 flex-1">{actionError}</span>
+          {canImportExport && actionError.includes('覆盖导入') && (
+            <div className="flex shrink-0 items-center gap-2">
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => importSkills('directory', true)}>
+                覆盖导入目录
+              </Button>
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => importSkills('zip', true)}>
+                覆盖导入 ZIP
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -457,6 +838,7 @@ function SkillScope({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeK
         saveError={saveError}
         onClose={() => setDialogOpen(false)}
         onSave={saveFromDialog}
+        onReveal={canImportExport ? revealDir : undefined}
       />
     </SettingsPage>
   )

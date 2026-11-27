@@ -125,14 +125,28 @@ export function buildCommandSuggestions(ctx: CommandAvailabilityContext): Compos
 
 export function buildSkillSuggestions(skills: readonly SkillSummary[]): ComposerSuggestionItem[] {
   return skills
-    .filter((skill) => skill.enabled)
+    .filter((skill) => skill.enabled && skill.userInvocable !== false)
     .map((skill) => ({
       id: `skill:${skill.scope}:${skill.name}`,
       group: 'skill',
       label: skill.name,
       description: skill.description,
-      badge: skill.eco ? '生态' : skill.scope === 'project' ? '项目' : '用户',
-      keywords: [skill.name, skill.description, 'skill', '技能'],
+      badge:
+        skill.scope === 'bundled'
+          ? '内置'
+          : skill.eco
+            ? '生态'
+            : skill.scope === 'project'
+              ? '项目'
+              : '用户',
+      ...(skill.argumentHint !== undefined && { argumentHint: skill.argumentHint }),
+      keywords: [
+        skill.name,
+        skill.description,
+        ...(skill.whenToUse !== undefined ? [skill.whenToUse] : []),
+        'skill',
+        '技能'
+      ],
       payload: {
         kind: 'skill',
         name: skill.name,

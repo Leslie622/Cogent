@@ -19,6 +19,7 @@ import {
   ListChecksIcon,
   SearchIcon,
   TerminalIcon,
+  WandSparklesIcon,
   WrenchIcon,
 } from 'lucide-react'
 import {
@@ -43,6 +44,7 @@ export type ToolStatus = ToolDisplayStatus
 const TOOL_ICON: Record<string, React.ReactNode> = {
   read: <FileTextIcon />,
   read_attachment: <FileTextIcon />,
+  skill: <WandSparklesIcon />,
   glob: <FolderSearchIcon />,
   find: <FolderSearchIcon />,
   grep: <SearchIcon />,
@@ -53,6 +55,25 @@ const TOOL_ICON: Record<string, React.ReactNode> = {
   todo_write: <ListChecksIcon />,
   bash: <TerminalIcon />,
   powershell: <TerminalIcon />
+}
+
+/** skill 工具专属展开体：顶栏展示「技能 [name]」徽章，下方保留换行展示 `<skill_content>` */
+function SkillBlock({ name, content }: { name: string; content: string }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/60">
+      <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2 text-xs">
+        <span className="text-muted-foreground">技能</span>
+        {name !== '' && (
+          <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-foreground">
+            {name}
+          </span>
+        )}
+      </div>
+      <div className="code-typography max-h-64 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-foreground/90">
+        {content}
+      </div>
+    </div>
+  )
 }
 
 /** edit 的展示 diff 行染色：+ 增 / - 删 / 其余（行号上下文）灰 */
@@ -231,11 +252,15 @@ export function ToolCard({
               失败原因已由行尾 Tooltip 承担，CodeBlock 统一 default 变体不再红 */}
           {hasDiff && <DiffBlock diff={diff} />}
           {hasResult && (
-            <CodeBlock size="sm">
-              <CodeBlockContent wrap className="max-h-64">
-                {result}
-              </CodeBlockContent>
-            </CodeBlock>
+            name === 'skill' && status !== 'error' ? (
+              <SkillBlock name={primary} content={result} />
+            ) : (
+              <CodeBlock size="sm">
+                <CodeBlockContent wrap className="max-h-64">
+                  {result}
+                </CodeBlockContent>
+              </CodeBlock>
+            )
           )}
         </TraceCollapsibleContent>
       )}

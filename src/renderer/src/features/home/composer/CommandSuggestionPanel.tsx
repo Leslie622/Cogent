@@ -142,11 +142,14 @@ export function CommandSuggestionPanel({
         </div>
 
         {item.badge !== undefined && (
+          // 徽标统一淡玻璃配方（2026-11-27 用户定调：内边距放宽、字不加粗）。
+          // 「单独发送」是行为提示（整条发送、不内插正文），保留低饱和琥珀
+          // 与纯信息性标签区分；其余走中性 —— 文字色纪律：透明度只许用在背景。
           <span
             className={cn(
-              'shrink-0 rounded-md px-1.5 py-0.5 text-xs leading-none font-medium',
+              'shrink-0 rounded-md px-2.5 py-1 text-xs leading-none font-normal',
               item.badge === '单独发送'
-                ? 'bg-amber-500/12 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300'
+                ? 'bg-amber-500/10 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300'
                 : 'bg-foreground/[0.055] text-muted-foreground dark:bg-white/[0.08]'
             )}
           >

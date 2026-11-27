@@ -48,6 +48,22 @@ declare global {
       clipboardFiles: () => Promise<string[]>
       attachmentPreview: (id: string, thumbnail: boolean) => Promise<string>
       attachmentAction: (id: string, action: 'reveal' | 'save') => Promise<void>
+      importSkills: (params: {
+        scope: 'user' | 'project'
+        cwd?: string
+        kind: 'directory' | 'zip'
+        overwrite?: boolean
+      }) => Promise<{ canceled: boolean; imported: string[]; skipped: string[] }>
+      exportSkill: (params: {
+        scope: SkillScope
+        cwd?: string
+        name: string
+      }) => Promise<{ canceled: boolean }>
+      revealSkillDir: (params: {
+        scope: SkillScope
+        cwd?: string
+        name: string
+      }) => Promise<{ ok: true }>
       /** 查询 Agent 引擎服务连接状态（诊断） */
       restartHost: () => Promise<unknown>
       getStatus: () => Promise<{
@@ -313,9 +329,19 @@ export interface EngineMethodParams extends DefaultsParams, AttachmentParams, Fi
   'mcp.override': { cwd: string; name: string; enabled?: boolean; exposure?: McpExposure }
   'skills.list': { cwd?: string }
   'skills.read': { scope: SkillScope; name: string; cwd?: string }
-  'skills.save': { scope: SkillScope; name: string; description: string; body: string; cwd?: string }
+  'skills.save': {
+    scope: 'user' | 'project'
+    name: string
+    description: string
+    body: string
+    cwd?: string
+    whenToUse?: string
+    manualOnly?: boolean
+    userInvocable?: boolean
+    argumentHint?: string
+  }
   'skills.delete': { scope: SkillScope; name: string; cwd?: string }
-  'skills.setEnabled': { scope: SkillScope; name: string; value: 'enabled' | 'disabled' | 'inherit'; cwd?: string }
+  'skills.setEnabled': { scope: 'user' | 'project'; name: string; value: 'enabled' | 'disabled' | 'inherit'; cwd?: string }
 }
 
 /** 任务清单条目（与 protocol TodoItem 镜像；todo_write 全量替换维护） */
@@ -355,7 +381,20 @@ export interface EngineMethodResult extends DefaultsResults, AttachmentResults, 
   'mcp.sync': { synced: number }
   'mcp.override': { ok: true }
   'skills.list': { skills: SkillSummary[]; errors: string[] }
-  'skills.read': { description: string; body: string }
+  'skills.read': {
+    description: string
+    body: string
+    whenToUse?: string
+    manualOnly?: boolean
+    userInvocable?: boolean
+    argumentHint?: string
+    license?: string
+    compatibility?: string
+    allowedTools?: string[]
+    unsupportedRuntime?: 'context-fork'
+    resourceFiles?: string[]
+    readonly?: boolean
+  }
   'skills.save': { ok: true }
   'skills.delete': { ok: true }
   'skills.setEnabled': { ok: true }
@@ -392,23 +431,34 @@ export interface McpServerSummary {
 }
 
 /** 技能定义所在作用域（与 protocol SkillScope 镜像） */
-export type SkillScope = 'user' | 'project'
+export type SkillScope = 'user' | 'project' | 'bundled'
+
+/** 技能发现来源类别（与 protocol SkillOrigin 镜像） */
+export type SkillOrigin = 'cogent' | 'agents' | 'claude' | 'custom' | 'bundled'
 
 /** 技能摘要（skills.list 行；body 另经 skills.read 取） */
 export interface SkillSummary {
   name: string
   description: string
   scope: SkillScope
-  /** SKILL.md 绝对路径（模型渐进加载的 read 入口） */
+  origin?: SkillOrigin
+  /** SKILL.md 绝对路径 */
   path: string
   baseDir: string
-  /** frontmatter disable-model-invocation：不进模型清单，仅 /skill: 手动可调 */
+  /** frontmatter disable-model-invocation：不进模型清单，仅用户显式可调 */
   manualOnly: boolean
+  userInvocable?: boolean
+  whenToUse?: string
+  argumentHint?: string
+  allowedTools?: string[]
+  unsupportedRuntime?: 'context-fork'
+  resourceCount?: number
+  readonly?: boolean
   enabled: boolean
   userDisabled: boolean
   /** 项目级状态文件对本名的显式覆盖（缺省 = 无覆盖） */
   override?: boolean
-  /** 来自 .agents 生态兼容目录（zcode 等工具装的）：只读发现 + 按名启停，编辑/删除禁用 */
+  /** 来自生态兼容目录（.agents / .claude）：只读发现 + 按名启停，编辑/删除禁用 */
   eco?: boolean
 }
 
@@ -542,6 +592,7 @@ export type InspectEntryKind =
   | 'tool.completed'
   | 'approval.asked'
   | 'approval.decided'
+  | 'skill.loaded'
   | 'title.started'
   | 'title.finished'
 
