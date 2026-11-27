@@ -21,14 +21,19 @@
  *   （凭据降级横幅，见 CredentialsBanner），ApiKeyField 增「清除」动作
  *   （removeApiKey）。
  */
-import { useEffect, useState } from 'react'
-import { IconPlus, IconRefresh } from '@tabler/icons-react'
+import { useEffect, useMemo, useState } from 'react'
+import { IconChevronDown, IconPlus, IconRefresh } from '@tabler/icons-react'
 import { cn } from 'cn'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { ProviderLogo } from '@/components/ProviderLogo'
 import { SidebarResizeHandle } from '@/components/SidebarResizeHandle'
-import { useEngineStore } from '@/stores/engine'
+import { providerDisplayName, useEngineStore } from '@/stores/engine'
 import type { CustomProviderDef, ProviderOverrideDef } from '@/env.d'
 import { BuiltinProviderDetail } from './BuiltinProviderDetail'
 import { CustomProviderDetail } from './CustomProviderDetail'
@@ -144,6 +149,7 @@ function CredentialsBanner({ error }: { error: string }) {
 }
 
 export function ModelsSection() {
+  const models = useEngineStore((s) => s.models)
   const providers = useEngineStore((s) => s.customProviders)
   const overrides = useEngineStore((s) => s.overrides)
   const saveProviders = useEngineStore((s) => s.saveProviders)
@@ -161,8 +167,28 @@ export function ModelsSection() {
     void window.cogent.getCredentialsStatus().then((status) => setCredentialsError(status.error))
   }, [])
 
+  const extraBuiltinProviders = useMemo(() => {
+    const pinned = new Set(BUILTIN_PROVIDERS.map((p) => p.id))
+    const seen = new Set<string>()
+    for (const m of models) {
+      if (!m.provider.startsWith('custom/') && !pinned.has(m.provider)) {
+        seen.add(m.provider)
+      }
+    }
+    for (const id of Object.keys(overrides)) {
+      if (!id.startsWith('custom/') && !pinned.has(id)) {
+        seen.add(id)
+      }
+    }
+    return [...seen]
+      .map((id) => ({ id, name: providerDisplayName(id, providers) }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [models, overrides, providers])
+
   const selectedDef = providers.find((p) => p.id === selectedId)
-  const selectedBuiltin = BUILTIN_PROVIDERS.find((b) => b.id === selectedId)
+  const selectedBuiltin =
+    BUILTIN_PROVIDERS.find((b) => b.id === selectedId) ??
+    extraBuiltinProviders.find((b) => b.id === selectedId)
   // 选中项被删时回落首个内置：派生值，无需同步逻辑
   const activeBuiltin = selectedBuiltin ?? BUILTIN_PROVIDERS[0]
 
@@ -281,13 +307,15 @@ export function ModelsSection() {
               ref={rail.listRef}
               inert={rail.collapsed ? true : undefined}
               className={cn(
-                'absolute inset-y-0 left-0 min-w-44 overflow-y-auto p-3 transition-opacity duration-200',
+                'absolute inset-y-0 left-0 min-w-44 overflow-y-auto px-3 pb-3 transition-opacity duration-200 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
                 rail.collapsed && 'opacity-0'
               )}
               style={{ width: rail.widthPx }}
             >
               <section className="flex flex-col gap-0.5">
-                <div className="flex h-7 items-center px-2 text-xs text-muted-foreground">内置供应商</div>
+                <div className="sticky top-0 z-10 bg-background pt-3 pb-1">
+                  <div className="flex h-6 items-center px-2 text-xs text-muted-foreground">内置供应商</div>
+                </div>
                 {BUILTIN_PROVIDERS.map((provider) => (
                   <ProviderNavRow
                     key={provider.id}
@@ -299,8 +327,34 @@ export function ModelsSection() {
                   />
                 ))}
               </section>
-              <section className="mt-4 flex flex-col gap-0.5">
-                <div className="flex h-7 items-center px-2 text-xs text-muted-foreground">自定义供应商</div>
+              {extraBuiltinProviders.length > 0 && (
+                <section className="mt-1 flex flex-col gap-0.5">
+                  <Collapsible defaultOpen={extraBuiltinProviders.some((p) => keyConfigured[p.id] === true || p.id === selectedId)}>
+                    <div className="sticky top-0 z-10 bg-background py-1">
+                      <CollapsibleTrigger className="flex h-7 w-full items-center gap-1 rounded-lg px-2 text-xs text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground">
+                        <IconChevronDown className="size-3.5 transition-transform duration-200 [[data-state=closed]_&]:-rotate-90" />
+                        <span>更多内置供应商（{extraBuiltinProviders.length}）</span>
+                      </CollapsibleTrigger>
+                    </div>
+                    <CollapsibleContent className="flex flex-col gap-0.5 pt-0.5">
+                      {extraBuiltinProviders.map((provider) => (
+                        <ProviderNavRow
+                          key={provider.id}
+                          active={selectedDef === undefined && activeBuiltin.id === provider.id}
+                          providerId={provider.id}
+                          name={provider.name}
+                          ok={keyConfigured[provider.id] === true}
+                          onClick={() => setSelectedId(provider.id)}
+                        />
+                      ))}
+                    </CollapsibleContent>
+                  </Collapsible>
+                </section>
+              )}
+              <section className="mt-1 flex flex-col gap-0.5">
+                <div className="sticky top-0 z-10 bg-background pt-3 pb-1">
+                  <div className="flex h-6 items-center px-2 text-xs text-muted-foreground">自定义供应商</div>
+                </div>
                 {providers.length === 0 ? (
                   <p className="px-2 py-1 text-xs text-muted-foreground">尚无自定义供应商</p>
                 ) : (
@@ -320,7 +374,7 @@ export function ModelsSection() {
             <div
               inert={!rail.collapsed ? true : undefined}
               className={cn(
-                'absolute inset-y-0 left-0 w-12 overflow-y-auto transition-opacity duration-200',
+                'absolute inset-y-0 left-0 w-12 overflow-y-auto transition-opacity duration-200 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
                 !rail.collapsed && 'opacity-0'
               )}
             >
@@ -335,6 +389,18 @@ export function ModelsSection() {
                     onClick={() => setSelectedId(provider.id)}
                   />
                 ))}
+                {extraBuiltinProviders
+                  .filter((p) => keyConfigured[p.id] === true || p.id === selectedId)
+                  .map((provider) => (
+                    <ProviderIconButton
+                      key={provider.id}
+                      active={selectedDef === undefined && activeBuiltin.id === provider.id}
+                      providerId={provider.id}
+                      name={provider.name}
+                      ok={keyConfigured[provider.id] === true}
+                      onClick={() => setSelectedId(provider.id)}
+                    />
+                  ))}
                 <div aria-hidden className="my-1.5 h-px w-6 bg-border" />
                 {providers.map((def) => (
                   <ProviderIconButton

@@ -44,7 +44,7 @@ describe('输入框模型菜单', () => {
     expect(screen.queryByText(/输入：|模型声明/)).not.toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: new RegExp(model.id) })).toBeInTheDocument()
     expect(screen.queryByText('视觉') !== null).toBe(input?.includes('image') === true)
-    expect(screen.getByRole('group', { name: '思考力度关闭' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '思考力度Off' })).toBeInTheDocument()
   })
 
   it('模型设置行和展开菜单共用有效能力，关闭后标签立即消失', () => {
@@ -63,5 +63,30 @@ describe('输入框模型菜单', () => {
 
     expect(screen.getByRole('menu')).toBeInTheDocument()
     expect(screen.queryByText(/输入：|模型声明/)).not.toBeInTheDocument()
+  })
+
+  it('禁 Off 模型在滑杆与标签中绝不展示 Off', () => {
+    const mandatory: ModelSummary = {
+      id: 'o3-strict',
+      name: 'o3',
+      provider: 'custom/test',
+      input: ['text'],
+      reasoning: true,
+      thinkingLevels: ['low', 'high'],
+      contextWindow: 128_000,
+      maxTokens: 4096
+    }
+    useEngineStore.setState({
+      models: [mandatory],
+      keyConfigured: { [mandatory.provider]: true },
+      activeModelId: mandatory.id,
+      activeProviderId: mandatory.provider,
+      thinkingLevel: 'off'
+    })
+    render(<ModelMenu />)
+    fireEvent.click(screen.getByRole('button', { name: `选择模型：${mandatory.id}` }))
+
+    expect(screen.getByRole('group', { name: '思考力度Low' })).toBeInTheDocument()
+    expect(screen.queryByText('Off')).not.toBeInTheDocument()
   })
 })

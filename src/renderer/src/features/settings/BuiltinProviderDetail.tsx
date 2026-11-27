@@ -57,7 +57,15 @@ export function BuiltinProviderDetail({
     const rows: Array<{ def: ModelDef; shadowed: boolean }> = catalog.map((m) => {
       const shadow = customModels.find((x) => x.id === m.id)
       return {
-        def: shadow ?? { id: m.id, contextWindow: m.contextWindow, reasoning: m.reasoning },
+        def: shadow ?? {
+          id: m.id,
+          contextWindow: m.contextWindow,
+          maxTokens: m.maxTokens,
+          ...(m.input !== undefined && { input: m.input }),
+          reasoning: m.reasoning,
+          ...(m.thinkingLevelMap !== undefined && { thinkingLevelMap: m.thinkingLevelMap }),
+          ...(m.compat !== undefined && { compat: m.compat })
+        },
         shadowed: shadow !== undefined
       }
     })
@@ -166,7 +174,7 @@ export function BuiltinProviderDetail({
           ))}
           {catalog.length === 0 && (
             <div className="flex h-10 items-center justify-center text-xs text-muted-foreground">
-              目录中暂无该供应商的模型，可手动添加
+              暂无模型
             </div>
           )}
         </div>

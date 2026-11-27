@@ -8,18 +8,14 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { cn } from 'cn'
 import { Slider } from '@/components/ui/slider'
+import { THINKING_LEVEL_LABELS, THINKING_ORDER } from '@shared/model-presets'
 import type { ThinkingLevel } from '@/env.d'
 
-/** 思考力度选项（off = 关闭，跟随引擎默认；其余透传给 agent.submit） */
-const THINKING_OPTIONS: ReadonlyArray<{ id: 'off' | ThinkingLevel; label: string }> = [
-  { id: 'off', label: '关闭' },
-  { id: 'minimal', label: '最低' },
-  { id: 'low', label: '低' },
-  { id: 'medium', label: '中' },
-  { id: 'high', label: '高' },
-  { id: 'xhigh', label: '极高' },
-  { id: 'max', label: '最大' },
-]
+/** 思考力度选项（业界通用英文档位：Off / Minimal / Low / Medium / High / XHigh / Max） */
+const THINKING_OPTIONS: ReadonlyArray<{ id: 'off' | ThinkingLevel; label: string }> = THINKING_ORDER.map((id) => ({
+  id,
+  label: THINKING_LEVEL_LABELS[id]
+}))
 
 /** 思考力度色彩坡道（低 → 高）：灰蓝(关) → 天蓝 → 主题蓝 → 靛 → 紫 → 品红。
  *  档位越高颜色越"热"、光晕越强 —— 力度感可视化的全部素材都从这条坡道取 */
@@ -103,16 +99,24 @@ export function thinkingVisuals(
     supportedLevels === undefined
       ? THINKING_OPTIONS
       : THINKING_OPTIONS.filter((option) => supportedLevels.includes(option.id))
-  const index = Math.max(0, options.findIndex((option) => option.id === value))
-  // 单档滑杆无从谈"进度"，取坡道起点（最冷静的灰蓝）
-  const t = options.length > 1 ? index / (options.length - 1) : 0
+  const matched = options.findIndex((option) => option.id === value)
+  const index = matched >= 0 ? matched : 0
+  const effective = options.at(index)
+  const effectiveId = effective?.id ?? value
+  // 单档非 off 模型（如仅 High 的纯推理模型）仍取对应力度色并保留呼吸动效，仅 Off 为灰蓝
+  const t =
+    options.length > 1
+      ? index / (options.length - 1)
+      : effectiveId === 'off'
+        ? 0
+        : Math.max(0.25, THINKING_ORDER.indexOf(effectiveId) / (THINKING_ORDER.length - 1))
   const from = rampColor(t * 0.55)
   const to = rampColor(t)
   return {
     options,
     index,
     t,
-    label: THINKING_OPTIONS.find((option) => option.id === value)?.label,
+    label: effective?.label ?? THINKING_OPTIONS.find((option) => option.id === effectiveId)?.label,
     text: `rgb(${to.join(' ')})`,
     /* 注入滑杆根元素的 CSS 变量：--think-from/to 已在 globals.css 注册为
        可插值颜色（配合 transition 平滑变色）；--think-r/g/b 通道 + 透明度
@@ -208,18 +212,22 @@ export function ThinkingSlider({
       <Slider
         value={[index]}
         min={0}
-        max={options.length - 1}
+        max={Math.max(1, options.length - 1)}
         step={1}
-        marks={options.map((_, i) => i)}
+        disabled={options.length <= 1}
+        marks={options.length > 1 ? options.map((_, i) => i) : undefined}
         /* 拇指在下方覆写为 size-6（24px），定位点公式必须同步真实拇指宽，
            否则端点圆点落在拇指停靠行程外、贴住轨道圆角端部 */
         thumbSizePx={24}
         filledThrough={index}
         thumbAriaLabel="思考力度"
-        getThumbAriaValueText={() => options[index].label}
+        getThumbAriaValueText={() => options[index]?.label ?? THINKING_LEVEL_LABELS[value]}
         onValueChange={(next) => {
+          if (options.length <= 1) return
+          const picked = options.at(next[0])
+          if (!picked) return
           setSteered(true)
-          onChange(options[next[0]].id)
+          onChange(picked.id)
         }}
         style={vars}
         fillClassName="think-cells"

@@ -5,7 +5,15 @@
  */
 import { create } from 'zustand'
 import { NOTIFY_SOUND_FILE_FIELDS, type NotifyKind, type SoundFileField } from '@shared/ipc'
-import type { CustomProviderDef, CustomProvidersPayload, EngineMethodResult, ModelSummary, ProviderOverrideDef, ThinkingLevelWithOff } from '@/env.d'
+import type {
+  CustomProviderDef,
+  CustomProvidersPayload,
+  EngineMethodParams,
+  EngineMethodResult,
+  ModelSummary,
+  ProviderOverrideDef,
+  ThinkingLevelWithOff
+} from '@/env.d'
 
 // 失焦保存先于测试点击发生，但 IPC 回包可能更晚。保留最近保存的 Promise，
 // 测试等待定义与本供应商 Key 生效；失败也保留到重存，不能悄悄改测旧配置。
@@ -60,6 +68,42 @@ export const BUILTIN_PROVIDER_NAMES: Record<string, string> = {
   openrouter: 'OpenRouter',
   xai: 'xAI',
   zai: 'Z.AI',
+  'zai-coding-cn': 'Z.AI Coding (CN)',
+  'amazon-bedrock': 'Amazon Bedrock',
+  'ant-ling': 'Ant Ling',
+  azure: 'Azure OpenAI',
+  baseten: 'Baseten',
+  cerebras: 'Cerebras',
+  'cloudflare-ai-gateway': 'Cloudflare AI Gateway',
+  'cloudflare-workers-ai': 'Cloudflare Workers AI',
+  fireworks: 'Fireworks AI',
+  'github-copilot': 'GitHub Copilot',
+  'google-vertex': 'Google Vertex AI',
+  groq: 'Groq',
+  huggingface: 'Hugging Face',
+  'kimi-coding': 'Kimi Coding',
+  meta: 'Meta',
+  minimax: 'MiniMax',
+  'minimax-cn': 'MiniMax (CN)',
+  mistral: 'Mistral',
+  moonshotai: 'Moonshot AI',
+  'moonshotai-cn': 'Moonshot AI (CN)',
+  nvidia: 'NVIDIA NIM',
+  'openai-codex': 'OpenAI Codex',
+  opencode: 'OpenCode',
+  'opencode-go': 'OpenCode Go',
+  'qwen-token-plan': 'Qwen Token Plan',
+  'qwen-token-plan-cn': 'Qwen Token Plan (CN)',
+  'qwen-token-plan-individual': 'Qwen Token Plan (Individual)',
+  'qwen-token-plan-individual-cn': 'Qwen Token Plan (Individual CN)',
+  radius: 'Radius',
+  together: 'Together AI',
+  typesafe: 'TypeSafe',
+  'vercel-ai-gateway': 'Vercel AI Gateway',
+  xiaomi: 'Xiaomi MiMo',
+  'xiaomi-token-plan-ams': 'Xiaomi MiMo (AMS)',
+  'xiaomi-token-plan-cn': 'Xiaomi MiMo (CN)',
+  'xiaomi-token-plan-sgp': 'Xiaomi MiMo (SGP)',
 }
 
 /** provider 显示名：自定义走 def.name；内置查名册，未收录兜底原 id */
@@ -111,6 +155,7 @@ interface EngineState {
   saveProviders: (providers: CustomProviderDef[], overrides: ProviderOverrideDef[]) => Promise<void>
   saveApiKey: (providerId: string, apiKey: string | null) => Promise<void>
   testModel: (providerId: string, modelId: string) => Promise<EngineMethodResult['models.test']>
+  discoverModels: (params: EngineMethodParams['models.discover']) => Promise<EngineMethodResult['models.discover']>
   setActiveModel: (modelId: string, providerId?: string | null) => void
   setThinkingLevel: (level: EngineState['thinkingLevel']) => void
   /** 设置页「默认权限」开关：落盘 + 内存态（新会话物化缺省随动） */
@@ -264,15 +309,23 @@ export const useEngineStore = create<EngineState>((set, get) => ({
         provider: null as string | null,
         id: modelsResult.models[0]?.id ?? ''
       }
+      const resolvedModelId = settings.activeModelId ?? defaultModel.id
+      const resolvedProviderId = settings.activeProviderId ?? defaultModel.provider
+      const rawThinkingLevel = normalizeThinkingLevel(settings.thinkingLevel)
+      const activeTarget = findActiveModel(modelsResult.models, keys, resolvedModelId, resolvedProviderId)
+      const resolvedThinkingLevel =
+        activeTarget && activeTarget.thinkingLevels.length > 0 && !activeTarget.thinkingLevels.includes(rawThinkingLevel)
+          ? nearestThinkingLevel(rawThinkingLevel, activeTarget.thinkingLevels)
+          : rawThinkingLevel
       set({
         models: modelsResult.models,
         keyConfigured: keys,
         customProviders: customPayload.providers,
         overrides: toOverrideMap(customPayload),
         // 偏好回填：落盘的模型可能已不在目录（改名/删除）→ 校验一次再落
-        activeModelId: settings.activeModelId ?? defaultModel.id,
-        activeProviderId: settings.activeProviderId ?? defaultModel.provider,
-        thinkingLevel: normalizeThinkingLevel(settings.thinkingLevel),
+        activeModelId: resolvedModelId,
+        activeProviderId: resolvedProviderId,
+        thinkingLevel: resolvedThinkingLevel,
         defaultPermissionMode: defaults.defaultPermissionMode,
         sendShortcut: settings.sendShortcut ?? 'enter',
         closeBehavior: settings.closeBehavior ?? 'ask',
@@ -289,12 +342,31 @@ export const useEngineStore = create<EngineState>((set, get) => ({
 
   refreshKeys: async () => {
     const keyStatus = await window.cogent.listApiKeys()
-    set({ keyConfigured: toKeyMap(keyStatus) })
+    const keyConfigured = toKeyMap(keyStatus)
+    const state = get()
+    const active = findActiveModel(state.models, keyConfigured, state.activeModelId, state.activeProviderId)
+    const patch: Partial<EngineState> = { keyConfigured }
+    if (active && active.thinkingLevels.length > 0 && !active.thinkingLevels.includes(state.thinkingLevel)) {
+      const clamped = nearestThinkingLevel(state.thinkingLevel, active.thinkingLevels)
+      patch.thinkingLevel = clamped
+      void window.cogent.saveSettings({ thinkingLevel: clamped })
+    }
+    set(patch)
   },
 
   refreshModels: async () => {
     const { models } = await window.cogent.engineRequest('models.list', {})
-    set({ models })
+    const state = get()
+    const target = models.find(
+      (m) => m.id === state.activeModelId && (state.activeProviderId == null || m.provider === state.activeProviderId)
+    )
+    const patch: Partial<EngineState> = { models }
+    if (target && target.thinkingLevels.length > 0 && !target.thinkingLevels.includes(state.thinkingLevel)) {
+      const clamped = nearestThinkingLevel(state.thinkingLevel, target.thinkingLevels)
+      patch.thinkingLevel = clamped
+      void window.cogent.saveSettings({ thinkingLevel: clamped })
+    }
+    set(patch)
   },
 
   saveProviders: (providers, overrides) => {
@@ -315,6 +387,10 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   testModel: async (providerId, modelId) => {
     await Promise.all([providersSaved, keysSaved.get(providerId)])
     return window.cogent.engineRequest('models.test', { providerId, modelId })
+  },
+  discoverModels: async (params) => {
+    if (params.providerId) await keysSaved.get(params.providerId)
+    return window.cogent.engineRequest('models.discover', params)
   },
 
   // 选中模型/思考力度的 setter 都同步落盘（fire-and-forget：写失败不回滚内存态，
@@ -341,8 +417,15 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     })
   },
   setThinkingLevel: (thinkingLevel) => {
-    set({ thinkingLevel })
-    void window.cogent.saveSettings({ thinkingLevel })
+    const state = get()
+    const active = findActiveModel(state.models, state.keyConfigured, state.activeModelId, state.activeProviderId)
+    const supported = active?.thinkingLevels
+    const effective =
+      supported && supported.length > 0 && !supported.includes(thinkingLevel)
+        ? nearestThinkingLevel(thinkingLevel, supported)
+        : thinkingLevel
+    set({ thinkingLevel: effective })
+    void window.cogent.saveSettings({ thinkingLevel: effective })
   },
   setDefaultPermissionMode: async (defaultPermissionMode) => {
     try {

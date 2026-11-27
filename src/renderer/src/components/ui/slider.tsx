@@ -133,7 +133,7 @@ function Slider<Value extends number | readonly number[]>({
                  属于宿主元素，hover/click 落上面即落在点上；上下越出轨道的
                  部分被 Track overflow-hidden 裁掉各 1px，无碍。 */
               style={{
-                left: `calc(${thumbSizePx / 2}px + (100% - ${thumbSizePx}px) * ${((mark - min) / (max - min)).toFixed(4)})`,
+                left: `calc(${thumbSizePx / 2}px + (100% - ${thumbSizePx}px) * ${(max > min ? (mark - min) / (max - min) : 0).toFixed(4)})`,
               }}
             />
           ))}

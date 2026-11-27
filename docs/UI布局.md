@@ -118,6 +118,15 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
 - 升级原语时核对下方样式陷阱。Sonner 消费 appearance store、继承应用字体；普通宽 356px、错误 560px，action 使用同色淡底，App 挂 top-center。
 - registry 的 IconPlaceholder 换实际图标，CLI 标记沿用官方含义。安装后检查构建产物。
 
+## 模型配置弹窗
+
+模型编辑 Dialog 使用 `sm:max-w-xl`、24px 内距，固定头部模型身份、底部保存栏；中段用 shadcn `TabsList line` 分为基础、思考和兼容，各页签独立滚动并保持挂载。
+页签去掉额外水平内距，文字和标题、分组、字段共用左沿；组内及组间使用20px间隔，滚动区与底栏同步24px边距。基础页只呈现容量与输入能力，不再重复放置跳转思考页签的摘要入口。
+预设和协议选项复用 Select，能力用 Switch、档位用带勾 Toggle；三态兼容选项用 ButtonGroup 组合 Toggle。上下文滑杆沿用 ContextWindowSlider。
+低频协议映射与预算只保留一个 Button disclosure / xs 的「高级设置」入口，配 Collapsible 展开两组表单；默认不加通栏分隔或默认值摘要，有覆盖时提示「已自定义」。
+供应商详情的「供应商兼容设置」位于模型列表之后，沿用 Button disclosure / xs 与 Collapsible；模型页签只覆盖当前模型，未单独设置的项继续继承。
+兼容字段共用按自身容器宽度切换的排版：字符串选项用 Select，三态用单行 ButtonGroup，不平铺长参数按钮。非必要的操作说明和模型列表教学文字不常显，仅保留校验、不可用原因与数值规则。
+
 ## 首页与交互面板
 
 | 部件 | 视觉与组件配方 |

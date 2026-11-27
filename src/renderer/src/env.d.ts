@@ -189,6 +189,7 @@ export type EngineMethod =
   | 'credentials.list'
   | 'models.list'
   | 'models.test'
+  | 'models.discover'
   | 'inspect.entries'
   | 'inspect.entry'
   | 'mcp.list'
@@ -322,6 +323,12 @@ export interface EngineMethodParams extends DefaultsParams, AttachmentParams, Fi
   'credentials.list': Record<string, never>
   'models.list': Record<string, never>
   'models.test': { providerId: string; modelId: string }
+  'models.discover': {
+    providerId?: string
+    baseUrl: string
+    apiFormat?: 'openai-completions' | 'openai-responses' | 'anthropic-messages'
+    apiKey?: string
+  }
   'inspect.entries': { sessionId: string }
   'inspect.entry': { sessionId: string; seq: number }
   'mcp.list': { cwd?: string }
@@ -375,6 +382,7 @@ export interface EngineMethodResult extends DefaultsResults, AttachmentResults, 
   'credentials.list': { providers: ProviderSummary[] }
   'models.list': { models: ModelSummary[]; defaultModel?: { provider: string; id: string } }
   'models.test': { elapsedMs: number }
+  'models.discover': { models: DiscoveredModel[] }
   'inspect.entries': { entries: InspectEntrySummary[] }
   'inspect.entry': InspectEntryDetail
   'mcp.list': { servers: McpServerSummary[]; errors: string[] }
@@ -720,6 +728,31 @@ export interface ProviderSummary {
   keyConfigured: boolean
 }
 
+export type ThinkingLevelMap = Partial<Record<ThinkingLevelWithOff, string | null>>
+
+export type ThinkingFormat =
+  | 'openai'
+  | 'openrouter'
+  | 'deepseek'
+  | 'together'
+  | 'baseten'
+  | 'zai'
+  | 'qwen'
+  | 'qwen-chat-template'
+  | 'chat-template'
+  | 'string-thinking'
+  | 'ant-ling'
+
+export interface DiscoveredModel {
+  id: string
+  name?: string
+  contextWindow?: number
+  maxTokens?: number
+  input?: Array<'text' | 'image'>
+  reasoning?: boolean
+  thinkingLevelMap?: ThinkingLevelMap
+}
+
 export interface ModelSummary {
   input?: Array<'text' | 'image'>
   id: string
@@ -728,6 +761,10 @@ export interface ModelSummary {
   reasoning: boolean
   /** 该模型真实支持的思考力度档（含 'off'；引擎按 pi 目录判定） */
   thinkingLevels: ThinkingLevelWithOff[]
+  /** 原始思考档位映射（供设置页编辑内置/自定义模型时无损回显） */
+  thinkingLevelMap?: ThinkingLevelMap
+  /** 当前模型生效的兼容覆盖 */
+  compat?: ProviderCompatDef
   contextWindow: number
   maxTokens: number
   /** 是否用户添加（缺省 false = pi 目录原生）；默认模型设置 UI 锁 id */
@@ -740,8 +777,7 @@ export interface ModelSummary {
 /**
  * 用户自定义模型定义（与 protocol/types.ts ModelDef 镜像；引擎侧补默认值构建）。
  * pi 输入模态只有 text | image（视频/PDF 无对应字段）。
- * thinkingLevels：支持的思考等级子集（缺省 = 跟随端点默认），引擎据此构建
- * thinkingLevelMap（选中透传 / 未选中 null）。
+ * thinkingLevelMap：各档映射（string = 启用下发值，null = 显式禁用）。
  */
 export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
@@ -756,12 +792,15 @@ export interface ModelDef {
   input?: Array<'text' | 'image'>
   reasoning?: boolean
   thinkingLevels?: ThinkingLevel[]
+  thinkingLevelMap?: ThinkingLevelMap
   /** 压缩参数覆盖 —— 盘上兼容字段：pi 不读、引擎不消费（触发线 = pi
       reserve 制 + 窗口自适应），仅为旧盘上数据保留 */
   compaction?: CompactionParamsOverride
   /** 思考预算（token 按档位）：推理模型思考硬钳制，防小窗输出
       预算被吃光。设置 UI 在「高级」折叠 */
   thinkingBudgets?: ThinkingBudgetsOverride
+  /** 模型级端点兼容覆盖 */
+  compat?: ProviderCompatDef
 }
 
 /** 思考预算（token 按档位），镜像 protocol/types.ts；xhigh/max 档引擎侧归 high */
@@ -772,12 +811,16 @@ export interface ThinkingBudgetsOverride {
   high?: number
 }
 
-/** provider 级兼容覆盖（高级面），镜像 protocol/types.ts；仅 openai
-    系方言消费，未设置时引擎按 baseUrl 自动探测 */
+/** provider / model 级兼容覆盖（高级面），镜像 protocol/types.ts */
 export interface ProviderCompatDef {
+  thinkingFormat?: ThinkingFormat
+  supportsReasoningEffort?: boolean
+  supportsDeveloperRole?: boolean
   thinkingTokenBudgetField?: 'thinking_budget' | 'thinking_budget_tokens' | 'thinking_token_budget'
   supportsThinkingTokenBudget?: boolean
   maxTokensField?: 'max_tokens' | 'max_completion_tokens'
+  forceAdaptiveThinking?: boolean
+  supportsTemperature?: boolean
 }
 
 /** 压缩触发参数的用户覆盖（ModelDef.compaction 的形状，镜像 protocol/types.ts） */

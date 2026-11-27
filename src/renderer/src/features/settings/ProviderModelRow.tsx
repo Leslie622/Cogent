@@ -14,17 +14,36 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { ModelVisionBadge } from '@/components/ModelVisionBadge'
 import { providerDisplayName, useEngineStore } from '@/stores/engine'
-import type { ModelDef } from '@/env.d'
+import { formatThinkingSummary, resolveSupportedThinkingLevels } from '@shared/model-presets'
+import type { ModelDef, ThinkingLevelWithOff } from '@/env.d'
 import { BADGE, formatContext } from './models-recipes'
 
-/** 模型行徽标：上下文窗口 + 推理（ModelDef / 目录摘要通用） */
-function ModelBadges({ def }: { def: ModelDef }) {
+function deriveLevelsForRow(def: ModelDef, summaryLevels?: ThinkingLevelWithOff[]): ThinkingLevelWithOff[] | undefined {
+  if (!def.reasoning) return undefined
+  if (summaryLevels && summaryLevels.length > 0) return summaryLevels
+  if (def.thinkingLevelMap !== undefined) return resolveSupportedThinkingLevels(true, def.thinkingLevelMap)
+  if (def.thinkingLevels !== undefined) return ['off', ...def.thinkingLevels]
+  return undefined
+}
+
+/** 模型行徽标：上下文窗口 + 推理（外层只显示「思考」，悬停提示支持档位） */
+function ModelBadges({ def, summaryLevels }: { def: ModelDef; summaryLevels?: ThinkingLevelWithOff[] }) {
+  const levels = deriveLevelsForRow(def, summaryLevels)
+  const thinkingSummary = levels ? formatThinkingSummary(levels) : null
   return (
     <>
       {def.contextWindow !== undefined && (
         <span className={cn(BADGE, 'shrink-0')}>{formatContext(def.contextWindow)}</span>
       )}
-      {def.reasoning && <span className={cn(BADGE, 'shrink-0')}>思考</span>}
+      {def.reasoning && (
+        thinkingSummary ? (
+          <Hint tip={thinkingSummary.tooltip}>
+            <span className={cn(BADGE, 'shrink-0')}>思考</span>
+          </Hint>
+        ) : (
+          <span className={cn(BADGE, 'shrink-0')}>思考</span>
+        )
+      )}
     </>
   )
 }
@@ -69,8 +88,16 @@ function ModelRowActions({
   const testTip = !providerEnabled ? '请先启用供应商' : !enabled ? '请先启用模型' : '测试模型'
   return (
     // right-13 = 行右内距 16 + 开关 32 + 缝 4：簇右缘贴开关左侧；
-    // 动作钮裸浮于行上；键盘聚焦与探测期间保持可见，避免反馈图标突然消失。
-    <div className={cn('absolute right-13 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100', testing && 'opacity-100')}>
+    // 动作簇带同色底 + 左侧柔化渐变，窄行时遮盖下方徽标防图标与文字叠穿；
+    // 非悬停时禁指针事件，避免隐形按钮拦截点击；键盘聚焦与探测期间保持可见。
+    <div
+      className={cn(
+        'pointer-events-none absolute right-13 z-10 flex items-center gap-0.5 rounded-md bg-background pl-1 opacity-0',
+        'before:pointer-events-none before:absolute before:inset-y-0 before:-left-4 before:w-4 before:bg-gradient-to-r before:from-transparent before:to-background',
+        'group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+        testing && 'pointer-events-auto opacity-100'
+      )}
+    >
       <Hint tip={testTip}>
         <Button
           variant="ghost"
@@ -124,15 +151,16 @@ export function ProviderModelRow({
   /** 缺省 = 无删除语义（未改过的目录模型不能删，只能禁用） */
   onDelete?: () => void
 }) {
-  const input = useEngineStore((s) => s.models.find((m) => m.provider === providerId && m.id === def.id)?.input)
+  const summary = useEngineStore((s) => s.models.find((m) => m.provider === providerId && m.id === def.id))
+  const input = summary?.input
   return (
     /* relative 供动作簇绝对定位锚定 */
     <div className="group relative flex h-12 min-w-0 items-center gap-2 px-4">
       {/* 显示一律 id（2026-11-10 定调，同聊天页模型菜单口径）：目录营销名与
           API id 不对应，所见即所传；自定义条目更是 id 输什么是什么 —— name 不参与呈现 */}
-      <span className="min-w-0 shrink truncate text-sm">{def.id}</span>
+      <span className={cn('min-w-0 shrink truncate text-sm', !enabled && 'text-muted-foreground')}>{def.id}</span>
       <ModelVisionBadge input={input} size="default" />
-      <ModelBadges def={def} />
+      <ModelBadges def={def} summaryLevels={summary?.thinkingLevels} />
       <ModelRowActions providerId={providerId} modelId={def.id} enabled={enabled} onEdit={onEdit} onDelete={onDelete} />
       <Switch checked={enabled} onCheckedChange={onToggle} aria-label={`${def.id} 启用`} className="ml-auto" />
     </div>

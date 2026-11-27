@@ -1,12 +1,11 @@
 /**
  * 自定义供应商详情卡（2026-11-10 从 ModelsSection.tsx 拆出）：ModelsSection
  * master-detail 右栏的自定义分支。字段组成：名称（头部行内编辑）/ Base URL /
- * API 格式 / API Key / 模型列表 / 高级（端点兼容）；模型行复用
+ * API 格式 / API Key / 模型列表 / 供应商兼容设置；模型行复用
  * ProviderModelRow（与内置详情共享），增改走 ModelDialog。
  */
 import { useMemo, useState } from 'react'
-import { IconChevronDown, IconDots, IconTrash } from '@tabler/icons-react'
-import { cn } from 'cn'
+import { IconChevronDown, IconDots, IconDownload, IconTrash } from '@tabler/icons-react'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import {
@@ -22,13 +21,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Toggle } from '@/components/ui/toggle'
 import { ProviderLogo } from '@/components/ProviderLogo'
 import { useEngineStore } from '@/stores/engine'
 import type { CustomProviderDef, ModelDef } from '@/env.d'
 import { ApiKeyField } from './ApiKeyField'
+import { CompatFields } from './CompatFields'
 import { FormatSelect } from './FormatSelect'
 import { ModelDialog } from './ModelDialog'
+import { ModelDiscoveryDialog } from './ModelDiscoveryDialog'
 import {
   AddModelButton,
   disabledAfterRename,
@@ -36,15 +36,6 @@ import {
   toggleDisabledModel,
 } from './ProviderModelRow'
 import { FIELD_GAP, FIELD_LABEL } from './models-recipes'
-
-/** 思考预算字段名的可选项：自托管 openai 系方言的三种认法 +
-    不下发（缺省）。字段名原样透传引擎 → pi 方言层落请求体 */
-const BUDGET_FIELD_OPTIONS: ReadonlyArray<{ label: string; value: 'thinking_budget' | 'thinking_budget_tokens' | 'thinking_token_budget' | undefined }> = [
-  { label: '不下发', value: undefined },
-  { label: 'thinking_budget', value: 'thinking_budget' },
-  { label: 'thinking_budget_tokens', value: 'thinking_budget_tokens' },
-  { label: 'thinking_token_budget', value: 'thinking_token_budget' }
-]
 
 /** 自定义供应商详情。文本输入本地编辑、失焦提交（每次修改即时全量保存，见
     ModelsSection.tsx 文件头"保存语义"）；模型行 = ModelDef 文本 + hover 动作簇 +
@@ -71,7 +62,10 @@ export function CustomProviderDetail({
     const defIds = new Set(defs.map((d) => d.id))
     return [...defs, ...def.models.filter((id) => !defIds.has(id)).map((id): ModelDef => ({ id }))]
   }, [def])
+  const existingIds = useMemo(() => new Set(modelRows.map((m) => m.id)), [modelRows])
   const [dialog, setDialog] = useState<{ initial: ModelDef | null } | null>(null)
+  const [discoverOpen, setDiscoverOpen] = useState(false)
+  const apiFormat = def.apiFormat ?? 'openai-completions'
 
   const patch = (partial: Partial<CustomProviderDef>): void => onChange({ ...def, ...partial })
   const disabled = new Set(def.disabledModels ?? [])
@@ -96,6 +90,14 @@ export function CustomProviderDetail({
       models: def.models.filter((m) => m !== modelId),
       modelDefs: (def.modelDefs ?? []).filter((d) => d.id !== modelId),
       disabledModels: (def.disabledModels ?? []).filter((id) => id !== modelId)
+    })
+  }
+  const applyDiscovered = (addedDefs: ModelDef[]): void => {
+    if (addedDefs.length === 0) return
+    const addedIds = new Set(addedDefs.map((d) => d.id))
+    patch({
+      models: def.models.filter((id) => !addedIds.has(id)),
+      modelDefs: [...(def.modelDefs ?? []), ...addedDefs]
     })
   }
 
@@ -156,69 +158,28 @@ export function CustomProviderDetail({
         <FormatSelect value={def.apiFormat} onChange={(apiFormat) => patch({ apiFormat })} />
       </div>
 
-      {/* 高级折叠：端点兼容覆盖 —— 懂端点用户的面，默认收起。
-          思考预算字段名 = 自托管 openai 系端点（vLLM/Qwen/DashScope/SGLang/
-          llama.cpp）对方言字段名的认法，选对后模型级思考预算才会随请求下发；
-          anthropic 方言走官方 budget_tokens 不经此面 */}
-      <Collapsible>
-        <CollapsibleTrigger
-          className={
-            '-ml-2 flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground ' +
-            'hover:bg-accent-foreground/5 hover:text-foreground'
-          }
-        >
-          <IconChevronDown className="size-3.5 transition-transform duration-200 [[data-state=closed]_&]:rotate-180" aria-hidden="true" />
-          高级（端点兼容）
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="mt-2 border-t pt-3">
-            <label className={FIELD_LABEL}>思考预算字段名</label>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {BUDGET_FIELD_OPTIONS.map((option) => (
-                <Hint key={option.value ?? 'none'} tip={option.label} side="bottom">
-                  <Toggle
-                    variant="outline"
-                    size="default"
-                    pressed={def.compat?.thinkingTokenBudgetField === option.value}
-                    onPressedChange={(on) =>
-                      on &&
-                      patch({
-                        compat:
-                          option.value === undefined
-                            ? undefined
-                            : { ...def.compat, thinkingTokenBudgetField: option.value }
-                      })
-                    }
-                    className={cn(
-                      'text-sm font-normal',
-                      'aria-pressed:bg-foreground/10 aria-pressed:text-foreground'
-                    )}
-                  >
-                    {option.label}
-                  </Toggle>
-                </Hint>
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              官方端点无需配置（引擎按 baseUrl 自动探测）；配置后请在模型编辑的「高级」里按档位填思考预算
-            </p>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-
       <ApiKeyField providerId={def.id} />
 
       {/* 模型列表：开关关 = 进 disabledModels（可逆，引擎不注册该模型） */}
       <div className={FIELD_GAP}>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <label className={FIELD_LABEL}>模型列表</label>
-          <AddModelButton onClick={() => setDialog({ initial: null })} />
+          <div className="flex items-center gap-1.5">
+            <Hint tip={baseUrl.trim() ? '从 /models 接口自动获取可用模型' : '请先填写 Base URL'}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!baseUrl.trim()}
+                onClick={() => setDiscoverOpen(true)}
+              >
+                <IconDownload className="size-3.5" />
+                获取模型列表
+              </Button>
+            </Hint>
+            <AddModelButton onClick={() => setDialog({ initial: null })} />
+          </div>
         </div>
-        {modelRows.length === 0 ? (
-          <p className="mt-2 text-xs text-muted-foreground">
-            添加端点上可用的模型，配置后才会出现在聊天的模型菜单里。
-          </p>
-        ) : (
+        {modelRows.length > 0 && (
           // 限高 + 内部滚动同内置详情（max-h-96 = 8 行），多模型不推长右栏页面
           <div className="mt-2 max-h-96 divide-y divide-border overflow-y-auto rounded-lg border border-border">
             {modelRows.map((row) => (
@@ -236,12 +197,37 @@ export function CustomProviderDetail({
         )}
       </div>
 
+      {/* 低频兼容默认放在主要连接与模型配置之后，不打断必填路径。 */}
+      <Collapsible className="mt-6">
+        <CollapsibleTrigger render={<Button variant="disclosure" size="xs" className="group -ml-2" />}>
+          供应商兼容设置
+          <IconChevronDown className="transition-transform group-data-panel-open:rotate-180" aria-hidden="true" />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-4">
+            <CompatFields value={def.compat} apiFormat={apiFormat} onChange={(compat) => patch({ compat })} />
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+
       <ModelDialog
         open={dialog !== null}
         initial={dialog?.initial ?? null}
         catalog={catalog}
+        apiFormat={apiFormat}
         onClose={() => setDialog(null)}
         onSave={saveModel}
+      />
+
+      <ModelDiscoveryDialog
+        open={discoverOpen}
+        onClose={() => setDiscoverOpen(false)}
+        providerId={def.id}
+        baseUrl={baseUrl.trim() || def.baseUrl}
+        apiFormat={apiFormat}
+        existingIds={existingIds}
+        catalog={catalog}
+        onApply={applyDiscovered}
       />
     </>
   )
