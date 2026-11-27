@@ -159,9 +159,9 @@ void (async()=>{try {
  const sessionId=await evaluate(${JSON.stringify(bootstrap)});
  let loaded = new Promise(done=>win.webContents.once('did-finish-load',done));win.reload();await loaded;
  await wait(()=>evaluate('Array.from(document.querySelectorAll("header")).some(el=>el.innerText.includes("文件链接验收"))'),'目标聊天主体与历史水合');
- await wait(()=>evaluate('document.querySelector("[data-chat-session] textarea")?.disabled===false'),'目标聊天输入与草稿就绪');
+ await wait(()=>evaluate('document.querySelector("[data-chat-session] [contenteditable=true][aria-label=聊天输入框]")')!==null,'目标聊天输入与草稿就绪');
  await wait(()=>evaluate('document.body.innerText.includes("file-test")'),'测试模型偏好水合');
- await evaluate('document.querySelector("textarea").focus()');await win.webContents.insertText('生成文件链接');
+ await evaluate('document.querySelector("[contenteditable=true][aria-label=聊天输入框]").focus()');await win.webContents.insertText('生成文件链接');
  await wait(()=>evaluate('document.querySelector("[aria-label=发送]")?.disabled===false'),'实际发送按钮就绪');
  await evaluate((${submit.toString()})(sessionId));
  await evaluate('document.querySelector("[aria-label=发送]").click()');

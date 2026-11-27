@@ -60,8 +60,8 @@ const clickPreview=async name=>evaluate('Array.from(document.querySelectorAll("[
 const clickOutputMenu=async name=>evaluate('Array.from(document.querySelectorAll("[data-output-card]")).find(card=>card.innerText.includes('+JSON.stringify(name)+')).querySelector("[aria-haspopup=menu]").click()');
 const reload=async()=>{const loaded=new Promise(done=>win.webContents.once('did-finish-load',done));win.reload();await loaded};
 const send=async text=>{
- await wait(()=>evaluate('document.querySelector("[data-chat-session] textarea")?.disabled===false'),'目标聊天实际输入框就绪');
- await evaluate('document.querySelector("textarea").focus()');await win.webContents.insertText(text);
+ await wait(()=>evaluate('document.querySelector("[data-chat-session] [contenteditable=true][aria-label=聊天输入框]")')!==null,'目标聊天实际输入框就绪');
+ await evaluate('document.querySelector("[contenteditable=true][aria-label=聊天输入框]").focus()');await win.webContents.insertText(text);
  await wait(()=>evaluate('document.querySelector("[aria-label=发送]")?.disabled===false'),'实际发送按钮就绪');
  await evaluate('window.outputTerminal=new Promise(resolve=>{const un=window.cogent.onEngineEvent(e=>{if(e.method==="run.completed"||e.method==="run.failed"){un();resolve(e)}})});undefined');
  await evaluate('document.querySelector("[aria-label=发送]").click()');
