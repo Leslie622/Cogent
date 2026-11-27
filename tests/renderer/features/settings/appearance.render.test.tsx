@@ -8,7 +8,15 @@ import { useAppearanceStore } from '@/stores/appearance'
 const storageKey = 'cogent-appearance'
 
 beforeEach(() => {
-  useAppearanceStore.setState({ colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65, popoverGlass: 60 })
+  useAppearanceStore.setState({
+    colorMode: 'light',
+    interfaceSkin: 'mint',
+    shellOpacity: 65,
+    popoverGlass: true,
+    popoverGlassOpacity: 60,
+    popoverGlassBlur: 10,
+    popoverGlassSaturate: 140,
+  })
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
     matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
   }))
@@ -17,7 +25,15 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   useAppearanceStore.getState().setAccent('default')
-  useAppearanceStore.setState({ colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65, popoverGlass: 60 })
+  useAppearanceStore.setState({
+    colorMode: 'light',
+    interfaceSkin: 'mint',
+    shellOpacity: 65,
+    popoverGlass: true,
+    popoverGlassOpacity: 60,
+    popoverGlassBlur: 10,
+    popoverGlassSaturate: 140,
+  })
   localStorage.removeItem(storageKey)
   vi.unstubAllGlobals()
 })
@@ -207,22 +223,59 @@ it('不支持系统材质的平台与深色模式隐藏外壳不透明度滑杆'
   expect(screen.queryByRole('group', { name: '外壳不透明度' })).not.toBeInTheDocument()
 })
 
-it('浮层毛玻璃滑杆支持调整百分比、0% 关闭并可恢复默认 60%', () => {
+it('浮层毛玻璃总开关与不透明度 / 模糊度 / 饱和度独立调节、持久化并支持各自恢复默认', () => {
   render(<AppearanceSection />)
-  expect(screen.getByRole('group', { name: '浮层毛玻璃' })).toBeInTheDocument()
-  const reset = screen.getByRole('button', { name: '恢复默认毛玻璃强度' })
+  const toggle = screen.getByRole('switch', { name: '浮层毛玻璃' })
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  const resetOpacity = screen.getByRole('button', { name: '恢复默认浮层不透明度' })
+  const resetBlur = screen.getByRole('button', { name: '恢复默认浮层模糊度' })
+  const resetSaturate = screen.getByRole('button', { name: '恢复默认浮层饱和度' })
+  expect(resetOpacity).toBeDisabled()
+  expect(resetBlur).toBeDisabled()
+  expect(resetSaturate).toBeDisabled()
   expect(screen.getByText('60%')).toBeInTheDocument()
-  expect(reset).toBeDisabled()
-  act(() => useAppearanceStore.getState().setPopoverGlass(85))
-  expect(screen.getByText('85%')).toBeInTheDocument()
-  expect(reset).not.toBeDisabled()
-  expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ state: { popoverGlass: 85 } })
-  act(() => useAppearanceStore.getState().setPopoverGlass(0))
-  expect(screen.getByText('0%')).toBeInTheDocument()
-  fireEvent.click(reset)
-  expect(useAppearanceStore.getState().popoverGlass).toBe(60)
-  expect(screen.getByText('60%')).toBeInTheDocument()
-  expect(reset).toBeDisabled()
+  expect(screen.getByText('10px')).toBeInTheDocument()
+  expect(screen.getByText('140%')).toBeInTheDocument()
+
+  act(() => {
+    useAppearanceStore.getState().setPopoverGlassOpacity(20)
+    useAppearanceStore.getState().setPopoverGlassBlur(7)
+    useAppearanceStore.getState().setPopoverGlassSaturate(180)
+  })
+  expect(screen.getByText('20%')).toBeInTheDocument()
+  expect(screen.getByText('7px')).toBeInTheDocument()
+  expect(screen.getByText('180%')).toBeInTheDocument()
+  expect(resetOpacity).not.toBeDisabled()
+  expect(resetBlur).not.toBeDisabled()
+  expect(resetSaturate).not.toBeDisabled()
+  expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({
+    state: {
+      popoverGlass: true,
+      popoverGlassOpacity: 20,
+      popoverGlassBlur: 7,
+      popoverGlassSaturate: 180,
+    },
+  })
+
+  fireEvent.click(toggle)
+  expect(useAppearanceStore.getState().popoverGlass).toBe(false)
+  expect(resetOpacity).toBeDisabled()
+  expect(resetBlur).toBeDisabled()
+  expect(resetSaturate).toBeDisabled()
+
+  fireEvent.click(toggle)
+  fireEvent.click(resetOpacity)
+  fireEvent.click(resetBlur)
+  fireEvent.click(resetSaturate)
+  expect(useAppearanceStore.getState()).toMatchObject({
+    popoverGlass: true,
+    popoverGlassOpacity: 60,
+    popoverGlassBlur: 10,
+    popoverGlassSaturate: 140,
+  })
+  expect(resetOpacity).toBeDisabled()
+  expect(resetBlur).toBeDisabled()
+  expect(resetSaturate).toBeDisabled()
 })
 
 it('代码设置独立成组，默认显示行号且不换行，重读缺省或无效值时保留默认行号', async () => {

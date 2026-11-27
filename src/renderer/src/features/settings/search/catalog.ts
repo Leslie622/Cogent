@@ -96,7 +96,19 @@ export const SETTING_COPY = {
   },
   'appearance.popover-glass': {
     title: '浮层毛玻璃',
-    desc: '调节下拉选择、菜单与轻量浮层的毛玻璃强度，0% 时关闭',
+    desc: '开启下拉选择、菜单与轻量浮层的毛玻璃效果，关闭后回落实色',
+  },
+  'appearance.popover-glass-opacity': {
+    title: '浮层不透明度',
+    desc: '调节浮层玻璃面纱的不透明度，越低越透出背后内容',
+  },
+  'appearance.popover-glass-blur': {
+    title: '浮层模糊度',
+    desc: '调节浮层背后的高斯模糊半径（px），过大时会把细小文字抹平',
+  },
+  'appearance.popover-glass-saturate': {
+    title: '浮层饱和度',
+    desc: '调节浮层透出背景的色彩饱和度，越高色彩越鲜明',
   },
   'appearance.ui-font-size': {
     title: '界面字号',
@@ -303,15 +315,18 @@ export const SETTING_ITEM_ENTRIES: readonly SettingItemEntry[] = [
   item('appearance.shell-opacity', 'appearance', '界面样式', ['透明度', '毛玻璃', '透光', 'acrylic'], 3, {
     isVisible: (env) => Boolean(env.backdropSupported) && !env.dark,
   }),
-  item('appearance.popover-glass', 'appearance', '界面样式', ['毛玻璃', '半透明', '模糊', '透明度', '下拉', '菜单', '浮层', 'glass', 'blur'], 4),
-  item('appearance.ui-font-size', 'appearance', '界面样式', ['字体大小', '缩放', '字号'], 5),
-  item('appearance.accent', 'appearance', '界面样式', ['主题强调色', '点缀色', 'accent'], 6),
-  item('appearance.content-font', 'appearance', '对话', ['字体风格', '正文字体', '中文字体', '英文字体'], 7),
-  item('appearance.markdown-theme', 'appearance', '对话', ['Themd', '主题包', '内容主题', '导入主题'], 8),
-  item('appearance.code-font', 'appearance', '代码', ['等宽字体', '代码块字体', 'monospace'], 9),
-  item('appearance.code-font-size', 'appearance', '代码', ['代码字号'], 10),
-  item('appearance.code-line-numbers', 'appearance', '代码', ['行号', 'line numbers'], 11),
-  item('appearance.code-wrap', 'appearance', '代码', ['自动换行', 'word wrap'], 12),
+  item('appearance.popover-glass', 'appearance', '界面样式', ['毛玻璃', '下拉', '菜单', '浮层', 'glass'], 4),
+  item('appearance.popover-glass-opacity', 'appearance', '界面样式', ['毛玻璃', '不透明度', '半透明', '透明度', '透光', 'alpha'], 5),
+  item('appearance.popover-glass-blur', 'appearance', '界面样式', ['毛玻璃', '模糊度', '模糊半径', '磨砂', 'blur'], 6),
+  item('appearance.popover-glass-saturate', 'appearance', '界面样式', ['毛玻璃', '饱和度', '鲜艳', 'saturate'], 7),
+  item('appearance.ui-font-size', 'appearance', '界面样式', ['字体大小', '缩放', '字号'], 8),
+  item('appearance.accent', 'appearance', '界面样式', ['主题强调色', '点缀色', 'accent'], 9),
+  item('appearance.content-font', 'appearance', '对话', ['字体风格', '正文字体', '中文字体', '英文字体'], 10),
+  item('appearance.markdown-theme', 'appearance', '对话', ['Themd', '主题包', '内容主题', '导入主题'], 11),
+  item('appearance.code-font', 'appearance', '代码', ['等宽字体', '代码块字体', 'monospace'], 12),
+  item('appearance.code-font-size', 'appearance', '代码', ['代码字号'], 13),
+  item('appearance.code-line-numbers', 'appearance', '代码', ['行号', 'line numbers'], 14),
+  item('appearance.code-wrap', 'appearance', '代码', ['自动换行', 'word wrap'], 15),
 
   // 通知
   item('notifications.turn-done', 'notifications', '通知', ['完成提醒', '轮次提醒'], 1),

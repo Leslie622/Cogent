@@ -3,6 +3,13 @@
 > 本文负责区域、视觉配方、组件用法与样式陷阱；功能机制见对应模块页。
 > 区域代号用于描述、注释和组件命名。历史过程查 Git，不在本文追加实施流水账。
 
+## 设计素材
+
+长期维护的设计素材统一存放在 `resources/design-assets/`，索引见该目录的 `README.md`。
+文件状态徽章的 SVG、配色、交互预览与再生成方式归属 `resources/design-assets/change-badges/`。
+改动列表使用文字版：占位 44×20px，居中显示 48×28px 画布内的 43×20px 水平底板，保留粗斜体与无感叹号的 NEW；
+仅裁去透明留白，不缩小字形或撑高文件行，深浅主题切换本地 SVG，中文语义由 Hint 与屏幕阅读文本保留。
+
 ## 架构地图
 
 独立文档站完全自包含，采用系统字体栈、中性侧栏与低饱和语义边界底色（区分桌面壳冷蓝、运行时内核靛蓝、存储根青灰与规划琥珀虚线），适配明暗双色。全高三栏为 236px 左导航（架构地图 + 专题流程 13 项双分组）、弹性画布（支持 `#view=` 定位与胶囊泳道分隔）、340px 说明。999px 及以下收起左栏，699px 及以下也收起右栏，窄屏点选打开覆盖式说明。
@@ -90,7 +97,7 @@ shell ─┬─ header            40px 拖拽区：折叠开关、菜单、窗�
 | hover / active | 玻璃外壳（header / app-sidebar）使用半透明柔光胶囊（`--chrome-hover` / `--chrome-active` + 微高光）；内容侧栏行使用单层磁吸滑动胶囊 `bg-accent-foreground/5` 随指针在行间平滑过渡（减少动画下即时切换）；active 保持清晰层级且不叠色加深 |
 | 行内小钮 | 原生 ghost（hover `bg-muted`）；侧栏搜索入口用 Button ghost-soft，与会话行同为 `bg-accent-foreground/5`；软叠由组件变体提供，不落在 Button 调用点 |
 | 文字 | 实色 token；次级 `muted-foreground`，placeholder `--placeholder`；层级靠实色深浅 |
-| 轻量浮层 | `Select` / `DropdownMenu` / `ContextMenu` / `Popover` / `Combobox` / `HoverCard` 支持 `0–100%`「浮层毛玻璃」滑杆（默认 `60%`，`0%` 关闭，`lib/popover-glass.ts` 按明暗与强度投影 `--popover-glass` / `--popover-glass-sub` / `--popover-glass-blur` / `--popover-glass-saturate`），在 `html[data-popover-glass]` 且支持 `backdrop-filter` 时启用 `.popover-glass` 与防嵌套发灰的 `.popover-glass-sub`，并在作用域内将 `--accent` / `--border` 重映射为半透明软叠（浅 6% 黑 / 8% 线，深 9% 白 / 10% 线）保持通透；关闭（`0%`）或不支持时自动回落实色 `bg-popover`。`Dialog` / `AlertDialog` / `CommandDialog` 与 `Tooltip` 保持实色本体 |
+| 轻量浮层 | `Select` / `DropdownMenu` / `ContextMenu` / `Popover` / `Combobox` / `HoverCard` 支持「浮层毛玻璃」总开关与独立三维度滑杆（不透明度 `0–100%` 默认 `60%`、模糊度 `0–32px` 默认 `10px`、饱和度 `100–250%` 默认 `140%`，`lib/popover-glass.ts` 投影 `--popover-glass` / `--popover-glass-sub` / `--popover-glass-blur` / `--popover-glass-saturate`），在 `html[data-popover-glass]` 且支持 `backdrop-filter` 时启用 `.popover-glass` 与防嵌套发灰的 `.popover-glass-sub`，并在作用域内将 `--accent` / `--border` 重映射为半透明软叠（浅 6% 黑 / 8% 线，深 9% 白 / 10% 线）保持通透；关闭或不支持时自动回落实色 `bg-popover`。`Dialog` / `AlertDialog` / `CommandDialog` 与 `Tooltip` 保持实色本体 |
 | 语义色 | destructive 错误红；warning 琥珀 `oklch(0.666 0.155 70)`；chrome-accent 品牌蓝 `#0231fa` |
 | 聚焦 | `--focus-width: 1px` 内贴实线，浅色 `oklch(0.556 0 0)`、深色 `oklch(0.708 0 0)`，默认 150ms 淡入淡出。控件例外见[组件库与安装](#组件库与安装) |
 | 圆角 | 内容主体左上角 `--radius-xl`；输入卡 `InputGroup` composer 档 `rounded-2xl`（原生表单仍 `rounded-lg`）；发送/停止钮 `Button icon-sm` 原生圆角；其余按组件变体，信息区条只圆上两角 |
@@ -225,8 +232,8 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   立即停止指针命中，恢复宽度时反向展开。reduced-motion 直接切换。
   库的 visibility/scrollable 快照不作为索引判断源。
 - 用量行在正文 footer，使用 `text-xs text-muted-foreground tabular-nums`。统计内容和显示条件见[用量与成本](模块/用量与成本.md)。
-- 产物区位于终答与用量之间，使用shadcn Nova Card的sm档横向文件行：左侧图标、中间名称/类型、右侧ButtonGroup组合“打开＋下拉”；
-  文件图标用Material Icon Theme原始彩色SVG，size-6，不加底色或图标框；正文文件链接共用同一组件，size-4。
+- 产物区位于终答与用量之间，使用shadcn Nova Card的sm档横向单行文件行：左侧图标、中间名称与类型同行基线排列、右侧ButtonGroup组合“打开＋下拉”；
+  卡片内边距覆盖为py-2/px-2.5，圆角覆盖为rounded-lg（与下方改动条一致），行内gap-2，不预留图标框；文件图标用Material Icon Theme原始彩色SVG，size-5，不加底色或图标框；正文文件链接共用同一组件，size-4。
   不设“交付文件”标题或数量行，另存等动作收进菜单，正常项不常显大小、申报说明或保存状态。首屏3项可展开全部，异常提示与回合Badge保留；
   文件动作失败用AlertDialog与“知道了”关闭钮，长路径可换行滚动。门控和版本机制见[产物文件卡片](模块/产物文件卡片.md)。
 - Markdown 使用 Streamdown + Shiki + CJK；本地链接显示Material文件图标与原标签，不加背景，自动识别的文件名使用普通文本链接；
