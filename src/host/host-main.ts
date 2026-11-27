@@ -319,6 +319,30 @@ async function main(): Promise<void> {
     return sessions.testModel(p.providerId, p.modelId)
   }
 
+  /** 端点模型列表自动发现：校验 baseUrl/apiFormat，复用 Host 内存凭据或传入临时明文 Key */
+  function handleModelsDiscover(params: unknown) {
+    const p = params as Partial<{ providerId: unknown; baseUrl: unknown; apiFormat: unknown; apiKey: unknown }> | null | undefined
+    if (typeof p?.baseUrl !== 'string' || p.baseUrl.trim().length === 0) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'models.discover 需要 { baseUrl: 非空 string }')
+    }
+    if (p.providerId !== undefined && typeof p.providerId !== 'string') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'models.discover 的 providerId 必须是 string')
+    }
+    if (p.apiKey !== undefined && typeof p.apiKey !== 'string') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'models.discover 的 apiKey 必须是 string')
+    }
+    const API_FORMATS = ['openai-completions', 'openai-responses', 'anthropic-messages'] as const
+    if (p.apiFormat !== undefined && (typeof p.apiFormat !== 'string' || !(API_FORMATS as readonly string[]).includes(p.apiFormat))) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, `models.discover 的 apiFormat 必须是 ${API_FORMATS.join('|')} 之一`)
+    }
+    return sessions.discoverModels({
+      baseUrl: p.baseUrl,
+      ...(p.providerId !== undefined && { providerId: p.providerId }),
+      ...(p.apiFormat !== undefined && { apiFormat: p.apiFormat as (typeof API_FORMATS)[number] }),
+      ...(p.apiKey !== undefined && { apiKey: p.apiKey })
+    })
+  }
+
   /** 会话检索与现有 HostApi 同门校验，不给 renderer 文件系统入口。 */
   function handleSessionSearch(params: unknown) {
     validateSearchQuery(params)
@@ -955,6 +979,7 @@ async function main(): Promise<void> {
     ['credentials.list', handleCredentialsList],
     ['models.list', () => sessions.listModels()],
     ['models.test', handleModelsTest],
+    ['models.discover', handleModelsDiscover],
     ['providers.custom.sync', handleProvidersCustomSync],
     ['providers.custom.get', () => structuredClone(sessions.businessConfig.providers)],
     ['session.defaults.get', () => ({ ...sessions.businessConfig.defaults })],

@@ -29,6 +29,7 @@ export const METHOD_ACCESS = {
   'credentials.remove': { httpScope: 'write', rendererAllowed: false },
   'models.list': { httpScope: 'readonly', rendererAllowed: true },
   'models.test': { httpScope: 'write', rendererAllowed: true },
+  'models.discover': { httpScope: 'write', rendererAllowed: true },
 
   // ———— 会话与检索 ————
   'session.list': { httpScope: 'readonly', rendererAllowed: true },

@@ -291,6 +291,23 @@ export interface ProviderSummary {
   custom?: boolean
 }
 
+/** 思考等级映射表（pi Model.thinkingLevelMap 同构）：string = 启用并下发该协议值；null = 显式禁用 */
+export type ThinkingLevelMap = Partial<Record<ThinkingLevelWithOff, string | null>>
+
+/** OpenAI-compatible 思考请求格式（pi OpenAICompletionsCompat.thinkingFormat 子集） */
+export type ThinkingFormat =
+  | 'openai'
+  | 'openrouter'
+  | 'deepseek'
+  | 'together'
+  | 'baseten'
+  | 'zai'
+  | 'qwen'
+  | 'qwen-chat-template'
+  | 'chat-template'
+  | 'string-thinking'
+  | 'ant-ling'
+
 /** 模型摘要（models.list 返回；模型选择下拉的数据源） */
 export interface ModelSummary {
   input?: Array<'text' | 'image'>
@@ -306,6 +323,10 @@ export interface ModelSummary {
    * 切模型时据此 clamp —— 避免"选了 medium 实际下发 high"的静默降级。
    */
   thinkingLevels: ThinkingLevelWithOff[]
+  /** 原始思考档位映射（供设置页编辑内置/自定义模型时无损回显） */
+  thinkingLevelMap?: ThinkingLevelMap
+  /** 当前模型生效的兼容覆盖（供设置页回显） */
+  compat?: ProviderCompatDef
   contextWindow: number
   maxTokens: number
   /**
@@ -688,8 +709,10 @@ export interface ModelDef {
   input?: Array<'text' | 'image'>
   /** 模型支持思考/推理（pi 会按 thinkingLevel 附带 reasoning 参数） */
   reasoning?: boolean
-  /** 支持的思考等级子集；缺省 = 跟随端点默认（不下发映射）。仅 reasoning 时有意义 */
+  /** 支持的思考等级子集（旧版兼容字段）；新编辑统一写 thinkingLevelMap */
   thinkingLevels?: ThinkingLevel[]
+  /** 思考档位映射（含 off 三态与各档协议值，优先于 thinkingLevels） */
+  thinkingLevelMap?: ThinkingLevelMap
   /**
    * 压缩参数覆盖 —— 盘上兼容字段：压缩内核 = pi（触发线 pi reserve 制，
    * 引擎按窗口自适应，见 runtime/compaction.ts piTriggerRatio），本覆盖
@@ -703,6 +726,8 @@ export interface ModelDef {
    * 预算表。设置 UI 收在「高级」折叠。
    */
   thinkingBudgets?: ThinkingBudgetsOverride
+  /** 模型级端点兼容覆盖（逐字段覆盖 provider 级 compat） */
+  compat?: ProviderCompatDef
 }
 
 /**
@@ -738,12 +763,45 @@ export interface ThinkingBudgetsOverride {
  * 不经此面）。
  */
 export interface ProviderCompatDef {
+  /** 思考参数格式（未设时 pi 按 baseUrl 自动探测） */
+  thinkingFormat?: ThinkingFormat
+  /** 是否支持 reasoning_effort 字段 */
+  supportsReasoningEffort?: boolean
+  /** 是否支持 developer role（替代 system） */
+  supportsDeveloperRole?: boolean
   /** 思考预算的请求体字段名（自托管方言三选）；缺省不发预算字段 */
   thinkingTokenBudgetField?: 'thinking_budget' | 'thinking_budget_tokens' | 'thinking_token_budget'
   /** thinkingTokenBudgetField 的简写：置 true 等价 'thinking_token_budget' */
   supportsThinkingTokenBudget?: boolean
   /** max_tokens 字段名（部分网关只认其一） */
   maxTokensField?: 'max_tokens' | 'max_completion_tokens'
+  /** AnthropicMessages 强制使用 adaptive thinking + output_config.effort */
+  forceAdaptiveThinking?: boolean
+  /** AnthropicMessages 是否接受 temperature 字段 */
+  supportsTemperature?: boolean
+}
+
+/** 端点模型自动发现入参 */
+export interface ModelsDiscoverParams {
+  providerId?: string
+  baseUrl: string
+  apiFormat?: 'openai-completions' | 'openai-responses' | 'anthropic-messages'
+  apiKey?: string
+}
+
+/** 端点自动发现到的单条模型候选 */
+export interface DiscoveredModel {
+  id: string
+  name?: string
+  contextWindow?: number
+  maxTokens?: number
+  input?: Array<'text' | 'image'>
+  reasoning?: boolean
+  thinkingLevelMap?: ThinkingLevelMap
+}
+
+export interface ModelsDiscoverResult {
+  models: DiscoveredModel[]
 }
 
 /**
@@ -1194,6 +1252,8 @@ export interface ProtocolMethods extends DefaultsMethods, AttachmentMethods, Fil
   'models.list': { params: Record<string, never>; result: ModelsListResult }
   /** 独立连通性探测：使用已保存配置，不创建会话；网络失败由统一错误帧返回。 */
   'models.test': { params: { providerId: string; modelId: string }; result: { elapsedMs: number } }
+  /** 端点模型列表自动发现（OpenAI/Anthropic 兼容 /models） */
+  'models.discover': { params: ModelsDiscoverParams; result: ModelsDiscoverResult }
   'providers.custom.sync': { params: ProvidersCustomSyncParams; result: ProvidersCustomSyncResult }
   /** MCP 座：server 摘要 + 配置诊断（缺省 user 级视图；带 cwd = 项目合并视图） */
   'mcp.list': { params: { cwd?: string }; result: McpListResult }

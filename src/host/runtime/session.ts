@@ -78,6 +78,7 @@ import {
 import type { CredentialRegistry } from './credentials'
 import { CustomProviderRegistry } from './custom-providers'
 import { testModelConnectivity } from './model-connectivity'
+import { discoverEndpointModels } from './model-discovery'
 import { SessionInspector, type TitleTrace } from './inspector'
 import { SessionTitleConfig } from './session-title-config'
 import { generateSessionTitle } from '../kernel/session-title'
@@ -787,6 +788,11 @@ export class SessionManager implements CogentKernel {
       throw new ProtocolError(RpcErrorCode.InvalidParams, `模型不存在或已禁用: ${providerId}/${modelId}`)
     }
     return testModelConnectivity(this.modelRuntime, model)
+  }
+
+  /** 查询端点 /models 列表（复用 Host 内存凭据表，参数传入明文 Key 优先） */
+  discoverModels(params: import('../../protocol').ModelsDiscoverParams): Promise<import('../../protocol').ModelsDiscoverResult> {
+    return discoverEndpointModels(params, (providerId) => this.credentials.get(providerId))
   }
 
   /** pi catalog → 协议模型摘要（UI 下拉数据源；key 配置状态在 credentials.list 单独查） */

@@ -25,7 +25,8 @@ import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.l
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
 import type { Api, Model, MutableModels, Provider, ThinkingBudgets } from '@earendil-works/pi-ai'
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent'
-import type { CustomProviderDef, ModelDef, ProviderCompatDef, ProviderOverrideDef } from '../../protocol'
+import type { CustomProviderDef, ModelDef, ProviderCompatDef, ProviderOverrideDef, ThinkingLevelMap } from '../../protocol'
+import { NON_OFF_THINKING_LEVELS } from '../../shared/model-presets'
 
 /**
  * Model 对象上的思考预算通道（声明合并 —— compaction.ts 的
@@ -56,39 +57,89 @@ const API_BY_FORMAT = {
   'anthropic-messages': anthropicMessagesApi
 } as const
 
+/**
+ * 解析 ModelDef 的 thinkingLevelMap：
+ * 1. 非推理模型不下发映射；
+ * 2. 显式提供 thinkingLevelMap 时：非 off 档未列出一律补 null（防 pi 默认放开 minimal），
+ *    off 仅在显式配置 string 或 null 时写入（保留 undefined = 默认允许关闭语义）；
+ * 3. 仅提供旧 thinkingLevels 时沿用旧映射逻辑；
+ * 4. 都未提供时继承目录基底映射。
+ */
+function resolveThinkingLevelMap(
+  def: ModelDef,
+  reasoning: boolean,
+  catalogBase?: Model<Api>
+): Model<Api>['thinkingLevelMap'] {
+  if (!reasoning) return undefined
+  if (def.thinkingLevelMap !== undefined) {
+    const map: ThinkingLevelMap = {}
+    if (def.thinkingLevelMap.off === null || typeof def.thinkingLevelMap.off === 'string') {
+      map.off = def.thinkingLevelMap.off
+    }
+    for (const level of NON_OFF_THINKING_LEVELS) {
+      const value = def.thinkingLevelMap[level]
+      map[level] = typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+    }
+    return map
+  }
+  if (def.thinkingLevels !== undefined && def.reasoning === true) {
+    return Object.fromEntries(
+      NON_OFF_THINKING_LEVELS.map((level) => [level, def.thinkingLevels?.includes(level) ? level : null])
+    )
+  }
+  return catalogBase?.thinkingLevelMap
+}
+
+function pickCompatForApi(
+  api: Api,
+  merged: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (Object.keys(merged).length === 0) return undefined
+  if (api === 'anthropic-messages') {
+    const filtered: Record<string, unknown> = { ...merged }
+    delete filtered.thinkingFormat
+    delete filtered.supportsReasoningEffort
+    delete filtered.supportsDeveloperRole
+    delete filtered.thinkingTokenBudgetField
+    delete filtered.supportsThinkingTokenBudget
+    delete filtered.maxTokensField
+    return Object.keys(filtered).length > 0 ? filtered : undefined
+  }
+  const filtered: Record<string, unknown> = { ...merged }
+  delete filtered.forceAdaptiveThinking
+  delete filtered.supportsTemperature
+  return Object.keys(filtered).length > 0 ? filtered : undefined
+}
+
 /** ModelDef → pi Model：merge 语义 —— catalogBase（目录同 id 条目）在时以它为基底，
     用户 def 显式设置的字段才覆盖；全新 id 无基底则兜底（context/maxTokens/input/reasoning）。
     cost 一律不取自 def（协议 ModelDef 无此字段，用户不可配价）：有目录基底 = 继承
     目录定价（同 id 用户条目本质是"编辑目录行"，丢定价等于静默抹掉成本统计），
-    全新自定义模型 = 全 0（自定义端点计费对外不可知，UI 不显示价格即可）。
-    thinkingLevels → thinkingLevelMap：选中的等级原值透传（openai 方言直落
-    reasoning_effort），未选中置 null（显式不支持）；不选 = 继承基底映射或不下发跟端点默认 */
+    全新自定义模型 = 全 0（自定义端点计费对外不可知，UI 不显示价格即可）。 */
 function buildModel(
   def: ModelDef,
   api: Api,
   providerId: string,
   baseUrl: string,
   catalogBase?: Model<Api>,
-  compat?: ProviderCompatDef
+  providerCompat?: ProviderCompatDef
 ): Model<Api> {
-  const ALL_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+  const reasoning = def.reasoning ?? catalogBase?.reasoning ?? false
+  const thinkingLevelMap = resolveThinkingLevelMap(def, reasoning, catalogBase)
+  const mergedCompat = pickCompatForApi(api, {
+    ...(catalogBase?.compat as Record<string, unknown> | undefined),
+    ...(providerCompat as Record<string, unknown> | undefined),
+    ...(def.compat as Record<string, unknown> | undefined)
+  })
   return {
     id: def.id,
     name: def.name ?? catalogBase?.name ?? def.id,
     api,
     provider: providerId,
     baseUrl,
-    reasoning: def.reasoning ?? catalogBase?.reasoning ?? false,
+    reasoning,
     input: def.input ?? catalogBase?.input ?? ['text'],
-    ...(def.thinkingLevels !== undefined && def.reasoning === true &&{
-      thinkingLevelMap: Object.fromEntries(
-        ALL_LEVELS.map((level) => [level, def.thinkingLevels?.includes(level) ? level : null])
-      )
-    }),
-    // def 未配思考档且基底有映射（pi 目录生成）→ 继承，"编辑目录行"不动未配置的维度
-    ...(def.thinkingLevels === undefined && catalogBase?.thinkingLevelMap !== undefined && {
-      thinkingLevelMap: catalogBase.thinkingLevelMap
-    }),
+    ...(thinkingLevelMap !== undefined && { thinkingLevelMap }),
     cost: catalogBase?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: def.contextWindow ?? catalogBase?.contextWindow ?? CUSTOM_MODEL_CONTEXT_WINDOW,
     maxTokens: def.maxTokens ?? catalogBase?.maxTokens ?? CUSTOM_MODEL_MAX_TOKENS,
@@ -97,10 +148,8 @@ function buildModel(
     ...(def.compaction !== undefined && { compaction: def.compaction }),
     // 思考预算：同样走声明合并附加字段，session 侧同步到 Agent
     ...(def.thinkingBudgets !== undefined && { thinkingBudgets: def.thinkingBudgets }),
-    // 端点兼容覆盖：provider 级 compat 下沉到每个模型（pi 上游
-    // provider-composer 同位语义）。字段同名直通（ProviderCompatDef 是
-    // OpenAICompletionsCompat 的子集）；anthropic 方言不经此面 —— 调用处不传
-    ...(compat !== undefined && { compat })
+    // 端点兼容覆盖：catalogBase → provider compat → model compat 逐字段合并
+    ...(mergedCompat !== undefined && { compat: mergedCompat })
   }
 }
 
@@ -207,18 +256,15 @@ export class CustomProviderRegistry {
     const advanced = def.modelDefs ?? []
     const seen = new Set<string>()
     const models: Model<Api>[] = []
-    // compat 仅 openai 系方言消费（anthropic-messages 走官方 budget_tokens，
-    // 形状不同不经此面）—— 门在此处，buildModel 只管透传
-    const compat = apiFormat === 'anthropic-messages' ? undefined : def.compat
     for (const modelDef of advanced) {
       if (disabled.has(modelDef.id) || seen.has(modelDef.id)) continue
       seen.add(modelDef.id)
-      models.push(buildModel(modelDef, apiFormat, def.id, def.baseUrl, undefined, compat))
+      models.push(buildModel(modelDef, apiFormat, def.id, def.baseUrl, undefined, def.compat))
     }
     for (const modelId of def.models) {
       if (disabled.has(modelId) || seen.has(modelId)) continue
       seen.add(modelId)
-      models.push(buildModel({ id: modelId }, apiFormat, def.id, def.baseUrl, undefined, compat))
+      models.push(buildModel({ id: modelId }, apiFormat, def.id, def.baseUrl, undefined, def.compat))
     }
     return createProvider({
       id: def.id,

@@ -6,13 +6,36 @@ import type { SessionDefaults } from '../../shared/host-config'
 import type { ProvidersCustomSyncParams } from '../../protocol'
 
 const positive = z.number().finite().positive()
+const thinkingWire = z.union([z.string().trim().min(1), z.null()])
+const thinkingLevelMap = z.object({
+  off: thinkingWire,
+  minimal: thinkingWire,
+  low: thinkingWire,
+  medium: thinkingWire,
+  high: thinkingWire,
+  xhigh: thinkingWire,
+  max: thinkingWire
+}).partial().strict().optional()
+const compat = z.object({
+  thinkingFormat: z.enum([
+    'openai', 'openrouter', 'deepseek', 'together', 'baseten', 'zai',
+    'qwen', 'qwen-chat-template', 'chat-template', 'string-thinking', 'ant-ling'
+  ]).optional(),
+  supportsReasoningEffort: z.boolean().optional(),
+  supportsDeveloperRole: z.boolean().optional(),
+  thinkingTokenBudgetField: z.enum(['thinking_budget', 'thinking_budget_tokens', 'thinking_token_budget']).optional(),
+  supportsThinkingTokenBudget: z.boolean().optional(),
+  maxTokensField: z.enum(['max_tokens', 'max_completion_tokens']).optional(),
+  forceAdaptiveThinking: z.boolean().optional(),
+  supportsTemperature: z.boolean().optional()
+})
 const model = z.object({ id: z.string().min(1), name: z.string().optional(), contextWindow: positive.optional(), maxTokens: positive.optional(),
   reasoning: z.boolean().optional(), input: z.array(z.enum(['text', 'image'])).min(1).optional(),
   thinkingLevels: z.array(z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])).optional(),
+  thinkingLevelMap,
   compaction: z.object({ thresholdRatio: positive.max(1).optional(), roomFloorTokens: positive.optional() }).optional(),
-  thinkingBudgets: z.object({ minimal: positive.optional(), low: positive.optional(), medium: positive.optional(), high: positive.optional() }).optional() })
-const compat = z.object({ thinkingTokenBudgetField: z.enum(['thinking_budget', 'thinking_budget_tokens', 'thinking_token_budget']).optional(),
-  supportsThinkingTokenBudget: z.boolean().optional(), maxTokensField: z.enum(['max_tokens', 'max_completion_tokens']).optional() })
+  thinkingBudgets: z.object({ minimal: positive.optional(), low: positive.optional(), medium: positive.optional(), high: positive.optional() }).optional(),
+  compat: compat.optional() })
 export const providersSchema: z.ZodType<ProvidersCustomSyncParams> = z.object({
   providers: z.array(z.object({ id: z.string().regex(/^custom\/.+/), name: z.string(), baseUrl: z.string(), models: z.array(z.string().min(1)),
     modelDefs: z.array(model).optional(), apiFormat: z.enum(['openai-completions', 'openai-responses', 'anthropic-messages']).optional(),
