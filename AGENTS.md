@@ -1,6 +1,14 @@
 # AGENTS.md — Cogent
 
-Cogent 是 Electron + pi 的桌面 Agent 客户端。开发从对应的模块入口开始。
+Cogent 是 Electron + pi 的本地优先桌面 Agent 客户端。开发从对应的模块入口开始。
+
+## 项目概览
+
+- 技术栈：Electron 40 + electron-vite 6（ESM、TypeScript ~5.9）；渲染层 React 19 + Tailwind CSS 4 + Zustand；Agent 内核为 pi（`@earendil-works/pi-*`）；测试 Vitest 5，lint 用 ESLint 10 flat config（`eslint.config.mjs`）。
+- 本地开发建议使用与 CI 一致的 Node 24；安装用 `npm ci`（postinstall 走 patch-package，补丁在 `patches/`）。
+- 源码在 `src/`：`electron/`（main、preload）、`host/`（独立 Node 引擎进程，另有对外 MCP Server 入口）、`node/`、`protocol/`、`renderer/`、`shared/`。构建产物在 `out/`；路径别名 `@` → `src/renderer/src`、`@shared` → `src/shared`（tsconfig 与 vitest 保持一致）。
+- 测试统一在 `tests/`，按环境分三个 project：`node`（host/shared/electron）、`web`（renderer，jsdom）、`integration`（mock SSE + 真构建产物，串行运行，缺失或过期会先自动 build）。
+- `packaging/` 打包脚本，`scripts/` 各类检查脚本，`docs/` 项目文档，`licenses/` 许可清单，`resources/` 资源（含官方 node22 runtime）。
 
 ## 按任务找入口
 
@@ -23,8 +31,10 @@ Cogent 是 Electron + pi 的桌面 Agent 客户端。开发从对应的模块入
 
 ## 常用命令
 
+- 安装与启动：`npm ci`（Node 24）；`npm run dev` 由用户启动。
 - 四关交付：`npm run lint && npm run typecheck && npm run build && npm test`
-- 定向单测：`npx vitest run <path>` 或 `node tests/run-tests.mjs run --project node|web|integration`
+- 定向单测：`npx vitest run <path>` 或 `node tests/run-tests.mjs run --project node|web|integration`；全量监听 `npm run test:watch`，覆盖率 `npm run coverage`。
+- 打包：`npm run pack`（可选 `--win-only` / `--deb-only`）。
 - 环境前提（Windows 沙箱 `TEMP` 隐藏目录、`tools.test.ts` 的 `rg`/`fd` 路径）见[测试边界](docs/模块/测试.md#测试边界)。
 
 ## 协作与工作区
