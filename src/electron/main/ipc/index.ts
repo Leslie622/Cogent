@@ -19,6 +19,7 @@ import { registerWorkspaceIpc } from './workspace'
 import { registerSettingsIpc } from './settings'
 import { registerStorageIpc } from './storage'
 import { registerAttachmentIpc } from './attachments'
+import { registerSkillsIpc } from './skills'
 import { registerFileIpc } from './files'
 import { registerFileViewsIpc } from './file-views'
 import { registerBrowserIpc } from './browser'
@@ -44,6 +45,7 @@ export function registerIpc(deps: IpcDeps, store: CredentialStore): void {
   registerSettingsIpc()
   registerStorageIpc()
   registerAttachmentIpc(deps)
+  registerSkillsIpc(deps)
   registerFileIpc(deps)
   registerFileViewsIpc(deps)
   registerBrowserIpc({ ...deps, resolveBrowserPreview: (source, selectedRoot) => createFileViewPreviewSource(deps, source.leaseId, selectedRoot) })

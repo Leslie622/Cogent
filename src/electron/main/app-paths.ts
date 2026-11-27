@@ -70,3 +70,24 @@ export function resolveExistingIconPath(kind: 'window' | 'tray'): string | null 
   })
   return existsSync(candidate) ? candidate : null
 }
+
+/** 解析随包内置技能目录（打包态：resources/skills；开发态：仓库根 resources/skills）。 */
+export function resolveBundledSkillsPath(options: {
+  isPackaged: boolean
+  resourcesPath: string
+  mainDir: string
+}): string {
+  if (options.isPackaged) {
+    return join(options.resourcesPath, 'skills')
+  }
+  return join(options.mainDir, '..', '..', 'resources', 'skills')
+}
+
+export function resolveExistingBundledSkillsDir(): string | null {
+  const candidate = resolveBundledSkillsPath({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    mainDir: import.meta.dirname
+  })
+  return existsSync(candidate) ? candidate : null
+}

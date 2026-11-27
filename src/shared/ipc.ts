@@ -13,6 +13,12 @@ export const IPC = {
   attachmentsClipboard: 'attachments:clipboard',
   attachmentsPreview: 'attachments:preview',
   attachmentsAction: 'attachments:action',
+  /** renderer → main：选择目录或 .zip 导入技能（路径不经 renderer，main 弹窗后直调 Host） */
+  skillsImport: 'skills:import',
+  /** renderer → main：选择保存位置导出技能为 .zip */
+  skillsExport: 'skills:export',
+  /** renderer → main：经 Host 核验后在系统文件管理器打开技能目录 */
+  skillsReveal: 'skills:reveal',
   /** renderer → main：查询 Agent 引擎服务连接状态 */
   appStatus: 'app:status',
   appRestart: 'app:restart',

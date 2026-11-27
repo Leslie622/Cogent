@@ -61,6 +61,8 @@ export interface HostOptions {
    */
   beforeSend?: () => void
   enableHttpRpc?: boolean
+  /** 随包内置技能目录（注入 COGENT_BUNDLED_SKILLS_DIR 供 Host 发现 bundled 层） */
+  bundledSkillsDir?: string
 }
 
 export class HostManager {
@@ -149,7 +151,8 @@ export class HostManager {
       env: {
         ...process.env,
         ...(asElectronNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
-        ...(this.opts.enableHttpRpc ? { COGENT_HTTP_RPC: '1' } : {})
+        ...(this.opts.enableHttpRpc ? { COGENT_HTTP_RPC: '1' } : {}),
+        ...(this.opts.bundledSkillsDir !== undefined ? { COGENT_BUNDLED_SKILLS_DIR: this.opts.bundledSkillsDir } : {})
       },
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true

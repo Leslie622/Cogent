@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, shell, type WebContents } from 'electron'
 import { getAppDisplayName } from '../../shared/brand'
-import { resolveExistingIconPath, resolveUnpackedMainEntry } from './app-paths'
+import { resolveExistingBundledSkillsDir, resolveExistingIconPath, resolveUnpackedMainEntry } from './app-paths'
 import { HostManager } from './host/manager'
 import { refreshMcpAccessFile } from './host/mcp-access'
 import { resolveEngineNode } from './host/runtime'
@@ -187,11 +187,13 @@ if (!app.requestSingleInstanceLock()) {
     // 引擎代理：握手时把宿主持久化的 key 灌进引擎内存表（凭据降级时这里是空表，
     // 引擎按"无 key"启动 —— 用户重输 key 后经 credentials:set 即时推送）
     const engineNodeBin = resolveEngineNode()
+    const bundledSkillsDir = resolveExistingBundledSkillsDir() ?? undefined
     host = new HostManager({
       entryPath: resolveUnpackedMainEntry('host.js'),
       nodeBin: engineNodeBin,
       beforeSend: checkCurrentCaller,
       readCredentials: () => credentialStore.readAll(),
+      ...(bundledSkillsDir !== undefined && { bundledSkillsDir }),
       // HTTP 门默认开（阶段 3a 起：webview 页面消费者需要；loopback + 恒鉴权）
       enableHttpRpc: true
     })

@@ -48,6 +48,26 @@ const api = {
   clipboardFiles: (): Promise<string[]> => ipcRenderer.invoke(IPC.attachmentsClipboard),
   attachmentPreview: (id: string, thumbnail: boolean): Promise<string> => ipcRenderer.invoke(IPC.attachmentsPreview, { id, thumbnail }),
   attachmentAction: (id: string, action: 'reveal' | 'save'): Promise<void> => ipcRenderer.invoke(IPC.attachmentsAction, { id, action }),
+  /** 选择本地目录或 .zip 导入技能（主进程弹窗选源后直调 Host） */
+  importSkills: (params: {
+    scope: 'user' | 'project'
+    cwd?: string
+    kind: 'directory' | 'zip'
+    overwrite?: boolean
+  }): Promise<{ canceled: boolean; imported: string[]; skipped: string[] }> =>
+    ipcRenderer.invoke(IPC.skillsImport, params),
+  /** 选择保存路径导出单枚技能为 .zip */
+  exportSkill: (params: {
+    scope: 'user' | 'project' | 'bundled'
+    cwd?: string
+    name: string
+  }): Promise<{ canceled: boolean }> => ipcRenderer.invoke(IPC.skillsExport, params),
+  /** 经 Host 核验路径后在系统文件管理器中打开技能目录 */
+  revealSkillDir: (params: {
+    scope: 'user' | 'project' | 'bundled'
+    cwd?: string
+    name: string
+  }): Promise<{ ok: true }> => ipcRenderer.invoke(IPC.skillsReveal, params),
   /** 查询 Agent 引擎服务连接状态（诊断） */
   restartHost: (): Promise<AppStatus> => ipcRenderer.invoke(IPC.appRestart),
   getStatus: (): Promise<AppStatus> => ipcRenderer.invoke(IPC.appStatus),
