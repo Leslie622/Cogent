@@ -80,7 +80,7 @@ export function FullAccessConfirm({
             name="文件和文件夹"
             desc="读取、创建、修改和删除可访问的文件。"
           />
-          <Separator className="bg-border/60" />
+          <Separator className="border-border/60" />
           <PermissionRow
             icon={IconTerminal2}
             name="终端命令"

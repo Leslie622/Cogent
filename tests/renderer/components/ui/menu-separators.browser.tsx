@@ -5,6 +5,8 @@ import { IconInfoCircle, IconSettings, IconTerminal2, IconWorld } from '@tabler/
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Separator } from '@/components/ui/separator'
+import { ButtonGroupSeparator } from '@/components/ui/button-group'
 import '@/globals.css'
 
 const root = createRoot(document.getElementById('root')!)
@@ -39,8 +41,30 @@ async function show(size: 'default' | 'lg', fontSize: number, dark: boolean, off
   })
 }
 
-declare global {
-  interface Window { menuSeparatorHarness: { show: typeof show } }
+/** 覆盖同一取整问题的通用横线、竖线与按钮组消费点，位置刻意落在分数坐标。 */
+async function showSeparators(kind: 'horizontal' | 'vertical' | 'button-group-horizontal' | 'button-group-vertical', fontSize: number, dark: boolean, offset: number) {
+  document.documentElement.classList.toggle('dark', dark)
+  document.documentElement.style.setProperty('--ui-font-size', `${fontSize}px`)
+  const vertical = kind.endsWith('vertical')
+  const Line = kind.startsWith('button-group') ? ButtonGroupSeparator : Separator
+  flushSync(() => root.render(
+    <div style={{ position: 'absolute', left: 40 + (vertical ? offset : 0), top: 50 + (vertical ? 0 : offset), width: 300, height: 240, display: 'flex', flexDirection: vertical ? 'row' : 'column' }}>
+      <Line orientation={vertical ? 'vertical' : 'horizontal'} />
+      <div style={{ flexShrink: 0, width: vertical ? fontSize * 8.1 : undefined, height: vertical ? undefined : fontSize * 8.1 }} />
+      <Line orientation={vertical ? 'vertical' : 'horizontal'} />
+    </div>,
+  ))
+  await document.fonts.ready
+  await frame()
+  await frame()
+  return [...document.querySelectorAll<HTMLElement>('[data-slot=separator], [data-slot=button-group-separator]')].map((line) => {
+    const { x, y, width, height } = line.getBoundingClientRect()
+    return { x, y, width, height }
+  })
 }
-window.menuSeparatorHarness = { show }
+
+declare global {
+  interface Window { menuSeparatorHarness: { show: typeof show; showSeparators: typeof showSeparators } }
+}
+window.menuSeparatorHarness = { show, showSeparators }
 if (import.meta.hot) import.meta.hot.dispose(() => root.unmount())

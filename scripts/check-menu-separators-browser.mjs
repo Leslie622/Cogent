@@ -1,4 +1,4 @@
-/** 独立 Electron profile 按物理像素比较菜单横线，退出时关闭子进程与 Vite。 */
+/** 独立 Electron profile 按物理像素比较菜单和通用分隔线，退出时关闭子进程与 Vite。 */
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, relative } from 'node:path'
@@ -27,35 +27,49 @@ app.whenReady().then(async()=>{
  const output=${JSON.stringify(output ? resolve(output) : null)};
  if(output) mkdirSync(output,{recursive:true});
  const rows=[];
- for(const size of ['default','lg']) for(const font of [11,14,16]) for(const dark of [false,true]) for(const offset of [0,0.4,0.8]) {
-   const lines=await win.webContents.executeJavaScript('window.menuSeparatorHarness.show('+JSON.stringify(size)+','+font+','+dark+','+offset+')');
-   if(lines.length!==2) throw new Error('菜单分隔线数量错误：'+lines.length);
-   const screenshot=await win.webContents.capturePage();
+ function sampleLines(screenshot,lines,vertical=false) {
    const png=screenshot.toPNG();
    // PNG 的宽高是实际位图尺寸，避免把 NativeImage 的 DIP 尺寸当成物理像素。
    const width=png.readUInt32BE(16), height=png.readUInt32BE(20);
    const pixels=screenshot.toBitmap();
    if(pixels.length!==width*height*4) throw new Error('截图位图尺寸不一致');
    const ratio=width/500;
-   const samples=lines.map(line=>{
-     const x=Math.round((line.x+line.width/2)*ratio);
-     const start=Math.floor(line.y*ratio)-3, end=Math.ceil((line.y+line.height)*ratio)+3;
+   return lines.map(line=>{
+     const cross=Math.round((vertical?line.y+line.height/2:line.x+line.width/2)*ratio);
+     const origin=vertical?line.x:line.y, extent=vertical?line.width:line.height;
+     const start=Math.floor(origin*ratio)-3, end=Math.ceil((origin+extent)*ratio)+3;
      const scan=[];
-     for(let y=start;y<end;y++) {
+     for(let position=start;position<end;position++) {
+       const x=vertical?position:cross, y=vertical?cross:position;
        const p=(y*width+x)*4;
-       scan.push({y,rgb:[pixels[p+2],pixels[p+1],pixels[p]]});
+       scan.push({position,rgb:[pixels[p+2],pixels[p+1],pixels[p]]});
      }
      const background=scan[0].rgb;
      const ink=scan.filter(row=>row.rgb.some((value,index)=>value!==background[index]));
-     return {top:line.y,height:line.height,ink};
+     return {origin,extent,ink};
    });
+ }
+ for(const size of ['default','lg']) for(const font of [11,14,16]) for(const dark of [false,true]) for(const offset of [0,0.4,0.8]) {
+   const lines=await win.webContents.executeJavaScript('window.menuSeparatorHarness.show('+JSON.stringify(size)+','+font+','+dark+','+offset+')');
+   if(lines.length!==2) throw new Error('菜单分隔线数量错误：'+lines.length);
+   const screenshot=await win.webContents.capturePage();
+   const samples=sampleLines(screenshot,lines);
    const passed=JSON.stringify(samples[0].ink.map(row=>row.rgb))===JSON.stringify(samples[1].ink.map(row=>row.rgb)) && samples[0].ink.length===Math.floor(dpr);
    rows.push({size,font,dark,offset,passed,samples});
-   if(output && size==='lg' && font===14 && !dark && offset===0) writeFileSync(join(output,'menu-'+dpr+'.png'),png);
+   if(output && size==='lg' && font===14 && !dark && offset===0) writeFileSync(join(output,'menu-'+dpr+'.png'),screenshot.toPNG());
+ }
+ for(const kind of ['horizontal','vertical','button-group-horizontal','button-group-vertical']) for(const font of [11,14,16]) for(const dark of [false,true]) for(const offset of [0,0.4,0.8]) {
+   const lines=await win.webContents.executeJavaScript('window.menuSeparatorHarness.showSeparators('+JSON.stringify(kind)+','+font+','+dark+','+offset+')');
+   if(lines.length!==2) throw new Error('通用分隔线数量错误：'+lines.length);
+   const screenshot=await win.webContents.capturePage();
+   const samples=sampleLines(screenshot,lines,kind.endsWith('vertical'));
+   const passed=JSON.stringify(samples[0].ink.map(row=>row.rgb))===JSON.stringify(samples[1].ink.map(row=>row.rgb)) && samples[0].ink.length===Math.floor(dpr);
+   rows.push({kind,font,dark,offset,passed,samples});
+   if(output && font===14 && !dark && offset===0) writeFileSync(join(output,kind+'-'+dpr+'.png'),screenshot.toPNG());
  }
  const failures=rows.filter(row=>!row.passed);
  console.log(JSON.stringify({electron:process.versions.electron,chromium:process.versions.chrome,dpr,cases:rows.length,passed:failures.length===0,
-   failures:failures.map(({size,font,dark,offset,samples})=>({size,font,dark,offset,lines:samples.map(line=>line.ink.map(row=>row.rgb))}))},null,2));
+   failures:failures.map(({size,kind,font,dark,offset,samples})=>({size,kind,font,dark,offset,lines:samples.map(line=>line.ink.map(row=>row.rgb))}))},null,2));
  clearTimeout(timeout);
  app.exit(failures.length===0?0:1);
 }).catch(error=>{console.error(error);app.exit(1)});

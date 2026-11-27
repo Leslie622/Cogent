@@ -1,3 +1,4 @@
+/** 细线以原生边框绘制，避免分数 DPR 下背景色矩形随纵向位置出现 1 / 2 行差异。 */
 import { Separator as SeparatorPrimitive } from "@base-ui/react/separator"
 import { cn } from "cn"
 
@@ -15,7 +16,7 @@ function Separator({
       // 选择器永远不匹配（细线曾因此无尺寸不可见）—— 显式渲染属性 + 值匹配
       data-orientation={orientation}
       className={cn(
-        "shrink-0 bg-border data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:w-px data-[orientation=vertical]:self-stretch",
+        "shrink-0 border-border data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=horizontal]:border-t data-[orientation=vertical]:w-px data-[orientation=vertical]:self-stretch data-[orientation=vertical]:border-l",
         className
       )}
       {...props}
