@@ -7,6 +7,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { zipSync } from 'fflate'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SkillStore } from '../../../src/host/runtime/skill-store'
 
@@ -172,17 +173,17 @@ describe('SkillStore', () => {
     expect(skills.map((s) => s.name)).toContain('broken')
   })
 
-  it('/skill: 活展开：命中展开（形状镜像 pi）/ manualOnly 可展开 / 禁用与未命中原样', () => {
+  it('/skill: 活展开：统一走 <skill_content> 与变量替换 / manualOnly 可展开 / 禁用与未命中原样', () => {
     const root = newRoot()
     const store = new SkillStore(root, join(root, 'agents'))
-    store.save('user', undefined, 'guide', '怎么做事', '第一步…第二步…')
+    store.save('user', undefined, 'guide', '怎么做事', '第一步…目录=${COGENT_SKILL_DIR}…参数=$ARGUMENTS')
     const expanded = store.expandSkillCommand('/skill:guide 做某事', join(root, 'ws'))
-    expect(expanded).toContain('<skill name="guide"')
-    expect(expanded).toContain('References are relative to')
-    expect(expanded).toContain('第一步…第二步…')
-    expect(expanded.endsWith('做某事')).toBe(true)
+    expect(expanded).toContain('<skill_content name="guide">')
+    expect(expanded).toContain('Base directory for this skill:')
+    expect(expanded).toContain(`目录=${join(root, 'skills', 'guide')}`)
+    expect(expanded).toContain('参数=做某事')
     // 纯调用无 args：块结尾
-    expect(store.expandSkillCommand('/skill:guide').endsWith('</skill>')).toBe(true)
+    expect(store.expandSkillCommand('/skill:guide').endsWith('</skill_content>')).toBe(true)
     // 未命中 + 无前缀：原样
     expect(store.expandSkillCommand('/skill:nope x')).toBe('/skill:nope x')
     expect(store.expandSkillCommand('普通消息')).toBe('普通消息')
@@ -207,13 +208,132 @@ describe('SkillStore', () => {
     store.save('user', undefined, 'beta', '技能 B', '正文 B')
     const blocks = store.expandSkillsByName(['alpha', 'beta'], [ws])
     expect(blocks).toHaveLength(2)
-    expect(blocks[0]).toContain('<skill name="alpha"')
+    expect(blocks[0]).toContain('<skill_content name="alpha">')
     expect(blocks[0]).toContain('正文 A')
-    expect(blocks[1]).toContain('<skill name="beta"')
+    expect(blocks[1]).toContain('<skill_content name="beta">')
     expect(blocks[1]).toContain('正文 B')
 
     store.setEnabled('user', undefined, 'beta', 'disabled')
     expect(() => store.expandSkillsByName(['beta'], [ws])).toThrow(/不存在或已禁用/)
     expect(() => store.expandSkillsByName(['missing'], [ws])).toThrow(/不存在或已禁用/)
+  })
+
+  it('7 级优先级：bundled 垫底、.claude 兼容、monorepo 祖先向上扫至 .git 根', () => {
+    const root = newRoot()
+    const bundled = join(root, 'bundled')
+    const claude = join(root, 'claude')
+    const repo = join(root, 'repo')
+    const sub = join(repo, 'packages', 'app')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    mkdirSync(sub, { recursive: true })
+
+    placeSkill(bundled, 'shared', 'bundled 版')
+    placeSkill(bundled, 'only-bundled', '纯内置技能')
+    placeSkill(join(claude, 'skills'), 'claude-user', '用户 claude')
+    placeSkill(join(repo, '.cogent', 'skills'), 'ancestor', '仓库根技能')
+    placeSkill(join(repo, '.claude', 'skills'), 'shared', '仓库 claude 版')
+    placeSkill(join(sub, '.cogent', 'skills'), 'shared', '子包 cogent 版')
+
+    const store = new SkillStore(root, join(root, 'agents'), { claudeRoot: claude, bundledDir: bundled })
+    const listed = store.list(sub)
+    const byName = new Map(listed.skills.map((s) => [s.name, s]))
+
+    expect(byName.get('only-bundled')).toMatchObject({ scope: 'bundled', origin: 'bundled', readonly: true, enabled: true })
+    expect(byName.get('claude-user')).toMatchObject({ scope: 'user', origin: 'claude', eco: true, readonly: true })
+    expect(byName.get('ancestor')).toMatchObject({ scope: 'project', origin: 'cogent', description: '仓库根技能' })
+    expect(byName.get('shared')).toMatchObject({ scope: 'project', origin: 'cogent', description: '子包 cogent 版' })
+    expect(() => store.delete('bundled', undefined, 'only-bundled')).toThrow(/不可删除/)
+  })
+
+  it('save 无损保留既有 frontmatter 扩展字段，且支持高级字段读写', () => {
+    const root = newRoot()
+    const store = new SkillStore(root, join(root, 'agents'))
+    mkdirSync(join(root, 'skills', 'rich'), { recursive: true })
+    writeFileSync(
+      join(root, 'skills', 'rich', 'SKILL.md'),
+      [
+        '---',
+        'name: rich',
+        'description: 旧描述',
+        'license: Apache-2.0',
+        'compatibility: Node >= 22',
+        'allowed-tools: Read Bash(git diff *)',
+        'context: fork',
+        'metadata:',
+        '  author: team-a',
+        '---',
+        '',
+        '旧正文'
+      ].join('\n')
+    )
+
+    const before = store.read('user', undefined, 'rich')
+    expect(before).toMatchObject({
+      license: 'Apache-2.0',
+      compatibility: 'Node >= 22',
+      allowedTools: ['Read', 'Bash(git diff *)'],
+      unsupportedRuntime: 'context-fork'
+    })
+
+    // 通过 save 编辑描述、正文和高级开关后，license / allowed-tools / context / metadata 全部无损保留
+    store.save('user', undefined, 'rich', '新描述', '新正文', {
+      whenToUse: '审查代码时',
+      manualOnly: true,
+      userInvocable: false,
+      argumentHint: '[路径]'
+    })
+    const after = store.read('user', undefined, 'rich')
+    expect(after).toMatchObject({
+      description: '新描述',
+      body: '新正文',
+      whenToUse: '审查代码时',
+      manualOnly: true,
+      userInvocable: false,
+      argumentHint: '[路径]',
+      license: 'Apache-2.0',
+      compatibility: 'Node >= 22',
+      allowedTools: ['Read', 'Bash(git diff *)'],
+      unsupportedRuntime: 'context-fork'
+    })
+    const raw = readFileSync(join(root, 'skills', 'rich', 'SKILL.md'), 'utf8')
+    expect(raw).toContain('author: "team-a"')
+  })
+
+  it('导入导出闭环：目录与 zip 导入、导出 .zip、冲突保护、以及 zip 路径穿越拒绝', () => {
+    const root = newRoot()
+    const store = new SkillStore(root, join(root, 'agents'))
+
+    // 1. 构造待导入目录（含附属脚本）
+    const srcDir = join(root, 'import-src', 'pack-skill')
+    mkdirSync(join(srcDir, 'scripts'), { recursive: true })
+    writeFileSync(join(srcDir, 'SKILL.md'), '---\nname: pack-skill\ndescription: 打包技能\n---\n\n正文内容\n')
+    writeFileSync(join(srcDir, 'scripts', 'helper.sh'), 'echo hi\n')
+
+    const dirRes = store.importFromPath('user', undefined, srcDir)
+    expect(dirRes).toEqual({ imported: ['pack-skill'], skipped: [] })
+    expect(store.read('user', undefined, 'pack-skill').resourceFiles).toEqual(['scripts/helper.sh'])
+
+    // 2. 同名默认不覆盖报错，overwrite=true 允许覆盖
+    expect(() => store.importFromPath('user', undefined, srcDir, false)).toThrow(/覆盖导入/)
+    expect(store.importFromPath('user', undefined, srcDir, true).imported).toEqual(['pack-skill'])
+
+    // 3. 导出为 .zip，再导入到另一个项目作用域
+    const exportedZip = join(root, 'pack-skill.zip')
+    store.exportToZip('user', undefined, 'pack-skill', exportedZip)
+    const ws = join(root, 'ws-export')
+    mkdirSync(ws, { recursive: true })
+    const zipRes = store.importFromPath('project', ws, exportedZip)
+    expect(zipRes).toEqual({ imported: ['pack-skill'], skipped: [] })
+    expect(store.read('project', ws, 'pack-skill').resourceFiles).toEqual(['scripts/helper.sh'])
+
+    // 4. 恶意路径穿越 zip 必须拒绝
+    const evilZip = join(root, 'evil.zip')
+    writeFileSync(
+      evilZip,
+      zipSync({
+        '../escape/SKILL.md': new TextEncoder().encode('---\nname: evil\ndescription: bad\n---\n\nx')
+      })
+    )
+    expect(() => store.importFromPath('user', undefined, evilZip)).toThrow(/非法路径/)
   })
 })

@@ -74,6 +74,9 @@ export const METHOD_ACCESS = {
   'skills.save': { httpScope: 'write', rendererAllowed: true },
   'skills.delete': { httpScope: 'write', rendererAllowed: true },
   'skills.setEnabled': { httpScope: 'write', rendererAllowed: true },
+  'skills.import': { rendererAllowed: false },
+  'skills.export': { rendererAllowed: false },
+  'skills.revealTarget': { rendererAllowed: false },
 
   // ———— 附件（仅壳内） ————
   'attachments.describe': { rendererAllowed: true },

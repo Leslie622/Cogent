@@ -437,6 +437,29 @@ export class SessionInspector {
     )
   }
 
+  /** 技能加载观测：模型经 skill 工具自主加载或用户显式实体展开共用记录点 */
+  skillLoaded(info: {
+    name: string
+    trigger: 'tool' | 'explicit'
+    origin: string
+    truncated?: boolean
+    resourceCount?: number
+  }): void {
+    const triggerLabel = info.trigger === 'tool' ? '模型调用' : '用户显式'
+    this.record(
+      'skill.loaded',
+      `技能加载 · ${info.name}`,
+      [
+        { label: '触发', value: triggerLabel },
+        { label: '来源', value: info.origin },
+        ...(info.resourceCount !== undefined && info.resourceCount > 0
+          ? [{ label: '附带文件', value: `${info.resourceCount} 个` }]
+          : []),
+        ...(info.truncated === true ? [{ label: '截断', value: '已截断至 100KB' }] : [])
+      ]
+    )
+  }
+
   // ———— 读取（inspect.entries / inspect.entry 的后端）————
 
   /** 摘要全量（seq 升序）；首条 seq > 0 = 更早条目已被环形丢弃 */

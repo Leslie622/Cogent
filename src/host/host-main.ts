@@ -51,8 +51,12 @@ import {
   type McpServerDef,
   type McpSyncParams,
   type McpSyncResult,
+  type SkillExportParams,
+  type SkillImportParams,
+  type SkillImportResult,
   type SkillListResult,
   type SkillReadResult,
+  type SkillRevealResult,
   type SkillSaveParams,
   type SkillScope,
   type SkillSetEnabledParams,
@@ -105,6 +109,10 @@ const STORAGE_ROOT = process.env.COGENT_HOME || join(homedir(), getStorageDirNam
  * （harness 把 USERPROFILE/HOME 指进临时根）自动隔离，无需独立覆盖口。
  */
 const AGENTS_ROOT = join(homedir(), '.agents')
+/** Claude 生态兼容根（~/.claude）：只读发现（与 .agents 同款隔离语义） */
+const CLAUDE_ROOT = join(homedir(), '.claude')
+/** 随包内置技能目录（由主进程经环境变量显式注入，未设则不挂内置层以保持测试隔离） */
+const BUNDLED_SKILLS_DIR = process.env.COGENT_BUNDLED_SKILLS_DIR?.trim() || undefined
 
 // 方言模块预热：pi-ai 的 API 方言是**首次请求时**才动态 import（lazyApi），
 // 冷启动会拉起整个厂商 SDK，首次文件访问可占数秒；文件打开慢已由探针确认，
@@ -154,8 +162,11 @@ async function main(): Promise<void> {
   const approvals = new ApprovalRegistry(STORAGE_ROOT)
   // MCP 客户端配置（~/.cogent/mcp.json 用户级定义 + 项目级 override 合并，阶段 4a）
   const mcpConfig = new McpConfigStore(STORAGE_ROOT)
-  // 技能目录（~/.cogent/skills 用户级 + <cwd>/.cogent/skills 项目级 + 两级启停，阶段 4b）
-  const skillStore = new SkillStore(STORAGE_ROOT, AGENTS_ROOT)
+  // 技能目录（7 级发现链：bundled 垫底 + 用户/项目 .cogent/.agents/.claude + 祖先至 .git）
+  const skillStore = new SkillStore(STORAGE_ROOT, AGENTS_ROOT, {
+    claudeRoot: CLAUDE_ROOT,
+    ...(BUNDLED_SKILLS_DIR !== undefined && { bundledDir: BUNDLED_SKILLS_DIR })
+  })
   const sessions = new SessionManager(
     credentials,
     storage,
@@ -771,12 +782,28 @@ async function main(): Promise<void> {
     return { ok: true as const }
   }
 
-  /** skills.* 入口校验（共用）：scope 判别 + cwd（project 档必填）+ name 非空。
-      名字字符规则在 store 的 pi 同款校验里跑（单一权威，边界只管形状）。 */
-  function skillTarget(params: unknown): { scope: SkillScope; cwd: string | undefined; name: string } {
-    const p = params as Partial<SkillSaveParams>
+  /** skills.* 可写作用域校验（save/delete/setEnabled/import：scope=user|project）。 */
+  function writableSkillScope(params: unknown): { scope: 'user' | 'project'; cwd: string | undefined } {
+    const p = params as Partial<{ scope: unknown; cwd: unknown }>
     if (p.scope !== 'user' && p.scope !== 'project') {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.* 需要 scope: user|project')
+    }
+    if (p.cwd !== undefined && (typeof p.cwd !== 'string' || p.cwd.length === 0)) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.* 的 cwd 必须是非空 string')
+    }
+    return { scope: p.scope, cwd: p.cwd }
+  }
+
+  /** skills.* 目标校验（read/export/reveal 允许 bundled；写操作由 allowBundled=false 收紧）。 */
+  function skillTarget(params: unknown, allowBundled: boolean): { scope: SkillScope; cwd: string | undefined; name: string } {
+    const p = params as Partial<{ scope: unknown; cwd: unknown; name: unknown }>
+    const validScope =
+      p.scope === 'user' || p.scope === 'project' || (allowBundled && p.scope === 'bundled')
+    if (!validScope) {
+      throw new ProtocolError(
+        RpcErrorCode.InvalidParams,
+        allowBundled ? 'skills.* 需要 scope: user|project|bundled' : 'skills.* 需要 scope: user|project'
+      )
     }
     if (p.cwd !== undefined && (typeof p.cwd !== 'string' || p.cwd.length === 0)) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.* 的 cwd 必须是非空 string')
@@ -784,19 +811,36 @@ async function main(): Promise<void> {
     if (typeof p.name !== 'string' || p.name.length === 0) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.* 需要 name: string')
     }
-    return { scope: p.scope, cwd: p.cwd, name: p.name }
+    return { scope: p.scope as SkillScope, cwd: p.cwd, name: p.name }
   }
 
   function handleSkillsSave(params: unknown): SkillWriteResult {
     const p = params as Partial<SkillSaveParams>
-    const target = skillTarget(params)
+    const target = skillTarget(params, false)
     if (typeof p.description !== 'string' || p.description.length === 0) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.save 需要 description: string')
     }
     if (typeof p.body !== 'string') {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.save 需要 body: string（可为空串）')
     }
-    skillStore.save(target.scope, target.cwd, target.name, p.description, p.body)
+    if (p.whenToUse !== undefined && typeof p.whenToUse !== 'string') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.save 的 whenToUse 必须是 string')
+    }
+    if (p.manualOnly !== undefined && typeof p.manualOnly !== 'boolean') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.save 的 manualOnly 必须是 boolean')
+    }
+    if (p.userInvocable !== undefined && typeof p.userInvocable !== 'boolean') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.save 的 userInvocable 必须是 boolean')
+    }
+    if (p.argumentHint !== undefined && typeof p.argumentHint !== 'string') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.save 的 argumentHint 必须是 string')
+    }
+    skillStore.save(target.scope as 'user' | 'project', target.cwd, target.name, p.description, p.body, {
+      whenToUse: p.whenToUse,
+      manualOnly: p.manualOnly,
+      userInvocable: p.userInvocable,
+      argumentHint: p.argumentHint
+    })
     return { ok: true as const }
   }
 
@@ -809,24 +853,51 @@ async function main(): Promise<void> {
   }
 
   function handleSkillsDelete(params: unknown): SkillWriteResult {
-    const target = skillTarget(params)
+    const target = skillTarget(params, false)
     skillStore.delete(target.scope, target.cwd, target.name)
     return { ok: true as const }
   }
 
   function handleSkillsRead(params: unknown): SkillReadResult {
-    const target = skillTarget(params)
+    const target = skillTarget(params, true)
     return skillStore.read(target.scope, target.cwd, target.name)
   }
 
   function handleSkillsSetEnabled(params: unknown): SkillWriteResult {
     const p = params as Partial<SkillSetEnabledParams>
-    const target = skillTarget(params)
+    const target = skillTarget(params, false)
     if (p.value !== 'enabled' && p.value !== 'disabled' && p.value !== 'inherit') {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.setEnabled 需要 value: enabled|disabled|inherit')
     }
-    skillStore.setEnabled(target.scope, target.cwd, target.name, p.value)
+    skillStore.setEnabled(target.scope as 'user' | 'project', target.cwd, target.name, p.value)
     return { ok: true as const }
+  }
+
+  function handleSkillsImport(params: unknown): SkillImportResult {
+    const p = params as Partial<SkillImportParams>
+    const { scope, cwd } = writableSkillScope(params)
+    if (typeof p.sourcePath !== 'string' || p.sourcePath.length === 0) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.import 需要 sourcePath: string')
+    }
+    if (p.overwrite !== undefined && typeof p.overwrite !== 'boolean') {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.import 的 overwrite 必须是 boolean')
+    }
+    return skillStore.importFromPath(scope, cwd, p.sourcePath, p.overwrite === true)
+  }
+
+  function handleSkillsExport(params: unknown): SkillWriteResult {
+    const p = params as Partial<SkillExportParams>
+    const target = skillTarget(params, true)
+    if (typeof p.destinationPath !== 'string' || p.destinationPath.length === 0) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'skills.export 需要 destinationPath: string')
+    }
+    skillStore.exportToZip(target.scope, target.cwd, target.name, p.destinationPath)
+    return { ok: true as const }
+  }
+
+  function handleSkillsRevealTarget(params: unknown): SkillRevealResult {
+    const target = skillTarget(params, true)
+    return { dir: skillStore.revealDir(target.scope, target.cwd, target.name) }
   }
 
   /**
@@ -906,6 +977,9 @@ async function main(): Promise<void> {
     ['skills.save', handleSkillsSave],
     ['skills.delete', handleSkillsDelete],
     ['skills.setEnabled', handleSkillsSetEnabled],
+    ['skills.import', handleSkillsImport],
+    ['skills.export', handleSkillsExport],
+    ['skills.revealTarget', handleSkillsRevealTarget],
     ['inspect.entries', handleInspectEntries],
     ['inspect.entry', handleInspectEntry],
     // 票据签发（决定 23）：main 经 stdio 发起（血缘全权）；HTTP 门侧由档位表

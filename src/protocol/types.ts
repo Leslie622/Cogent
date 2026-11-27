@@ -897,35 +897,53 @@ export interface McpSyncResult {
   synced: number
 }
 
-// ———— 技能座（阶段 4b，docs/模块/技能座.md）————
+// ———— 技能座（docs/模块/技能座.md & docs/计划/技能座升级实现.md）————
 //
-// 技能 = 目录里的 SKILL.md 指令包（pi Agent Skills 生态形状），Host 管
-// 两个受管目录的发现/启停/编辑；进入会话走「清单进系统提示段、正文模型
-// read 自取」的渐进加载（pi 原生语义），段由 before_agent_start 钩子
+// 技能 = 目录里的 SKILL.md 指令包（Agent Skills 开放标准），Host 管多源
+// 发现/启停/无损编辑/导入导出；进入会话走「清单进系统提示段、正文经专用
+// `skill` 工具或用户显式实体加载」的渐进加载，段由 before_agent_start 钩子
 // 每回合活算（热刷新）。
 
-/** 技能定义所在作用域（由目录决定：~/.cogent/skills 或 <cwd>/.cogent/skills） */
-export type SkillScope = 'user' | 'project'
+/** 技能定义所在作用域（user = 用户级、project = 项目级、bundled = 内置只读层） */
+export type SkillScope = 'user' | 'project' | 'bundled'
 
-/** skills.list 的技能摘要（设置页卡片行数据源） */
+/** 技能发现来源：自有目录 / 生态兼容目录（.agents / .claude）/ 自定义额外目录 / 随包内置 */
+export type SkillOrigin = 'cogent' | 'agents' | 'claude' | 'custom' | 'bundled'
+
+/** skills.list 的技能摘要（设置页卡片行与输入框候选数据源） */
 export interface SkillSummary {
   name: string
   description: string
   scope: SkillScope
-  /** SKILL.md 绝对路径（渐进加载的 read 入口，UI 展示用） */
+  /** 技能来源目录类别（兼容旧客户端：可选字段） */
+  origin?: SkillOrigin
+  /** SKILL.md 绝对路径（UI 展示与目录打开定位用） */
   path: string
-  /** 技能目录（references/ 等相对资源的锚点） */
+  /** 技能目录（scripts/references/assets 等相对资源的锚点） */
   baseDir: string
-  /** frontmatter disable-model-invocation：不进模型清单，仅 /skill: 手动可调 */
+  /** frontmatter disable-model-invocation：不进模型清单，仅用户显式可调 */
   manualOnly: boolean
-  /** 两级启停求值后的生效值（清单注入按此过滤） */
+  /** frontmatter user-invocable（默认 true）：false 时不进输入框 $/\/ 面板，仅模型自主可调 */
+  userInvocable?: boolean
+  /** frontmatter when_to_use：补充路由触发场景 */
+  whenToUse?: string
+  /** frontmatter argument-hint：显式调用时的参数占位提示 */
+  argumentHint?: string
+  /** frontmatter allowed-tools（静态无损保留与展示，不接运行时审批引擎） */
+  allowedTools?: string[]
+  /** 需前置运行时支持的高阶声明提示（如 context: fork 等待子会话座） */
+  unsupportedRuntime?: 'context-fork'
+  /** 同级附属文件数量（scripts/references/assets 等，不含 SKILL.md 本身） */
+  resourceCount?: number
+  /** 是否只读来源（eco / custom / bundled 不可在 UI 编辑或删除） */
+  readonly?: boolean
+  /** 两级启停求值后的生效值（清单注入与工具加载按此过滤） */
   enabled: boolean
   /** user 级禁用名单命中（项目覆盖重新启用时 enabled=true 但此项仍为 true） */
   userDisabled: boolean
   /** 项目级状态文件对本名的显式覆盖（缺省 = 无覆盖，回落 user 名单） */
   override?: boolean
-  /** 来自 .agents 生态兼容目录（zcode 等工具装的）：只读发现 + 按名启停，
-   *  新建/编辑/删除归原工具（写路径只在 .cogent） */
+  /** 来自生态兼容目录（.agents / .claude）：只读发现 + 按名启停，编辑/删除归原工具 */
   eco?: boolean
 }
 
@@ -938,9 +956,9 @@ export interface SkillListResult {
   errors: string[]
 }
 
-/** 新增/编辑一枚技能（skills.save）：frontmatter 由引擎生成（防手写错） */
+/** 新增/编辑一枚技能（skills.save）：编辑既有技能时无损保留其余 frontmatter 字段 */
 export interface SkillSaveParams {
-  scope: SkillScope
+  scope: 'user' | 'project'
   /** scope=project 时必填（项目技能目录所在的工作区主根） */
   cwd?: string
   /** 名字规则镜像 pi validateName：1-64、^[a-z0-9-]+$、无首尾/连续连字符 */
@@ -949,6 +967,14 @@ export interface SkillSaveParams {
   description: string
   /** 正文 Markdown，不含 frontmatter */
   body: string
+  /** 可选：触发场景（when_to_use）；空串表示清除 */
+  whenToUse?: string
+  /** 可选：仅手动调用（disable-model-invocation） */
+  manualOnly?: boolean
+  /** 可选：允许输入框面板调用（user-invocable，缺省/true = 允许） */
+  userInvocable?: boolean
+  /** 可选：参数提示（argument-hint）；空串表示清除 */
+  argumentHint?: string
 }
 
 export interface SkillDeleteParams {
@@ -960,7 +986,7 @@ export interface SkillDeleteParams {
 
 /** 写启停状态（skills.setEnabled）：user 档写禁用名单，project 档写 overrides */
 export interface SkillSetEnabledParams {
-  scope: SkillScope
+  scope: 'user' | 'project'
   /** scope=project 时必填 */
   cwd?: string
   name: string
@@ -975,11 +1001,47 @@ export interface SkillWriteResult {
   ok: true
 }
 
-/** 读单枚技能正文（skills.read）：编辑表单回填源（list 不带 body —— 正文可能很大） */
+/** 导入本地目录或 .zip 技能包 */
+export interface SkillImportParams {
+  scope: 'user' | 'project'
+  cwd?: string
+  sourcePath: string
+  overwrite?: boolean
+}
+
+export interface SkillImportResult {
+  imported: string[]
+  skipped: string[]
+}
+
+/** 导出单枚技能为标准 .zip 压缩包 */
+export interface SkillExportParams {
+  scope: SkillScope
+  cwd?: string
+  name: string
+  destinationPath: string
+}
+
+export interface SkillRevealResult {
+  dir: string
+}
+
+/** 读单枚技能正文（skills.read）：编辑/查看弹窗回填源（list 不带 body —— 正文可能很大） */
 export interface SkillReadResult {
   description: string
   /** 去 frontmatter 的正文 Markdown */
   body: string
+  whenToUse?: string
+  manualOnly?: boolean
+  userInvocable?: boolean
+  argumentHint?: string
+  license?: string
+  compatibility?: string
+  allowedTools?: string[]
+  unsupportedRuntime?: 'context-fork'
+  /** 同级附属文件相对路径列表（不含 SKILL.md） */
+  resourceFiles?: string[]
+  readonly?: boolean
 }
 
 export interface InspectEntriesParams {
@@ -1028,6 +1090,7 @@ export type InspectEntryKind =
   | 'tool.progress'
   | 'approval.asked'
   | 'approval.decided'
+  | 'skill.loaded'
   | 'title.started'
   | 'title.finished'
 
@@ -1131,6 +1194,12 @@ export interface ProtocolMethods extends DefaultsMethods, AttachmentMethods, Fil
   'skills.delete': { params: SkillDeleteParams; result: SkillWriteResult }
   /** 技能座：写启停状态（user 名单 / project overrides） */
   'skills.setEnabled': { params: SkillSetEnabledParams; result: SkillWriteResult }
+  /** 技能座：从本地目录或 .zip 导入技能（仅主进程选框后调用，不对 renderer/HTTP 开放任意路径） */
+  'skills.import': { params: SkillImportParams; result: SkillImportResult }
+  /** 技能座：导出单枚技能整目录为 .zip（仅主进程选框后调用） */
+  'skills.export': { params: SkillExportParams; result: SkillWriteResult }
+  /** 技能座：核验并返回技能目录真实路径（仅主进程打开文件夹前调用） */
+  'skills.revealTarget': { params: SkillDeleteParams; result: SkillRevealResult }
   /** 控制台：拉会话的观测条目摘要（时间线数据源；ring 上限内全量，超出只留最近） */
   'inspect.entries': { params: InspectEntriesParams; result: InspectEntriesResult }
   /** 控制台：按 seq 拉单条详情（请求体全文 / SSE 分片 / 系统提示词…） */

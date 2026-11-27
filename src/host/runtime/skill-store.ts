@@ -1,48 +1,70 @@
 /**
- * 技能 store（阶段 4b，docs/模块/技能座.md）—— Host 侧技能目录的
- * 发现 / 合并 / 两级启停 / 编辑真源。
+ * 技能 store（docs/模块/技能座.md & docs/计划/技能座升级实现.md）—— Host 侧技能目录的
+ * 多源发现 / 合并 / 两级启停 / 无损编辑 / 统一执行加载 / 安全导入导出真源。
  *
- * 目录与状态（与 MCP 座对称的两级设计；技能是被动文本，无进程信任门 →
- * 项目级允许定义）：
- * - user 级 `<root>/skills/<name>/SKILL.md`（UI 建或手放）；
- * - project 级 `<cwd>/.cogent/skills/<name>/SKILL.md`：同名覆盖 user
- *   （zcode nearest-wins，design/v2/skill.md:185-196；pi 的 user 先得
- *   skills.ts:457-459 是异类不采）+ 冲突诊断；
- * - 生态兼容目录 `.agents/skills`（两级：`<agentsRoot>/skills` 与
- *   `<cwd>/.agents/skills`）：zcode 等生态工具装技能的中立目录，**只读
- *   发现 + 按名启停**，新建/编辑/删除仍走 .cogent（两套工具不改对方的
- *   文件）；同级别同名 .cogent 胜（zcode「同一级别 .zcode 优先于 .agents」
- *   同款，adapters/skills/roots.ts:112-118）；
- * - 启停：user `<root>/skills.json` 禁用名单 + project
- *   `<cwd>/.cogent/skills.json` overrides（可禁 user 技能 / 重新启用
- *   user 已禁 —— 近者胜，与定义优先级一致）。
+ * 完整 7 级发现优先级（后者覆盖前者，近者胜 + 冲突诊断；同文件经 realpathSync.native 去重）：
+ * 1. bundled 内置技能层（垫底只读，随包分发）
+ * 2. [预留：插件技能根]
+ * 3. 用户生态 ~/.claude/skills（只读）
+ * 4. 用户生态 ~/.agents/skills（只读）
+ * 5. 用户自有 ~/.cogent/skills（可读写）
+ * 6. 自定义额外目录 customDirs（只读，按配置序）
+ * 7. 项目目录（自 .git worktree 根逐级向下至当前 cwd，每级按 .claude → .agents → .cogent 递进）
  *
- * 发现直接用 pi 的 `loadSkillsFromDir`（skills.ts:168-171：SKILL.md 目录
- * 即技能根不再递归 / 根下裸 .md / 递归子目录 + ignore 文件遵循）—— 校验、
- * ignore、裸 md 规则全部白拿，Host 只选目录。名字/描述的写入校验镜像
- * pi validateName/validateDescription（skills.ts:92-127，未从包导出）。
- *
- * 快照 + 热刷新：snapshot() 无缓存，每次调用重新发现（段钩子每回合活算 =
- * 回合边界热刷新，含手动改文件；dsh 的 Chokidar 推送监视在此不成立：拉
- * 模式每回合都是完整观察，无中间态）。`/skill:` 展开也走活快照 —— pi 内建
- * 展开读 loader 静态集（agent-session.ts:2319），与回合刷新的活清单会脱节，
- * 故由本 store 承担（输出形状镜像 agent-session.ts:2325）。
- *
- * 边界：技能文件与状态文件是外部输入（约定.md §1.1 持久化读取）—— 损坏
- * JSON / 坏 frontmatter / 名字非法逐条诊断收集不炸（list/snapshot 带回
- * errors）；save/delete/setEnabled 是手动设置动作，非法输入显式 throw
- * （fail-fast，mcp-config 同款纪律）。名字字符集 ^[a-z0-9-]+$ 本身排除
- * 路径分隔符与 `..`，落点安全由校验保证（不叠加 isWithin 重复设防）。
+ * 加载收口：
+ * - 专用 `skill` 工具与用户显式触发（$`/` 实体、`/skill:`）100% 共用 `loadForExecution`：
+ *   无缓存活快照、100KB 字节截断、附属资源清单、通用变量映射表（正文强制 allowSensitive: false）
+ *   与统一 `<skill_content>` 外壳。
+ * - `save()` 编辑既有技能时读取原 frontmatter 并无损合并，绝不抹掉 license / compatibility /
+ *   metadata / allowed-tools / context / agent 等标准或扩展字段。
  */
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { loadSkillsFromDir, parseFrontmatter, stripFrontmatter, type ResourceDiagnostic, type Skill } from '@earendil-works/pi-coding-agent'
-import type { SkillListResult, SkillScope } from '../../protocol'
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
+import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
+import { unzipSync, zipSync } from 'fflate'
+import {
+  loadSkillsFromDir,
+  parseFrontmatter,
+  stripFrontmatter,
+  type ResourceDiagnostic,
+  type Skill
+} from '@earendil-works/pi-coding-agent'
+import type {
+  SkillImportResult,
+  SkillListResult,
+  SkillOrigin,
+  SkillReadResult,
+  SkillScope
+} from '../../protocol'
 import { ProtocolError, RpcErrorCode } from '../../protocol'
+import { expandTemplateVars } from './template-vars'
 
-/** pi skills.ts:11-14 同款上限（名字 64 / 描述 1024，Agent Skills spec） */
+/** Agent Skills 规范上限（镜像 pi skills.ts:11-14） */
 const MAX_NAME_LENGTH = 64
 const MAX_DESCRIPTION_LENGTH = 1024
+
+/** 技能正文单次加载字节上限（对齐 zcode core/src/tool/handlers/skill.ts:18） */
+export const MAX_SKILL_BYTES = 100_000
+
+/** 附属文件枚举上限（供技能正文提示与编辑页展示） */
+const MAX_RESOURCE_FILES = 50
+
+/** zip 导入安全护栏（对齐 zcode zip-source 防护线） */
+const MAX_IMPORT_ZIP_BYTES = 50 * 1024 * 1024
+const MAX_IMPORT_UNZIPPED_BYTES = 100 * 1024 * 1024
+const MAX_IMPORT_SINGLE_FILE_BYTES = 10 * 1024 * 1024
+const MAX_IMPORT_FILE_COUNT = 1000
 
 /** user 级禁用名单（盘上形状） */
 interface UserState {
@@ -54,9 +76,63 @@ interface ProjectState {
   overrides: Record<string, boolean>
 }
 
+export interface SkillStoreOptions {
+  /** 用户级 ~/.claude 根（传根而非 skills 子目录，与 agentsRoot 对称；缺省则不扫用户级 .claude） */
+  claudeRoot?: string
+  /** 随应用打包的内置技能目录（如 resources/skills；缺省则无内置层） */
+  bundledDir?: string
+  /** 用户配置的额外只读技能目录列表 */
+  customDirs?: readonly string[]
+}
+
+export interface SkillSaveOptions {
+  whenToUse?: string
+  manualOnly?: boolean
+  userInvocable?: boolean
+  argumentHint?: string
+}
+
+export interface SkillExecutionContext {
+  cwdOrRoots?: string | readonly string[]
+  projectDir?: string
+  sessionId?: string
+  args?: string
+  /** 模型自主调用（skill 工具）为 true，拒绝 disable-model-invocation 技能；用户显式调用为 false */
+  requireModelInvocable: boolean
+  extra?: Readonly<Record<string, string>>
+}
+
+export interface LoadedSkillResult {
+  name: string
+  baseDir: string
+  filePath: string
+  scope: SkillScope
+  origin: SkillOrigin
+  /** 渲染完成的 `<skill_content>` 完整文本（已完成变量替换） */
+  content: string
+  truncated: boolean
+  resourceFiles: string[]
+}
+
+/** 技能发现内部记录（携带完整解析后的标准/扩展元数据） */
+export interface DiscoveredSkill extends Skill {
+  scope: SkillScope
+  origin: SkillOrigin
+  readonly: boolean
+  eco: boolean
+  userInvocable: boolean
+  whenToUse?: string
+  argumentHint?: string
+  license?: string
+  compatibility?: string
+  allowedTools?: string[]
+  unsupportedRuntime?: 'context-fork'
+}
+
 /** 名字规则镜像 pi validateName（skills.ts:92-112；返回空 = 合法） */
-function validateName(name: string): string[] {
+export function validateSkillName(name: string): string[] {
   const errors: string[] = []
+  if (name.length === 0) errors.push('name 不能为空')
   if (name.length > MAX_NAME_LENGTH) errors.push(`name 超过 ${MAX_NAME_LENGTH} 字符（${name.length}）`)
   if (!/^[a-z0-9-]+$/.test(name)) errors.push('name 只能是小写字母、数字、连字符')
   if (name.startsWith('-') || name.endsWith('-')) errors.push('name 不能以连字符开头或结尾')
@@ -73,12 +149,19 @@ function validateDescription(description: string): string | undefined {
   return undefined
 }
 
-/** 诊断 → 协议错误串（发现诊断是 pi 形状，list/snapshot 统一折成字符串） */
 function diagnosticsToErrors(diagnostics: ResourceDiagnostic[]): string[] {
   return diagnostics.map((d) => `${d.path !== undefined ? `${d.path}: ` : ''}${d.message}`)
 }
 
-/** 读状态文件（BOM 容错；损坏/形状不对 → error 诊断 + 缺省空态，不炸） */
+/** 安全取真实路径（遵守约定 §1.2 第 9 条：Windows 下用 realpathSync.native 展开 8.3 短名） */
+function nativeRealpath(targetPath: string): string {
+  try {
+    return realpathSync.native(targetPath)
+  } catch {
+    return resolve(targetPath)
+  }
+}
+
 function readStateFile<T>(path: string, check: (value: unknown) => T | undefined): { state: T; error?: string } {
   if (!existsSync(path)) return { state: check({}) as T }
   let text = readFileSync(path, 'utf8')
@@ -117,7 +200,7 @@ function checkProjectState(value: unknown): ProjectState | undefined {
   return { overrides: overrides as Record<string, boolean> }
 }
 
-/** 原子替换写（JsonStorageDriver 同款纪律，json-driver.ts:46-53：tmp + rename，Windows 同卷原子） */
+/** 原子替换写（tmp + rename，Windows 同卷原子） */
 function atomicWrite(path: string, text: string): void {
   mkdirSync(dirname(path), { recursive: true })
   const tmp = `${path}.tmp`
@@ -130,13 +213,235 @@ function atomicWrite(path: string, text: string): void {
   }
 }
 
-/** frontmatter 值转义：JSON 字符串即合法 YAML 双引号标量（pi 用完整 yaml 包解析，往返安全） */
-function yamlString(value: string): string {
-  return JSON.stringify(value)
+/** 序列化单个 YAML 标量/复合值（保证 JSON 双引号标量与缩进结构 100% 合法往返） */
+function serializeYamlValue(value: unknown, indent: number): string {
+  if (value === null) return 'null'
+  if (typeof value === 'boolean' || typeof value === 'number') return String(value)
+  if (typeof value === 'string') return JSON.stringify(value)
+  const pad = ' '.repeat(indent)
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '[]'
+    return value
+      .map((item) => {
+        if (typeof item === 'object' && item !== null) {
+          const nested = serializeYamlValue(item, indent + 2)
+          return `\n${pad}- ${nested.trimStart()}`
+        }
+        return `\n${pad}- ${serializeYamlValue(item, indent + 2)}`
+      })
+      .join('')
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== undefined)
+    if (entries.length === 0) return '{}'
+    return entries
+      .map(([k, v]) => {
+        const keyStr = /^[A-Za-z0-9_-]+$/.test(k) ? k : JSON.stringify(k)
+        const valStr = serializeYamlValue(v, indent + 2)
+        return valStr.startsWith('\n') ? `\n${pad}${keyStr}:${valStr}` : `\n${pad}${keyStr}: ${valStr}`
+      })
+      .join('')
+  }
+  if (typeof value === 'bigint') return String(value)
+  return 'null'
+}
+
+/** 将 frontmatter 记录按确定性键序序列化为合法 YAML 头（name/description 在前，其余保留原顺序） */
+function serializeFrontmatter(record: Record<string, unknown>): string {
+  const orderedKeys = [
+    ...['name', 'description', 'when_to_use', 'disable-model-invocation', 'user-invocable', 'argument-hint'].filter(
+      (k) => record[k] !== undefined
+    ),
+    ...Object.keys(record).filter(
+      (k) =>
+        record[k] !== undefined &&
+        !['name', 'description', 'when_to_use', 'disable-model-invocation', 'user-invocable', 'argument-hint'].includes(k)
+    )
+  ]
+  const lines = orderedKeys.map((k) => {
+    const keyStr = /^[A-Za-z0-9_-]+$/.test(k) ? k : JSON.stringify(k)
+    const valStr = serializeYamlValue(record[k], 2)
+    return valStr.startsWith('\n') ? `${keyStr}:${valStr}` : `${keyStr}: ${valStr}`
+  })
+  return `---\n${lines.join('\n')}\n---`
 }
 
 function invalid(errors: string[]): never {
   throw new ProtocolError(RpcErrorCode.InvalidParams, errors.join('；'))
+}
+
+/** 归一化 allowed-tools（支持空格/逗号分隔字符串或字符串数组，对齐 agentskills.io & Claude Code） */
+function parseAllowedTools(raw: unknown): string[] | undefined {
+  if (Array.isArray(raw)) {
+    const items = raw.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
+    return items.length > 0 ? items : undefined
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (trimmed.length === 0) return undefined
+    // 允许逗号或空白分隔，同时保留括号内的空格（如 Bash(git diff *)）
+    const items: string[] = []
+    let current = ''
+    let depth = 0
+    for (let i = 0; i < trimmed.length; i++) {
+      const ch = trimmed[i]
+      if (ch === '(') depth++
+      else if (ch === ')' && depth > 0) depth--
+      if (depth === 0 && (ch === ',' || /\s/.test(ch))) {
+        if (current.trim().length > 0) items.push(current.trim())
+        current = ''
+        continue
+      }
+      current += ch
+    }
+    if (current.trim().length > 0) items.push(current.trim())
+    return items.length > 0 ? items : undefined
+  }
+  return undefined
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+/** 从 SKILL.md 文件解析扩展 frontmatter 字段（解析失败静默回落，不阻断发现） */
+function extractExtendedMeta(filePath: string): {
+  userInvocable: boolean
+  whenToUse?: string
+  argumentHint?: string
+  license?: string
+  compatibility?: string
+  allowedTools?: string[]
+  unsupportedRuntime?: 'context-fork'
+} {
+  try {
+    const { frontmatter } = parseFrontmatter<Record<string, unknown>>(readFileSync(filePath, 'utf8'))
+    const userInvocable = frontmatter['user-invocable'] !== false
+    const whenToUse = asNonEmptyString(frontmatter['when_to_use']) ?? asNonEmptyString(frontmatter['whenToUse'])
+    const argumentHint = asNonEmptyString(frontmatter['argument-hint']) ?? asNonEmptyString(frontmatter['argumentHint'])
+    const license = asNonEmptyString(frontmatter.license)
+    const compatibility = asNonEmptyString(frontmatter.compatibility)
+    const allowedTools = parseAllowedTools(frontmatter['allowed-tools'] ?? frontmatter.allowedTools)
+    const context = asNonEmptyString(frontmatter.context)
+    const unsupportedRuntime = context === 'fork' ? 'context-fork' : undefined
+    return {
+      userInvocable,
+      ...(whenToUse !== undefined && { whenToUse }),
+      ...(argumentHint !== undefined && { argumentHint }),
+      ...(license !== undefined && { license }),
+      ...(compatibility !== undefined && { compatibility }),
+      ...(allowedTools !== undefined && { allowedTools }),
+      ...(unsupportedRuntime !== undefined && { unsupportedRuntime })
+    }
+  } catch {
+    return { userInvocable: true }
+  }
+}
+
+/**
+ * 向上解析项目目录链至 `.git` worktree 根（返回顺序：远祖先 → 当前目录，使近者胜）。
+ * 无 `.git` 标记时只包含当前目录本身（对标 zcode adapters/skills/roots.ts:74-86）。
+ */
+function resolveProjectAncestors(cwd: string): string[] {
+  const start = resolve(cwd)
+  let worktreeRoot: string | null = null
+  let cursor = start
+  for (;;) {
+    if (existsSync(join(cursor, '.git'))) {
+      worktreeRoot = cursor
+      break
+    }
+    const parent = dirname(cursor)
+    if (parent === cursor) break
+    cursor = parent
+  }
+  if (worktreeRoot === null) return [start]
+  const dirs: string[] = []
+  let current = start
+  for (;;) {
+    dirs.push(current)
+    if (current === worktreeRoot || current === dirname(current)) break
+    current = dirname(current)
+  }
+  return dirs.reverse()
+}
+
+/**
+ * 列出技能目录内的附属文件相对路径（不含 SKILL.md、隐藏目录、.git、node_modules，拒绝逃逸 symlink）。
+ * 返回排序后的 POSIX 相对路径数组，最多 `limit` 条。
+ */
+export function listSkillResources(baseDir: string, limit: number = MAX_RESOURCE_FILES): string[] {
+  if (!existsSync(baseDir)) return []
+  const realBase = nativeRealpath(baseDir)
+  const results: string[] = []
+
+  const walk = (dir: string): void => {
+    if (results.length >= limit) return
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name))
+    for (const entry of entries) {
+      if (results.length >= limit) return
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
+      const fullPath = join(dir, entry.name)
+      const rel = relative(baseDir, fullPath).split(sep).join('/')
+      if (rel === 'SKILL.md') continue
+      try {
+        const realPath = nativeRealpath(fullPath)
+        const basePrefix = realBase.endsWith(sep) ? realBase : `${realBase}${sep}`
+        if (realPath !== realBase && !realPath.startsWith(basePrefix)) continue
+        const st = statSync(realPath)
+        if (st.isDirectory()) {
+          walk(fullPath)
+        } else if (st.isFile()) {
+          results.push(rel)
+        }
+      } catch {
+        continue
+      }
+    }
+  }
+
+  walk(baseDir)
+  return results
+}
+
+/** 按字节上限截断正文（保证 UTF-8 字符边界完整不截断半个多字节字符） */
+function truncateByBytes(text: string, maxBytes: number): { text: string; truncated: boolean } {
+  const buf = Buffer.from(text, 'utf8')
+  if (buf.byteLength <= maxBytes) return { text, truncated: false }
+  let end = maxBytes
+  // 回退跳过 UTF-8 续字节（0b10xxxxxx），避免截出 U+FFFD
+  while (end > 0 && (buf[end] & 0xc0) === 0x80) end--
+  return { text: buf.subarray(0, end).toString('utf8'), truncated: true }
+}
+
+/** 校验并归一化 zip 内部相对路径，拒绝绝对路径、驱动器盘符与 `..` 穿越 */
+function sanitizeArchivePath(rawPath: string): string | null {
+  const normalized = rawPath.replaceAll('\\', '/')
+  if (normalized.length === 0 || normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized)) return null
+  const parts = normalized.split('/').filter((p) => p.length > 0 && p !== '.')
+  if (parts.length === 0 || parts.some((p) => p === '..')) return null
+  return posix.join(...parts)
+}
+
+/** 校验待导入目录内所有节点，拒绝任何 symlink 逃逸 */
+function assertNoSymlinks(dir: string): void {
+  const entries = readdirSync(dir, { withFileTypes: true })
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name)
+    const st = lstatSync(fullPath)
+    if (st.isSymbolicLink()) {
+      invalid([`导入源包含符号链接（已拒绝）：${entry.name}`])
+    }
+    if (st.isDirectory()) assertNoSymlinks(fullPath)
+  }
 }
 
 export class SkillStore {
@@ -144,11 +449,20 @@ export class SkillStore {
   private readonly userStateFile: string
   /** user 级生态兼容目录（<agentsRoot>/skills，如 ~/.agents/skills） */
   private readonly userEcoDir: string
+  /** user 级 Claude 生态目录（<claudeRoot>/skills，如 ~/.claude/skills；未配置则不扫） */
+  private readonly userClaudeDir?: string
+  /** 随包内置技能目录（最低优先级、只读） */
+  private readonly bundledDir?: string
+  /** 额外自定义只读技能目录 */
+  private readonly customDirs: readonly string[]
 
-  constructor(root: string, agentsRoot: string) {
+  constructor(root: string, agentsRoot: string, opts: SkillStoreOptions = {}) {
     this.userDir = join(root, 'skills')
     this.userStateFile = join(root, 'skills.json')
     this.userEcoDir = join(agentsRoot, 'skills')
+    this.userClaudeDir = opts.claudeRoot !== undefined ? join(opts.claudeRoot, 'skills') : undefined
+    this.bundledDir = opts.bundledDir
+    this.customDirs = opts.customDirs ?? []
   }
 
   private projectDir(cwd: string): string {
@@ -159,152 +473,237 @@ export class SkillStore {
     return join(cwd, '.agents', 'skills')
   }
 
+  private projectClaudeDir(cwd: string): string {
+    return join(cwd, '.claude', 'skills')
+  }
+
   private projectStateFile(cwd: string): string {
     return join(cwd, '.cogent', 'skills.json')
   }
 
   /**
-   * user（+ 可选 project）目录发现合并：同名 project 胜 + 冲突诊断；
-   * realPath 去重防同一文件经 symlink 目录两处出现（pi loadSkills 的
-   * realPathSet 同款，skills.ts:428-435）。
-   *
-   * 加目录序 = 同名优先级（后者胜）：项目 .cogent > 项目 .agents >
-   * 用户 .cogent > 用户 .agents（级别优先，同级别内自有目录压过生态
-   * 兼容目录）。eco 集合记生态目录出身（list 的 eco 标记数据源；被同名
-   * 覆盖的生态版按胜者 filePath 判，天然不误标）。
+   * 多源发现与合并（按 7 级优先级从低到高叠加，后者覆盖前者并记录冲突诊断）。
+   * - `cwds` 为空 = 仅发现 bundled + user + custom 视图；
+   * - `cwds` 非空 = 逆序遍历绑定根（次根先入、主根 `cwds[0]` 最后入），每根向上扫描至 `.git` 根。
    */
-  private discover(cwd?: string): { skills: Skill[]; errors: string[]; eco: Set<string> } {
+  private discoverMany(cwds: readonly string[] = []): { skills: DiscoveredSkill[]; errors: string[] } {
     const errors: string[] = []
-    const byName = new Map<string, Skill>()
+    const byName = new Map<string, DiscoveredSkill>()
     const realPaths = new Set<string>()
-    const eco = new Set<string>()
 
-    const addDir = (dir: string, source: SkillScope, isEco: boolean): void => {
-      const { skills, diagnostics } = loadSkillsFromDir({ dir, source })
+    const addDir = (dir: string, scope: SkillScope, origin: SkillOrigin): void => {
+      if (!existsSync(dir)) return
+      const { skills, diagnostics } = loadSkillsFromDir({ dir, source: scope })
       errors.push(...diagnosticsToErrors(diagnostics))
+      const readonly = origin !== 'cogent'
+      const eco = origin === 'agents' || origin === 'claude'
       for (const skill of skills) {
-        const realPath = realpathSync(skill.filePath)
+        const realPath = nativeRealpath(skill.filePath)
         if (realPaths.has(realPath)) continue
         const existing = byName.get(skill.name)
         if (existing !== undefined) {
           errors.push(`技能 "${skill.name}" 同名冲突：${skill.filePath} 覆盖 ${existing.filePath}`)
         }
-        byName.set(skill.name, skill)
+        const ext = extractExtendedMeta(skill.filePath)
+        const discovered: DiscoveredSkill = {
+          ...skill,
+          scope,
+          origin,
+          readonly,
+          eco,
+          ...ext
+        }
+        byName.set(skill.name, discovered)
         realPaths.add(realPath)
-        if (isEco) eco.add(skill.filePath)
       }
     }
 
-    addDir(this.userEcoDir, 'user', true)
-    addDir(this.userDir, 'user', false)
-    if (cwd !== undefined) {
-      addDir(this.projectEcoDir(cwd), 'project', true)
-      addDir(this.projectDir(cwd), 'project', false)
+    // 1. bundled 内置技能层（最低优先级，垫底只读）
+    if (this.bundledDir !== undefined) {
+      addDir(this.bundledDir, 'bundled', 'bundled')
     }
-    return { skills: [...byName.values()], errors, eco }
+
+    // 2. 用户生态（.claude → .agents）与用户自有（.cogent）
+    if (this.userClaudeDir !== undefined) {
+      addDir(this.userClaudeDir, 'user', 'claude')
+    }
+    addDir(this.userEcoDir, 'user', 'agents')
+    addDir(this.userDir, 'user', 'cogent')
+
+    // 3. 自定义额外只读目录
+    for (const customDir of this.customDirs) {
+      addDir(customDir, 'user', 'custom')
+    }
+
+    // 4. 项目多根（次根先入、主根 cwds[0] 最后入；每根从 .git worktree 祖先逐级向下至该根）
+    for (let i = cwds.length - 1; i >= 0; i--) {
+      const ancestors = resolveProjectAncestors(cwds[i])
+      for (const dir of ancestors) {
+        addDir(this.projectClaudeDir(dir), 'project', 'claude')
+        addDir(this.projectEcoDir(dir), 'project', 'agents')
+        addDir(this.projectDir(dir), 'project', 'cogent')
+      }
+    }
+
+    return { skills: [...byName.values()], errors }
   }
 
-  /** 两级启停状态装载（损坏文件 → 诊断 + 空态兜底，不炸求值） */
-  private loadStates(cwd?: string): { userDisabled: Set<string>; projectOverrides: Map<string, boolean>; errors: string[] } {
+  private loadStatesMany(cwds: readonly string[] = []): {
+    userDisabled: Set<string>
+    projectOverrides: Map<string, boolean>
+    errors: string[]
+  } {
     const user = readStateFile(this.userStateFile, checkUserState)
-    const errors = [...user.error !== undefined ? [user.error] : []]
+    const errors = [...(user.error !== undefined ? [user.error] : [])]
     const userDisabled = new Set(user.state.disabled)
-    let projectOverrides = new Map<string, boolean>()
-    if (cwd !== undefined) {
-      const project = readStateFile(this.projectStateFile(cwd), checkProjectState)
+    const projectOverrides = new Map<string, boolean>()
+    for (let i = cwds.length - 1; i >= 0; i--) {
+      const project = readStateFile(this.projectStateFile(cwds[i]), checkProjectState)
       if (project.error !== undefined) errors.push(project.error)
-      projectOverrides = new Map(Object.entries(project.state.overrides))
+      for (const [name, enabled] of Object.entries(project.state.overrides)) {
+        projectOverrides.set(name, enabled)
+      }
     }
     return { userDisabled, projectOverrides, errors }
   }
 
-  /** list 共用底座：发现合并 + 两级状态（带 projectOverrides 原样给摘要投影） */
-  private merged(cwd?: string): {
-    skills: Skill[]
-    userDisabled: Set<string>
+  private static effective(
+    skill: DiscoveredSkill,
+    userDisabled: Set<string>,
     projectOverrides: Map<string, boolean>
-    errors: string[]
-    eco: Set<string>
-  } {
-    const discovered = this.discover(cwd)
-    const states = this.loadStates(cwd)
-    return {
-      skills: discovered.skills,
-      userDisabled: states.userDisabled,
-      projectOverrides: states.projectOverrides,
-      errors: [...discovered.errors, ...states.errors],
-      eco: discovered.eco
-    }
-  }
-
-  private static effective(skill: Skill, userDisabled: Set<string>, projectOverrides: Map<string, boolean>): boolean {
+  ): boolean {
     const override = projectOverrides.get(skill.name)
     if (override !== undefined) return override
     return !userDisabled.has(skill.name)
   }
 
   /**
-   * skills.list 响应：摘要 + 诊断。cwd 缺省 = 仅 user 目录视图（无项目
-   * 覆盖列）；带 cwd = 两级合并视图（含被禁用项 —— 列表就是管理面）。
+   * skills.list 响应：摘要 + 诊断。cwd 缺省 = user + bundled 视图；
+   * 带 cwd = 完整项目合并视图（含被禁用项 —— 列表即管理面）。
    */
   list(cwd?: string): SkillListResult {
-    const { skills, userDisabled, projectOverrides, errors, eco } = this.merged(cwd)
+    const cwds = cwd !== undefined ? [cwd] : []
+    const discovered = this.discoverMany(cwds)
+    const states = this.loadStatesMany(cwds)
     return {
-      skills: skills.map((skill) => ({
-        name: skill.name,
-        description: skill.description,
-        scope: skill.sourceInfo.scope === 'project' ? 'project' : 'user',
-        path: skill.filePath,
-        baseDir: skill.baseDir,
-        manualOnly: skill.disableModelInvocation,
-        enabled: SkillStore.effective(skill, userDisabled, projectOverrides),
-        userDisabled: userDisabled.has(skill.name),
-        ...(projectOverrides.has(skill.name) && { override: projectOverrides.get(skill.name) }),
-        ...(eco.has(skill.filePath) && { eco: true })
-      })),
-      errors
+      skills: discovered.skills.map((skill) => {
+        const resourceCount = listSkillResources(skill.baseDir).length
+        return {
+          name: skill.name,
+          description: skill.description,
+          scope: skill.scope,
+          origin: skill.origin,
+          path: skill.filePath,
+          baseDir: skill.baseDir,
+          manualOnly: skill.disableModelInvocation,
+          userInvocable: skill.userInvocable,
+          ...(skill.whenToUse !== undefined && { whenToUse: skill.whenToUse }),
+          ...(skill.argumentHint !== undefined && { argumentHint: skill.argumentHint }),
+          ...(skill.allowedTools !== undefined && { allowedTools: skill.allowedTools }),
+          ...(skill.unsupportedRuntime !== undefined && { unsupportedRuntime: skill.unsupportedRuntime }),
+          ...(resourceCount > 0 && { resourceCount }),
+          ...(skill.readonly && { readonly: true }),
+          enabled: SkillStore.effective(skill, states.userDisabled, states.projectOverrides),
+          userDisabled: states.userDisabled.has(skill.name),
+          ...(states.projectOverrides.has(skill.name) && { override: states.projectOverrides.get(skill.name) }),
+          ...(skill.eco && { eco: true })
+        }
+      }),
+      errors: [...discovered.errors, ...states.errors]
     }
   }
 
-  /**
-   * 装配/展开用活快照：合并发现 − 禁用项（manualOnly 保留 —— 它们仍可
-   * /skill: 手动调用，进不进模型清单由 skill-prompt 的 formatter 决定）。
-   * 无缓存：每次调用重新发现（段钩子每回合调用 = 热刷新数据面）。
-   */
-  snapshot(cwd?: string): { skills: Skill[]; errors: string[] } {
-    const { skills, userDisabled, projectOverrides, errors } = this.merged(cwd)
-    return { skills: skills.filter((s) => SkillStore.effective(s, userDisabled, projectOverrides)), errors }
+  /** 单根活快照（合并发现 − 禁用项；无缓存，每回合热刷新） */
+  snapshot(cwd?: string): { skills: DiscoveredSkill[]; errors: string[] } {
+    return this.snapshotMany(cwd !== undefined ? [cwd] : [])
   }
 
-  private dirFor(scope: SkillScope, cwd?: string): string {
+  /** 多根工作区活快照（主根 `cwds[0]` 优先） */
+  snapshotMany(cwds: readonly string[]): { skills: DiscoveredSkill[]; errors: string[] } {
+    const discovered = this.discoverMany(cwds)
+    const states = this.loadStatesMany(cwds)
+    return {
+      skills: discovered.skills.filter((s) => SkillStore.effective(s, states.userDisabled, states.projectOverrides)),
+      errors: [...discovered.errors, ...states.errors]
+    }
+  }
+
+  private writableDirFor(scope: 'user' | 'project', cwd?: string): string {
     if (scope === 'user') return this.userDir
-    if (cwd === undefined) invalid([`scope=project 需要 cwd（项目技能目录所在工作区）`])
+    if (cwd === undefined) invalid(['scope=project 需要 cwd（项目技能目录所在工作区）'])
     return this.projectDir(cwd)
   }
 
   /**
-   * 新增/编辑一枚技能（skills.save 委托）：frontmatter 由引擎生成（防
-   * 手写错），目录名 = name（发现规则按目录取 SKILL.md，名字一致才可往返）。
-   * 写入前跑 pi 同款校验，非法即 throw（手动设置动作明确反馈）。
+   * 新增/编辑一枚技能（skills.save 委托）：
+   * 编辑既有技能时读取原 SKILL.md 的 frontmatter 并无损合并，绝不丢失 license /
+   * compatibility / metadata / allowed-tools / context / agent 等标准或扩展字段。
    */
-  save(scope: SkillScope, cwd: string | undefined, name: string, description: string, body: string): void {
-    const nameErrors = validateName(name)
+  save(
+    scope: 'user' | 'project',
+    cwd: string | undefined,
+    name: string,
+    description: string,
+    body: string,
+    options: SkillSaveOptions = {}
+  ): void {
+    const nameErrors = validateSkillName(name)
     if (nameErrors.length > 0) invalid(nameErrors)
     const descriptionError = validateDescription(description)
     if (descriptionError !== undefined) invalid([descriptionError])
-    const dir = this.dirFor(scope, cwd)
-    const content = `---\nname: ${yamlString(name)}\ndescription: ${yamlString(description)}\n---\n\n${body}\n`
-    atomicWrite(join(dir, name, 'SKILL.md'), content)
+    const dir = this.writableDirFor(scope, cwd)
+    const targetFile = join(dir, name, 'SKILL.md')
+
+    // 无损合并既有 frontmatter
+    let existingFm: Record<string, unknown> = {}
+    if (existsSync(targetFile)) {
+      try {
+        existingFm = { ...parseFrontmatter<Record<string, unknown>>(readFileSync(targetFile, 'utf8')).frontmatter }
+      } catch {
+        existingFm = {}
+      }
+    }
+
+    const merged: Record<string, unknown> = {
+      ...existingFm,
+      name,
+      description
+    }
+
+    if (options.whenToUse !== undefined) {
+      const trimmed = options.whenToUse.trim()
+      delete merged.whenToUse
+      if (trimmed.length > 0) merged.when_to_use = trimmed
+      else delete merged.when_to_use
+    }
+    if (options.manualOnly !== undefined) {
+      if (options.manualOnly) merged['disable-model-invocation'] = true
+      else delete merged['disable-model-invocation']
+    }
+    if (options.userInvocable !== undefined) {
+      if (!options.userInvocable) merged['user-invocable'] = false
+      else delete merged['user-invocable']
+    }
+    if (options.argumentHint !== undefined) {
+      const trimmed = options.argumentHint.trim()
+      delete merged.argumentHint
+      if (trimmed.length > 0) merged['argument-hint'] = trimmed
+      else delete merged['argument-hint']
+    }
+
+    const content = `${serializeFrontmatter(merged)}\n\n${body}\n`
+    atomicWrite(targetFile, content)
   }
 
   /**
-   * 删除技能目录（skills.delete 委托）：只清同级状态文件的对应名（跨级
-   * 名单可能是对另一作用域同名技能的合法状态，不动）。
+   * 删除技能目录（skills.delete 委托）：仅允许删除可写作用域（user/project），
+   * bundled 内置技能不可删除；只清同级状态文件的对应名。
    */
   delete(scope: SkillScope, cwd: string | undefined, name: string): void {
-    const nameErrors = validateName(name)
+    if (scope === 'bundled') invalid(['内置技能（bundled）不可删除，可通过启停开关禁用'])
+    const nameErrors = validateSkillName(name)
     if (nameErrors.length > 0) invalid(nameErrors)
-    const dir = this.dirFor(scope, cwd)
+    const dir = this.writableDirFor(scope, cwd)
     const target = join(dir, name)
     if (!existsSync(target)) invalid([`技能 "${name}" 不存在（${dir}）`])
     rmSync(target, { recursive: true, force: true })
@@ -324,14 +723,19 @@ export class SkillStore {
   }
 
   /**
-   * 写启停状态（skills.setEnabled 委托）：user 档写禁用名单（inherit 无
-   * 更上层可回落，非法）；project 档写 overrides（inherit = 清除该名覆盖）。
-   * 目标名必须在当前发现里（对空名写状态 = UI bug，fail-fast）。
+   * 写启停状态（skills.setEnabled 委托）：user 档写禁用名单，project 档写 overrides。
+   * 任意已发现技能（含 eco / bundled）均可按名启停。
    */
-  setEnabled(scope: SkillScope, cwd: string | undefined, name: string, value: 'enabled' | 'disabled' | 'inherit'): void {
-    const nameErrors = validateName(name)
+  setEnabled(
+    scope: 'user' | 'project',
+    cwd: string | undefined,
+    name: string,
+    value: 'enabled' | 'disabled' | 'inherit'
+  ): void {
+    const nameErrors = validateSkillName(name)
     if (nameErrors.length > 0) invalid(nameErrors)
-    if (!this.discover(scope === 'project' ? cwd : undefined).skills.some((s) => s.name === name)) {
+    const cwds = scope === 'project' && cwd !== undefined ? [cwd] : []
+    if (!this.discoverMany(cwds).skills.some((s) => s.name === name)) {
       invalid([`技能 "${name}" 不存在`])
     }
     if (scope === 'user') {
@@ -350,129 +754,406 @@ export class SkillStore {
     atomicWrite(path, `${JSON.stringify({ overrides }, null, 2)}\n`)
   }
 
-  /**
-   * 读单枚技能正文（skills.read 委托）：编辑表单回填源。查找视图与调用方
-   * 的列表口径一致（user 档 = user 目录，project 档 = 两级合并胜者）。
-   */
-  read(scope: SkillScope, cwd: string | undefined, name: string): { description: string; body: string } {
-    const nameErrors = validateName(name)
+  /** 按作用域查找单枚技能（read / export / reveal 共用） */
+  private findSkill(scope: SkillScope, cwd: string | undefined, name: string): DiscoveredSkill {
+    const nameErrors = validateSkillName(name)
     if (nameErrors.length > 0) invalid(nameErrors)
-    const skill = this.discover(scope === 'project' ? cwd : undefined).skills.find((s) => s.name === name)
-    if (skill === undefined) invalid([`技能 "${name}" 不存在`])
-    const { frontmatter, body } = parseFrontmatter(readFileSync(skill.filePath, 'utf8'))
+    const cwds = scope === 'project' && cwd !== undefined ? [cwd] : []
+    const found = this.discoverMany(cwds).skills.find((s) => s.name === name)
+    if (found === undefined) invalid([`技能 "${name}" 不存在`])
+    return found
+  }
+
+  /** 读单枚技能正文与完整元信息（skills.read 委托：编辑/只读查看回填源） */
+  read(scope: SkillScope, cwd: string | undefined, name: string): SkillReadResult {
+    const skill = this.findSkill(scope, cwd, name)
+    const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(readFileSync(skill.filePath, 'utf8'))
     const description = frontmatter.description
     if (typeof description !== 'string' || description.length === 0) {
-      invalid([`${skill.filePath}: description 缺失（引擎生成的技能不会这样 —— 手放文件请补 frontmatter）`])
+      invalid([`${skill.filePath}: description 缺失（手放文件请补 frontmatter）`])
     }
-    return { description, body }
-  }
-
-  /**
-   * 多根工作区活快照（主根优先，按 realpath 去重）：
-   * 先加载用户级与次根，最后加载主根 `cwds[0]`（后者胜），并与各自启停覆盖合并。
-   * 单个或空根列表直接委托 `snapshot()`，零行为差异。
-   */
-  snapshotMany(cwds: readonly string[]): { skills: Skill[]; errors: string[] } {
-    if (cwds.length <= 1) return this.snapshot(cwds[0])
-    const errors: string[] = []
-    const byName = new Map<string, Skill>()
-    const realPaths = new Set<string>()
-    const userState = readStateFile(this.userStateFile, checkUserState)
-    if (userState.error !== undefined) errors.push(userState.error)
-    const userDisabled = new Set(userState.state.disabled)
-    const projectOverrides = new Map<string, boolean>()
-
-    const addDir = (dir: string, source: SkillScope): void => {
-      const { skills, diagnostics } = loadSkillsFromDir({ dir, source })
-      errors.push(...diagnosticsToErrors(diagnostics))
-      for (const skill of skills) {
-        const realPath = realpathSync(skill.filePath)
-        if (realPaths.has(realPath)) continue
-        const existing = byName.get(skill.name)
-        if (existing !== undefined) {
-          errors.push(`技能 "${skill.name}" 同名冲突：${skill.filePath} 覆盖 ${existing.filePath}`)
-        }
-        byName.set(skill.name, skill)
-        realPaths.add(realPath)
-      }
-    }
-
-    addDir(this.userEcoDir, 'user')
-    addDir(this.userDir, 'user')
-    // 逆序遍历绑定根：次根先入、主根（cwds[0]）最后入，确保主根同名技能与启停覆盖胜出
-    for (let i = cwds.length - 1; i >= 0; i--) {
-      const root = cwds[i]
-      addDir(this.projectEcoDir(root), 'project')
-      addDir(this.projectDir(root), 'project')
-      const state = readStateFile(this.projectStateFile(root), checkProjectState)
-      if (state.error !== undefined) errors.push(state.error)
-      for (const [name, enabled] of Object.entries(state.state.overrides)) {
-        projectOverrides.set(name, enabled)
-      }
-    }
+    const resourceFiles = listSkillResources(skill.baseDir)
     return {
-      skills: [...byName.values()].filter((s) => SkillStore.effective(s, userDisabled, projectOverrides)),
-      errors
+      description,
+      body,
+      ...(skill.whenToUse !== undefined && { whenToUse: skill.whenToUse }),
+      manualOnly: skill.disableModelInvocation,
+      userInvocable: skill.userInvocable,
+      ...(skill.argumentHint !== undefined && { argumentHint: skill.argumentHint }),
+      ...(skill.license !== undefined && { license: skill.license }),
+      ...(skill.compatibility !== undefined && { compatibility: skill.compatibility }),
+      ...(skill.allowedTools !== undefined && { allowedTools: skill.allowedTools }),
+      ...(skill.unsupportedRuntime !== undefined && { unsupportedRuntime: skill.unsupportedRuntime }),
+      ...(resourceFiles.length > 0 && { resourceFiles }),
+      ...(skill.readonly && { readonly: true })
     }
   }
 
+  /** 核验并返回技能目录真实路径（skills.revealTarget 委托，供主进程安全打开文件夹） */
+  revealDir(scope: SkillScope, cwd: string | undefined, name: string): string {
+    const skill = this.findSkill(scope, cwd, name)
+    return nativeRealpath(skill.baseDir)
+  }
+
   /**
-   * 按名活展开多个技能实体（结构化 agent.submit.skills 专用）：
-   * 任一指定技能不存在或已禁用时显式抛 InvalidParams，绝不静默丢弃；
-   * 读文件失败也显式报错，保证所选实体与送入模型的指令严格一致。
+   * 统一技能执行加载管线（专用 `skill` 工具、结构化 `$`/`/` 实体、`/skill:` 命令三路共用）：
+   * 1. 无缓存活快照查名；
+   * 2. 模型调用路径严格拦截 `disable-model-invocation`；
+   * 3. 100KB 字节截断 + 通用变量替换（正文强制 `allowSensitive: false`）；
+   * 4. 封装 `<skill_content>` 规范外壳 + `Base directory` + 附属资源列表。
    */
-  expandSkillsByName(names: readonly string[], cwdOrRoots?: string | readonly string[]): string[] {
-    if (names.length === 0) return []
-    const snapshot = Array.isArray(cwdOrRoots)
-      ? this.snapshotMany(cwdOrRoots)
-      : this.snapshot(cwdOrRoots as string | undefined)
-    const byName = new Map(snapshot.skills.map((skill) => [skill.name, skill]))
-    const blocks: string[] = []
+  loadForExecution(name: string, ctx: SkillExecutionContext): LoadedSkillResult {
+    const cwds: readonly string[] =
+      ctx.cwdOrRoots === undefined
+        ? []
+        : typeof ctx.cwdOrRoots === 'string'
+          ? [ctx.cwdOrRoots]
+          : ctx.cwdOrRoots
+    const snapshot = this.snapshotMany(cwds)
+    const skill = snapshot.skills.find((s) => s.name === name)
+    if (skill === undefined) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, `技能 "${name}" 不存在或已禁用`)
+    }
+    if (ctx.requireModelInvocable && skill.disableModelInvocation) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, `技能 "${name}" 已设为仅手动调用，不允许模型自动加载`)
+    }
+
+    let rawContent: string
+    try {
+      rawContent = readFileSync(skill.filePath, 'utf8')
+    } catch (error) {
+      throw new ProtocolError(
+        RpcErrorCode.InvalidParams,
+        `读取技能 "${name}" 失败：${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+
+    const stripped = stripFrontmatter(rawContent).trim()
+    const { text: bounded, truncated } = truncateByBytes(stripped, MAX_SKILL_BYTES)
+    const expanded = expandTemplateVars(
+      bounded,
+      {
+        skillDir: skill.baseDir,
+        projectDir: ctx.projectDir ?? cwds[0],
+        sessionId: ctx.sessionId,
+        arguments: ctx.args,
+        extra: ctx.extra
+      },
+      { allowSensitive: false }
+    )
+
+    const resourceFiles = listSkillResources(skill.baseDir)
+    const lines: string[] = [
+      `<skill_content name="${skill.name}">`,
+      `# Skill: ${skill.name}`,
+      '',
+      expanded,
+      '',
+      `Base directory for this skill: ${skill.baseDir}`,
+      'Relative paths in this skill are relative to this base directory.'
+    ]
+    if (resourceFiles.length > 0) {
+      lines.push('Bundled files:')
+      for (const file of resourceFiles) lines.push(`- ${file}`)
+    }
+    if (truncated) {
+      lines.push('[Skill content truncated]')
+    }
+    lines.push('</skill_content>')
+
+    return {
+      name: skill.name,
+      baseDir: skill.baseDir,
+      filePath: skill.filePath,
+      scope: skill.scope,
+      origin: skill.origin,
+      content: lines.join('\n'),
+      truncated,
+      resourceFiles
+    }
+  }
+
+  /** 校验用户显式指定的技能均存在且已启用（submit 前置快速失败，不提前读全文） */
+  assertSkillsAvailable(names: readonly string[], cwdOrRoots?: string | readonly string[]): void {
+    if (names.length === 0) return
+    const cwds: readonly string[] =
+      cwdOrRoots === undefined
+        ? []
+        : typeof cwdOrRoots === 'string'
+          ? [cwdOrRoots]
+          : cwdOrRoots
+    const active = new Set(this.snapshotMany(cwds).skills.map((s) => s.name))
     for (const name of names) {
-      const skill = byName.get(name)
-      if (skill === undefined) {
+      if (!active.has(name)) {
         throw new ProtocolError(RpcErrorCode.InvalidParams, `技能 "${name}" 不存在或已禁用`)
       }
-      let content: string
-      try {
-        content = readFileSync(skill.filePath, 'utf8')
-      } catch (error) {
-        throw new ProtocolError(
-          RpcErrorCode.InvalidParams,
-          `读取技能 "${name}" 失败：${error instanceof Error ? error.message : String(error)}`
-        )
-      }
-      const body = stripFrontmatter(content).trim()
-      blocks.push(`<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`)
     }
-    return blocks
   }
 
-  /**
-   * `/skill:name args` 活展开（Cogent submit 路径委托，替代 pi 内建的
-   * loader 静态集查找）：命中禁用技能 = 视为不存在原样透传；manualOnly
-   * 技能可展开（这正是它存在的意义）。读文件失败也透传（模型看到字面
-   * /skill: 名 = 可见信号），stderr 留痕一次。
-   */
-  expandSkillCommand(text: string, cwdOrRoots?: string | readonly string[]): string {
-    if (!text.startsWith('/skill:')) return text
+  /** 解析 `/skill:name args` 纯文本命令（仅在技能存在且已启用时命中） */
+  parseSkillCommand(
+    text: string,
+    cwdOrRoots?: string | readonly string[]
+  ): { name: string; args: string } | undefined {
+    if (!text.startsWith('/skill:')) return undefined
     const rest = text.slice(7)
     const spaceIndex = rest.indexOf(' ')
     const name = spaceIndex === -1 ? rest : rest.slice(0, spaceIndex)
     const args = spaceIndex === -1 ? '' : rest.slice(spaceIndex + 1).trim()
-    const snapshot = Array.isArray(cwdOrRoots)
-      ? this.snapshotMany(cwdOrRoots)
-      : this.snapshot(cwdOrRoots as string | undefined)
-    const skill = snapshot.skills.find((s) => s.name === name)
-    if (skill === undefined) return text
+    const cwds: readonly string[] =
+      cwdOrRoots === undefined
+        ? []
+        : typeof cwdOrRoots === 'string'
+          ? [cwdOrRoots]
+          : cwdOrRoots
+    const skill = this.snapshotMany(cwds).skills.find((s) => s.name === name)
+    if (skill === undefined) return undefined
+    return { name: skill.name, args }
+  }
+
+  /**
+   * 按名活展开多个技能实体（结构化 agent.submit.skills 专用）：
+   * 复用 `loadForExecution`（requireModelInvocable: false），返回完整结果供会话记录观测。
+   */
+  expandSkillsDetailed(
+    names: readonly string[],
+    cwdOrRoots?: string | readonly string[],
+    runtimeCtx?: { projectDir?: string; sessionId?: string }
+  ): LoadedSkillResult[] {
+    if (names.length === 0) return []
+    return names.map((name) =>
+      this.loadForExecution(name, {
+        cwdOrRoots,
+        projectDir: runtimeCtx?.projectDir,
+        sessionId: runtimeCtx?.sessionId,
+        requireModelInvocable: false
+      })
+    )
+  }
+
+  /** 向后兼容包装：直接返回展开后的 `<skill_content>` 块字符串数组 */
+  expandSkillsByName(
+    names: readonly string[],
+    cwdOrRoots?: string | readonly string[],
+    runtimeCtx?: { projectDir?: string; sessionId?: string }
+  ): string[] {
+    return this.expandSkillsDetailed(names, cwdOrRoots, runtimeCtx).map((r) => r.content)
+  }
+
+  /**
+   * `/skill:name args` 活展开（Cogent submit 路径委托）：
+   * 命中禁用/不存在技能原样透传；成功则统一走 `loadForExecution`（含 `$ARGUMENTS` 替换）。
+   */
+  expandSkillCommand(
+    text: string,
+    cwdOrRoots?: string | readonly string[],
+    runtimeCtx?: { projectDir?: string; sessionId?: string }
+  ): string {
+    return this.expandSkillCommandDetailed(text, cwdOrRoots, runtimeCtx).prompt
+  }
+
+  expandSkillCommandDetailed(
+    text: string,
+    cwdOrRoots?: string | readonly string[],
+    runtimeCtx?: { projectDir?: string; sessionId?: string }
+  ): { prompt: string; loaded?: LoadedSkillResult } {
+    if (!text.startsWith('/skill:')) return { prompt: text }
+    const rest = text.slice(7)
+    const spaceIndex = rest.indexOf(' ')
+    const name = spaceIndex === -1 ? rest : rest.slice(0, spaceIndex)
+    const args = spaceIndex === -1 ? '' : rest.slice(spaceIndex + 1).trim()
+    const cwds: readonly string[] =
+      cwdOrRoots === undefined
+        ? []
+        : typeof cwdOrRoots === 'string'
+          ? [cwdOrRoots]
+          : cwdOrRoots
+    const skill = this.snapshotMany(cwds).skills.find((s) => s.name === name)
+    if (skill === undefined) return { prompt: text }
     try {
-      const content = readFileSync(skill.filePath, 'utf8')
-      const body = stripFrontmatter(content).trim()
-      const block = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`
-      return args === '' ? block : `${block}\n\n${args}`
+      const loaded = this.loadForExecution(name, {
+        cwdOrRoots,
+        projectDir: runtimeCtx?.projectDir,
+        sessionId: runtimeCtx?.sessionId,
+        args: args.length > 0 ? args : undefined,
+        requireModelInvocable: false
+      })
+      return { prompt: loaded.content, loaded }
     } catch (error) {
       process.stderr.write(`[skills] 展开 /skill:${name} 失败：${error instanceof Error ? error.message : String(error)}\n`)
-      return text
+      return { prompt: text }
+    }
+  }
+
+  /**
+   * 从本地目录或 `.zip` 压缩包安全导入技能（skills.import 委托）：
+   * - 支持单个技能目录（根含 SKILL.md）或包含多个技能子目录的根目录；
+   * - zip 经 fflate 内存安全解压：拒绝路径穿越、超量文件、超大体积；目录拒绝符号链接；
+   * - 全部校验通过后经 staging 原子安装，失败无半装残留。
+   */
+  importFromPath(
+    scope: 'user' | 'project',
+    cwd: string | undefined,
+    sourcePath: string,
+    overwrite: boolean = false
+  ): SkillImportResult {
+    if (!isAbsolute(sourcePath) || !existsSync(sourcePath)) {
+      invalid([`导入路径不存在：${sourcePath}`])
+    }
+    const targetRoot = this.writableDirFor(scope, cwd)
+    const stagingRoot = join(targetRoot, `.staging-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    mkdirSync(stagingRoot, { recursive: true })
+
+    try {
+      const st = statSync(sourcePath)
+      let inspectRoot = stagingRoot
+      if (st.isDirectory()) {
+        assertNoSymlinks(sourcePath)
+        inspectRoot = join(stagingRoot, 'src')
+        cpSync(sourcePath, inspectRoot, { recursive: true, dereference: false })
+      } else if (st.isFile() && extname(sourcePath).toLowerCase() === '.zip') {
+        if (st.size > MAX_IMPORT_ZIP_BYTES) {
+          invalid([`压缩包超过 ${Math.round(MAX_IMPORT_ZIP_BYTES / 1024 / 1024)}MB 上限`])
+        }
+        const rawZip = readFileSync(sourcePath)
+        let entries: Record<string, Uint8Array>
+        try {
+          entries = unzipSync(new Uint8Array(rawZip.buffer, rawZip.byteOffset, rawZip.byteLength))
+        } catch (error) {
+          invalid([`压缩包解压失败：${error instanceof Error ? error.message : String(error)}`])
+        }
+        const entryList = Object.entries(entries)
+        if (entryList.length > MAX_IMPORT_FILE_COUNT) {
+          invalid([`压缩包内文件数超过 ${MAX_IMPORT_FILE_COUNT} 上限`])
+        }
+        let totalBytes = 0
+        inspectRoot = join(stagingRoot, 'unzipped')
+        mkdirSync(inspectRoot, { recursive: true })
+        for (const [rawName, data] of entryList) {
+          if (rawName.endsWith('/')) continue
+          const safeRel = sanitizeArchivePath(rawName)
+          if (safeRel === null) {
+            invalid([`压缩包包含非法路径（已拒绝）：${rawName}`])
+          }
+          if (data.byteLength > MAX_IMPORT_SINGLE_FILE_BYTES) {
+            invalid([`压缩包内单文件超过 ${Math.round(MAX_IMPORT_SINGLE_FILE_BYTES / 1024 / 1024)}MB 上限：${safeRel}`])
+          }
+          totalBytes += data.byteLength
+          if (totalBytes > MAX_IMPORT_UNZIPPED_BYTES) {
+            invalid([`压缩包解压总大小超过 ${Math.round(MAX_IMPORT_UNZIPPED_BYTES / 1024 / 1024)}MB 上限`])
+          }
+          const destFile = join(inspectRoot, ...safeRel.split('/'))
+          mkdirSync(dirname(destFile), { recursive: true })
+          writeFileSync(destFile, data)
+        }
+      } else {
+        invalid(['仅支持导入本地技能目录或 .zip 压缩包'])
+      }
+
+      // 定位所有候选技能目录（根含 SKILL.md，或扫描一层/多层子目录中的 SKILL.md）
+      const skillDirs = this.findImportableSkillDirs(inspectRoot)
+      if (skillDirs.length === 0) {
+        invalid(['导入源中未找到任何包含有效 SKILL.md 的技能目录'])
+      }
+
+      // 校验每个技能目录的 frontmatter 与名称唯一性
+      const candidates: Array<{ name: string; dir: string }> = []
+      const seenNames = new Set<string>()
+      for (const dir of skillDirs) {
+        const skillFile = join(dir, 'SKILL.md')
+        const { frontmatter } = parseFrontmatter<Record<string, unknown>>(readFileSync(skillFile, 'utf8'))
+        const name = asNonEmptyString(frontmatter.name) ?? basename(dir)
+        const nameErrors = validateSkillName(name)
+        if (nameErrors.length > 0) invalid([`${skillFile}: ${nameErrors.join('；')}`])
+        const desc = typeof frontmatter.description === 'string' ? frontmatter.description : ''
+        const descError = validateDescription(desc)
+        if (descError !== undefined) invalid([`${skillFile}: ${descError}`])
+        if (seenNames.has(name)) invalid([`导入包内存在重复技能名 "${name}"`])
+        seenNames.add(name)
+        candidates.push({ name, dir })
+      }
+
+      const imported: string[] = []
+      const skipped: string[] = []
+      mkdirSync(targetRoot, { recursive: true })
+
+      for (const candidate of candidates) {
+        const destDir = join(targetRoot, candidate.name)
+        if (existsSync(destDir)) {
+          if (!overwrite) {
+            skipped.push(candidate.name)
+            continue
+          }
+          const backupDir = join(targetRoot, `.backup-${candidate.name}-${Date.now()}`)
+          renameSync(destDir, backupDir)
+          try {
+            cpSync(candidate.dir, destDir, { recursive: true })
+            rmSync(backupDir, { recursive: true, force: true })
+          } catch (error) {
+            rmSync(destDir, { recursive: true, force: true })
+            renameSync(backupDir, destDir)
+            throw error
+          }
+        } else {
+          cpSync(candidate.dir, destDir, { recursive: true })
+        }
+        imported.push(candidate.name)
+      }
+
+      if (imported.length === 0 && skipped.length > 0) {
+        invalid([`同名技能已存在（${skipped.join('、')}），如需替换请勾选覆盖导入`])
+      }
+      return { imported, skipped }
+    } finally {
+      rmSync(stagingRoot, { recursive: true, force: true })
+    }
+  }
+
+  /** 在待导入目录中收集技能根（目录含 SKILL.md 即止步不继续下钻） */
+  private findImportableSkillDirs(root: string): string[] {
+    const found: string[] = []
+    const walk = (dir: string, depth: number): void => {
+      if (depth > 4) return
+      if (existsSync(join(dir, 'SKILL.md'))) {
+        found.push(dir)
+        return
+      }
+      let entries
+      try {
+        entries = readdirSync(dir, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        if (entry.name.startsWith('.') || entry.name === '__MACOSX' || entry.name === 'node_modules') continue
+        walk(join(dir, entry.name), depth + 1)
+      }
+    }
+    walk(root, 0)
+    return found
+  }
+
+  /** 将指定技能整目录打包导出为标准 `.zip` 压缩包（含 SKILL.md 与全部附属文件） */
+  exportToZip(scope: SkillScope, cwd: string | undefined, name: string, destinationPath: string): void {
+    if (!isAbsolute(destinationPath)) invalid([`导出目标必须是绝对路径：${destinationPath}`])
+    const skill = this.findSkill(scope, cwd, name)
+    const files: Record<string, Uint8Array> = {}
+    const prefix = skill.name
+    files[`${prefix}/SKILL.md`] = new Uint8Array(readFileSync(skill.filePath))
+    for (const rel of listSkillResources(skill.baseDir, MAX_IMPORT_FILE_COUNT)) {
+      const fullPath = join(skill.baseDir, ...rel.split('/'))
+      files[`${prefix}/${rel}`] = new Uint8Array(readFileSync(fullPath))
+    }
+    const zipped = zipSync(files, { level: 6 })
+    mkdirSync(dirname(destinationPath), { recursive: true })
+    const tmp = `${destinationPath}.tmp`
+    writeFileSync(tmp, zipped)
+    try {
+      renameSync(tmp, destinationPath)
+    } catch (error) {
+      rmSync(tmp, { force: true })
+      throw error
     }
   }
 }

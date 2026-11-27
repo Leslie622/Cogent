@@ -15,11 +15,15 @@ function toolResultText(result: unknown, separator: string): string {
 }
 
 /**
- * 工具结果 → 一行摘要（tool.completed 事件与 ToolCallRecord.resultSummary 共用）。
- * 取 result.content 的文本块拼接（模型 facing 的结果即用户可读的结果），截 200
- * 字符 —— 摘要服务"一眼看懂发生了什么"，全文模型已在循环里消费过。
+ * 工具结果 → 展示摘要（tool.completed 事件与 ToolCallRecord.resultSummary 共用）。
+ * - 常规工具：压平单行并截 200 字符（"一眼看懂发生了什么"）；
+ * - `skill` 工具：保留换行并放宽至 4000 字符，供技能卡展开查阅 `<skill_content>`。
  */
-export function summarizeToolResult(result: unknown): string {
+export function summarizeToolResult(result: unknown, toolName?: string): string {
+  if (toolName === 'skill') {
+    const text = toolResultText(result, '\n').trim()
+    return text.length > 4000 ? `${text.slice(0, 4000)}\n…` : text
+  }
   const text = toolResultText(result, ' ').replace(/\s+/g, ' ').trim()
   return text.length > 200 ? `${text.slice(0, 200)}…` : text
 }
@@ -115,7 +119,7 @@ export function toChatMessages(messages: Array<AttachmentMessage | CompactionBar
     if (message.role === 'toolResult') {
       results.set(message.toolCallId, {
         isError: message.isError,
-        text: summarizeToolResult({ content: message.content }),
+        text: summarizeToolResult({ content: message.content }, message.toolName),
         diff: extractResultDiff({ details: message.details }),
         endedAt: message.timestamp,
         startedAt: message.durationMs !== undefined ? message.timestamp - message.durationMs : undefined

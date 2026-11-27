@@ -26,6 +26,7 @@ import { interactToolDeclarations, summarizeAskUserArgs, summarizeTodoWriteArgs 
 import type { ToolKind } from '../../protocol'
 import { attachmentToolDeclaration } from './read-attachment'
 import { outputToolDeclaration } from './outputs/tool'
+import { skillToolDeclaration, summarizeSkillArgs } from './skill-tool'
 
 /** 当前平台的 shell 工具名（allowlist 与元数据表共用） */
 export const SHELL_TOOL_NAME = platform() === 'win32' ? 'powershell' : 'bash'
@@ -76,6 +77,7 @@ export function summarizeArgs(name: string, args: unknown): string {
 const TOOL_METAS: Record<string, { kind: ToolKind; summarize: (args: unknown) => string }> = {
   report_outputs: { kind: 'read', summarize: () => 'report_outputs(交付清单)' },
   read_attachment: { kind: 'read', summarize: (a) => summarizeArgs('read_attachment', a) },
+  skill: { kind: 'read', summarize: summarizeSkillArgs },
   read: { kind: 'read', summarize: (a) => summarizeArgs('read', a) },
   grep: { kind: 'read', summarize: (a) => summarizeArgs('grep', a) },
   find: { kind: 'read', summarize: (a) => summarizeArgs('find', a) },
@@ -129,6 +131,6 @@ export function toolDeclarations(): Array<{ name: string; description: string; p
   return [
     ...tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
     ...interactToolDeclarations(),
-    attachmentToolDeclaration(), outputToolDeclaration()
+    attachmentToolDeclaration(), outputToolDeclaration(), skillToolDeclaration()
   ]
 }

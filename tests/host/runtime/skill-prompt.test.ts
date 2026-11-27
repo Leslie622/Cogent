@@ -1,31 +1,30 @@
 /**
  * skill-prompt.ts 单元测试（docs/模块/测试.md）—— formatter 的预算模型：
- * pi XML 形状镜像、单条 250 截断、总预算降级 names-only、条目截断兜底、
- * manualOnly 过滤、XML 转义。
+ * 专用 `skill` 工具导语、无 <location> 暴露、whenToUse 合并、单条 250 截断、
+ * 总预算降级纯 names-only、条目截断兜底、manualOnly 过滤、XML 转义。
  */
-import { createSyntheticSourceInfo, type Skill } from '@earendil-works/pi-coding-agent'
 import { describe, expect, it } from 'vitest'
-import { formatSkillsSection } from '../../../src/host/runtime/skill-prompt'
+import { buildManualSkillPrompt, formatSkillsSection, type PromptSkillEntry } from '../../../src/host/runtime/skill-prompt'
 
-const skill = (name: string, description: string, extra: Partial<Skill> = {}): Skill => ({
+const skill = (name: string, description: string, extra: Partial<PromptSkillEntry> = {}): PromptSkillEntry => ({
   name,
   description,
-  filePath: `/skills/${name}/SKILL.md`,
-  baseDir: `/skills/${name}`,
-  sourceInfo: createSyntheticSourceInfo(`/skills/${name}/SKILL.md`, { source: 'user' }),
   disableModelInvocation: false,
   ...extra
 })
 
 describe('formatSkillsSection', () => {
-  it('形状镜像 pi formatSkillsForPrompt：导语 + <available_skills> XML', () => {
-    const section = formatSkillsSection([skill('a', '做事甲'), skill('b', '做事乙')])
-    expect(section).toContain('The following skills provide specialized instructions for specific tasks.')
+  it('指引调用 skill 工具且不暴露磁盘路径 <location>', () => {
+    const section = formatSkillsSection([
+      skill('a', '做事甲', { whenToUse: '遇到甲任务时' }),
+      skill('b', '做事乙')
+    ])
+    expect(section).toContain('call the `skill` tool with its exact name')
     expect(section).toContain('<available_skills>')
     expect(section).toContain('  <skill>')
     expect(section).toContain('    <name>a</name>')
-    expect(section).toContain('    <description>做事甲</description>')
-    expect(section).toContain('    <location>/skills/a/SKILL.md</location>')
+    expect(section).toContain('    <description>做事甲 (When to use: 遇到甲任务时)</description>')
+    expect(section).not.toContain('<location>')
     expect(section).toContain('</available_skills>')
   })
 
@@ -41,30 +40,45 @@ describe('formatSkillsSection', () => {
     expect(section).not.toContain('x'.repeat(250))
   })
 
-  it('XML 特殊字符转义（形状与 pi 一致）', () => {
+  it('XML 特殊字符转义', () => {
     const section = formatSkillsSection([skill('esc', '含 <标签> & "引号"')])
     expect(section).toContain('含 &lt;标签&gt; &amp; &quot;引号&quot;')
   })
 
-  it('总预算超限降级 names-only（description 全去，location 保留）', () => {
-    // 60 枚 × 约 350 chars description ≈ 21k > 20k 预算
-    const many = Array.from({ length: 60 }, (_, i) => skill(`s${i}`, `${i}号技能——${'详'.repeat(330)}`))
+  it('总预算超限降级纯 names-only（仅保留 <name>）', () => {
+    const many = Array.from({ length: 100 }, (_, i) => skill(`s${i}`, `${i}号技能——${'详'.repeat(240)}`))
     const section = formatSkillsSection(many, 20_000)
     expect(section).not.toContain('<description>')
     expect(section).toContain('<name>s0</name>')
-    expect(section).toContain('<location>/skills/s0/SKILL.md</location>')
+    expect(section).toContain('<name>s99</name>')
   })
 
   it('names-only 仍超预算：截条目 + 省略计数（至少留一枚）', () => {
-    // 长路径技能：names-only 也超小预算
-    const fat = Array.from({ length: 30 }, (_, i) => skill(`s${i}`, 'd', {
-      filePath: `/very/long/${'p'.repeat(60)}/dir${i}/SKILL.md`
-    }))
+    const fat = Array.from({ length: 50 }, (_, i) => skill(`very-long-skill-name-number-${i}`, 'd'))
     const section = formatSkillsSection(fat, 700)
     expect(section).not.toBeNull()
     expect(section).toMatch(/<!-- \d+ more skills omitted \(budget 700\) -->/)
-    // 至少一枚保留
-    expect(section).toContain('<name>s0</name>')
-    expect(section!.length).toBeLessThanOrEqual(700 + 200) // 兜底档允许留一枚略超
+    expect(section).toContain('<name>very-long-skill-name-number-0</name>')
+    expect(section!.length).toBeLessThanOrEqual(700 + 200)
+  })
+})
+
+describe('buildManualSkillPrompt', () => {
+  it('单技能 + 附带问题：先调 skill 工具再处理用户请求', () => {
+    const prompt = buildManualSkillPrompt(['skill-creator'], '你能做什么？')
+    expect(prompt).toContain('Use the skill named `skill-creator` for this turn.')
+    expect(prompt).toContain('First call the `skill` tool with name `skill-creator` before doing the task.')
+    expect(prompt).toContain('User request:\n你能做什么？')
+  })
+
+  it('单技能无附带文字：提示直接加载并按技能说明回复', () => {
+    const prompt = buildManualSkillPrompt(['skill-creator'], '   ')
+    expect(prompt).toContain('No additional user request was provided.')
+  })
+
+  it('多技能组合：要求依次调用 skill 工具', () => {
+    const prompt = buildManualSkillPrompt(['a', 'b'], '一起处理')
+    expect(prompt).toContain('`a`, `b`')
+    expect(prompt).toContain('User request:\n一起处理')
   })
 })

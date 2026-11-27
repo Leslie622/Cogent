@@ -16,7 +16,10 @@ describe('protocol/method-access', () => {
       'credentials.remove',
       'providers.custom.sync',
       'files.actionTarget',
-      'fileViews.acquire'
+      'fileViews.acquire',
+      'skills.import',
+      'skills.export',
+      'skills.revealTarget'
     ]) {
       expect(allowed.has(restricted)).toBe(false)
     }

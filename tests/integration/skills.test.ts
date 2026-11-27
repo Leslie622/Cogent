@@ -29,7 +29,6 @@ import {
 
 const home = makeTempDir('cogent-skills-home-')
 const ws = makeTempDir('cogent-skills-ws-')
-const projectSkillPath = join(ws, '.cogent', 'skills', 'commit-check', 'SKILL.md')
 
 // ———— mock LLM：动作队列（请求序 = 动作序，串行驱动确定） ————
 
@@ -38,11 +37,16 @@ type Action =
   | { type: 'toolCall'; callId: string; tool: string; args: Record<string, unknown> }
 const text = (t: string): Action => ({ type: 'text', text: t })
 const ACTIONS: Action[] = [
-  // S2 一轮：read 渐进加载（读胜者 project 版 SKILL.md 正文）
-  { type: 'toolCall', callId: 'r1', tool: 'read', args: { path: projectSkillPath } },
+  // S2 一轮：专用 skill 工具按名渐进加载（触发通用变量替换与 <skill_content> 外壳）
+  { type: 'toolCall', callId: 'r1', tool: 'skill', args: { name: 'commit-check', args: 'src/host' } },
   text('S2 done'), // S2 二轮
   text('S3 done'), // S3（同会话热禁用后）
-  text('S4 done') // S4（inherit 回落 + /skill: 展开后）
+  // S4：/skill:commit-check 列出步骤 → 引导模型调用 skill 工具（与手动选 chip 同链）
+  { type: 'toolCall', callId: 'r2', tool: 'skill', args: { name: 'commit-check', args: '列出步骤' } },
+  text('S4 done'),
+  // S5：结构化 skills=['manual-skill'] + 文字 → 显式点名放行 manualOnly 技能走 skill 工具
+  { type: 'toolCall', callId: 'r3', tool: 'skill', args: { name: 'manual-skill' } },
+  text('S5 done')
 ]
 let actionIndex = 0
 /** LLM 请求体留存（断言系统提示段/工具结果回灌/用户消息展开） */
@@ -79,8 +83,8 @@ const server: Server = createServer((req, res) => {
 
 const engine: EngineHandle = startEngine(home)
 
-const submitAndDone = async (sessionId: string, text: string): Promise<void> => {
-  await engine.send('agent.submit', { sessionId, text, model: 'mock' })
+const submitAndDone = async (sessionId: string, text: string, skills?: string[]): Promise<void> => {
+  await engine.send('agent.submit', { sessionId, text, model: 'mock', ...(skills !== undefined && { skills }) })
   await engine.waitEvent('run.completed', (p) => p.sessionId === sessionId, 30_000)
 }
 
@@ -113,7 +117,7 @@ describe('技能座集成（协议方法 + 段注入 + read 闭环 + 回合热�
       cwd: ws,
       name: 'commit-check',
       description: '项目版描述',
-      body: '提交前三步：lint、typecheck、test'
+      body: '提交前三步：lint、typecheck、test；目录=${CLAUDE_SKILL_DIR}；参数=$ARGUMENTS'
     })
     check('2. skills.save project 级写入', saveProject.result?.ok === true, JSON.stringify(saveProject.error ?? saveProject.result))
     const list = await engine.send<SkillListResult>('skills.list', { cwd: ws })
@@ -163,13 +167,22 @@ describe('技能座集成（协议方法 + 段注入 + read 闭环 + 回合热�
       r0.slice(0, 200)
     )
     const toolEnd = await engine.waitEvent('tool.completed', (p) => p.sessionId === s2 && p.callId === 'r1', 30_000).catch(() => undefined)
+    const projectSkillDir = join(ws, '.cogent', 'skills', 'commit-check')
     check(
-      '7. read 渐进加载：SKILL.md 正文进工具结果（read 档免审批直执行）',
-      toolEnd !== undefined && toolEnd.params.isError === false && (toolEnd.params.summary ?? '').includes('提交前三步'),
+      '7. 专用 skill 工具渐进加载（read 档免审批直执行，输出 <skill_content>）',
+      toolEnd !== undefined &&
+        toolEnd.params.isError === false &&
+        (toolEnd.params.summary ?? '').includes('提交前三步') &&
+        (toolEnd.params.summary ?? '').includes('skill_content'),
       toolEnd === undefined ? 'tool.completed 未到' : JSON.stringify(toolEnd.params.summary)
     )
     const r1 = JSON.stringify(requestBodies[1] ?? {})
-    check('8. 工具结果回灌二轮（循环闭合）', r1.includes('提交前三步'))
+    const escapedDir = JSON.stringify(projectSkillDir).slice(1, -1)
+    check(
+      '8. 工具结果回灌二轮（含 <skill_content>、${CLAUDE_SKILL_DIR} 与 $ARGUMENTS 替换结果）',
+      r1.includes('提交前三步') && r1.includes('skill_content') && r1.includes(escapedDir) && r1.includes('参数=src/host'),
+      r1.slice(0, 400)
+    )
 
     // ———— S3 同会话热禁用：下一轮请求该技能从清单消失（sections diff 补丁） ————
     await engine.send('skills.setEnabled', { scope: 'project', cwd: ws, name: 'commit-check', value: 'disabled' })
@@ -186,7 +199,7 @@ describe('技能座集成（协议方法 + 段注入 + read 闭环 + 回合热�
       systemText.slice(0, 200)
     )
 
-    // ———— S4 inherit 回落 + /skill: 活展开 ————
+    // ———— S4 inherit 回落 + /skill: 走专用 skill 工具闭环 ————
     await engine.send('skills.setEnabled', { scope: 'project', cwd: ws, name: 'commit-check', value: 'inherit' })
     const relist = await engine.send<SkillListResult>('skills.list', { cwd: ws })
     check(
@@ -196,13 +209,55 @@ describe('技能座集成（协议方法 + 段注入 + read 闭环 + 回合热�
     )
     await submitAndDone(s2, '/skill:commit-check 列出步骤')
     const r3 = requestBodies[3] as { messages?: Array<{ role: string }> } | undefined
-    const userText = JSON.stringify((r3?.messages ?? []).filter((m) => m.role === 'user'))
-    // JSON 串里的引号是 \"，断言片段要先按同规则转义
-    const skillTag = JSON.stringify('<skill name="commit-check"').slice(1, -1)
+    const s4UserText = JSON.stringify((r3?.messages ?? []).filter((m) => m.role === 'user'))
     check(
-      '11. /skill: 活展开进用户消息（块形状 + args 追加）',
-      userText.includes(skillTag) && userText.includes('提交前三步') && userText.includes('列出步骤'),
-      userText.slice(0, 300)
+      '11. /skill: 改写为显式调用 skill 工具指令并携带用户任务',
+      s4UserText.includes('First call the `skill` tool with name `commit-check`') && s4UserText.includes('列出步骤'),
+      s4UserText.slice(-300)
+    )
+    const toolEnd2 = await engine.waitEvent('tool.completed', (p) => p.sessionId === s2 && p.callId === 'r2', 30_000).catch(() => undefined)
+    check(
+      '11b. /skill: 经 skill 工具返回保留换行的 <skill_content> 供 UI 技能卡展示',
+      toolEnd2 !== undefined &&
+        toolEnd2.params.isError === false &&
+        (toolEnd2.params.summary ?? '').includes('\n') &&
+        (toolEnd2.params.summary ?? '').includes('参数=列出步骤'),
+      toolEnd2 === undefined ? 'tool.completed 未到' : JSON.stringify(toolEnd2.params.summary)
+    )
+
+    // ———— S5 结构化 skills chip + 文字：放行 manualOnly 技能走 skill 工具 ————
+    await engine.send('skills.save', {
+      scope: 'user',
+      name: 'manual-skill',
+      description: '仅手动触发的技能',
+      body: '手动技能正文内容',
+      manualOnly: true
+    })
+    await submitAndDone(s2, '你能做什么？', ['manual-skill'])
+    const r5 = requestBodies[5] as { messages?: Array<{ role: string }> } | undefined
+    const s5UserText = JSON.stringify((r5?.messages ?? []).filter((m) => m.role === 'user'))
+    check(
+      '11c. 结构化 skills + 文字：生成显式 skill 工具指令并附带用户问题',
+      s5UserText.includes('First call the `skill` tool with name `manual-skill`') && s5UserText.includes('你能做什么？'),
+      s5UserText.slice(-300)
+    )
+    const toolEnd3 = await engine.waitEvent('tool.completed', (p) => p.sessionId === s2 && p.callId === 'r3', 30_000).catch(() => undefined)
+    check(
+      '11d. 用户显式点名放行 manualOnly 技能经 skill 工具加载成功',
+      toolEnd3 !== undefined &&
+        toolEnd3.params.isError === false &&
+        (toolEnd3.params.summary ?? '').includes('手动技能正文内容'),
+      toolEnd3 === undefined ? 'tool.completed 未到' : JSON.stringify(toolEnd3.params.summary)
+    )
+
+    const inspect = await engine.send<{ entries: Array<{ kind: string; title: string }> }>('inspect.entries', { sessionId: s2 })
+    const loadedEntries = (inspect.result?.entries ?? []).filter((e) => e.kind === 'skill.loaded')
+    check(
+      '12. inspect 审计记录 skill.loaded（模型调用 + /skill: + 结构化 chip 共 3 条）',
+      loadedEntries.length >= 3 &&
+        loadedEntries.some((e) => e.title.includes('commit-check')) &&
+        loadedEntries.some((e) => e.title.includes('manual-skill')),
+      JSON.stringify(loadedEntries)
     )
   }, 180_000)
 })

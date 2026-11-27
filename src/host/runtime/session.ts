@@ -82,8 +82,9 @@ import { SessionInspector, type TitleTrace } from './inspector'
 import { SessionTitleConfig } from './session-title-config'
 import { generateSessionTitle } from '../kernel/session-title'
 import { McpConfigStore } from './mcp-config'
-import { formatSkillsSection } from './skill-prompt'
+import { buildManualSkillPrompt, formatSkillsSection } from './skill-prompt'
 import { SkillStore } from './skill-store'
+import { createSkillTool } from './skill-tool'
 import type { ProjectRegistry } from './project'
 import type { ApprovalRegistry } from './approvals'
 import type { CogentKernel, KernelNotifier } from '../kernel/contract'
@@ -181,7 +182,9 @@ interface StreamingState {
   fileContext?: FileContext
   fileReferences: Map<string, FileReference[]>
   attachmentInput?: { inputId: string; text: string; attachments: AttachmentRef[]; directories?: DirectoryRef[]; bound: boolean }
-  skillInput?: { text: string; skills?: Array<{ name: string }>; command?: { name: 'init' }; expandedBlocks: string[]; bound: boolean }
+  skillInput?: { text: string; skills?: Array<{ name: string }>; command?: { name: 'init' }; bound: boolean }
+  /** 本轮用户显式点名的技能集（`$skill` 实体或 `/skill:` 命令）：放行 `disable-model-invocation` 技能走 `skill` 工具 */
+  explicitSkills?: Set<string>
   images?: import('@earendil-works/pi-ai').ImageContent[]
   attachmentPreparation?: AbortController
   messageId: string
@@ -861,7 +864,7 @@ export class SessionManager implements CogentKernel {
     if (command?.name === 'init' && workspace.roots.length === 0) {
       throw new ProtocolError(RpcErrorCode.InvalidRequest, '/init 需要先绑定项目或工作区目录')
     }
-    const expandedSkillBlocks = this.skillStore.expandSkillsByName(skills, workspace.roots)
+    this.skillStore.assertSkillsAvailable(skills, workspace.roots)
     let target: Model<Api> | undefined
     if (model) {
       // provider 双键限定优先：同名模型会被多家目录收录（azure 目录也有
@@ -899,7 +902,8 @@ export class SessionManager implements CogentKernel {
     if (firstInput && !previousInput) this.notify('session.summaryChanged', { summary: { ...session.summary } })
 
     const runId = crypto.randomUUID()
-    this.ensureInspector(session).runStarted(text, this.ensureSystemPrompt(session), thinkingLevel ?? 'off')
+    const inspector = this.ensureInspector(session)
+    inspector.runStarted(text, this.ensureSystemPrompt(session), thinkingLevel ?? 'off')
     const streaming: StreamingState = {
       workspace,
       runId,
@@ -935,9 +939,9 @@ export class SessionManager implements CogentKernel {
         text,
         ...(skills.length > 0 && { skills: skills.map((name) => ({ name })) }),
         ...(command !== undefined && { command }),
-        expandedBlocks: expandedSkillBlocks,
         bound: false
       }
+      if (skills.length > 0) streaming.explicitSkills = new Set(skills)
     }
     this.streaming.set(sessionId, streaming)
     this.notify('run.started', { sessionId, runId, turnId: inputId, input: streaming.input! })
@@ -996,20 +1000,28 @@ export class SessionManager implements CogentKernel {
       // 判等防每回合堆 thinking_level_change 空条目（同 setModel 注释）
       pi.setThinkingLevel(thinkingLevel as ThinkingLevel)
     }
-    // /skill: 活展开：pi 内建展开查 loader 静态集（agent-session.ts:2319），
-    // 与段落钩子的回合热刷新会脱节 —— 统一由 skillStore 用活快照展开；
-    // 若提交携带结构化技能/命令实体，则优先按结构化块组装，不对正文做纯文本触发解析。
+    // 显式技能触发（结构化 `$skill` 实体或 `/skill:name args`）：统一改写为引导模型
+    // 先调专用 `skill` 工具的回合指令（对标 zcode `buildManualSkillPrompt`），确保手动
+    // 触发与模型自主触发共享同一条工具调用链、UI 技能卡与注意力聚焦。
     if (this.finishPreparingRun(session, pi, streaming)) return
     let prompt: string
     if (streaming.skillInput !== undefined) {
-      const parts = [
-        ...streaming.skillInput.expandedBlocks,
+      const taskParts = [
         ...(streaming.skillInput.command?.name === 'init' ? [INIT_COMMAND_PROMPT] : []),
         ...(text.trim().length > 0 ? [text] : [])
       ]
-      prompt = parts.join('\n\n')
+      const taskText = taskParts.join('\n\n')
+      const explicitNames = streaming.skillInput.skills?.map((s) => s.name) ?? []
+      prompt = explicitNames.length > 0 ? buildManualSkillPrompt(explicitNames, taskText) : taskText
     } else {
-      prompt = this.skillStore.expandSkillCommand(text, this.workspaceRoots(session))
+      const roots = this.workspaceRoots(session)
+      const parsed = this.skillStore.parseSkillCommand(text, roots)
+      if (parsed !== undefined) {
+        streaming.explicitSkills = new Set([parsed.name])
+        prompt = buildManualSkillPrompt([parsed.name], parsed.args)
+      } else {
+        prompt = text
+      }
     }
     if (streaming.attachmentInput !== undefined) {
       const refs = streaming.attachmentInput.attachments
@@ -1817,6 +1829,27 @@ export class SessionManager implements CogentKernel {
       // ask_user 挂起 → question.asked → respond/abort/settle 三路收尾；
       // plan 闭环 → enter_plan 开关 + submit_plan 挂起审批（plan.respond）
       customTools: [
+        createSkillTool({
+          load: (name, args) => {
+            const roots = this.workspaceRoots(session)
+            const explicit = this.streaming.get(sessionId)?.explicitSkills?.has(name) === true
+            const loaded = this.skillStore.loadForExecution(name, {
+              cwdOrRoots: roots,
+              projectDir: roots[0],
+              sessionId,
+              args,
+              requireModelInvocable: !explicit
+            })
+            session.inspector?.skillLoaded({
+              name: loaded.name,
+              trigger: explicit ? 'explicit' : 'tool',
+              origin: loaded.origin,
+              truncated: loaded.truncated,
+              resourceCount: loaded.resourceFiles.length
+            })
+            return loaded
+          }
+        }),
         createReportOutputsTool((callId, declarations, cwd, signal) => {
           const run = this.streaming.get(sessionId)!
           const context = run.fileContext!
@@ -2171,7 +2204,7 @@ export class SessionManager implements CogentKernel {
         const streaming = this.streaming.get(sessionId)
         if (!streaming) return
         if (!event.isError && (event.toolName === 'write' || event.toolName === 'edit') && streaming.turnId !== undefined) this.outputs.wrote(sessionId, streaming.turnId)
-        const summary = summarizeToolResult(event.result)
+        const summary = summarizeToolResult(event.result, event.toolName)
         const diff = extractResultDiff(event.result)
         const record = streaming.tools.find((t) => t.callId === event.toolCallId)
         const fileRefs = [...streaming.fileReferences].filter(([id]) => id === event.toolCallId || id.startsWith(event.toolCallId + '/')).flatMap(([, refs]) => refs)
