@@ -142,13 +142,25 @@ describe('WorkspaceChangesService', () => {
     await service.storage.commit({
       summary: {
         version: 1, sessionId: 's1', turnId: 't-crash', revision: 1, state: 'running',
-        coverage: 'complete', totalAdded: 0, totalDeleted: 0, incompleteCount: 0, items: [], warnings: []
+        coverage: 'tools-only', totalAdded: 0, totalDeleted: 0, incompleteCount: 0, items: [], warnings: ['未绑定工作区目录，仅追踪文件工具改动']
       },
       entries: []
     }, new AbortController().signal)
     const [recovered] = await service.get('s1', 't-crash')
     expect(recovered.state).toBe('interrupted')
     expect(recovered.warnings.some((w) => w.includes('中断'))).toBe(true)
+    // 历史落盘的「未绑定工作区」提示不再面向用户
+    expect(recovered.warnings.some((w) => w.includes('未绑定'))).toBe(false)
+
+    await service.storage.commit({
+      summary: {
+        version: 1, sessionId: 's1', turnId: 't-legacy', revision: 1, state: 'ready',
+        coverage: 'tools-only', totalAdded: 0, totalDeleted: 0, incompleteCount: 0, items: [], warnings: ['未绑定工作区目录，仅追踪文件工具改动']
+      },
+      entries: []
+    }, new AbortController().signal)
+    const [legacy] = await service.get('s1', 't-legacy')
+    expect(legacy.warnings).toEqual([])
 
     // 删会话清理
     await service.releaseSession('s1')

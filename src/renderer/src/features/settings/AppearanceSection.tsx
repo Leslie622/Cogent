@@ -36,9 +36,15 @@ import {
   SHELL_OPACITY_MIN,
 } from '@/lib/interface-skins'
 import {
-  DEFAULT_POPOVER_GLASS,
-  POPOVER_GLASS_MAX,
-  POPOVER_GLASS_MIN,
+  DEFAULT_POPOVER_GLASS_BLUR,
+  DEFAULT_POPOVER_GLASS_OPACITY,
+  DEFAULT_POPOVER_GLASS_SATURATE,
+  POPOVER_GLASS_BLUR_MAX,
+  POPOVER_GLASS_BLUR_MIN,
+  POPOVER_GLASS_OPACITY_MAX,
+  POPOVER_GLASS_OPACITY_MIN,
+  POPOVER_GLASS_SATURATE_MAX,
+  POPOVER_GLASS_SATURATE_MIN,
 } from '@/lib/popover-glass'
 import {
   CODE_FONT_SIZES,
@@ -107,6 +113,64 @@ function AccentControl() {
   )
 }
 
+function SliderRow({
+  searchId,
+  title,
+  desc,
+  value,
+  display,
+  min,
+  max,
+  step = 1,
+  defaultValue,
+  disabled,
+  resetLabel,
+  onChange,
+}: {
+  searchId: keyof typeof SETTING_COPY
+  title: string
+  desc: string
+  value: number
+  display: string
+  min: number
+  max: number
+  step?: number
+  defaultValue: number
+  disabled?: boolean
+  resetLabel: string
+  onChange: (value: number) => void
+}) {
+  return (
+    <SettingsRow searchId={searchId} title={title} desc={desc}>
+      <div className="flex items-center gap-2">
+        <span className="w-11 text-right text-xs text-muted-foreground tabular-nums">{display}</span>
+        <Slider
+          value={[value]}
+          min={min}
+          max={max}
+          step={step}
+          disabled={disabled}
+          onValueChange={(next) => onChange(next[0])}
+          className="w-40"
+          aria-label={title}
+          thumbAriaLabel={title}
+        />
+        <Hint tip={resetLabel}>
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={disabled || value === defaultValue}
+            onClick={() => onChange(defaultValue)}
+            aria-label={resetLabel}
+          >
+            <IconArrowBackUp />
+          </Button>
+        </Hint>
+      </div>
+    </SettingsRow>
+  )
+}
+
 export function AppearanceSection() {
   const theme = useActiveTheme()
   const isDark = useIsDarkMode()
@@ -127,6 +191,12 @@ export function AppearanceSection() {
   const setShellOpacity = useAppearanceStore((s) => s.setShellOpacity)
   const popoverGlass = useAppearanceStore((s) => s.popoverGlass)
   const setPopoverGlass = useAppearanceStore((s) => s.setPopoverGlass)
+  const popoverGlassOpacity = useAppearanceStore((s) => s.popoverGlassOpacity)
+  const setPopoverGlassOpacity = useAppearanceStore((s) => s.setPopoverGlassOpacity)
+  const popoverGlassBlur = useAppearanceStore((s) => s.popoverGlassBlur)
+  const setPopoverGlassBlur = useAppearanceStore((s) => s.setPopoverGlassBlur)
+  const popoverGlassSaturate = useAppearanceStore((s) => s.popoverGlassSaturate)
+  const setPopoverGlassSaturate = useAppearanceStore((s) => s.setPopoverGlassSaturate)
   const backdropSupported = 'cogent' in window && Boolean(window.cogent.backdropSupported)
   const uiFontSize = useAppearanceStore((s) => s.uiFontSize)
   const setUiFontSize = useAppearanceStore((s) => s.setUiFontSize)
@@ -198,67 +268,70 @@ export function AppearanceSection() {
           <InterfaceSkinPicker value={interfaceSkin} dark={isDark} onValueChange={setInterfaceSkin} />
         </SettingsLocateTarget>
         {backdropSupported && !isDark && (
-          <SettingsRow
+          <SliderRow
             searchId="appearance.shell-opacity"
             title={SETTING_COPY['appearance.shell-opacity'].title}
             desc={`调节头部与两侧栏的透光程度，100% 时完全不透明（默认 ${DEFAULT_SHELL_OPACITY}%）`}
-          >
-            <div className="flex items-center gap-2">
-              <span className="w-9 text-right text-xs text-muted-foreground tabular-nums">{shellOpacity}%</span>
-              <Slider
-                value={[shellOpacity]}
-                min={SHELL_OPACITY_MIN}
-                max={SHELL_OPACITY_MAX}
-                step={1}
-                onValueChange={(value) => setShellOpacity(value[0])}
-                className="w-40"
-                aria-label="外壳不透明度"
-                thumbAriaLabel="外壳不透明度"
-              />
-              <Hint tip="恢复默认不透明度">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  disabled={shellOpacity === DEFAULT_SHELL_OPACITY}
-                  onClick={() => setShellOpacity(DEFAULT_SHELL_OPACITY)}
-                  aria-label="恢复默认不透明度"
-                >
-                  <IconArrowBackUp />
-                </Button>
-              </Hint>
-            </div>
-          </SettingsRow>
+            value={shellOpacity}
+            display={`${shellOpacity}%`}
+            min={SHELL_OPACITY_MIN}
+            max={SHELL_OPACITY_MAX}
+            defaultValue={DEFAULT_SHELL_OPACITY}
+            resetLabel="恢复默认不透明度"
+            onChange={setShellOpacity}
+          />
         )}
         <SettingsRow
           searchId="appearance.popover-glass"
           title={SETTING_COPY['appearance.popover-glass'].title}
-          desc={`调节下拉选择、菜单与轻量浮层的毛玻璃强度，0% 时关闭（默认 ${DEFAULT_POPOVER_GLASS}%）`}
+          desc={SETTING_COPY['appearance.popover-glass'].desc}
         >
-          <div className="flex items-center gap-2">
-            <span className="w-9 text-right text-xs text-muted-foreground tabular-nums">{popoverGlass}%</span>
-            <Slider
-              value={[popoverGlass]}
-              min={POPOVER_GLASS_MIN}
-              max={POPOVER_GLASS_MAX}
-              step={1}
-              onValueChange={(value) => setPopoverGlass(value[0])}
-              className="w-40"
-              aria-label="浮层毛玻璃"
-              thumbAriaLabel="浮层毛玻璃"
-            />
-            <Hint tip="恢复默认毛玻璃强度">
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={popoverGlass === DEFAULT_POPOVER_GLASS}
-                onClick={() => setPopoverGlass(DEFAULT_POPOVER_GLASS)}
-                aria-label="恢复默认毛玻璃强度"
-              >
-                <IconArrowBackUp />
-              </Button>
-            </Hint>
-          </div>
+          <Switch
+            checked={popoverGlass}
+            onCheckedChange={setPopoverGlass}
+            aria-label="浮层毛玻璃"
+          />
         </SettingsRow>
+        <SliderRow
+          searchId="appearance.popover-glass-opacity"
+          title={SETTING_COPY['appearance.popover-glass-opacity'].title}
+          desc={`${SETTING_COPY['appearance.popover-glass-opacity'].desc}（默认 ${DEFAULT_POPOVER_GLASS_OPACITY}%）`}
+          value={popoverGlassOpacity}
+          display={`${popoverGlassOpacity}%`}
+          min={POPOVER_GLASS_OPACITY_MIN}
+          max={POPOVER_GLASS_OPACITY_MAX}
+          defaultValue={DEFAULT_POPOVER_GLASS_OPACITY}
+          disabled={!popoverGlass}
+          resetLabel="恢复默认浮层不透明度"
+          onChange={setPopoverGlassOpacity}
+        />
+        <SliderRow
+          searchId="appearance.popover-glass-blur"
+          title={SETTING_COPY['appearance.popover-glass-blur'].title}
+          desc={`${SETTING_COPY['appearance.popover-glass-blur'].desc}（默认 ${DEFAULT_POPOVER_GLASS_BLUR}px）`}
+          value={popoverGlassBlur}
+          display={`${popoverGlassBlur}px`}
+          min={POPOVER_GLASS_BLUR_MIN}
+          max={POPOVER_GLASS_BLUR_MAX}
+          defaultValue={DEFAULT_POPOVER_GLASS_BLUR}
+          disabled={!popoverGlass}
+          resetLabel="恢复默认浮层模糊度"
+          onChange={setPopoverGlassBlur}
+        />
+        <SliderRow
+          searchId="appearance.popover-glass-saturate"
+          title={SETTING_COPY['appearance.popover-glass-saturate'].title}
+          desc={`${SETTING_COPY['appearance.popover-glass-saturate'].desc}（默认 ${DEFAULT_POPOVER_GLASS_SATURATE}%）`}
+          value={popoverGlassSaturate}
+          display={`${popoverGlassSaturate}%`}
+          min={POPOVER_GLASS_SATURATE_MIN}
+          max={POPOVER_GLASS_SATURATE_MAX}
+          step={5}
+          defaultValue={DEFAULT_POPOVER_GLASS_SATURATE}
+          disabled={!popoverGlass}
+          resetLabel="恢复默认浮层饱和度"
+          onChange={setPopoverGlassSaturate}
+        />
         <SettingsRow
           searchId="appearance.ui-font-size"
           title={SETTING_COPY['appearance.ui-font-size'].title}

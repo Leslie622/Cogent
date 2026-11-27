@@ -30,13 +30,13 @@ function OutputCard({ doc, item }: { doc: TurnOutputs; item: OutputItem }) {
   }
   const type = item.name.includes('.') ? item.name.split('.').at(-1)!.toUpperCase() : '文件'
   return <>
-    <Card size="sm" data-output-card={item.outputId}>
-      <CardContent className="flex flex-col gap-2">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-11 shrink-0 items-center justify-center" aria-hidden="true"><FileIcon path={item.name} className="size-6" /></div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate" title={item.sourcePath}>{item.name}</p>
-            <p className="text-sm text-muted-foreground">{type}</p>
+    <Card size="sm" className="rounded-lg py-2" data-output-card={item.outputId}>
+      <CardContent className="flex flex-col gap-1 px-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <FileIcon path={item.name} className="size-5 shrink-0" />
+          <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
+            <p className="min-w-0 truncate" title={item.sourcePath}>{item.name}</p>
+            <p className="shrink-0 text-xs text-muted-foreground">{type}</p>
           </div>
           <ButtonGroup className="shrink-0" aria-label={`${item.name} 操作`}>
             <Button size="sm" variant="outline" aria-label={`打开 ${item.name}`} title={saved ? '预览交付副本' : '查看当前原文件'} onClick={() => open('delivery')}>打开</Button>
@@ -73,7 +73,7 @@ export function OutputCards() {
   }
   const updating = doc.state === 'running' || doc.state === 'finalizing'
   const items = expanded ? doc.published : doc.published.slice(0, 3)
-  return <section className="flex min-w-0 flex-col gap-3" aria-label="产物文件" data-output-cards data-output-state={doc.state}>
+  return <section className="flex min-w-0 flex-col gap-2" aria-label="产物文件" data-output-cards data-output-state={doc.state}>
     {(updating || doc.outcome === 'aborted' || doc.outcome === 'error') && <div className="flex flex-wrap items-center gap-2 text-sm">{updating && <Badge variant="secondary">{doc.state === 'finalizing' ? '正在保存产物' : '更新中'}</Badge>}{!updating && doc.outcome === 'aborted' && <Badge variant="outline">回合已停止</Badge>}{!updating && doc.outcome === 'error' && <Badge variant="outline">回合失败，保留已确认文件</Badge>}</div>}
     {doc.warning !== undefined && <p role="status" className="text-xs">{doc.warning}</p>}
     {error !== undefined && <p role="alert" className="text-sm">产物保存失败：{error}</p>}

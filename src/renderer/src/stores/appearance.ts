@@ -24,10 +24,18 @@ import {
   type InterfaceSkinId,
 } from '@/lib/interface-skins'
 import {
-  clampPopoverGlass,
-  DEFAULT_POPOVER_GLASS,
-  POPOVER_GLASS_MAX,
-  POPOVER_GLASS_MIN,
+  clampPopoverGlassBlur,
+  clampPopoverGlassOpacity,
+  clampPopoverGlassSaturate,
+  DEFAULT_POPOVER_GLASS_BLUR,
+  DEFAULT_POPOVER_GLASS_OPACITY,
+  DEFAULT_POPOVER_GLASS_SATURATE,
+  POPOVER_GLASS_BLUR_MAX,
+  POPOVER_GLASS_BLUR_MIN,
+  POPOVER_GLASS_OPACITY_MAX,
+  POPOVER_GLASS_OPACITY_MIN,
+  POPOVER_GLASS_SATURATE_MAX,
+  POPOVER_GLASS_SATURATE_MIN,
 } from '@/lib/popover-glass'
 
 export type OutputVerbosity = 'low' | 'high'
@@ -84,6 +92,12 @@ export const CODE_FONT_SIZES = Array.from({ length: 17 }, (_value, index) => ind
 export const UI_FONT_SIZES = [11, 12, 13, 14, 15, 16] as const
 export const DEFAULT_UI_FONT_SIZE = 14
 
+function readIntInRange(value: unknown, min: number, max: number, fallback: number): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
+    ? value
+    : fallback
+}
+
 interface AppearanceState {
   outputVerbosity: OutputVerbosity
   /** 仅控制过程中的单次请求统计；最终回合汇总独立显示，默认关闭。 */
@@ -93,8 +107,14 @@ interface AppearanceState {
   interfaceSkin: InterfaceSkinId
   /** 主窗口外壳（头部与两侧栏）不透明度（40–100%，100% 即完全不透明） */
   shellOpacity: number
-  /** 轻量浮层（Select / 菜单 / Popover 等）毛玻璃强度（0–100%，0% = 关闭；默认 60%） */
-  popoverGlass: number
+  /** 轻量浮层（Select / 菜单 / Popover 等）毛玻璃总开关（默认开启） */
+  popoverGlass: boolean
+  /** 轻量浮层毛玻璃面纱不透明度（0–100%，默认 60%） */
+  popoverGlassOpacity: number
+  /** 轻量浮层毛玻璃模糊半径（0–32px，默认 10px） */
+  popoverGlassBlur: number
+  /** 轻量浮层毛玻璃背景饱和度（100–250%，默认 140%） */
+  popoverGlassSaturate: number
   uiFontSize: number
   /** 代码块与文件预览行号（默认开） */
   showLineNumbers: boolean
@@ -113,7 +133,10 @@ interface AppearanceState {
   setColorMode: (mode: ColorMode) => void
   setInterfaceSkin: (skin: InterfaceSkinId) => void
   setShellOpacity: (opacity: number) => void
-  setPopoverGlass: (intensity: number) => void
+  setPopoverGlass: (enabled: boolean) => void
+  setPopoverGlassOpacity: (opacity: number) => void
+  setPopoverGlassBlur: (blur: number) => void
+  setPopoverGlassSaturate: (saturate: number) => void
   setUiFontSize: (size: number) => void
   setShowLineNumbers: (show: boolean) => void
   setCodeWrap: (wrap: boolean) => void
@@ -173,7 +196,10 @@ export const useAppearanceStore = create<AppearanceState>()(
       colorMode: 'light',
       interfaceSkin: DEFAULT_INTERFACE_SKIN,
       shellOpacity: DEFAULT_SHELL_OPACITY,
-      popoverGlass: DEFAULT_POPOVER_GLASS,
+      popoverGlass: true,
+      popoverGlassOpacity: DEFAULT_POPOVER_GLASS_OPACITY,
+      popoverGlassBlur: DEFAULT_POPOVER_GLASS_BLUR,
+      popoverGlassSaturate: DEFAULT_POPOVER_GLASS_SATURATE,
       uiFontSize: DEFAULT_UI_FONT_SIZE,
       showLineNumbers: true,
       codeWrap: false,
@@ -187,7 +213,10 @@ export const useAppearanceStore = create<AppearanceState>()(
       setColorMode: (colorMode) => set({ colorMode }),
       setInterfaceSkin: (interfaceSkin) => set({ interfaceSkin }),
       setShellOpacity: (opacity) => set({ shellOpacity: clampShellOpacity(opacity) }),
-      setPopoverGlass: (intensity) => set({ popoverGlass: clampPopoverGlass(intensity) }),
+      setPopoverGlass: (enabled) => set({ popoverGlass: enabled }),
+      setPopoverGlassOpacity: (opacity) => set({ popoverGlassOpacity: clampPopoverGlassOpacity(opacity) }),
+      setPopoverGlassBlur: (blur) => set({ popoverGlassBlur: clampPopoverGlassBlur(blur) }),
+      setPopoverGlassSaturate: (saturate) => set({ popoverGlassSaturate: clampPopoverGlassSaturate(saturate) }),
       setUiFontSize: (uiFontSize) => set({ uiFontSize }),
       setShowLineNumbers: (showLineNumbers) => set({ showLineNumbers }),
       setCodeWrap: (codeWrap) => set({ codeWrap }),
@@ -200,6 +229,13 @@ export const useAppearanceStore = create<AppearanceState>()(
       name: 'cogent-appearance',
       merge: (persisted, current) => {
         const raw = persisted as Partial<Record<keyof AppearanceState, unknown>> | undefined
+        // 兼容旧版布尔或 0–100 整数强度持久化（0 / false → 关闭，正数 / true → 开启）
+        const popoverGlass =
+          typeof raw?.popoverGlass === 'boolean'
+            ? raw.popoverGlass
+            : typeof raw?.popoverGlass === 'number'
+              ? raw.popoverGlass > 0
+              : true
         return {
           ...current,
           outputVerbosity: raw?.outputVerbosity === 'low' ? 'low' : 'high',
@@ -209,23 +245,26 @@ export const useAppearanceStore = create<AppearanceState>()(
           colorMode:
             raw?.colorMode === 'dark' || raw?.colorMode === 'system' ? raw.colorMode : 'light',
           interfaceSkin: isInterfaceSkinId(raw?.interfaceSkin) ? raw.interfaceSkin : DEFAULT_INTERFACE_SKIN,
-          shellOpacity:
-            typeof raw?.shellOpacity === 'number' &&
-            Number.isInteger(raw.shellOpacity) &&
-            raw.shellOpacity >= SHELL_OPACITY_MIN &&
-            raw.shellOpacity <= SHELL_OPACITY_MAX
-              ? raw.shellOpacity
-              : DEFAULT_SHELL_OPACITY,
-          // 兼容旧版布尔持久化（true→默认强度，false→0%）与当前 0–100 整数档
-          popoverGlass:
-            typeof raw?.popoverGlass === 'number' &&
-            Number.isInteger(raw.popoverGlass) &&
-            raw.popoverGlass >= POPOVER_GLASS_MIN &&
-            raw.popoverGlass <= POPOVER_GLASS_MAX
-              ? raw.popoverGlass
-              : raw?.popoverGlass === false
-                ? POPOVER_GLASS_MIN
-                : DEFAULT_POPOVER_GLASS,
+          shellOpacity: readIntInRange(raw?.shellOpacity, SHELL_OPACITY_MIN, SHELL_OPACITY_MAX, DEFAULT_SHELL_OPACITY),
+          popoverGlass,
+          popoverGlassOpacity: readIntInRange(
+            raw?.popoverGlassOpacity,
+            POPOVER_GLASS_OPACITY_MIN,
+            POPOVER_GLASS_OPACITY_MAX,
+            DEFAULT_POPOVER_GLASS_OPACITY,
+          ),
+          popoverGlassBlur: readIntInRange(
+            raw?.popoverGlassBlur,
+            POPOVER_GLASS_BLUR_MIN,
+            POPOVER_GLASS_BLUR_MAX,
+            DEFAULT_POPOVER_GLASS_BLUR,
+          ),
+          popoverGlassSaturate: readIntInRange(
+            raw?.popoverGlassSaturate,
+            POPOVER_GLASS_SATURATE_MIN,
+            POPOVER_GLASS_SATURATE_MAX,
+            DEFAULT_POPOVER_GLASS_SATURATE,
+          ),
           uiFontSize:
             typeof raw?.uiFontSize === 'number' && (UI_FONT_SIZES as readonly number[]).includes(raw.uiFontSize)
               ? raw.uiFontSize

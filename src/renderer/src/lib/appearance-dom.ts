@@ -10,15 +10,30 @@ export function bindAppearanceDom(): () => void {
   // 深色模式下系统 Acrylic 会透出浅色亮度导致外壳发灰发白，因此与其他平台及子窗口一并保持实色渐变。
   const backdrop = window.location.hash === '' && 'cogent' in window && Boolean(window.cogent.backdropSupported)
   const apply = () => {
-    const { colorMode, interfaceSkin, shellOpacity, popoverGlass, codeWrap, accent, uiFontSize, codeFontSize } = useAppearanceStore.getState()
+    const {
+      colorMode,
+      interfaceSkin,
+      shellOpacity,
+      popoverGlass,
+      popoverGlassOpacity,
+      popoverGlassBlur,
+      popoverGlassSaturate,
+      codeWrap,
+      accent,
+      uiFontSize,
+      codeFontSize,
+    } = useAppearanceStore.getState()
     const dark = isDarkMode(colorMode, media.matches)
     const effectiveBackdrop = backdrop && !dark
     root.classList.toggle('dark', dark)
     root.dataset.interfaceSkin = interfaceSkin
     root.toggleAttribute('data-backdrop', effectiveBackdrop)
-    root.toggleAttribute('data-popover-glass', popoverGlass > 0)
-    if (popoverGlass > 0) {
-      const glass = popoverGlassVariables(popoverGlass, dark)
+    root.toggleAttribute('data-popover-glass', popoverGlass)
+    if (popoverGlass) {
+      const glass = popoverGlassVariables(
+        { opacity: popoverGlassOpacity, blur: popoverGlassBlur, saturate: popoverGlassSaturate },
+        dark,
+      )
       root.style.setProperty('--popover-glass', glass['--popover-glass'])
       root.style.setProperty('--popover-glass-sub', glass['--popover-glass-sub'])
       root.style.setProperty('--popover-glass-blur', glass['--popover-glass-blur'])

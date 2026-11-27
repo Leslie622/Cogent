@@ -1,0 +1,107 @@
+[
+  {
+    "id": "added",
+    "label": "新增",
+    "word": "NEW",
+    "light": [
+      "#EAF6EE",
+      "#BFDFC9",
+      "#2F7747"
+    ],
+    "dark": [
+      "#243A2C",
+      "#40614C",
+      "#A8DDB9"
+    ]
+  },
+  {
+    "id": "modified",
+    "label": "修改",
+    "word": "EDIT",
+    "light": [
+      "#EBF2FF",
+      "#CBDCF3",
+      "#3867A6"
+    ],
+    "dark": [
+      "#253044",
+      "#3F5574",
+      "#AACDFA"
+    ]
+  },
+  {
+    "id": "deleted",
+    "label": "删除",
+    "word": "DEL",
+    "light": [
+      "#FFF0ED",
+      "#F1D0C9",
+      "#AF5147"
+    ],
+    "dark": [
+      "#3F2A2D",
+      "#6A4247",
+      "#F5B6AF"
+    ]
+  },
+  {
+    "id": "renamed",
+    "label": "重命名",
+    "word": "REN",
+    "light": [
+      "#F0EBFF",
+      "#D8CCF5",
+      "#7050AB"
+    ],
+    "dark": [
+      "#302A43",
+      "#514367",
+      "#D3BEFC"
+    ]
+  },
+  {
+    "id": "type-changed",
+    "label": "类型变化",
+    "word": "TYPE",
+    "light": [
+      "#FFF5E4",
+      "#EAD9B9",
+      "#8D6829"
+    ],
+    "dark": [
+      "#3A3326",
+      "#62563B",
+      "#E9CD94"
+    ]
+  },
+  {
+    "id": "mode-changed",
+    "label": "权限变化",
+    "word": "MODE",
+    "light": [
+      "#EEF1F6",
+      "#D2D9E5",
+      "#63708B"
+    ],
+    "dark": [
+      "#2C313B",
+      "#4A5363",
+      "#C1CBDD"
+    ]
+  },
+  {
+    "id": "eol-or-encoding",
+    "label": "换行 / 编码",
+    "word": "TEXT",
+    "light": [
+      "#F4EEF6",
+      "#E0D0E5",
+      "#83608F"
+    ],
+    "dark": [
+      "#352D3D",
+      "#594765",
+      "#D9BCE6"
+    ]
+  }
+]

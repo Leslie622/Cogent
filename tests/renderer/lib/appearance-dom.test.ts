@@ -11,7 +11,19 @@ beforeEach(() => {
   document.documentElement.removeAttribute('style')
   media.matches = false
   media.addEventListener.mockClear()
-  useAppearanceStore.setState({ uiFontSize: 14, codeFontSize: null, colorMode: 'light', interfaceSkin: 'mint', shellOpacity: 65, popoverGlass: 60, codeWrap: false, accent: 'default' })
+  useAppearanceStore.setState({
+    uiFontSize: 14,
+    codeFontSize: null,
+    colorMode: 'light',
+    interfaceSkin: 'mint',
+    shellOpacity: 65,
+    popoverGlass: true,
+    popoverGlassOpacity: 60,
+    popoverGlassBlur: 10,
+    popoverGlassSaturate: 140,
+    codeWrap: false,
+    accent: 'default',
+  })
 })
 
 afterEach(() => {
@@ -119,29 +131,56 @@ it.each([
   expect(CODE_FONT_SIZES).toEqual(Array.from({ length: 17 }, (_value, index) => index + 8))
 })
 
-it('浮层毛玻璃默认 60%，支持 0–100% 投影到 CSS 变量并兼容旧布尔持久化', async () => {
+it('浮层毛玻璃三维度独立投影到 CSS 变量，总开关关闭清空属性并兼容旧整数与布尔持久化', async () => {
   unbind = bindAppearanceDom()
   const root = document.documentElement
   expect(root.hasAttribute('data-popover-glass')).toBe(true)
-  expect(root.style.getPropertyValue('--popover-glass-blur')).toBe('16px')
-  useAppearanceStore.getState().setPopoverGlass(100)
-  expect(root.style.getPropertyValue('--popover-glass-blur')).toBe('24px')
-  useAppearanceStore.getState().setPopoverGlass(0)
+  expect(root.style.getPropertyValue('--popover-glass')).toBe('oklch(1 0 0 / 0.6)')
+  expect(root.style.getPropertyValue('--popover-glass-blur')).toBe('10px')
+  expect(root.style.getPropertyValue('--popover-glass-saturate')).toBe('1.4')
+
+  useAppearanceStore.getState().setPopoverGlassOpacity(18)
+  useAppearanceStore.getState().setPopoverGlassBlur(7)
+  useAppearanceStore.getState().setPopoverGlassSaturate(180)
+  expect(root.style.getPropertyValue('--popover-glass')).toBe('oklch(1 0 0 / 0.18)')
+  expect(root.style.getPropertyValue('--popover-glass-blur')).toBe('7px')
+  expect(root.style.getPropertyValue('--popover-glass-saturate')).toBe('1.8')
+
+  useAppearanceStore.getState().setPopoverGlass(false)
   expect(root.hasAttribute('data-popover-glass')).toBe(false)
   expect(root.style.getPropertyValue('--popover-glass')).toBe('')
   await useAppearanceStore.persist.rehydrate()
-  expect(useAppearanceStore.getState().popoverGlass).toBe(0)
-  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { popoverGlass: true }, version: 0 }))
+  expect(useAppearanceStore.getState().popoverGlass).toBe(false)
+
+  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { popoverGlass: 85 }, version: 0 }))
   window.dispatchEvent(new StorageEvent('storage', { key: 'cogent-appearance', storageArea: localStorage }))
   await Promise.resolve()
-  expect(useAppearanceStore.getState().popoverGlass).toBe(60)
+  expect(useAppearanceStore.getState()).toMatchObject({
+    popoverGlass: true,
+    popoverGlassOpacity: 60,
+    popoverGlassBlur: 10,
+    popoverGlassSaturate: 140,
+  })
   expect(root.hasAttribute('data-popover-glass')).toBe(true)
-  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { popoverGlass: false }, version: 0 }))
+
+  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { popoverGlass: 0 }, version: 0 }))
   await useAppearanceStore.persist.rehydrate()
-  expect(useAppearanceStore.getState().popoverGlass).toBe(0)
-  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { popoverGlass: 105 }, version: 0 }))
+  expect(useAppearanceStore.getState().popoverGlass).toBe(false)
+
+  localStorage.setItem(
+    'cogent-appearance',
+    JSON.stringify({
+      state: { popoverGlass: true, popoverGlassOpacity: 120, popoverGlassBlur: -2, popoverGlassSaturate: 300 },
+      version: 0,
+    }),
+  )
   await useAppearanceStore.persist.rehydrate()
-  expect(useAppearanceStore.getState().popoverGlass).toBe(60)
+  expect(useAppearanceStore.getState()).toMatchObject({
+    popoverGlass: true,
+    popoverGlassOpacity: 60,
+    popoverGlassBlur: 10,
+    popoverGlassSaturate: 140,
+  })
 })
 
 it.each([
