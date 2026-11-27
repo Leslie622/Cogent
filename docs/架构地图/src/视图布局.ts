@@ -263,8 +263,8 @@ export const viewLayouts: Record<ViewId, ViewLayoutSpec> = {
       'flow.skills.consume.manual': { col: 5, lane: 2 },
     },
     notes: {
-      'flow.skills.writePath': '生态目录只读，自有目录原子写盘，改动在下一回合自然生效',
-      'flow.skills.consume': '正文永不缓存，每次现读磁盘最新内容',
+      'flow.skills.writePath': '生态与内置目录只读，自有目录无损原子写盘，支持目录/ZIP 导入导出',
+      'flow.skills.consume': '专用 skill 工具与显式展开统一走 loadForExecution，正文不缓存并完成变量替换',
     },
   },
 
@@ -281,8 +281,8 @@ export const viewLayouts: Record<ViewId, ViewLayoutSpec> = {
       'flow.skillsCode.consume': { col: 5, lane: 1 },
     },
     laneLabels: {
-      0: '配置写盘与四目录无缓存活扫（SkillStore）',
-      1: '回合前拉取、20K/250 预算格式化、sections diff 与双路消费',
+      0: '无损写盘、导入导出与七级多源活扫（SkillStore）',
+      1: '回合前拉取、20K 纯名降级、sections diff 与专用 skill 工具加载',
     },
   },
 

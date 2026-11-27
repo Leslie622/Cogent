@@ -170,43 +170,43 @@ model {
     // 4a. 技能加载机制（逻辑版）
     skills = system '技能加载机制' {
       writePath = system '1. 技能配置管理（磁盘真源）' {
-        technology '生态目录只读 · 自有目录原子写盘'
-        ui = component '设置页管理与两道校验' { technology '按用户/项目切换 · 名称 64 / 描述 1024' }
-        store = component '原子写盘与两级启停文件' { technology '写规范技能文件 · 记禁用与覆盖表' }
+        technology '多源只读隔离 · 无损编辑与安全导入导出'
+        ui = component '设置页管理、导入导出与两道校验' { technology '用户/项目切换 · 目录/ZIP 导入 · 名称 64 / 描述 1024' }
+        store = component '无损原子写盘与两级启停文件' { technology '合并保留扩展头信息 · 记禁用与覆盖表' }
       }
-      discover = component '2. 四目录无缓存活扫与合并' { technology '项目优先 · 真实路径去重 · 无监视器' }
-      budget = component '3. 清单预算三级降级' { technology '20K 预算 / 250 字截断 · 超限仅留名径' }
+      discover = component '2. 七级多源活扫与祖先合并' { technology 'bundled 垫底 · .claude/.agents · 向上扫至 .git' }
+      budget = component '3. 清单预算三级降级' { technology '20K 预算 / 250 字截断 · 超限纯 names-only' }
       refresh = component '4. 分段增量热刷新' { technology '关闭内核静态扫描 · 变更才打补丁' }
-      consume = system '5. 双路按需加载正文' {
-        technology '正文现读不缓存'
-        auto = component '模型按需读正文' { technology '调读文件工具免审批 · 超 50KB 截断' }
-        manual = component '用户斜杠命令活展开' { technology '发送前按活快照展开 · 含仅手动技能' }
+      consume = system '5. 双路统一执行加载与变量替换' {
+        technology '共用 loadForExecution · 正文不缓存 · 100KB 上限'
+        auto = component '模型调专用 skill 工具加载' { technology '免审专属技能卡 · 变量替换 · 拦仅手动项' }
+        manual = component '用户实体与斜杠命令活展开' { technology '$/ /skill: 同源展开 · $ARGUMENTS 替换' }
       }
 
       writePath.ui -[call]-> writePath.store '校验通过写盘'
-      writePath.store -[call]-> discover '落盘四目录真源'
+      writePath.store -[call]-> discover '落盘多源真源'
       discover -[call]-> budget '两级启停求值'
       budget -[call]-> refresh '写入技能动态段'
-      refresh -[call]-> consume.auto '模型看清单按需读'
-      discover -[call]-> consume.manual '活快照展开命令'
+      refresh -[call]-> consume.auto '模型看清单调 skill'
+      discover -[call]-> consume.manual '活快照展开实体/命令'
     }
 
     // 4b. 技能加载机制（源码调用图）
     skillsCode = system '技能加载机制（源码调用图）' {
-      ui = component 'SkillSection · registerEngineIpc' { technology 'draftError · skillsCache · skills.*' }
-      save = component 'SkillStore.save · setEnabled' { technology 'validateName · atomicWrite · skills.json' }
-      scan = component 'loadSkillsFromDir · snapshotMany' { technology '4 目录优先级 · realpathSync 去重' }
+      ui = component 'SkillSection · registerSkillsIpc' { technology 'draftError · skills.* · 目录/ZIP 导入导出' }
+      save = component 'SkillStore.save · importFromPath' { technology 'validateSkillName · 无损合并 · fflate 安全解压' }
+      scan = component 'loadSkillsFromDir · snapshotMany' { technology '7 级优先级 · realpathSync.native · bundled' }
       hook = component 'before_agent_start · createCogentHooks' { technology 'noSkills: true · 每回合无缓存拉取' }
-      format = component 'formatSkillsSection' { technology 'DEFAULT_SECTION_BUDGET 20K · 250 字' }
-      diff = component 'buildDynamicSections · sections diff' { technology '稳定度第 3 位 · 缺键撤段' }
-      consume = component 'read 工具 · expandSkillCommand' { technology 'toolMeta(read) 免审 · driveRun 展开' }
+      format = component 'formatSkillsSection' { technology '20K / 250 字 · 无 location · 纯 names-only' }
+      diff = component 'buildDynamicSections · sections diff' { technology '稳定度第 3 位 · 缺键撤段 · 压缩资产保留' }
+      consume = component 'createSkillTool · expandTemplateVars' { technology 'loadForExecution 100KB · skill.loaded 审计' }
 
-      ui -[call]-> save 'skills.save / setEnabled'
-      save -[call]-> scan '原子写四目录'
+      ui -[call]-> save 'save / import'
+      save -[call]-> scan '原子写自有目录'
       hook -[call]-> scan '每回合重扫'
       scan -[call]-> format '生成 XML 清单'
       format -[call]-> diff '写入 sections.skills'
-      diff -[call]-> consume '模型按需读 / 活展开'
+      diff -[call]-> consume 'skill 工具 / 显式展开'
     }
 
     // 5a. 钩子与扩展机制（逻辑版）
