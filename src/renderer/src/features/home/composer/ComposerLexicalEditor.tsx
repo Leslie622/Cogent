@@ -331,22 +331,27 @@ function EditorControllerPlugin({
       editorState.read(() => {
         const selection = $getSelection()
         if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
+          // 选区展开（如全选）意味着当前触发词已不活跃，抑制记录随之作废
+          dismissedSigRef.current = null
           setActiveTrigger(null)
           return
         }
         const anchorNode = selection.anchor.getNode()
         if (!$isTextNode(anchorNode)) {
+          // 锚点不在文本节点（如全删后的空段落）：触发词已不存在，抑制记录随之作废
+          dismissedSigRef.current = null
           setActiveTrigger(null)
           return
         }
         const before = anchorNode.getTextContent().slice(0, selection.anchor.offset)
         const next = extractActiveTrigger(before)
-        const sig = triggerSignature(next)
         if (next === null) {
           dismissedSigRef.current = null
           setActiveTrigger(null)
           return
         }
+        next.anchorKey = anchorNode.getKey()
+        const sig = triggerSignature(next)
         if (dismissedSigRef.current !== null && dismissedSigRef.current !== sig) {
           dismissedSigRef.current = null
         }
@@ -355,7 +360,8 @@ function EditorControllerPlugin({
           return
         }
         setActiveTrigger((prev) =>
-          prev?.kind === next.kind && prev.query === next.query && prev.start === next.start
+          prev?.kind === next.kind && prev.query === next.query && prev.start === next.start &&
+          prev.anchorKey === next.anchorKey
             ? prev
             : next
         )

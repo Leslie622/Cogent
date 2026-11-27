@@ -430,6 +430,10 @@ function ChatComposer({
       return
     }
     if (action === 'new') {
+      // 与侧栏「新建聊天」（HomeSidebar.startNew）同款两步落点：startNewChat
+      // 只翻视图态不清 chat store 的 activeSessionId，消息列表读的是后者 ——
+      // 漏清会出现视图已切「新聊天」但对话仍停在旧会话的裂脑。
+      useChatStore.setState({ activeSessionId: null })
       useHomeStore.getState().startNewChat()
       return
     }

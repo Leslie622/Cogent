@@ -2,7 +2,7 @@
  * 输入区上方的命令 / 技能候选浮层（毛玻璃材质 + 分组排布 + 键盘导航）。
  * `/` 显示「命令」与「技能」两组；`$`/`￥` 专显「技能」。
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { ArrowDownIcon, ArrowUpIcon, CornerDownLeftIcon } from 'lucide-react'
 import { IconInfoCircle, IconTerminal2, IconWand } from '@tabler/icons-react'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
@@ -63,6 +63,27 @@ export function CommandSuggestionPanel({
       container.scrollTo({ top: container.scrollTop + bottomDelta, behavior })
     }
   }, [selectedIndex, selectionSource, items.length, showGroupHeaders])
+
+  const renderGroupHeader = (label: string, withBorder: boolean): ReactNode => (
+    <div
+      data-composer-group-header={label}
+      className={cn(
+        // 吸顶头必须是列表流容器的直接子节点：sticky 只在 containing block 内生效，
+        // 若包在各分组容器里，上一组滚到底时头部提前脱钉、下一组头部未到顶，中间出现无吸顶空窗；
+        // 平铺后后一组头部滑入时直接盖住前一组脱钉前的头部，交接连续。
+        'sticky top-0 z-10 -mx-1.5 bg-popover/95 px-4 py-1.5 text-xs font-medium text-muted-foreground/90 backdrop-blur-md select-none dark:bg-popover/90',
+        withBorder && 'border-t border-border/40'
+      )}
+    >
+      {label}
+    </div>
+  )
+
+  const renderRows = (entries: Array<{ item: ComposerSuggestionItem; index: number }>, tailGap = false): ReactNode => (
+    <div className={cn('flex flex-col gap-0.5', tailGap && 'pb-1')}>
+      {entries.map(({ item, index }) => renderRow(item, index))}
+    </div>
+  )
 
   const footerText = triggerKind === '$' ? '输入内容以搜索技能' : '输入内容以搜索命令或技能'
 
@@ -159,32 +180,19 @@ export function CommandSuggestionPanel({
                 : '没有匹配的命令或技能'}
           </div>
         ) : (
-          <div className={cn('flex flex-col gap-1', !showGroupHeaders && 'pt-1.5')}>
+          <div className={cn('flex flex-col', !showGroupHeaders && 'pt-1.5')}>
             {commandItems.length > 0 && (
-              <div className="flex flex-col gap-0.5">
-                {showGroupHeaders && (
-                  <div className="sticky top-0 z-10 -mx-1.5 bg-popover/85 px-4 py-1.5 text-xs font-medium text-muted-foreground/90 backdrop-blur-md select-none dark:bg-popover/80">
-                    命令
-                  </div>
-                )}
-                {commandItems.map(({ item, index }) => renderRow(item, index))}
-              </div>
+              <>
+                {showGroupHeaders && renderGroupHeader('命令', false)}
+                {renderRows(commandItems, skillItems.length > 0)}
+              </>
             )}
 
             {skillItems.length > 0 && (
-              <div className="flex flex-col gap-0.5">
-                {showGroupHeaders && (
-                  <div
-                    className={cn(
-                      'sticky top-0 z-10 -mx-1.5 bg-popover/85 px-4 py-1.5 text-xs font-medium text-muted-foreground/90 backdrop-blur-md select-none dark:bg-popover/80',
-                      commandItems.length > 0 && 'border-t border-border/40'
-                    )}
-                  >
-                    技能
-                  </div>
-                )}
-                {skillItems.map(({ item, index }) => renderRow(item, index))}
-              </div>
+              <>
+                {showGroupHeaders && renderGroupHeader('技能', commandItems.length > 0)}
+                {renderRows(skillItems)}
+              </>
             )}
           </div>
         )}

@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage, EngineEvent } from '@/env.d'
+import { $createParagraphNode, $createTextNode, $getRoot } from 'lexical'
 import { bindEngineEvents, emptyBucket, useChatStore } from '@/stores/chat'
 import { useEngineStore } from '@/stores/engine'
 import { useHomeStore } from '@/stores/home'
@@ -562,5 +563,60 @@ describe('HomeChat 提交回包与输入区身份', () => {
     expect(composerInput().textContent).toBe('可重试问题')
     await act(async () => { clickSend(); await Promise.resolve() })
     expect(composerInput().textContent).toBe('')
+  })
+})
+
+describe('HomeChat /new 命令视图切换', () => {
+  /** 真实 Lexical 键盘流：输入 / 唤出面板、选中 /new，视图与消息必须同时离开旧会话。 */
+  it('/new 选中后清 activeSessionId，对话不再读旧会话', async () => {
+    // 环境补丁：Lexical 选区提交需要 Range 布局方法，浮层键盘导航需要 matchMedia/scrollTo
+    const rect = { bottom: 0, height: 0, left: 0, right: 0, top: 0, width: 0, x: 0, y: 0, toJSON: () => ({}) }
+    Range.prototype.getBoundingClientRect = (): DOMRect => rect
+    Range.prototype.getClientRects = (): DOMRectList =>
+      ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] })
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }))
+    Element.prototype.scrollTo = () => {}
+    // 面板打开会拉 skills.list，缺省 mock 回 [] 会让 result.skills 为 undefined
+    engineRequest.mockImplementation((method) =>
+      Promise.resolve(method === 'skills.list' ? { skills: [] } : []))
+
+    // 复位运行位但保留旧会话消息（与 settleInitialRun 同款，跨 describe 不可见故内联）
+    useChatStore.setState((state) => ({
+      bySession: { ...state.bySession, [SID]: {
+        ...state.bySession[SID]!, runtime: { ...emptyBucket().runtime }
+      } }
+    }))
+    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    expect(screen.getByText('问题')).toBeInTheDocument()
+
+    const el = screen.getByRole('textbox', { name: '聊天输入框' })
+    type Editorish = { update: (fn: () => void) => void }
+    const editor = (el as HTMLElement & { __lexicalEditor?: Editorish }).__lexicalEditor
+    if (editor === undefined) throw new Error('lexical editor not attached')
+    // 冲刷挂载水合，避免与输入合并成一次 cogent-hydrate 提交
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    act(() => {
+      editor.update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        paragraph.append($createTextNode('/'))
+        root.append(paragraph)
+        paragraph.selectEnd()
+      })
+    })
+    await act(async () => { await Promise.resolve() })
+    expect(document.querySelector('[data-composer-suggestion-panel]')).not.toBeNull()
+
+    const newRow = screen.getByText('/new').closest('button') as HTMLElement
+    fireEvent.mouseDown(newRow)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+
+    // 视图态与消息源同步离开旧会话：只翻 home 视图态不清 activeSessionId 会裂脑
+    expect(useHomeStore.getState().session.kind).toBe('new')
+    expect(useChatStore.getState().activeSessionId).toBeNull()
+    expect(screen.queryByText('问题')).not.toBeInTheDocument()
+    // 动作型命令删除触发词后草稿归零，不留 '/' 残字
+    expect(el.textContent).toBe('')
   })
 })

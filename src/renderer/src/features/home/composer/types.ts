@@ -43,6 +43,8 @@ export interface ActiveTrigger {
   start: number
   /** 查询串在当前文本节点中的结束偏移（光标位置） */
   end: number
+  /** 触发词所在文本节点的 key；Esc 抑制签名用它区分重新输入的新触发词实例，避免同形签名永久拦截 */
+  anchorKey?: string
 }
 
 export type SlashCommandExecution =

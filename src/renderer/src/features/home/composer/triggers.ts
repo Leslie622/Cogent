@@ -32,7 +32,10 @@ export function extractActiveTrigger(textBeforeCursor: string): ActiveTrigger | 
 }
 
 export function triggerSignature(trigger: ActiveTrigger | null): string | null {
-  return trigger === null ? null : `${trigger.kind}:${trigger.start}:${trigger.query}`
+  if (trigger === null) return null
+  // anchorKey 参与签名：start 是节点内相对偏移，删掉重输的触发词与被关闭的那次同形，
+  // 必须靠节点身份区分，否则抑制签名会命中后来重新输入的触发词。
+  return `${trigger.kind}:${trigger.anchorKey ?? ''}:${trigger.start}:${trigger.query}`
 }
 
 function scoreText(text: string, query: string): number | null {
