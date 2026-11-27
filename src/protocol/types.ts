@@ -910,6 +910,15 @@ export type SkillScope = 'user' | 'project' | 'bundled'
 /** 技能发现来源：自有目录 / 生态兼容目录（.agents / .claude）/ 自定义额外目录 / 随包内置 */
 export type SkillOrigin = 'cogent' | 'agents' | 'claude' | 'custom' | 'bundled'
 
+/** 技能单条诊断级别（warning = 仍可用但有规范或覆盖提示；error = 加载失败不可启用） */
+export type SkillDiagnosticSeverity = 'warning' | 'error'
+
+/** 技能行内诊断条目（本地化文案，由 SkillSummary 随列表带回 UI） */
+export interface SkillDiagnosticItem {
+  severity: SkillDiagnosticSeverity
+  message: string
+}
+
 /** skills.list 的技能摘要（设置页卡片行与输入框候选数据源） */
 export interface SkillSummary {
   name: string
@@ -937,7 +946,7 @@ export interface SkillSummary {
   resourceCount?: number
   /** 是否只读来源（eco / custom / bundled 不可在 UI 编辑或删除） */
   readonly?: boolean
-  /** 两级启停求值后的生效值（清单注入与工具加载按此过滤） */
+  /** 两级启停求值后的生效值（清单注入与工具加载按此过滤；invalid=true 时恒为 false） */
   enabled: boolean
   /** user 级禁用名单命中（项目覆盖重新启用时 enabled=true 但此项仍为 true） */
   userDisabled: boolean
@@ -945,6 +954,12 @@ export interface SkillSummary {
   override?: boolean
   /** 来自生态兼容目录（.agents / .claude）：只读发现 + 按名启停，编辑/删除归原工具 */
   eco?: boolean
+  /** 是否因缺少 description 或 YAML 损坏而无法加载（不可启用、不进模型清单与输入框） */
+  invalid?: boolean
+  /** 不可用技能是否可在表单中编辑补齐（例如 YAML 可解析仅缺 description 时为 true，YAML 损坏时为 false） */
+  editable?: boolean
+  /** 归属该技能的行内警告/错误提示（已本地化） */
+  diagnostics?: SkillDiagnosticItem[]
 }
 
 export interface SkillListResult {
@@ -954,6 +969,8 @@ export interface SkillListResult {
    * 不炸列表逐条带回（约定.md §1.1 持久化读取）
    */
   errors: string[]
+  /** 技能状态文件（skills.json）自身的读取/格式错误（非单枚技能诊断） */
+  stateErrors?: string[]
 }
 
 /** 新增/编辑一枚技能（skills.save）：编辑既有技能时无损保留其余 frontmatter 字段 */

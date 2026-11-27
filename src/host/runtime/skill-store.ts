@@ -41,6 +41,7 @@ import {
   type Skill
 } from '@earendil-works/pi-coding-agent'
 import type {
+  SkillDiagnosticItem,
   SkillImportResult,
   SkillListResult,
   SkillOrigin,
@@ -127,6 +128,21 @@ export interface DiscoveredSkill extends Skill {
   compatibility?: string
   allowedTools?: string[]
   unsupportedRuntime?: 'context-fork'
+  diagnostics?: SkillDiagnosticItem[]
+}
+
+/** 扫描中因缺少必填 description 或 YAML 损坏而未能加载的技能记录 */
+interface InvalidSkillRecord {
+  name: string
+  description: string
+  filePath: string
+  baseDir: string
+  scope: SkillScope
+  origin: SkillOrigin
+  readonly: boolean
+  eco: boolean
+  editable: boolean
+  diagnostics: SkillDiagnosticItem[]
 }
 
 /** 名字规则镜像 pi validateName（skills.ts:92-112；返回空 = 合法） */
@@ -151,6 +167,98 @@ function validateDescription(description: string): string | undefined {
 
 function diagnosticsToErrors(diagnostics: ResourceDiagnostic[]): string[] {
   return diagnostics.map((d) => `${d.path !== undefined ? `${d.path}: ` : ''}${d.message}`)
+}
+
+/** 将 pi 资源诊断消息本地化为面向用户的中文说明 */
+function translateSkillDiagnostic(message: string): string {
+  if (message === 'description is required') {
+    return '缺少必填的 description，无法加载（请补充后刷新）'
+  }
+  const descTooLong = /^description exceeds (\d+) characters \((\d+)\)$/.exec(message)
+  if (descTooLong !== null) {
+    return `description 超过 ${descTooLong[1]} 字符上限（当前 ${descTooLong[2]} 字符），建议精简`
+  }
+  if (message.startsWith('name contains invalid characters')) {
+    return '名称含不支持的字符（规范要求仅小写字母 a-z、数字 0-9 和连字符 -）'
+  }
+  const nameTooLong = /^name exceeds (\d+) characters \((\d+)\)$/.exec(message)
+  if (nameTooLong !== null) {
+    return `名称超过 ${nameTooLong[1]} 字符上限（当前 ${nameTooLong[2]} 字符）`
+  }
+  if (message === 'name must not start or end with a hyphen') {
+    return '名称不能以连字符开头或结尾'
+  }
+  if (message === 'name must not contain consecutive hyphens') {
+    return '名称不能包含连续连字符'
+  }
+  if (message.startsWith('failed to read skill file')) {
+    return '技能文件读取失败'
+  }
+  if (message.startsWith('failed to parse skill file')) {
+    return 'YAML frontmatter 解析失败'
+  }
+  return `YAML frontmatter 解析失败（${message}）`
+}
+
+function formatSkillSourceLabel(scope: SkillScope, origin: SkillOrigin): string {
+  if (origin === 'bundled' || scope === 'bundled') return '内置'
+  if (origin === 'claude') return `${scope === 'project' ? '项目' : '用户'} .claude`
+  if (origin === 'agents') return `${scope === 'project' ? '项目' : '用户'} .agents`
+  if (origin === 'custom') return '自定义目录'
+  return scope === 'project' ? '项目级' : '用户级'
+}
+
+/** 从未能加载的 SKILL.md / 裸 .md 文件提取名称、描述与可编辑性供列表展示 */
+function inspectInvalidSkillFile(
+  filePath: string,
+  rootDir: string,
+  scope: SkillScope,
+  origin: SkillOrigin,
+  diagnostics: SkillDiagnosticItem[]
+): InvalidSkillRecord {
+  const isDeclared = basename(filePath) === 'SKILL.md'
+  const baseDir = isDeclared ? dirname(filePath) : rootDir
+  const fallbackName = isDeclared ? basename(baseDir) : basename(filePath, '.md')
+  let name = fallbackName
+  let description = ''
+  let parseOk = false
+  try {
+    const raw = readFileSync(filePath, 'utf8')
+    const { frontmatter } = parseFrontmatter<Record<string, unknown>>(raw)
+    parseOk = true
+    if (typeof frontmatter.name === 'string' && frontmatter.name.trim().length > 0) {
+      name = frontmatter.name.trim()
+    }
+    if (typeof frontmatter.description === 'string') {
+      description = frontmatter.description.trim()
+    }
+  } catch {
+    parseOk = false
+  }
+  const readonly = origin !== 'cogent'
+  const eco = origin === 'agents' || origin === 'claude'
+  // 仅当源文件是受管目录的 SKILL.md、YAML 可解析且名称符合规范时，才允许弹窗直接补齐保存
+  const editable = parseOk && isDeclared && !readonly && !eco && scope !== 'bundled' && validateSkillName(name).length === 0
+  return {
+    name,
+    description,
+    filePath,
+    baseDir,
+    scope,
+    origin,
+    readonly,
+    eco,
+    editable,
+    diagnostics: diagnostics.map((d) => ({ severity: 'error', message: d.message }))
+  }
+}
+
+/** 校验 target 严格位于 parentDir 内部（防符号链接或相对路径穿越删除） */
+function isStrictSubpath(parentDir: string, targetPath: string): boolean {
+  const realParent = nativeRealpath(parentDir)
+  const realTarget = nativeRealpath(targetPath)
+  const prefix = realParent.endsWith(sep) ? realParent : `${realParent}${sep}`
+  return realTarget !== realParent && realTarget.startsWith(prefix)
 }
 
 /** 安全取真实路径（遵守约定 §1.2 第 9 条：Windows 下用 realpathSync.native 展开 8.3 短名） */
@@ -486,23 +594,53 @@ export class SkillStore {
    * - `cwds` 为空 = 仅发现 bundled + user + custom 视图；
    * - `cwds` 非空 = 逆序遍历绑定根（次根先入、主根 `cwds[0]` 最后入），每根向上扫描至 `.git` 根。
    */
-  private discoverMany(cwds: readonly string[] = []): { skills: DiscoveredSkill[]; errors: string[] } {
+  private discoverMany(cwds: readonly string[] = []): {
+    skills: DiscoveredSkill[]
+    invalidSkills: InvalidSkillRecord[]
+    errors: string[]
+  } {
     const errors: string[] = []
     const byName = new Map<string, DiscoveredSkill>()
+    const invalidSkills: InvalidSkillRecord[] = []
     const realPaths = new Set<string>()
+    const seenInvalidPaths = new Set<string>()
 
     const addDir = (dir: string, scope: SkillScope, origin: SkillOrigin): void => {
       if (!existsSync(dir)) return
       const { skills, diagnostics } = loadSkillsFromDir({ dir, source: scope })
       errors.push(...diagnosticsToErrors(diagnostics))
+      const diagsByPath = new Map<string, SkillDiagnosticItem[]>()
+      const orderedDiagPaths: string[] = []
+      for (const diag of diagnostics) {
+        if (diag.path === undefined) continue
+        const key = nativeRealpath(diag.path)
+        let list = diagsByPath.get(key)
+        if (list === undefined) {
+          list = []
+          diagsByPath.set(key, list)
+          orderedDiagPaths.push(diag.path)
+        }
+        const translated = translateSkillDiagnostic(diag.message)
+        if (!list.some((item) => item.message === translated)) {
+          list.push({ severity: 'warning', message: translated })
+        }
+      }
+
       const readonly = origin !== 'cogent'
       const eco = origin === 'agents' || origin === 'claude'
+      const loadedRealPaths = new Set<string>()
       for (const skill of skills) {
         const realPath = nativeRealpath(skill.filePath)
+        loadedRealPaths.add(realPath)
         if (realPaths.has(realPath)) continue
+        const skillDiagnostics: SkillDiagnosticItem[] = [...(diagsByPath.get(realPath) ?? [])]
         const existing = byName.get(skill.name)
         if (existing !== undefined) {
           errors.push(`技能 "${skill.name}" 同名冲突：${skill.filePath} 覆盖 ${existing.filePath}`)
+          const collisionMsg = `已覆盖低优先级同名技能（${formatSkillSourceLabel(existing.scope, existing.origin)}）`
+          if (!skillDiagnostics.some((item) => item.message === collisionMsg)) {
+            skillDiagnostics.push({ severity: 'warning', message: collisionMsg })
+          }
         }
         const ext = extractExtendedMeta(skill.filePath)
         const discovered: DiscoveredSkill = {
@@ -511,10 +649,20 @@ export class SkillStore {
           origin,
           readonly,
           eco,
-          ...ext
+          ...ext,
+          ...(skillDiagnostics.length > 0 && { diagnostics: skillDiagnostics })
         }
         byName.set(skill.name, discovered)
         realPaths.add(realPath)
+      }
+
+      for (const rawPath of orderedDiagPaths) {
+        const realPath = nativeRealpath(rawPath)
+        if (loadedRealPaths.has(realPath) || realPaths.has(realPath) || seenInvalidPaths.has(realPath)) continue
+        seenInvalidPaths.add(realPath)
+        invalidSkills.push(
+          inspectInvalidSkillFile(rawPath, dir, scope, origin, diagsByPath.get(realPath) ?? [])
+        )
       }
     }
 
@@ -545,7 +693,7 @@ export class SkillStore {
       }
     }
 
-    return { skills: [...byName.values()], errors }
+    return { skills: [...byName.values()], invalidSkills, errors }
   }
 
   private loadStatesMany(cwds: readonly string[] = []): {
@@ -585,31 +733,52 @@ export class SkillStore {
     const cwds = cwd !== undefined ? [cwd] : []
     const discovered = this.discoverMany(cwds)
     const states = this.loadStatesMany(cwds)
+    const validRows = discovered.skills.map((skill) => {
+      const resourceCount = listSkillResources(skill.baseDir).length
+      const nameEditable = validateSkillName(skill.name).length === 0
+      return {
+        name: skill.name,
+        description: skill.description,
+        scope: skill.scope,
+        origin: skill.origin,
+        path: skill.filePath,
+        baseDir: skill.baseDir,
+        manualOnly: skill.disableModelInvocation,
+        userInvocable: skill.userInvocable,
+        ...(skill.whenToUse !== undefined && { whenToUse: skill.whenToUse }),
+        ...(skill.argumentHint !== undefined && { argumentHint: skill.argumentHint }),
+        ...(skill.allowedTools !== undefined && { allowedTools: skill.allowedTools }),
+        ...(skill.unsupportedRuntime !== undefined && { unsupportedRuntime: skill.unsupportedRuntime }),
+        ...(resourceCount > 0 && { resourceCount }),
+        ...(skill.readonly && { readonly: true }),
+        enabled: SkillStore.effective(skill, states.userDisabled, states.projectOverrides),
+        userDisabled: states.userDisabled.has(skill.name),
+        ...(states.projectOverrides.has(skill.name) && { override: states.projectOverrides.get(skill.name) }),
+        ...(skill.eco && { eco: true }),
+        ...(!skill.readonly && !skill.eco && skill.scope !== 'bundled' && !nameEditable && { editable: false }),
+        ...(skill.diagnostics !== undefined && { diagnostics: skill.diagnostics })
+      }
+    })
+    const invalidRows = discovered.invalidSkills.map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      scope: skill.scope,
+      origin: skill.origin,
+      path: skill.filePath,
+      baseDir: skill.baseDir,
+      manualOnly: false,
+      ...(skill.readonly && { readonly: true }),
+      enabled: false,
+      userDisabled: false,
+      ...(skill.eco && { eco: true }),
+      invalid: true,
+      editable: skill.editable,
+      diagnostics: skill.diagnostics
+    }))
     return {
-      skills: discovered.skills.map((skill) => {
-        const resourceCount = listSkillResources(skill.baseDir).length
-        return {
-          name: skill.name,
-          description: skill.description,
-          scope: skill.scope,
-          origin: skill.origin,
-          path: skill.filePath,
-          baseDir: skill.baseDir,
-          manualOnly: skill.disableModelInvocation,
-          userInvocable: skill.userInvocable,
-          ...(skill.whenToUse !== undefined && { whenToUse: skill.whenToUse }),
-          ...(skill.argumentHint !== undefined && { argumentHint: skill.argumentHint }),
-          ...(skill.allowedTools !== undefined && { allowedTools: skill.allowedTools }),
-          ...(skill.unsupportedRuntime !== undefined && { unsupportedRuntime: skill.unsupportedRuntime }),
-          ...(resourceCount > 0 && { resourceCount }),
-          ...(skill.readonly && { readonly: true }),
-          enabled: SkillStore.effective(skill, states.userDisabled, states.projectOverrides),
-          userDisabled: states.userDisabled.has(skill.name),
-          ...(states.projectOverrides.has(skill.name) && { override: states.projectOverrides.get(skill.name) }),
-          ...(skill.eco && { eco: true })
-        }
-      }),
-      errors: [...discovered.errors, ...states.errors]
+      skills: [...validRows, ...invalidRows],
+      errors: [...discovered.errors, ...states.errors],
+      ...(states.errors.length > 0 && { stateErrors: states.errors })
     }
   }
 
@@ -701,11 +870,15 @@ export class SkillStore {
    */
   delete(scope: SkillScope, cwd: string | undefined, name: string): void {
     if (scope === 'bundled') invalid(['内置技能（bundled）不可删除，可通过启停开关禁用'])
-    const nameErrors = validateSkillName(name)
-    if (nameErrors.length > 0) invalid(nameErrors)
     const dir = this.writableDirFor(scope, cwd)
-    const target = join(dir, name)
-    if (!existsSync(target)) invalid([`技能 "${name}" 不存在（${dir}）`])
+    const cwds = scope === 'project' && cwd !== undefined ? [cwd] : []
+    const discovered = this.discoverMany(cwds)
+    const candidate =
+      discovered.skills.find((s) => s.scope === scope && s.origin === 'cogent' && s.name === name) ??
+      discovered.invalidSkills.find((s) => s.scope === scope && s.origin === 'cogent' && s.name === name)
+    if (candidate === undefined) invalid([`技能 "${name}" 不存在（${dir}）`])
+    const target = basename(candidate.filePath) === 'SKILL.md' ? candidate.baseDir : candidate.filePath
+    if (!existsSync(target) || !isStrictSubpath(dir, target)) invalid([`技能 "${name}" 不存在（${dir}）`])
     rmSync(target, { recursive: true, force: true })
     if (scope === 'user') {
       const { state } = readStateFile(this.userStateFile, checkUserState)
@@ -724,7 +897,7 @@ export class SkillStore {
 
   /**
    * 写启停状态（skills.setEnabled 委托）：user 档写禁用名单，project 档写 overrides。
-   * 任意已发现技能（含 eco / bundled）均可按名启停。
+   * 任意已发现技能（含 eco / bundled）均可按名启停；无效技能不可启用。
    */
   setEnabled(
     scope: 'user' | 'project',
@@ -732,11 +905,9 @@ export class SkillStore {
     name: string,
     value: 'enabled' | 'disabled' | 'inherit'
   ): void {
-    const nameErrors = validateSkillName(name)
-    if (nameErrors.length > 0) invalid(nameErrors)
     const cwds = scope === 'project' && cwd !== undefined ? [cwd] : []
     if (!this.discoverMany(cwds).skills.some((s) => s.name === name)) {
-      invalid([`技能 "${name}" 不存在`])
+      invalid([`技能 "${name}" 不存在或不可启用`])
     }
     if (scope === 'user') {
       if (value === 'inherit') invalid(['user 档没有 inherit（无更上层可回落），用 enabled/disabled'])
@@ -754,19 +925,53 @@ export class SkillStore {
     atomicWrite(path, `${JSON.stringify({ overrides }, null, 2)}\n`)
   }
 
-  /** 按作用域查找单枚技能（read / export / reveal 共用） */
+  /** 按作用域查找单枚可用技能（export 共用） */
   private findSkill(scope: SkillScope, cwd: string | undefined, name: string): DiscoveredSkill {
-    const nameErrors = validateSkillName(name)
-    if (nameErrors.length > 0) invalid(nameErrors)
     const cwds = scope === 'project' && cwd !== undefined ? [cwd] : []
     const found = this.discoverMany(cwds).skills.find((s) => s.name === name)
     if (found === undefined) invalid([`技能 "${name}" 不存在`])
     return found
   }
 
+  /** 按作用域查找技能（含不可用技能，供 read 修复缺描述文件 / revealDir 打开目录） */
+  private findAnySkill(
+    scope: SkillScope,
+    cwd: string | undefined,
+    name: string
+  ): { kind: 'valid'; skill: DiscoveredSkill } | { kind: 'invalid'; skill: InvalidSkillRecord } {
+    const cwds = scope === 'project' && cwd !== undefined ? [cwd] : []
+    const discovered = this.discoverMany(cwds)
+    const valid = discovered.skills.find((s) => s.name === name)
+    if (valid !== undefined) return { kind: 'valid', skill: valid }
+    const broken = discovered.invalidSkills.find((s) => s.scope === scope && s.name === name)
+    if (broken !== undefined) return { kind: 'invalid', skill: broken }
+    invalid([`技能 "${name}" 不存在`])
+  }
+
   /** 读单枚技能正文与完整元信息（skills.read 委托：编辑/只读查看回填源） */
   read(scope: SkillScope, cwd: string | undefined, name: string): SkillReadResult {
-    const skill = this.findSkill(scope, cwd, name)
+    const match = this.findAnySkill(scope, cwd, name)
+    if (match.kind === 'invalid') {
+      const broken = match.skill
+      let frontmatter: Record<string, unknown>
+      let body: string
+      try {
+        ;({ frontmatter, body } = parseFrontmatter<Record<string, unknown>>(readFileSync(broken.filePath, 'utf8')))
+      } catch {
+        invalid([`${broken.filePath}: YAML frontmatter 解析失败，请打开文件修复`])
+      }
+      const description = typeof frontmatter.description === 'string' ? frontmatter.description : ''
+      const resourceFiles = listSkillResources(broken.baseDir)
+      return {
+        description,
+        body,
+        manualOnly: frontmatter['disable-model-invocation'] === true,
+        userInvocable: frontmatter['user-invocable'] !== false,
+        ...(resourceFiles.length > 0 && { resourceFiles }),
+        ...(broken.readonly && { readonly: true })
+      }
+    }
+    const { skill } = match
     const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(readFileSync(skill.filePath, 'utf8'))
     const description = frontmatter.description
     if (typeof description !== 'string' || description.length === 0) {
@@ -791,8 +996,8 @@ export class SkillStore {
 
   /** 核验并返回技能目录真实路径（skills.revealTarget 委托，供主进程安全打开文件夹） */
   revealDir(scope: SkillScope, cwd: string | undefined, name: string): string {
-    const skill = this.findSkill(scope, cwd, name)
-    return nativeRealpath(skill.baseDir)
+    const match = this.findAnySkill(scope, cwd, name)
+    return nativeRealpath(match.skill.baseDir)
   }
 
   /**

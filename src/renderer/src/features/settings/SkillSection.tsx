@@ -12,6 +12,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
+  IconAlertTriangle,
   IconArrowBackUp,
   IconBook,
   IconChevronDown,
@@ -347,7 +348,7 @@ export function SkillSection() {
 
 function SkillScopeView({ scopeState, scopeKey }: { scopeState: ProjectScope; scopeKey: string }) {
   const [skills, setSkills] = useState<SkillSummary[] | null>(() => skillsCache.get(scopeKey) ?? null)
-  const [fileErrors, setFileErrors] = useState<string[]>([])
+  const [stateErrors, setStateErrors] = useState<string[]>([])
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -370,7 +371,7 @@ function SkillScopeView({ scopeState, scopeKey }: { scopeState: ProjectScope; sc
       if (latestRead.current !== read) return
       skillsCache.set(scopeKey, r.skills)
       setSkills(r.skills)
-      setFileErrors(r.errors)
+      setStateErrors(r.stateErrors ?? [])
     } catch (error) {
       if (latestRead.current === read) setActionError(unwrapIpcError(error))
     }
@@ -431,7 +432,12 @@ function SkillScopeView({ scopeState, scopeKey }: { scopeState: ProjectScope; sc
           ...(scope === 'project' && projectCwd !== undefined && { cwd: projectCwd })
         })
         if (latestEdit.current !== edit) return
-        const isReadonly = s.readonly === true || s.eco === true || s.scope === 'bundled' || (!userScope && s.scope !== 'project')
+        const isReadonly =
+          s.readonly === true ||
+          s.eco === true ||
+          s.scope === 'bundled' ||
+          (!userScope && s.scope !== 'project') ||
+          s.editable === false
         setEditing({
           name: s.name,
           scope: s.scope,
@@ -562,14 +568,16 @@ function SkillScopeView({ scopeState, scopeKey }: { scopeState: ProjectScope; sc
   }
 
   const userScope = scope === 'user'
-  const count = skills?.length ?? 0
+  const totalCount = skills?.length ?? 0
+  const count = skills?.filter((s) => s.invalid !== true).length ?? 0
   const q = query.trim().toLowerCase()
   const visible =
     q === ''
       ? (skills ?? [])
-      : (skills ?? []).filter((s) =>
-          `${s.name} ${s.description} ${s.whenToUse ?? ''}`.toLowerCase().includes(q)
-        )
+      : (skills ?? []).filter((s) => {
+          const diagText = s.diagnostics?.map((d) => d.message).join(' ') ?? ''
+          return `${s.name} ${s.description} ${s.whenToUse ?? ''} ${diagText}`.toLowerCase().includes(q)
+        })
 
   const cogentApi = window.cogent as Partial<typeof window.cogent> | undefined
   const canImportExport = typeof cogentApi?.importSkills === 'function'
@@ -599,7 +607,7 @@ function SkillScopeView({ scopeState, scopeKey }: { scopeState: ProjectScope; sc
     >
       {skills === null ? (
         <div className="mt-8 rounded-lg border border-border px-5 py-4 text-xs text-muted-foreground">加载中…</div>
-      ) : count === 0 ? (
+      ) : totalCount === 0 ? (
         userScope ? (
           <div className="mt-8 flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-12 text-center">
             <div className="text-sm font-medium">还没有技能</div>
@@ -683,21 +691,44 @@ function SkillScopeView({ scopeState, scopeKey }: { scopeState: ProjectScope; sc
         >
           {visible.map((s) => {
             const originTag = originBadgeLabel(s.origin, s.eco)
-            const isWritable =
+            const isInvalid = s.invalid === true
+            const diags = s.diagnostics ?? []
+            const hasError = isInvalid || diags.some((d) => d.severity === 'error')
+            const hasWarning = !hasError && diags.some((d) => d.severity === 'warning')
+            const isWritableDir =
               s.readonly !== true &&
               s.eco !== true &&
               s.scope !== 'bundled' &&
               (userScope || s.scope === 'project')
+            const isEditable = isWritableDir && s.editable !== false
+            const isViewable = !isEditable && !(isInvalid && s.editable === false)
 
             return (
-              <div key={`${s.scope}:${s.name}`} className="flex items-center gap-4 px-5 py-4">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
-                  <IconBook className="size-[18px] text-muted-foreground" />
+              <div key={`${s.scope}:${s.path}`} className="flex items-center gap-4 px-5 py-4">
+                <div
+                  className={
+                    hasError
+                      ? 'flex size-10 shrink-0 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/5'
+                      : 'flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background'
+                  }
+                >
+                  {hasError ? (
+                    <IconAlertTriangle className="size-[18px] text-destructive" />
+                  ) : (
+                    <IconBook className="size-[18px] text-muted-foreground" />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-medium">{s.name}</span>
-                    {!s.enabled && <span className={BADGE}>已禁用</span>}
+                    {isInvalid ? (
+                      <span className="rounded-md bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">不可用</span>
+                    ) : (
+                      !s.enabled && <span className={BADGE}>已禁用</span>
+                    )}
+                    {hasWarning && (
+                      <span className="rounded-md bg-warning/10 px-1.5 py-0.5 text-xs text-warning">规范提示</span>
+                    )}
                     {s.manualOnly && <span className={BADGE}>仅手动</span>}
                     {s.userInvocable === false && <span className={BADGE}>仅模型</span>}
                     {originTag !== null && <span className={BADGE}>{originTag}</span>}
@@ -708,19 +739,44 @@ function SkillScopeView({ scopeState, scopeKey }: { scopeState: ProjectScope; sc
                     )}
                     {s.unsupportedRuntime === 'context-fork' && <span className={BADGE}>主会话兼容</span>}
                   </div>
-                  <Hint tip={s.whenToUse !== undefined ? `${s.description}\n触发场景：${s.whenToUse}` : s.description} side="top">
-                    <div className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground">
-                      {s.description}
+                  {s.description.length > 0 && (
+                    <Hint tip={s.whenToUse !== undefined ? `${s.description}\n触发场景：${s.whenToUse}` : s.description} side="top">
+                      <div className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground">
+                        {s.description}
+                      </div>
+                    </Hint>
+                  )}
+                  {diags.length > 0 && (
+                    <div className="mt-1 flex flex-col gap-0.5">
+                      {diags.map((d, idx) => (
+                        <div
+                          key={idx}
+                          className={`flex items-start gap-1.5 text-xs leading-relaxed ${
+                            d.severity === 'error' ? 'text-destructive' : 'text-warning'
+                          }`}
+                        >
+                          <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                          <span className="min-w-0 break-words">{d.message}</span>
+                        </div>
+                      ))}
                     </div>
-                  </Hint>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <Switch
-                    checked={s.enabled}
-                    disabled={busy}
-                    onCheckedChange={(checked: boolean) => toggle(s, checked)}
-                    aria-label={`${s.name} 启用`}
-                  />
+                  {isInvalid ? (
+                    <Hint tip="技能存在错误，修复后才可启用" side="top">
+                      <span className="inline-flex">
+                        <Switch checked={false} disabled aria-label={`${s.name} 启用`} />
+                      </span>
+                    </Hint>
+                  ) : (
+                    <Switch
+                      checked={s.enabled}
+                      disabled={busy}
+                      onCheckedChange={(checked: boolean) => toggle(s, checked)}
+                      aria-label={`${s.name} 启用`}
+                    />
+                  )}
                   {canImportExport && (
                     <>
                       <Hint tip="打开技能目录" side="top">
@@ -734,52 +790,56 @@ function SkillScopeView({ scopeState, scopeKey }: { scopeState: ProjectScope; sc
                           <IconFolderOpen className="size-4" />
                         </Button>
                       </Hint>
-                      <Hint tip="导出为 .zip" side="top">
+                      {!isInvalid && (
+                        <Hint tip="导出为 .zip" side="top">
+                          <Button
+                            variant="ghost"
+                            size="default"
+                            disabled={busy}
+                            onClick={() => exportSkill(s)}
+                            aria-label={`导出 ${s.name}`}
+                          >
+                            <IconDownload className="size-4" />
+                          </Button>
+                        </Hint>
+                      )}
+                    </>
+                  )}
+                  {isEditable ? (
+                    <Button
+                      variant="ghost"
+                      size="default"
+                      disabled={busy}
+                      onClick={() => openEditOrView(s)}
+                      aria-label={`编辑 ${s.name}`}
+                    >
+                      <IconPencil className="size-4" />
+                    </Button>
+                  ) : (
+                    isViewable && (
+                      <Hint tip="查看技能正文与附带文件" side="top">
                         <Button
                           variant="ghost"
                           size="default"
                           disabled={busy}
-                          onClick={() => exportSkill(s)}
-                          aria-label={`导出 ${s.name}`}
+                          onClick={() => openEditOrView(s)}
+                          aria-label={`查看 ${s.name}`}
                         >
-                          <IconDownload className="size-4" />
+                          <IconEye className="size-4" />
                         </Button>
                       </Hint>
-                    </>
+                    )
                   )}
-                  {isWritable ? (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="default"
-                        disabled={busy}
-                        onClick={() => openEditOrView(s)}
-                        aria-label={`编辑 ${s.name}`}
-                      >
-                        <IconPencil className="size-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="default"
-                        disabled={busy}
-                        onClick={() => remove(s)}
-                        aria-label={`删除 ${s.name}`}
-                      >
-                        <IconTrash className="size-4" />
-                      </Button>
-                    </>
-                  ) : (
-                    <Hint tip="查看技能正文与附带文件" side="top">
-                      <Button
-                        variant="ghost"
-                        size="default"
-                        disabled={busy}
-                        onClick={() => openEditOrView(s)}
-                        aria-label={`查看 ${s.name}`}
-                      >
-                        <IconEye className="size-4" />
-                      </Button>
-                    </Hint>
+                  {isWritableDir && (
+                    <Button
+                      variant="ghost"
+                      size="default"
+                      disabled={busy}
+                      onClick={() => remove(s)}
+                      aria-label={`删除 ${s.name}`}
+                    >
+                      <IconTrash className="size-4" />
+                    </Button>
                   )}
                   {!userScope && s.override !== undefined && (
                     <Button
@@ -799,14 +859,12 @@ function SkillScopeView({ scopeState, scopeKey }: { scopeState: ProjectScope; sc
         </SettingsGroup>
       )}
 
-      {fileErrors.length > 0 && (
-        <SettingsGroup label="配置诊断">
-          {fileErrors.map((e, i) => (
-            <div key={i} className="px-5 py-3 text-sm leading-relaxed text-destructive">
-              {e}
-            </div>
+      {stateErrors.length > 0 && (
+        <div role="alert" className="mt-4 flex flex-col gap-1 rounded-lg border border-destructive/30 px-4 py-3 text-sm text-destructive">
+          {stateErrors.map((e, i) => (
+            <div key={i} className="break-words">{e}</div>
           ))}
-        </SettingsGroup>
+        </div>
       )}
 
       {actionNotice !== null && (

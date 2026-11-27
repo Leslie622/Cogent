@@ -380,7 +380,7 @@ export interface EngineMethodResult extends DefaultsResults, AttachmentResults, 
   'mcp.list': { servers: McpServerSummary[]; errors: string[] }
   'mcp.sync': { synced: number }
   'mcp.override': { ok: true }
-  'skills.list': { skills: SkillSummary[]; errors: string[] }
+  'skills.list': { skills: SkillSummary[]; errors: string[]; stateErrors?: string[] }
   'skills.read': {
     description: string
     body: string
@@ -436,6 +436,12 @@ export type SkillScope = 'user' | 'project' | 'bundled'
 /** 技能发现来源类别（与 protocol SkillOrigin 镜像） */
 export type SkillOrigin = 'cogent' | 'agents' | 'claude' | 'custom' | 'bundled'
 
+/** 技能单条诊断（与 protocol SkillDiagnosticItem 镜像） */
+export interface SkillDiagnosticItem {
+  severity: 'warning' | 'error'
+  message: string
+}
+
 /** 技能摘要（skills.list 行；body 另经 skills.read 取） */
 export interface SkillSummary {
   name: string
@@ -460,6 +466,12 @@ export interface SkillSummary {
   override?: boolean
   /** 来自生态兼容目录（.agents / .claude）：只读发现 + 按名启停，编辑/删除禁用 */
   eco?: boolean
+  /** 是否因错误未能加载（默认不启用） */
+  invalid?: boolean
+  /** 不可用技能是否仍可通过表单编辑修复 */
+  editable?: boolean
+  /** 归属该技能的行内提示 */
+  diagnostics?: SkillDiagnosticItem[]
 }
 
 /**

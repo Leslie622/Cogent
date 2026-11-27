@@ -61,7 +61,13 @@ describe('SkillStore', () => {
     expect(errors).toHaveLength(1)
     expect(errors[0]).toContain('dup')
     expect(skills).toHaveLength(1)
-    expect(skills[0]).toMatchObject({ scope: 'project', description: 'project 版' })
+    expect(skills[0]).toMatchObject({
+      scope: 'project',
+      description: 'project 版'
+    })
+    expect(skills[0].diagnostics).toHaveLength(1)
+    expect(skills[0].diagnostics?.[0]?.severity).toBe('warning')
+    expect(skills[0].diagnostics?.[0]?.message).toContain('已覆盖低优先级同名技能')
   })
 
   it('生态兼容目录：.agents/skills 两级发现 + eco 标记 + 同名自有目录胜', () => {
@@ -166,11 +172,88 @@ describe('SkillStore', () => {
     mkdirSync(join(root, 'skills', 'badyaml'), { recursive: true })
     writeFileSync(join(root, 'skills', 'badyaml', 'SKILL.md'), '---\nname: [broken\n---\n\n正文\n')
     const store = new SkillStore(root, join(root, 'agents'))
-    const { skills, errors } = store.list()
+    const { skills, errors, stateErrors } = store.list()
     expect(errors.length).toBeGreaterThanOrEqual(1)
     expect(errors.some((e) => e.includes('skills.json'))).toBe(true)
-    // 合法技能不受影响
-    expect(skills.map((s) => s.name)).toContain('broken')
+    expect(stateErrors?.some((e) => e.includes('skills.json'))).toBe(true)
+    // 合法技能不受影响；坏 YAML 技能以不可用行内错误呈现且默认不启用、不进运行时快照
+    expect(skills.find((s) => s.name === 'broken')).toMatchObject({ enabled: true })
+    const badYaml = skills.find((s) => s.name === 'badyaml')
+    expect(badYaml).toMatchObject({
+      invalid: true,
+      enabled: false,
+      editable: false
+    })
+    expect(badYaml?.diagnostics).toHaveLength(1)
+    expect(badYaml?.diagnostics?.[0]?.severity).toBe('error')
+    expect(badYaml?.diagnostics?.[0]?.message).toContain('解析失败')
+    expect(store.snapshot().skills.map((s) => s.name)).toEqual(['broken'])
+  })
+
+  it('行内警告与不可用错误：非法名仍可用且可启停删除，缺描述默认不启用并可修复/删除', () => {
+    const root = newRoot()
+    mkdirSync(join(root, 'skills', 'PDF助手'), { recursive: true })
+    writeFileSync(
+      join(root, 'skills', 'PDF助手', 'SKILL.md'),
+      '---\nname: "PDF助手"\ndescription: "处理 PDF 文档"\n---\n\nPDF 正文\n'
+    )
+    mkdirSync(join(root, 'skills', 'test-broken'), { recursive: true })
+    writeFileSync(
+      join(root, 'skills', 'test-broken', 'SKILL.md'),
+      '---\nname: test-broken\n---\n\n待补充描述的正文\n'
+    )
+
+    const store = new SkillStore(root, join(root, 'agents'))
+    const listed = store.list()
+    const pdfSkill = listed.skills.find((s) => s.name === 'PDF助手')
+    const brokenSkill = listed.skills.find((s) => s.name === 'test-broken')
+
+    expect(pdfSkill).toMatchObject({
+      enabled: true,
+      editable: false
+    })
+    expect(pdfSkill?.diagnostics).toHaveLength(1)
+    expect(pdfSkill?.diagnostics?.[0]?.severity).toBe('warning')
+    expect(pdfSkill?.diagnostics?.[0]?.message).toContain('名称含不支持的字符')
+    expect(pdfSkill?.invalid).toBeUndefined()
+
+    expect(brokenSkill).toMatchObject({
+      invalid: true,
+      enabled: false,
+      editable: true
+    })
+    expect(brokenSkill?.diagnostics).toHaveLength(1)
+    expect(brokenSkill?.diagnostics?.[0]?.severity).toBe('error')
+    expect(brokenSkill?.diagnostics?.[0]?.message).toContain('缺少必填的 description')
+    // 运行时快照只含可用技能，不含缺 description 的不可用技能
+    expect(store.snapshot().skills.map((s) => s.name)).toEqual(['PDF助手'])
+
+    // 警告技能可启停、可读、可定位目录、可删除
+    store.setEnabled('user', undefined, 'PDF助手', 'disabled')
+    expect(store.list().skills.find((s) => s.name === 'PDF助手')?.enabled).toBe(false)
+    expect(store.read('user', undefined, 'PDF助手').body).toBe('PDF 正文')
+    expect(store.revealDir('user', undefined, 'PDF助手')).toContain('PDF助手')
+    store.delete('user', undefined, 'PDF助手')
+    expect(store.list().skills.some((s) => s.name === 'PDF助手')).toBe(false)
+
+    // 不可用技能禁止启用，但支持读取补齐修复或直接删除
+    expect(() => store.setEnabled('user', undefined, 'test-broken', 'enabled')).toThrow(/不存在|不可启用/)
+    expect(store.read('user', undefined, 'test-broken')).toMatchObject({
+      description: '',
+      body: '待补充描述的正文'
+    })
+    store.save('user', undefined, 'test-broken', '已补齐的描述', '待补充描述的正文')
+    const fixed = store.list().skills.find((s) => s.name === 'test-broken')
+    expect(fixed).toMatchObject({ enabled: true })
+    expect(fixed?.invalid).toBeUndefined()
+    expect(fixed?.diagnostics).toBeUndefined()
+
+    // 坏 YAML 的不可用技能也支持直接从 store 删除
+    mkdirSync(join(root, 'skills', 'badyaml'), { recursive: true })
+    writeFileSync(join(root, 'skills', 'badyaml', 'SKILL.md'), '---\nname: [broken\n---\n\n正文\n')
+    expect(store.list().skills.find((s) => s.name === 'badyaml')?.invalid).toBe(true)
+    store.delete('user', undefined, 'badyaml')
+    expect(store.list().skills.some((s) => s.name === 'badyaml')).toBe(false)
   })
 
   it('/skill: 活展开：统一走 <skill_content> 与变量替换 / manualOnly 可展开 / 禁用与未命中原样', () => {
