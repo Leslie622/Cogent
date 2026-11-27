@@ -27,12 +27,12 @@ Cogent 是 Electron + pi 的本地优先桌面 Agent 客户端。开发从对应
 - 新架构、能力座、出口、跨模块机制重构或重要技术选型，先与用户对齐调研深度。默认实读 `reference/` 下 pi、deepseek-harness、zcode 的同主题源码，按需补 Pi-meme。重大架构判断再查主流产品公开资料。给出实读版本、文件与行号，旧结论只用于原范围。
 - 上述大块实现先在 `docs/计划/` 写目标、对照、方案、边界和验收，用户批准后写实现代码。排除项须说明实际依赖、安全或成本约束，低成本且有收益的功能纳入首发。
 - 实现变化同步负责该事实的文档，核对模块页的「验收：」。完成模块时更新对应技术笔记，附同主题 `reference/` 源码对照和出处。同类问题回填原规则和代表场景。
-- 实现交付按[约定](docs/约定.md#1-代码边界与交付)验证。报告真实结果，分别说明通过项、已知失败和待验证项。归因须有证据。
+- 日常改动默认定向验证；验证范围、四关触发条件与结果复用按[约定](docs/约定.md#14-验证范围)。报告真实结果，分别说明通过项、已知失败和待验证项。归因须有证据。
 
 ## 常用命令
 
 - 安装与启动：`npm ci`（Node 24）；`npm run dev` 由用户启动。
-- 四关交付：`npm run lint && npm run typecheck && npm run build && npm test`
+- 完整四关（仅在[触发条件](docs/约定.md#14-验证范围)满足时）：`npm run lint && npm run typecheck && npm run build && npm test`
 - 定向单测：`npx vitest run <path>` 或 `node tests/run-tests.mjs run --project node|web|integration`；全量监听 `npm run test:watch`，覆盖率 `npm run coverage`。
 - 打包：`npm run pack`（可选 `--win-only` / `--deb-only`）。
 - 环境前提（Windows 沙箱 `TEMP` 隐藏目录、`tools.test.ts` 的 `rg`/`fd` 路径）见[测试边界](docs/模块/测试.md#测试边界)。
