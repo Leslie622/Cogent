@@ -231,8 +231,8 @@ export function useHoverSlide({
       // 绝对定位以容器内边距盒为基准，getBoundingClientRect 是边框盒，补上容器边框宽
       if (rowRect.width <= 0 || rowRect.height <= 0 || containerRect.width <= 0) return null
       return {
-        x: rowRect.left - containerRect.left - container.clientLeft,
-        y: rowRect.top - containerRect.top - container.clientTop,
+        x: rowRect.left - containerRect.left - container.clientLeft + container.scrollLeft,
+        y: rowRect.top - containerRect.top - container.clientTop + container.scrollTop,
         w: rowRect.width,
         h: rowRect.height,
       }
