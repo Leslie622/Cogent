@@ -38,9 +38,11 @@ const READ_ONLY_TOOLS = new Set([
 
 const FILE_TOOLS = new Set(['write', 'edit'])
 const key = (sessionId: string, turnId: string) => `${sessionId}/${turnId}`
-/** 早期版本把"未绑定工作区"当警告落盘；它是会话的正常配置，读取时剔除，避免历史卡片继续展示。 */
+/** 早期版本把"未绑定工作区"和"跳过嵌套 Git 仓库目录"当警告落盘；它们属正常目录/配置边界，读取时剔除，避免历史卡片继续展示。 */
 const RETIRED_WARNINGS = new Set(['未绑定工作区目录，仅追踪文件工具改动'])
-const presentableWarnings = (warnings: string[]) => warnings.filter((warning) => !RETIRED_WARNINGS.has(warning))
+const RETIRED_WARNING_PREFIXES = ['跳过嵌套 Git 仓库目录：']
+const presentableWarnings = (warnings: string[]) =>
+  warnings.filter((warning) => !RETIRED_WARNINGS.has(warning) && !RETIRED_WARNING_PREFIXES.some((prefix) => warning.startsWith(prefix)))
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 interface RunState {
@@ -722,7 +724,8 @@ export class WorkspaceChangesService {
       }
     }
     for (const run of this.runs.values()) {
-      if (run.sessionId !== sessionId) continue
+      // 本回合 finalize 已完成落盘并将 phase 置 ready，不能再保活其仅用于比对的基线 blob。
+      if (run.sessionId !== sessionId || run.phase === 'ready') continue
       for (const base of run.baseline.values()) {
         if (base.side.kind === 'file' && base.side.saved && base.side.sha256 !== undefined) retained.add(base.side.sha256)
       }
