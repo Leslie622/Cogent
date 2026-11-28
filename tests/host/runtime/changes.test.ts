@@ -59,6 +59,8 @@ describe('WorkspaceChangesService', () => {
     const ownerRead = {}
     service.begin('s1', 't-read', ownerRead, [ws])
     await service.beforeTool('s1', 't-read', ownerRead, 'read', { path: 'target.ts' }, ws)
+    await service.beforeTool('s1', 't-read', ownerRead, 'skill', { name: 'demo' }, ws)
+    await service.beforeTool('s1', 't-read', ownerRead, 'tool_search', { query: 'vision' }, ws)
     expect(service.finishEmpty('s1', 't-read', ownerRead)).toBe(true)
     expect(await service.get('s1')).toEqual([])
 

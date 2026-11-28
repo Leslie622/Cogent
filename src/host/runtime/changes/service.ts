@@ -23,6 +23,8 @@ const READ_ONLY_TOOLS = new Set([
   'find',
   'ls',
   'glob',
+  'skill',
+  'tool_search',
   'read_attachment',
   'report_outputs',
   'todo_write',

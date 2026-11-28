@@ -106,6 +106,8 @@ describe('MCP 升级协议与会话闭环', () => {
     expect(approval.params.mcpMeta).toMatchObject({ serverName: 'mock', originalToolName: 'echo', destructive: false })
     await engine.send('approval.respond', { requestId: approval.params.requestId, approved: true })
     await complete(askId)
+    expect(engine.events.filter((event) => event.method === 'changes.updated' && event.params.sessionId === askId)).toEqual([])
+    expect((await engine.send<unknown[]>('changes.get', { sessionId: askId })).result).toEqual([])
     for (const planEnabled of [false, true]) {
       const id = await session()
       if (planEnabled) await engine.send('session.setPlanMode', { sessionId: id, enabled: true })
@@ -125,6 +127,16 @@ describe('MCP 升级协议与会话闭环', () => {
     expect(risk.params.kind).toBe('exec')
     expect(risk.params.mcpMeta).toMatchObject({ destructive: true, openWorld: true })
     await engine.send('approval.respond', { requestId: risk.params.requestId, approved: false }); await complete(destructiveId)
+    // 非只读 MCP 经 mcpAlways 放行后，后续直接放行回合仍须进入改动追踪（不能因 allowsMcp 短路漏追踪）
+    await submit(destructiveId, [tool('mcp__mock__destructive_echo', { text: 'allow-always' }), text()])
+    const riskAllow = await engine.waitEvent('approval.request', (params) => params.sessionId === destructiveId, 30_000)
+    await engine.send('approval.respond', { requestId: riskAllow.params.requestId, approved: true, mcpAlways: 'tool' })
+    await complete(destructiveId)
+    const beforeAutoTurn = engine.events.length
+    await submit(destructiveId, [tool('mcp__mock__destructive_echo', { text: 'auto-after-always' }), text()])
+    await complete(destructiveId)
+    expect(engine.events.slice(beforeAutoTurn).filter((event) => event.method === 'approval.request' && event.params.sessionId === destructiveId)).toEqual([])
+    expect((await engine.send<unknown[]>('changes.get', { sessionId: destructiveId })).result).toHaveLength(2)
   }, 60_000)
 
   it('stdio宿主敏感env被剥离，环境变量仅显式注入声明键', async () => {

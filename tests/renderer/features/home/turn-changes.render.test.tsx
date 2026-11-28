@@ -132,6 +132,47 @@ describe('TurnChangesBar & DiffPreview', () => {
     expect(useWorkspaceStore.getState().scopes.s1.tabs).toHaveLength(1)
   })
 
+  it('TurnChangesBar 在无净改动且非 partial 时隐藏，partial 或有告警时保留', () => {
+    const emptyBase: TurnChangesSummary = {
+      ...sampleSummary,
+      totalAdded: 0,
+      totalDeleted: 0,
+      incompleteCount: 0,
+      items: [],
+      warnings: []
+    }
+
+    const renderWith = (turnId: string, summary: TurnChangesSummary) => {
+      useChatStore.setState({
+        sessions: [],
+        activeSessionId: 's1',
+        bySession: { s1: { ...emptyBucket(), changes: { [turnId]: summary } } }
+      })
+      return render(
+        <FileLinkContext.Provider value={{ sessionId: 's1', turnId, refs: [] }}>
+          <TurnChangesBar />
+        </FileLinkContext.Provider>
+      )
+    }
+
+    const completeView = renderWith('t-complete', { ...emptyBase, turnId: 't-complete', coverage: 'complete' })
+    expect(completeView.container).toBeEmptyDOMElement()
+    cleanup()
+
+    const toolsOnlyView = renderWith('t-tools', { ...emptyBase, turnId: 't-tools', coverage: 'tools-only' })
+    expect(toolsOnlyView.container).toBeEmptyDOMElement()
+    cleanup()
+
+    renderWith('t-partial', { ...emptyBase, turnId: 't-partial', coverage: 'partial' })
+    expect(screen.getByText('本轮无净文件更改')).toBeInTheDocument()
+    expect(screen.getByText('部分统计')).toBeInTheDocument()
+    cleanup()
+
+    renderWith('t-warn', { ...emptyBase, turnId: 't-warn', coverage: 'complete', warnings: ['跳过嵌套 Git 仓库目录：sub'] })
+    expect(screen.getByText('本轮无净文件更改')).toBeInTheDocument()
+    expect(screen.getByText('跳过嵌套 Git 仓库目录：sub')).toBeInTheDocument()
+  })
+
   it('DiffPreview 加载冻结对比并支持统一/双栏切换及二进制降级', async () => {
     const textDiff: TurnFileDiff = {
       sessionId: 's1',

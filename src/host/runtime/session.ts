@@ -1535,12 +1535,14 @@ export class SessionManager implements CogentKernel {
   private async prepareToolChanges(
     session: Session,
     toolName: string,
+    kind: ToolKind,
     args: Record<string, unknown>,
     signal: AbortSignal | undefined
   ): Promise<{ block: boolean; reason?: string }> {
+    if (signal?.aborted) return { block: true, reason: '已中止' }
+    if (kind === 'read') return { block: false }
     const streaming = this.streaming.get(session.summary.id)
     if (streaming?.turnId === undefined) return { block: false }
-    if (signal?.aborted) return { block: true, reason: '已中止' }
     const cwd = streaming.fileContext?.cwd ?? streaming.workspace.cwd
     try {
       await this.changes.beforeTool(session.summary.id, streaming.turnId, streaming, toolName, args, cwd, signal)
@@ -1577,10 +1579,12 @@ export class SessionManager implements CogentKernel {
       audit.approvalDecided({ toolName, verdict: 'plan' })
       return Promise.resolve({ block: true, reason: '计划模式（只读）下写类与执行类工具被禁止' })
     }
-    if (mcp !== undefined && this.approvals.allowsMcp(session.summary.id, toolName, mcp.serverName, mcpReadOnly)) return Promise.resolve({ block: false })
+    if (mcp !== undefined && this.approvals.allowsMcp(session.summary.id, toolName, mcp.serverName, mcpReadOnly)) {
+      return this.prepareToolChanges(session, toolName, kind, args, signal)
+    }
     if (mode === 'auto') {
       audit.approvalDecided({ toolName, verdict: 'auto' })
-      return this.prepareToolChanges(session, toolName, args, signal)
+      return this.prepareToolChanges(session, toolName, kind, args, signal)
     }
     // 写类根内判定（软边界瘦身为"规则适用域"）：越界与否不再决定放拦，
     // 只决定 ask 是否可吃「始终允许」规则 —— 信任记忆的范围 = 根内写
@@ -1594,12 +1598,12 @@ export class SessionManager implements CogentKernel {
     // exec 等风险类照旧走询问（落到下方 ask 流程）
     if (mode === 'autonomous' && (kind === 'write' || kind === 'edit')) {
       audit.approvalDecided({ toolName, verdict: 'autonomous' })
-      return this.prepareToolChanges(session, toolName, args, signal)
+      return this.prepareToolChanges(session, toolName, kind, args, signal)
     }
     // 写类只匹配覆盖本次目标的已授权根，新增根不会沿用旧根的规则。
     if (mcp === undefined && roots.length > 0 && withinRoots && this.approvals.allows(isFileWrite ? targetRoots : roots, kind)) {
       audit.approvalDecided({ toolName, verdict: 'always-workspace' })
-      return this.prepareToolChanges(session, toolName, args, signal)
+      return this.prepareToolChanges(session, toolName, kind, args, signal)
     }
     // 弹审批面板并挂起（无超时 —— 用户不点就一直等，宿主输入框变停止
     // 钮可 abort；signal abort 兜底 resolve）
@@ -1628,7 +1632,7 @@ export class SessionManager implements CogentKernel {
           resolve({ block: true, reason: '已中止' })
         }
       })
-    }).then((verdict) => verdict.block ? verdict : this.prepareToolChanges(session, toolName, args, signal))
+    }).then((verdict) => verdict.block ? verdict : this.prepareToolChanges(session, toolName, kind, args, signal))
   }
 
   /** 某会话的全部挂起审批以 block 收尾（删除/退出兜底；abort 走 signal listener） */

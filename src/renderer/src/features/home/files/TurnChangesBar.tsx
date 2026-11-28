@@ -25,7 +25,8 @@ export function TurnChangesBar() {
   if (doc === undefined) {
     return error !== undefined ? <p role="alert" className="text-xs text-destructive">改动追踪失败：{error}</p> : null
   }
-  if (doc.items.length === 0 && doc.warnings.length === 0 && doc.coverage === 'complete') {
+  // 仅当统计不完整（partial）、存在告警或有未统计项时保留展示；complete/tools-only 零改动静默隐藏。
+  if (doc.items.length === 0 && doc.warnings.length === 0 && doc.incompleteCount === 0 && doc.coverage !== 'partial') {
     return null
   }
 
