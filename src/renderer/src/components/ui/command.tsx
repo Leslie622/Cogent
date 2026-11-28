@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Command as CommandPrimitive } from "cmdk"
 import { cn } from "cn"
+import { MenuSlideRows, useMenuSlideEnabled } from "@/components/ui/menu-slide"
 
 import {
   Dialog,
@@ -90,13 +91,20 @@ function CommandInput({
   )
 }
 
+/**
+ * 滑动胶囊（2026-11-28）：由外观「开启滑动动画」全局决定（menu-slide.tsx）。cmdk 的高亮是
+ * data-selected 属性、焦点留在输入框，所以用属性驱动：开 = List 内包行容器 + 胶囊、行加
+ * data-hover-slide，原类不动；关 = 原样。搜索变体只变文字色，胶囊读到底色不变就不停上去。
+ */
 function CommandList({
   className,
   layout = "default",
+  children,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.List> & {
   layout?: "default" | "fill"
 }) {
+  const slide = useMenuSlideEnabled()
   return (
     <CommandPrimitive.List
       data-slot="command-list"
@@ -106,7 +114,9 @@ function CommandList({
         className
       )}
       {...props}
-    />
+    >
+      {slide ? <MenuSlideRows mode="highlight">{children}</MenuSlideRows> : children}
+    </CommandPrimitive.List>
   )
 }
 
@@ -160,9 +170,11 @@ function CommandItem({
 }: React.ComponentProps<typeof CommandPrimitive.Item> & {
   variant?: "default" | "search"
 }) {
+  const slide = useMenuSlideEnabled()
   return (
     <CommandPrimitive.Item
       data-slot="command-item"
+      data-hover-slide={slide ? "" : undefined}
       data-variant={variant}
       className={cn(
         "group/command-item relative flex cursor-default items-center gap-2 rounded-sm text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-muted [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",

@@ -25,6 +25,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useProjectStore } from '@/stores/project'
 import { useHomeStore } from '@/stores/home'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 import { ProjectDialog } from './ProjectDialog'
 
 /** 行 hover 底：全局黑 5% 软叠配方（同侧栏行） */
@@ -48,6 +49,7 @@ function ProjectOption({
   return (
     <button
       type="button"
+      data-hover-slide
       onClick={onSelect}
       className={cn(
         'flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-sm text-foreground outline-none',
@@ -80,6 +82,9 @@ export function ProjectPicker({
   const [createOpen, setCreateOpen] = useState(false)
   const projects = useProjectStore((s) => s.projects)
   const loadProjects = useProjectStore((s) => s.load)
+  // 弹层里项目行与「新建项目」行之间的悬停滑动（2026-11-28）：胶囊挂在弹层上（随弹层挂载），
+  // 搜索框与空态文案不是行；由外观「开启滑动动画」全局控制
+  const slide = useHoverSlide()
 
   // 搜索过滤：名称子串（大小写不敏感）；弹层每次打开重置输入
   const filtered = useMemo(() => {
@@ -144,7 +149,7 @@ export function ProjectPicker({
                 <span
                   role="button"
                   aria-label="移除该项目"
-                  className="absolute inset-0 flex items-center justify-center rounded-full bg-muted-foreground text-background opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                  className="absolute inset-0 flex items-center justify-center rounded-full bg-muted-foreground text-background opacity-0 transition-opacity duration-(--hover-transition-duration) group-hover:opacity-100"
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.stopPropagation()
@@ -169,10 +174,12 @@ export function ProjectPicker({
         </Hint>
         {/* w-auto 覆写原语 w-72（锚点是小胶囊，菜单不必那么宽）；对齐参考稿圆角 */}
         <PopoverContent
+          ref={slide.containerRef}
           align="start"
           sideOffset={8}
-          className="w-auto min-w-60 max-w-80 gap-1 rounded-2xl p-1.5"
+          className={cn(slide.containerClassName, 'w-auto min-w-60 max-w-80 gap-1 rounded-2xl p-1.5')}
         >
+          {slide.pill}
           {/* 搜索行：灰底，图标+输入；无独立确认，过滤即时生效。圆角 lg 档
               （2026-11-20 用户定调）与设置页搜索框、表单控件统一，弃胶囊 */}
           <div className="flex h-9 items-center gap-2 rounded-lg bg-muted/60 px-3">
@@ -200,6 +207,7 @@ export function ProjectPicker({
           {/* 新建项目行：转入创建弹窗（两步流），建完经 onCreated 回到选择流 */}
           <button
             type="button"
+            data-hover-slide
             onClick={() => {
               setOpen(false)
               setCreateOpen(true)

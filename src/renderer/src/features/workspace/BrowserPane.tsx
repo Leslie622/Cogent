@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, Copy, Ellipsis, ExternalLink, FolderOpen, Globe, History, Minus, Plus, RotateCw, Search, Shield, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Hint } from '@/components/Hint'
+import { cn } from 'cn'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -30,6 +32,8 @@ const PERMISSION_DECISIONS = [{ value: 'ask', label: '询问' }, { value: 'allow
 
 export function BrowserPane(props: BrowserPaneProps) {
   const live = useRef(props); live.current = props
+  // 工具栏「后退 / 前进 / 刷新」三钮之间的悬停滑动；地址栏与菜单钮不入组
+  const navSlide = useHoverSlide()
   const host = useRef<HTMLDivElement>(null)
   const addressInput = useRef<HTMLInputElement>(null)
   const reservationRef = useRef<BrowserReservation | null>(null)
@@ -202,10 +206,11 @@ export function BrowserPane(props: BrowserPaneProps) {
 
   return <div className="relative flex h-full min-h-0 flex-col" data-browser-pane={props.tabId} data-browser-lease={reservation?.lease}>
     <div className="flex shrink-0 items-center gap-2 px-3 py-2" data-browser-toolbar>
-      <div className="flex shrink-0 items-center gap-1" data-browser-navigation>
-        <Hint tip="网页后退" side="bottom"><Button variant="ghost" size="icon-sm" aria-label="网页后退" disabled={!state?.canGoBack} onClick={() => void request('back', {}).catch(report)}><ArrowLeft /></Button></Hint>
-        <Hint tip="网页前进" side="bottom"><Button variant="ghost" size="icon-sm" aria-label="网页前进" disabled={!state?.canGoForward} onClick={() => void request('forward', {}).catch(report)}><ArrowRight /></Button></Hint>
-        <Hint tip={state?.loading ? '停止网页加载' : '刷新网页'} side="bottom"><Button variant="ghost" size="icon-sm" aria-label={state?.loading ? '停止网页加载' : '刷新网页'} disabled={!ready} onClick={() => void request(state?.loading ? 'stop' : 'reload', {}).catch(report)}>{state?.loading ? <X /> : <RotateCw />}</Button></Hint>
+      <div ref={navSlide.containerRef} className={cn(navSlide.containerClassName, 'flex shrink-0 items-center gap-1')} data-browser-navigation>
+        {navSlide.pill}
+        <Hint tip="网页后退" side="bottom"><Button variant="ghost" size="icon-sm" data-hover-slide aria-label="网页后退" disabled={!state?.canGoBack} onClick={() => void request('back', {}).catch(report)}><ArrowLeft /></Button></Hint>
+        <Hint tip="网页前进" side="bottom"><Button variant="ghost" size="icon-sm" data-hover-slide aria-label="网页前进" disabled={!state?.canGoForward} onClick={() => void request('forward', {}).catch(report)}><ArrowRight /></Button></Hint>
+        <Hint tip={state?.loading ? '停止网页加载' : '刷新网页'} side="bottom"><Button variant="ghost" size="icon-sm" data-hover-slide aria-label={state?.loading ? '停止网页加载' : '刷新网页'} disabled={!ready} onClick={() => void request(state?.loading ? 'stop' : 'reload', {}).catch(report)}>{state?.loading ? <X /> : <RotateCw />}</Button></Hint>
       </div>
       <form className="min-w-0 flex-1" data-browser-address onSubmit={event => { event.preventDefault(); void navigate() }}>
         <Input ref={addressInput} className="text-center" aria-label="网页地址或搜索" placeholder={sleeping ? '网页已休眠' : ready ? '输入网址后回车' : '浏览器正在准备…'} disabled={!ready} value={address} onChange={event => setAddress(event.target.value)} onFocus={event => event.currentTarget.select()} />

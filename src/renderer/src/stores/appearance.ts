@@ -37,6 +37,12 @@ import {
   POPOVER_GLASS_SATURATE_MAX,
   POPOVER_GLASS_SATURATE_MIN,
 } from '@/lib/popover-glass'
+import {
+  clampHoverTransitionMs,
+  DEFAULT_HOVER_TRANSITION_MS,
+  HOVER_TRANSITION_MS_MAX,
+  HOVER_TRANSITION_MS_MIN,
+} from '@/lib/hover-motion'
 
 export type OutputVerbosity = 'low' | 'high'
 
@@ -115,6 +121,12 @@ interface AppearanceState {
   popoverGlassBlur: number
   /** 轻量浮层毛玻璃背景饱和度（100–250%，默认 140%） */
   popoverGlassSaturate: number
+  /** 悬停滑动动画总开关（默认开）：并列的悬停行之间单层胶囊滑动，关 = 各行自画 hover */
+  hoverSlide: boolean
+  /** 悬停过渡总开关（默认开）：底色、文字色等绘制属性的 hover 过渡 */
+  hoverTransition: boolean
+  /** 悬停过渡时长（ms，50–2000 步 50，默认 150）；开关关闭时投影为 0ms */
+  hoverTransitionMs: number
   uiFontSize: number
   /** 代码块与文件预览行号（默认开） */
   showLineNumbers: boolean
@@ -137,6 +149,9 @@ interface AppearanceState {
   setPopoverGlassOpacity: (opacity: number) => void
   setPopoverGlassBlur: (blur: number) => void
   setPopoverGlassSaturate: (saturate: number) => void
+  setHoverSlide: (enabled: boolean) => void
+  setHoverTransition: (enabled: boolean) => void
+  setHoverTransitionMs: (ms: number) => void
   setUiFontSize: (size: number) => void
   setShowLineNumbers: (show: boolean) => void
   setCodeWrap: (wrap: boolean) => void
@@ -200,6 +215,9 @@ export const useAppearanceStore = create<AppearanceState>()(
       popoverGlassOpacity: DEFAULT_POPOVER_GLASS_OPACITY,
       popoverGlassBlur: DEFAULT_POPOVER_GLASS_BLUR,
       popoverGlassSaturate: DEFAULT_POPOVER_GLASS_SATURATE,
+      hoverSlide: true,
+      hoverTransition: true,
+      hoverTransitionMs: DEFAULT_HOVER_TRANSITION_MS,
       uiFontSize: DEFAULT_UI_FONT_SIZE,
       showLineNumbers: true,
       codeWrap: false,
@@ -217,6 +235,9 @@ export const useAppearanceStore = create<AppearanceState>()(
       setPopoverGlassOpacity: (opacity) => set({ popoverGlassOpacity: clampPopoverGlassOpacity(opacity) }),
       setPopoverGlassBlur: (blur) => set({ popoverGlassBlur: clampPopoverGlassBlur(blur) }),
       setPopoverGlassSaturate: (saturate) => set({ popoverGlassSaturate: clampPopoverGlassSaturate(saturate) }),
+      setHoverSlide: (enabled) => set({ hoverSlide: enabled }),
+      setHoverTransition: (enabled) => set({ hoverTransition: enabled }),
+      setHoverTransitionMs: (ms) => set({ hoverTransitionMs: clampHoverTransitionMs(ms) }),
       setUiFontSize: (uiFontSize) => set({ uiFontSize }),
       setShowLineNumbers: (showLineNumbers) => set({ showLineNumbers }),
       setCodeWrap: (codeWrap) => set({ codeWrap }),
@@ -264,6 +285,17 @@ export const useAppearanceStore = create<AppearanceState>()(
             POPOVER_GLASS_SATURATE_MIN,
             POPOVER_GLASS_SATURATE_MAX,
             DEFAULT_POPOVER_GLASS_SATURATE,
+          ),
+          // 缺字段 = 默认开；时长按滑杆刻度归整
+          hoverSlide: raw?.hoverSlide !== false,
+          hoverTransition: raw?.hoverTransition !== false,
+          hoverTransitionMs: clampHoverTransitionMs(
+            readIntInRange(
+              raw?.hoverTransitionMs,
+              HOVER_TRANSITION_MS_MIN,
+              HOVER_TRANSITION_MS_MAX,
+              DEFAULT_HOVER_TRANSITION_MS,
+            ),
           ),
           uiFontSize:
             typeof raw?.uiFontSize === 'number' && (UI_FONT_SIZES as readonly number[]).includes(raw.uiFontSize)

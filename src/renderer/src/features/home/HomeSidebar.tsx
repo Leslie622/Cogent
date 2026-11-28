@@ -61,7 +61,7 @@ import { RenameChatDialog } from './RenameChatDialog'
 import { useChatStore, type SessionSummary } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
 import { useHomeStore } from '@/stores/home'
-import { useSidebarHoverPill } from '@/hooks/use-sidebar-hover-pill'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 /** 行 hover 时右侧浮现的动作钮簇；focus-within 兜底键盘聚焦时也可见。
     菜单开着时也保持显现（2026-11-11 用户反馈）：右键菜单开着 = trigger（行 div
@@ -69,7 +69,7 @@ import { useSidebarHoverPill } from '@/hooks/use-sidebar-hover-pill'
     子 trigger 带 data-popup-open → group-has 兜住（此时焦点已被 Base UI 移进
     弹层，focus-within 不可靠，不能只靠它） */
 const ACTIONS =
-  'absolute right-1 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 motion-reduce:transition-none group-hover:opacity-100 group-focus-within:opacity-100 group-data-popup-open:opacity-100 group-has-[[data-popup-open]]:opacity-100'
+  'absolute right-1 flex items-center gap-0.5 opacity-0 transition-opacity duration-(--hover-transition-duration) motion-reduce:transition-none group-hover:opacity-100 group-focus-within:opacity-100 group-data-popup-open:opacity-100 group-has-[[data-popup-open]]:opacity-100'
 
 /** 分区标题行：标题 + 折叠箭头（hover 显现，展开=下/收起=右旋转过渡）。
  *  actions 可选（置顶分区无操作钮 2026-11-13）：无 actions 时右侧钮簇与
@@ -85,13 +85,13 @@ function SectionHeader({
 }) {
   return (
     <div
-      data-sidebar-row
+      data-hover-slide
       className="sidebar-row group relative flex h-7 items-center rounded-md px-2"
     >
       <CollapsibleTrigger
         render={<button type="button" />}
         className={cn(
-          'flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground transition-colors duration-150 group-hover:text-foreground motion-reduce:transition-none',
+          'flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground transition-colors duration-(--hover-transition-duration) group-hover:text-foreground motion-reduce:transition-none',
           actions && 'pr-12'
         )}
       >
@@ -167,7 +167,7 @@ const ChatRow = memo(function ChatRow({
       <ContextMenuTrigger
         render={
           <div
-            data-sidebar-row
+            data-hover-slide
             data-active={active || undefined}
             className="sidebar-row group relative flex h-8 items-center rounded-md [content-visibility:auto] [contain-intrinsic-size:auto_2rem]"
           />
@@ -190,7 +190,7 @@ const ChatRow = memo(function ChatRow({
           <span className="truncate">{chat.title}</span>
           {working && !waitingApproval && (
             <Spinner
-              className="absolute right-4 pointer-events-none transition-opacity duration-150 motion-reduce:transition-none group-hover:opacity-0 group-focus-within:opacity-0 group-data-popup-open:opacity-0 group-has-[[data-popup-open]]:opacity-0"
+              className="absolute right-4 pointer-events-none transition-opacity duration-(--hover-transition-duration) motion-reduce:transition-none group-hover:opacity-0 group-focus-within:opacity-0 group-data-popup-open:opacity-0 group-has-[[data-popup-open]]:opacity-0"
               aria-label="工作中"
             />
           )}
@@ -335,7 +335,7 @@ const ProjectRow = memo(function ProjectRow({
     <Collapsible open={expanded} onOpenChange={() => onToggle(projectId)}>
       <ContextMenu>
         <ContextMenuTrigger
-          render={<div data-sidebar-row className="sidebar-row group relative flex h-8 items-center rounded-md px-2" />}
+          render={<div data-hover-slide className="sidebar-row group relative flex h-8 items-center rounded-md px-2" />}
         >
           <CollapsibleTrigger
             render={<button type="button" />}
@@ -433,7 +433,7 @@ const ProjectRow = memo(function ProjectRow({
 })
 
 export function HomeSidebar() {
-  const { containerRef, pillRef } = useSidebarHoverPill()
+  const slide = useHoverSlide()
   const [pinnedOpen, setPinnedOpen] = useState(true)
   const [projectsOpen, setProjectsOpen] = useState(true)
   const [recentOpen, setRecentOpen] = useState(true)
@@ -627,17 +627,12 @@ export function HomeSidebar() {
 
       {/* 原生细滚动条保留系统箭头并持续可见，未溢出时不预留轨道。 */}
       <div className="scrollbar-native min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        <div ref={containerRef} className="relative">
-          <div
-            ref={pillRef}
-            aria-hidden="true"
-            data-visible="false"
-            className="sidebar-hover-pill rounded-md bg-accent-foreground/5"
-          />
+        <div ref={slide.containerRef} className={slide.containerClassName}>
+          {slide.pill}
           {/* 新聊天：整行动作项 → 无项目发起，主体信息区出"选择项目" */}
           <button
             type="button"
-            data-sidebar-row
+            data-hover-slide
             onClick={() => startNew()}
             className="sidebar-row group relative flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground"
           >

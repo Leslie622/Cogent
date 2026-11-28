@@ -278,6 +278,7 @@ export function ContextIndicator({ session }: { session: HomeSession }) {
           <Button
             variant="ghost"
             size="xs"
+            data-hover-slide
             className="composer-context-trigger h-7 gap-1.5 px-2"
             aria-label={`上下文窗口用量：${pctLabel}%`}
           />

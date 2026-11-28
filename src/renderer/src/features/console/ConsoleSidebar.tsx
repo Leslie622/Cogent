@@ -6,8 +6,12 @@
 import { useConsoleStore } from '@/stores/console'
 import { LAYERS } from './kinds'
 import { Switch } from '@/components/ui/switch'
+import { cn } from 'cn'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 export function ConsoleSidebar() {
+  // 会话行之间的悬停滑动（当前会话行自带底色，不停上去）
+  const slide = useHoverSlide()
   const sessions = useConsoleStore((s) => s.sessions)
   const sessionId = useConsoleStore((s) => s.sessionId)
   const runningBySession = useConsoleStore((s) => s.runningBySession)
@@ -25,11 +29,13 @@ export function ConsoleSidebar() {
               暂无会话。去主窗口发一条消息，这里就会出现观测记录。
             </p>
           ) : (
-            <ul className="flex flex-col gap-0.5">
+            <ul ref={slide.containerRef} className={cn(slide.containerClassName, 'flex flex-col gap-0.5')}>
+              {slide.pill}
               {sessions.map((session) => (
                 <li key={session.id}>
                   <button
                     type="button"
+                    data-hover-slide
                     className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${
                       session.id === sessionId ? 'bg-foreground/5' : 'hover:bg-foreground/5'
                     }`}

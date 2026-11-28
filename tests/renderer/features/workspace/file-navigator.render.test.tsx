@@ -124,3 +124,20 @@ describe('文件导航视图', () => {
     expect(screen.getByRole('treeitem', { name: 'assets' })).toHaveAttribute('aria-expanded', 'true')
   })
 })
+
+describe('文件导航悬停滑动装配', () => {
+  it('树行都是行、胶囊挂在虚拟化容器上（焦点行 / 当前文件行自带底色，胶囊不停上去）', async () => {
+    const scopeId = 'render-file-tree-slide'
+    scopes.push(scopeId)
+    const request = vi.fn((method: string) => Promise.resolve(method === 'fileViews.openContext' ? context : method === 'fileViews.listDirectory' ? page : { ok: true }))
+    window.cogent = { fileViewsRequest: request, onEngineEvent: () => () => undefined } as unknown as typeof window.cogent
+    render(<FileNavigator scopeId={scopeId} projectId="project" onOpen={vi.fn()} />)
+    const tree = await screen.findByRole('tree', { name: '项目文件' })
+    expect(tree).toHaveClass('relative', 'isolate')
+    expect(tree.firstElementChild).toHaveClass('hover-slide-pill')
+    const items = [...tree.querySelectorAll<HTMLElement>('[role="treeitem"]')]
+    expect(items.length).toBeGreaterThan(0)
+    expect(items.every((el) => el.hasAttribute('data-hover-slide'))).toBe(true)
+    expect(items.every((el) => el.classList.contains('hover:bg-accent'))).toBe(true)
+  })
+})

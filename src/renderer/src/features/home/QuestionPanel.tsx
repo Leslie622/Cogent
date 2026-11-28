@@ -21,6 +21,7 @@ import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useChatStore, type PendingQuestion } from '@/stores/chat'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 /** 选项序号：右对齐等宽数字，选中/作答态变深（zcode 同款灰序号） */
 function IndexMark({ index, active }: { index: number; active?: boolean }) {
@@ -42,6 +43,8 @@ function PendingQuestionCard({ pending, autoFocus }: { pending: PendingQuestion;
   const [highlighted, setHighlighted] = useState(-1)
   // 面板出现即聚焦卡容器（PlanPanel 同规：替换了输入框，焦点不能漂移）
   const cardRef = useRef<HTMLDivElement | null>(null)
+  // 选项行与「其他」行之间的悬停滑动（同 ApprovalPanel；高亮态由 mouseEnter 落进 state）
+  const slide = useHoverSlide()
   const otherInputRef = useRef<HTMLInputElement | null>(null)
   useEffect(() => {
     if (autoFocus) cardRef.current?.focus()
@@ -161,7 +164,7 @@ function PendingQuestionCard({ pending, autoFocus }: { pending: PendingQuestion;
               type="button"
               aria-label="上一问"
               disabled={current === 0}
-              className="rounded-md p-1.5 transition-colors hover:bg-muted/75 disabled:text-muted-foreground/40 disabled:hover:bg-transparent"
+              className="rounded-md p-1.5 transition-colors duration-(--hover-transition-duration) hover:bg-muted/75 disabled:text-muted-foreground/40 disabled:hover:bg-transparent"
               onClick={() => setCurrent(current - 1)}
             >
               <IconChevronLeft className="size-4" aria-hidden="true" />
@@ -173,7 +176,7 @@ function PendingQuestionCard({ pending, autoFocus }: { pending: PendingQuestion;
               type="button"
               aria-label="下一问"
               disabled={isLast}
-              className="rounded-md p-1.5 transition-colors hover:bg-muted/75 disabled:text-muted-foreground/40 disabled:hover:bg-transparent"
+              className="rounded-md p-1.5 transition-colors duration-(--hover-transition-duration) hover:bg-muted/75 disabled:text-muted-foreground/40 disabled:hover:bg-transparent"
               onClick={() => setCurrent(current + 1)}
             >
               <IconChevronRight className="size-4" aria-hidden="true" />
@@ -181,15 +184,17 @@ function PendingQuestionCard({ pending, autoFocus }: { pending: PendingQuestion;
           </div>
         )}
       </div>
-      <div className="mt-2 flex flex-col gap-1">
+      <div ref={slide.containerRef} className={cn(slide.containerClassName, 'mt-2 flex flex-col gap-1')}>
+        {slide.pill}
         {question.options.map((option, i) => {
           const isSelected = selected.includes(option.label)
           return (
             <button
               key={option.label}
               type="button"
+              data-hover-slide
               className={cn(
-                'flex min-h-9 items-center gap-2 rounded-lg px-2.5 py-1 text-left text-sm transition-colors',
+                'flex min-h-9 items-center gap-2 rounded-lg px-2.5 py-1 text-left text-sm transition-colors duration-(--hover-transition-duration)',
                 isSelected ? 'bg-muted' : i === highlighted ? 'bg-muted/75' : 'hover:bg-muted/75'
               )}
               onClick={() => chooseOption(option.label)}
@@ -214,8 +219,9 @@ function PendingQuestionCard({ pending, autoFocus }: { pending: PendingQuestion;
             选项同列；输入非空时覆盖选项选择（提交时优先取非空输入）。
             输入框内 ↑↓ 交还列表（PlanPanel 附言条同款：焦点拉回卡体不丢） */}
         <div
+          data-hover-slide
           className={cn(
-            'flex min-h-9 items-center gap-2 rounded-lg px-2.5 py-1 transition-colors',
+            'flex min-h-9 items-center gap-2 rounded-lg px-2.5 py-1 transition-colors duration-(--hover-transition-duration)',
             otherRow === highlighted ? 'bg-muted/75' : 'hover:bg-muted/75'
           )}
           onMouseEnter={() => setHighlighted(otherRow)}

@@ -10,12 +10,15 @@ import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useChatStore, type PendingPlan } from '@/stores/chat'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFocus: boolean }) {
   const respondPlan = useChatStore((s) => s.respondPlan)
   const [selected, setSelected] = useState(0)
   const [note, setNote] = useState('')
   const cardRef = useRef<HTMLDivElement>(null)
+  // 选项行之间的悬停滑动（同 ApprovalPanel）
+  const slide = useHoverSlide()
 
   const options: Array<{ label: string; desc: string; run: () => void }> = [
     {
@@ -71,16 +74,18 @@ function PendingPlanCard({ pending, autoFocus }: { pending: PendingPlan; autoFoc
       <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-xl bg-muted/40 p-3 text-sm leading-relaxed text-foreground">
         {pending.plan}
       </pre>
-      <div className="mt-3 flex flex-col gap-1">
+      <div ref={slide.containerRef} className={cn(slide.containerClassName, 'mt-3 flex flex-col gap-1')}>
+        {slide.pill}
         {options.map((option, i) => (
           <button
             key={option.label}
             type="button"
+            data-hover-slide
             onClick={() => execute(i)}
             onMouseEnter={() => setSelected(i)}
             onMouseLeave={() => setSelected(-1)}
             className={cn(
-              'flex h-9 items-center gap-2 rounded-lg px-2.5 text-left text-sm text-foreground transition-colors',
+              'flex h-9 items-center gap-2 rounded-lg px-2.5 text-left text-sm text-foreground transition-colors duration-(--hover-transition-duration)',
               i === selected ? 'bg-muted' : 'hover:bg-muted/60'
             )}
           >

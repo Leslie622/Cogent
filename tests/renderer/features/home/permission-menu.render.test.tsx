@@ -8,8 +8,9 @@
  * switch-mode-dropdown.render.test.tsx 头注）。
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@/env.d'
+import { useAppearanceStore } from '@/stores/appearance'
 import { useChatStore } from '@/stores/chat'
 import { PermissionMenu } from '@/features/home/PermissionMenu'
 
@@ -93,5 +94,103 @@ describe('PermissionMenu 完全访问切换全链路', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /权限模式：变更前确认/ })).toBeInTheDocument()
     )
+  })
+})
+
+/** jsdom 没有 Tailwind 样式：菜单行被聚焦时的底色由桩给出（真实值由 Electron 探针验证）；
+ *  hook 读静息底色的克隆副本带 position:absolute 内联，仍走真实计算值。 */
+const realGetComputedStyle = window.getComputedStyle.bind(window)
+function stubMenuFocusBackground() {
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((el: Element) => {
+    const style = realGetComputedStyle(el)
+    const row = el as HTMLElement
+    if (!row.matches('[data-slot="dropdown-menu-item"]') || row.style.position === 'absolute') return style
+    const focus =
+      row.getAttribute('data-variant') === 'warning' ? 'oklab(0.666 0.053 0.146 / 0.1)' : 'oklch(0.97 0 0)'
+    return new Proxy(style, {
+      get: (target, key) => (key === 'backgroundColor' ? focus : (Reflect.get(target, key, target) as unknown)),
+    })
+  })
+}
+
+describe('PermissionMenu 高亮走全局滑动开关（DropdownMenu 读外观 hoverSlide）', () => {
+  afterEach(() => {
+    useAppearanceStore.setState({ hoverSlide: true })
+    vi.restoreAllMocks()
+  })
+
+  it('开启：行保留 focus:bg-* 原类并打 data-hover-slide；焦点落行时胶囊读走该行自己的底色（warning 档带色）', () => {
+    stubMenuFocusBackground()
+    mount('ask')
+    fireEvent.click(screen.getByRole('button', { name: /权限模式/ }))
+    const menu = screen.getByRole('menu')
+    const ask = screen.getByRole('menuitem', { name: /变更前确认/ })
+    const auto = screen.getByRole('menuitem', { name: /完全访问/ })
+
+    expect(menu.querySelectorAll('[data-hover-slide]')).toHaveLength(4)
+    // 原有高亮类一字不动：关掉开关后行按原样自画
+    expect(ask.className).toContain('focus:bg-accent')
+    expect(auto.className).toContain('data-[variant=warning]:focus:bg-warning/10')
+
+    const pill = menu.querySelector<HTMLElement>('.hover-slide-pill')
+    if (pill === null) throw new Error('菜单里缺少滑动胶囊')
+    expect(pill).toHaveAttribute('data-visible', 'false')
+
+    // jsdom 无布局：补行高后派发 focusin（同 Base UI 悬停 / 方向键移焦点）
+    Object.defineProperty(auto, 'offsetTop', { value: 96, configurable: true })
+    Object.defineProperty(auto, 'offsetLeft', { value: 4, configurable: true })
+    Object.defineProperty(auto, 'offsetWidth', { value: 248, configurable: true })
+    Object.defineProperty(auto, 'offsetHeight', { value: 36, configurable: true })
+    fireEvent.focusIn(auto)
+    expect(pill).toHaveAttribute('data-visible', 'true')
+    expect(pill.style.getPropertyValue('--pill-y')).toBe('96px')
+    expect(pill.style.getPropertyValue('--pill-h')).toBe('36px')
+    expect(pill.style.getPropertyValue('--pill-bg')).toBe('oklab(0.666 0.053 0.146 / 0.1)')
+    expect(auto).toHaveAttribute('data-pill-over', '')
+  })
+
+  it('开启：指针压到分割线（去向不是菜单行）时不清高亮，胶囊才滑得过分割线', () => {
+    stubMenuFocusBackground()
+    mount('ask')
+    fireEvent.click(screen.getByRole('button', { name: /权限模式/ }))
+    const menu = screen.getByRole('menu')
+    const plan = screen.getByRole('menuitem', { name: /计划模式/ })
+    const separator = menu.querySelector('[data-slot=dropdown-menu-separator]')
+    if (!(separator instanceof HTMLElement)) throw new Error('菜单里缺少分割线')
+
+    Object.defineProperty(plan, 'offsetTop', { value: 0, configurable: true })
+    Object.defineProperty(plan, 'offsetLeft', { value: 4, configurable: true })
+    Object.defineProperty(plan, 'offsetWidth', { value: 248, configurable: true })
+    Object.defineProperty(plan, 'offsetHeight', { value: 54, configurable: true })
+    plan.focus()
+    fireEvent.focusIn(plan)
+    const pill = menu.querySelector<HTMLElement>('.hover-slide-pill')
+    if (pill === null) throw new Error('菜单里缺少滑动胶囊')
+    expect(pill).toHaveAttribute('data-visible', 'true')
+    expect(plan).toHaveAttribute('data-pill-over', '')
+
+    // React 的 onPointerLeave 由 pointerout + relatedTarget 合成。Base UI 默认在这里
+    // 清空高亮并把焦点移回面板（resetOnPointerLeave），胶囊只能淡出；滑动开启时关掉了它
+    fireEvent.pointerOut(plan, { relatedTarget: separator })
+    expect(plan).toHaveFocus()
+    expect(pill).toHaveAttribute('data-visible', 'true')
+    expect(plan).toHaveAttribute('data-pill-over', '')
+  })
+
+  it('关闭：不渲染胶囊、行不打标记，指针压到分割线按 Base UI 默认清高亮', () => {
+    useAppearanceStore.setState({ hoverSlide: false })
+    stubMenuFocusBackground()
+    mount('ask')
+    fireEvent.click(screen.getByRole('button', { name: /权限模式/ }))
+    const menu = screen.getByRole('menu')
+    expect(menu.querySelector('.hover-slide-pill')).toBeNull()
+    expect(menu.querySelector('[data-hover-slide]')).toBeNull()
+
+    const plan = screen.getByRole('menuitem', { name: /计划模式/ })
+    const separator = menu.querySelector('[data-slot=dropdown-menu-separator]')
+    if (!(separator instanceof HTMLElement)) throw new Error('菜单里缺少分割线')
+    plan.focus()
+    fireEvent.pointerOut(plan, { relatedTarget: separator })
+    expect(plan).not.toHaveFocus()
   })
 })

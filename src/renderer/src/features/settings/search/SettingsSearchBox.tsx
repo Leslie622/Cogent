@@ -45,7 +45,7 @@ export function SettingsSearchBox({ className }: { className?: string }) {
             setQuery('')
             inputRef.current?.focus()
           }}
-          className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+          className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors duration-(--hover-transition-duration) hover:text-foreground"
         >
           <IconX className="size-3.5" aria-hidden="true" />
         </button>

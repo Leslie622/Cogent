@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useChatStore } from '@/stores/chat'
 import type { PendingApproval } from '@/stores/chat'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 import { SwitchModeDropdown } from './SwitchModeDropdown'
 
 /** 「允许，并切换为」的可选档（F6 定稿，zcode 同款）：只列两档放宽模式 ——
@@ -79,6 +80,9 @@ function PendingApprovalCard({
   const [switchMode, setSwitchMode] = useState<SwitchMode>('autonomous')
   const [note, setNote] = useState('')
   const cardRef = useRef<HTMLDivElement>(null)
+  // 选项行之间的悬停滑动（2026-11-28）：胶囊读行自己的底色；选中态由 mouseEnter 落进 state、
+  // 类名从 hover:bg-muted/60 换成 bg-muted，hook 监听类名变化重取色，胶囊与行自绘一致
+  const slide = useHoverSlide()
   /** 下拉开合标记：开着时行的 mouseLeave 不清高亮（弹层是 portal，移进弹层
       必经 mouseLeave——不清则 selected 丢成 -1，确认钮/Enter 静默无操作，
       2026-11-16 修复的根因）。selected 事件顺序：
@@ -179,18 +183,20 @@ function PendingApprovalCard({
       {/* 选项列表：竖排全宽条状，序号 + 主文案 + 说明灰字；选中态浅灰底
           （键盘 ↑↓/鼠标 hover 点亮，hover 走 CSS —— 移开即消，选中走 state）。
           「允许，并切换为」行内嵌档位下拉（zcode 形态） */}
-      <div className="mt-3 flex flex-col gap-1">
+      <div ref={slide.containerRef} className={cn(slide.containerClassName, 'mt-3 flex flex-col gap-1')}>
+        {slide.pill}
         {options.map((option, i) => (
           <button
             key={option.label}
             type="button"
+            data-hover-slide
             onClick={() => execute(i)}
             onMouseEnter={() => setSelected(i)}
             onMouseLeave={() => {
               if (!switcherOpenRef.current) clearSelection()
             }}
             className={cn(
-              'flex h-9 items-center gap-2 rounded-lg px-2.5 text-left text-sm text-foreground transition-colors',
+              'flex h-9 items-center gap-2 rounded-lg px-2.5 text-left text-sm text-foreground transition-colors duration-(--hover-transition-duration)',
               i === selected ? 'bg-muted' : 'hover:bg-muted/60'
             )}
           >

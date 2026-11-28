@@ -7,6 +7,7 @@ import { ArrowDownIcon, ArrowUpIcon, CornerDownLeftIcon } from 'lucide-react'
 import { IconDatabase, IconInfoCircle, IconPlug, IconTerminal2, IconWand } from '@tabler/icons-react'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 import type { ComposerSuggestionItem, TriggerKind } from './types'
 
 interface CommandSuggestionPanelProps {
@@ -32,6 +33,9 @@ export function CommandSuggestionPanel({
 }: CommandSuggestionPanelProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const activeRef = useRef<HTMLButtonElement | null>(null)
+  // 候选行之间的高亮滑动（2026-11-28）：行拿不到焦点，高亮是 aria-selected + 按 selectedIndex 换的
+  // bg-* 类（↑↓ 与鼠标都落 selectedIndex），走 highlight 驱动；由外观「开启滑动动画」全局控制
+  const slide = useHoverSlide({ mode: 'highlight' })
 
   const groups: Array<{ key: ComposerSuggestionItem['group']; label: string; entries: Array<{ item: ComposerSuggestionItem; index: number }> }> = [
     { key: 'command', label: '命令', entries: [] }, { key: 'skill', label: '技能', entries: [] },
@@ -101,6 +105,7 @@ export function CommandSuggestionPanel({
         type="button"
         role="option"
         aria-selected={active}
+        data-hover-slide
         data-suggestion-item={item.id}
         onMouseEnter={() => onSelectIndex(index)}
         onMouseDown={(event) => {
@@ -109,7 +114,7 @@ export function CommandSuggestionPanel({
           onPick(item)
         }}
         className={cn(
-          'group flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors duration-100',
+          'group flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors duration-(--hover-transition-duration)',
           active
             ? 'bg-foreground/[0.075] text-foreground dark:bg-white/[0.10]'
             : 'text-foreground/90 hover:bg-foreground/[0.045] dark:hover:bg-white/[0.06]'
@@ -187,7 +192,8 @@ export function CommandSuggestionPanel({
                 : triggerKind === '@' ? '没有匹配的 MCP 资源' : '没有匹配的命令、技能或 MCP 提示词')}
           </div>
         ) : (
-          <div className={cn('flex flex-col', !showGroupHeaders && 'pt-1.5')}>
+          <div ref={slide.containerRef} className={cn(slide.containerClassName, 'flex flex-col', !showGroupHeaders && 'pt-1.5')}>
+            {slide.pill}
             {visibleGroups.map((group, index) => (
               <Fragment key={group.key}>
                 {showGroupHeaders && renderGroupHeader(group.label, index > 0)}

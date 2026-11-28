@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useUiStore, type AppView } from '@/stores/ui'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 /** 上区路由项：图标成对（描边 = 普通态，实心 = active 态） */
 const ITEMS: ReadonlyArray<{
@@ -58,10 +59,14 @@ const railButton = (active: boolean) =>
 export function AppSidebar() {
   const view = useUiStore((s) => s.view)
   const setView = useUiStore((s) => s.setView)
+  /* 上区路由钮之间加悬停滑动（2026-11-28 试装）：只加滑动不改高亮 —— 胶囊颜色读各钮自己的
+     hover 底色，active 钮读到的是 --chrome-active。下方设置钮是独钮，无行可滑，不装 */
+  const slide = useHoverSlide()
 
   return (
     <aside className="flex w-[50px] shrink-0 flex-col items-center pt-2 pb-3">
-      <nav className="flex flex-col items-center gap-1.5">
+      <nav ref={slide.containerRef} className={cn(slide.containerClassName, 'flex flex-col items-center gap-1.5')}>
+        {slide.pill}
         {ITEMS.map(({ view: itemView, label, icon: Icon, iconActive: IconFilled }) => {
           const active = view === itemView
           return (
@@ -70,6 +75,7 @@ export function AppSidebar() {
                 variant="ghost"
                 size="icon-lg"
                 className={railButton(active)}
+                data-hover-slide
                 aria-label={label}
                 aria-current={active ? 'page' : undefined}
                 onClick={() => setView(itemView)}

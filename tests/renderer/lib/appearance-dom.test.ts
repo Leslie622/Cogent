@@ -198,6 +198,26 @@ it.each([
   expect(document.documentElement.style.getPropertyValue('--chrome-surface')).not.toBe(before)
 })
 
+it('悬停过渡时长投影到 CSS 变量：关为 0ms；重读缺省默认开、时长按 50ms 刻度归整', async () => {
+  unbind = bindAppearanceDom()
+  const root = document.documentElement
+  expect(root.style.getPropertyValue('--hover-transition-duration')).toBe('150ms')
+
+  useAppearanceStore.getState().setHoverTransitionMs(300)
+  expect(root.style.getPropertyValue('--hover-transition-duration')).toBe('300ms')
+  useAppearanceStore.getState().setHoverTransition(false)
+  expect(root.style.getPropertyValue('--hover-transition-duration')).toBe('0ms')
+
+  localStorage.setItem('cogent-appearance', JSON.stringify({ state: { hoverTransitionMs: 123, hoverSlide: false }, version: 0 }))
+  await useAppearanceStore.persist.rehydrate()
+  expect(useAppearanceStore.getState()).toMatchObject({
+    hoverSlide: false,
+    hoverTransition: true,
+    hoverTransitionMs: 100,
+  })
+  expect(root.style.getPropertyValue('--hover-transition-duration')).toBe('100ms')
+})
+
 it('深色模式即使支持系统材质也不启用外壳透明，切回浅色后恢复', () => {
   vi.stubGlobal('cogent', { backdropSupported: true })
   useAppearanceStore.setState({ colorMode: 'dark', shellOpacity: 50 })

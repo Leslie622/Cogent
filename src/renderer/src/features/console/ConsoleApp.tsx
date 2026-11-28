@@ -16,6 +16,8 @@ import { bindConsoleEvents, useConsoleStore } from '@/stores/console'
 import { ConsoleSidebar } from './ConsoleSidebar'
 import { ConsoleTimeline } from './ConsoleTimeline'
 import { ConsoleDetail } from './ConsoleDetail'
+import { cn } from 'cn'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties
 /** chrome 面上 ghost hover 覆盖（同主窗口 AppHeader 配方） */
@@ -23,6 +25,8 @@ const CHROME_HOVER = 'hover:bg-foreground/5 hover:text-foreground'
 
 export function ConsoleApp() {
   const [maximized, setMaximized] = useState(false)
+  // 窗口控制三钮的悬停滑动（同主窗口 AppHeader 右组）；由外观「开启滑动动画」全局控制
+  const controlsSlide = useHoverSlide()
 
   // 事件订阅先行（避免 load 期间漏条目），再拉初始数据
   useEffect(() => {
@@ -60,10 +64,12 @@ export function ConsoleApp() {
             <span className="text-xs text-muted-foreground">· {active.title}</span>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-0.5 pr-2" style={NO_DRAG}>
+        <div ref={controlsSlide.containerRef} className={cn(controlsSlide.containerClassName, 'ml-auto flex items-center gap-0.5 pr-2')} style={NO_DRAG}>
+          {controlsSlide.pill}
           <Button
             variant="ghost"
             size="icon-sm"
+            data-hover-slide
             className={CHROME_HOVER}
             aria-label="最小化"
             onClick={() => void window.cogent.minimizeWindow()}
@@ -73,6 +79,7 @@ export function ConsoleApp() {
           <Button
             variant="ghost"
             size="icon-sm"
+            data-hover-slide
             className={CHROME_HOVER}
             aria-label={maximized ? '还原' : '最大化'}
             onClick={() => void window.cogent.toggleMaximizeWindow()}
@@ -82,6 +89,7 @@ export function ConsoleApp() {
           <Button
             variant="ghost"
             size="icon-sm"
+            data-hover-slide
             className="hover:bg-destructive hover:text-white"
             aria-label="关闭"
             onClick={() => void window.cogent.closeWindow()}

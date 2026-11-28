@@ -36,6 +36,12 @@ import {
   SHELL_OPACITY_MIN,
 } from '@/lib/interface-skins'
 import {
+  DEFAULT_HOVER_TRANSITION_MS,
+  HOVER_TRANSITION_MS_MAX,
+  HOVER_TRANSITION_MS_MIN,
+  HOVER_TRANSITION_MS_STEP,
+} from '@/lib/hover-motion'
+import {
   DEFAULT_POPOVER_GLASS_BLUR,
   DEFAULT_POPOVER_GLASS_OPACITY,
   DEFAULT_POPOVER_GLASS_SATURATE,
@@ -197,6 +203,12 @@ export function AppearanceSection() {
   const setPopoverGlassBlur = useAppearanceStore((s) => s.setPopoverGlassBlur)
   const popoverGlassSaturate = useAppearanceStore((s) => s.popoverGlassSaturate)
   const setPopoverGlassSaturate = useAppearanceStore((s) => s.setPopoverGlassSaturate)
+  const hoverSlide = useAppearanceStore((s) => s.hoverSlide)
+  const setHoverSlide = useAppearanceStore((s) => s.setHoverSlide)
+  const hoverTransition = useAppearanceStore((s) => s.hoverTransition)
+  const setHoverTransition = useAppearanceStore((s) => s.setHoverTransition)
+  const hoverTransitionMs = useAppearanceStore((s) => s.hoverTransitionMs)
+  const setHoverTransitionMs = useAppearanceStore((s) => s.setHoverTransitionMs)
   const backdropSupported = 'cogent' in window && Boolean(window.cogent.backdropSupported)
   const uiFontSize = useAppearanceStore((s) => s.uiFontSize)
   const setUiFontSize = useAppearanceStore((s) => s.setUiFontSize)
@@ -331,6 +343,34 @@ export function AppearanceSection() {
           disabled={!popoverGlass}
           resetLabel="恢复默认浮层饱和度"
           onChange={setPopoverGlassSaturate}
+        />
+        <SettingsRow
+          searchId="appearance.hover-slide"
+          title={SETTING_COPY['appearance.hover-slide'].title}
+          desc={SETTING_COPY['appearance.hover-slide'].desc}
+        >
+          <Switch checked={hoverSlide} onCheckedChange={setHoverSlide} aria-label="开启滑动动画" />
+        </SettingsRow>
+        <SettingsRow
+          searchId="appearance.hover-transition"
+          title={SETTING_COPY['appearance.hover-transition'].title}
+          desc={SETTING_COPY['appearance.hover-transition'].desc}
+        >
+          <Switch checked={hoverTransition} onCheckedChange={setHoverTransition} aria-label="开启过渡效果" />
+        </SettingsRow>
+        <SliderRow
+          searchId="appearance.hover-transition-duration"
+          title={SETTING_COPY['appearance.hover-transition-duration'].title}
+          desc={`${SETTING_COPY['appearance.hover-transition-duration'].desc}（默认 ${DEFAULT_HOVER_TRANSITION_MS}ms）`}
+          value={hoverTransitionMs}
+          display={`${hoverTransitionMs}ms`}
+          min={HOVER_TRANSITION_MS_MIN}
+          max={HOVER_TRANSITION_MS_MAX}
+          step={HOVER_TRANSITION_MS_STEP}
+          defaultValue={DEFAULT_HOVER_TRANSITION_MS}
+          disabled={!hoverTransition}
+          resetLabel="恢复默认过渡时长"
+          onChange={setHoverTransitionMs}
         />
         <SettingsRow
           searchId="appearance.ui-font-size"

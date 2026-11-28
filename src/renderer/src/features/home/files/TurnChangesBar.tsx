@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Hint } from '@/components/Hint'
 import { useChatStore } from '@/stores/chat'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { FileLinkContext } from './FileLink'
 
@@ -21,6 +22,9 @@ export function TurnChangesBar() {
     scope?.turnId === undefined ? undefined : state.bySession[scope.sessionId]?.changeErrors[scope.turnId]
   )
   const [open, setOpen] = useState(false)
+  // 展开体内文件行之间的悬停滑动（2026-11-28）：胶囊读行自己的 hover:bg-muted/60，
+  // 行内的「打开原文件」钮与提示不是行；由外观「开启滑动动画」全局控制
+  const slide = useHoverSlide()
 
   if (doc === undefined) {
     return error !== undefined ? <p role="alert" className="text-xs text-destructive">改动追踪失败：{error}</p> : null
@@ -58,7 +62,7 @@ export function TurnChangesBar() {
         onOpenChange={setOpen}
         className="overflow-hidden rounded-lg bg-card text-card-foreground ring-1 ring-foreground/10"
       >
-        <CollapsibleTrigger className="group/changes-trigger flex min-h-10 w-full min-w-0 cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs transition-colors outline-none select-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring">
+        <CollapsibleTrigger className="group/changes-trigger flex min-h-10 w-full min-w-0 cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs transition-colors duration-(--hover-transition-duration) outline-none select-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring">
           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 group-aria-expanded/changes-trigger:rotate-90" />
           <FileDiff className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-medium">
@@ -82,7 +86,8 @@ export function TurnChangesBar() {
           className="grid min-w-0 grid-rows-[minmax(0,0fr)] transition-[grid-template-rows] duration-200 ease-out data-open:grid-rows-[minmax(0,1fr)] data-starting-style:starting:grid-rows-[minmax(0,0fr)] data-ending-style:grid-rows-[minmax(0,0fr)] motion-reduce:transition-none"
         >
           <div className="min-h-0 min-w-0 overflow-hidden">
-            <div className="flex flex-col gap-0.5 border-t px-1.5 py-1.5">
+            <div ref={slide.containerRef} className={slide.containerClassName + ' flex flex-col gap-0.5 border-t px-1.5 py-1.5'}>
+              {slide.pill}
               {doc.warnings.map((warning, index) => (
                 <p key={index} role="status" className="px-1.5 py-0.5 text-xs text-muted-foreground">
                   {warning}
@@ -92,6 +97,7 @@ export function TurnChangesBar() {
                 <div
                   key={item.changeId}
                   data-change-item={item.changeId}
+                  data-hover-slide
                   className="group flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-muted/60"
                 >
                   <button

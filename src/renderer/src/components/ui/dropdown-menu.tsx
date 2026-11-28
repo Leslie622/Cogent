@@ -3,6 +3,7 @@ import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { ChevronRightIcon, CheckIcon } from "lucide-react"
+import { MENU_SLIDE_ROOT_PROPS, MenuSlideRows, useMenuSlideEnabled } from '@/components/ui/menu-slide'
 
 /**
  * 菜单尺寸档（2026-11-16 加 lg）：Content 下发 SizeContext，行/标签/分割线按
@@ -11,11 +12,23 @@ import { ChevronRightIcon, CheckIcon } from "lucide-react"
  * 不生成，产物缺失且 touch/清缓存均不恢复；字面条件类是百分百可靠的形态）。
  * size 不传 = 继承外层（React Context 沿 React 树传播、portal 不断 ——
  * SubContent 渲染走本组件且默认不传，子菜单面板自动跟随主面板放大）。
+ *
+ * 滑动胶囊（2026-11-28）：行高亮是否由单层滑动胶囊接管，由外观偏好「开启滑动动画」全局
+ * 决定（menu-slide.tsx），不逐菜单设。开 = Content 内包行容器 + 胶囊，行只加 data-hover-slide、
+ * 原有 focus:bg-* / warning / destructive 类一字不动（胶囊读行自己的底色与圆角）；关 = 不渲染
+ *  任何额外节点，与未接入时一致。
  */
 const MenuSizeContext = React.createContext<"default" | "lg">("default")
+/** 「开启滑动动画」是否生效；Content 与各行按它决定包不包胶囊、打不打行标记 */
+const MenuSlideContext = React.createContext(false)
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
-  return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+  const slide = useMenuSlideEnabled()
+  return (
+    <MenuSlideContext.Provider value={slide}>
+      <MenuPrimitive.Root data-slot="dropdown-menu" {...props} {...(slide ? MENU_SLIDE_ROOT_PROPS : {})} />
+    </MenuSlideContext.Provider>
+  )
 }
 
 function DropdownMenuPortal({ ...props }: MenuPrimitive.Portal.Props) {
@@ -33,6 +46,7 @@ function DropdownMenuContent({
   sideOffset = 4,
   size,
   className,
+  children,
   ...props
 }: MenuPrimitive.Popup.Props &
   Pick<
@@ -42,6 +56,7 @@ function DropdownMenuContent({
   VariantProps<typeof dropdownMenuContentVariants>) {
   const inherited = React.useContext(MenuSizeContext)
   const resolved = size ?? inherited
+  const slide = React.useContext(MenuSlideContext)
   return (
     <MenuSizeContext.Provider value={resolved}>
       <MenuPrimitive.Portal>
@@ -56,7 +71,9 @@ function DropdownMenuContent({
             data-slot="dropdown-menu-content"
             className={cn(dropdownMenuContentVariants({ size: resolved }), className)}
             {...props}
-          />
+          >
+            {slide ? <MenuSlideRows>{children}</MenuSlideRows> : children}
+          </MenuPrimitive.Popup>
         </MenuPrimitive.Positioner>
       </MenuPrimitive.Portal>
     </MenuSizeContext.Provider>
@@ -116,11 +133,13 @@ function DropdownMenuItem({
   variant?: "default" | "destructive" | "warning"
 }) {
   const size = React.useContext(MenuSizeContext)
+  const slide = React.useContext(MenuSlideContext)
   return (
     <MenuPrimitive.Item
       data-slot="dropdown-menu-item"
       data-inset={inset}
       data-variant={variant}
+      data-hover-slide={slide ? "" : undefined}
       className={cn(
         // warning 变体（2026-11-11 加，照 destructive 同款模式）：focus 高亮态的
         // `**:text-accent-foreground` 会把所有后代强制染黑，子元素自定义色打不过
@@ -148,10 +167,12 @@ function DropdownMenuSubTrigger({
   inset?: boolean
 }) {
   const size = React.useContext(MenuSizeContext)
+  const slide = React.useContext(MenuSlideContext)
   return (
     <MenuPrimitive.SubmenuTrigger
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
+      data-hover-slide={slide ? "" : undefined}
       className={cn(
         "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-popup-open:bg-accent data-popup-open:text-accent-foreground data-open:bg-accent data-open:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         size === "lg" && "gap-2 rounded-lg px-2 py-1.5",
@@ -195,10 +216,12 @@ function DropdownMenuCheckboxItem({
 }: MenuPrimitive.CheckboxItem.Props & {
   inset?: boolean
 }) {
+  const slide = React.useContext(MenuSlideContext)
   return (
     <MenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
       data-inset={inset}
+      data-hover-slide={slide ? "" : undefined}
       className={cn(
         "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
@@ -236,10 +259,12 @@ function DropdownMenuRadioItem({
 }: MenuPrimitive.RadioItem.Props & {
   inset?: boolean
 }) {
+  const slide = React.useContext(MenuSlideContext)
   return (
     <MenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
       data-inset={inset}
+      data-hover-slide={slide ? "" : undefined}
       className={cn(
         "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className

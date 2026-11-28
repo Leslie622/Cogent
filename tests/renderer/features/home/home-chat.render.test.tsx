@@ -620,3 +620,42 @@ describe('HomeChat /new 命令视图切换', () => {
     expect(el.textContent).toBe('')
   })
 })
+
+describe('HomeChat 悬停滑动装配（输入区工具行 / 截断动作条）', () => {
+  const setRuntime = (runtime: Partial<ReturnType<typeof emptyBucket>['runtime']>) => {
+    useChatStore.setState((state) => {
+      const bucket = state.bySession[SID] ?? emptyBucket()
+      return { bySession: { ...state.bySession, [SID]: { ...bucket, runtime: { ...bucket.runtime, ...runtime } } } }
+    })
+  }
+
+  it('工具行左右两簇各一组：左簇胶囊挂在插件条上、附件钮是行；右簇挂在 composer-actions 上、发送钮是行', () => {
+    setRuntime({ running: false })
+    const { container } = render(<HomeChat tabsCollapsed={false} onToggleTabs={() => {}} />)
+    // 权限钮 / 计划 chip / 上下文 / 模型在本文件被替身掉，各簇只剩一个真实行；结构接线照常可验
+    const toolbar = container.querySelector<HTMLElement>('[data-slot="input-group-addon"][data-align="block-end"]')!
+    expect(toolbar).toHaveClass('relative', 'isolate')
+    expect(toolbar.firstElementChild).toHaveClass('hover-slide-pill')
+    // 右簇嵌在插件条里：发送钮带 data-hover-slide 但归右簇容器（最近的 data-hover-slide-container）
+    const ownRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('[data-hover-slide]')].filter((row) => row.closest('[data-hover-slide-container]') === el)
+    expect(ownRows(toolbar)).toHaveLength(1)
+    expect(screen.getByRole('button', { name: '添加附件' })).toHaveAttribute('data-hover-slide')
+    const actions = container.querySelector<HTMLElement>('.composer-actions')!
+    expect(actions).toHaveClass('relative', 'isolate')
+    expect(actions.firstElementChild).toHaveClass('hover-slide-pill')
+    const send = ownRows(actions)
+    expect(send).toHaveLength(1)
+    expect(send[0]).toHaveAccessibleName(/发送/)
+    expect(send[0]).toHaveClass('bg-foreground/85', 'hover:bg-foreground')
+  })
+
+  it('截断动作条：继续生成 / 立即压缩两钮一组，说明文字不是行', () => {
+    setRuntime({ running: false, truncated: true })
+    render(<HomeChat tabsCollapsed={false} onToggleTabs={() => {}} />)
+    const group = screen.getByRole('button', { name: '继续生成' }).parentElement!
+    expect(group).toHaveClass('relative', 'isolate')
+    expect(group.firstElementChild).toHaveClass('hover-slide-pill')
+    expect(group.querySelectorAll('[data-hover-slide]')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: '立即压缩' })).toHaveClass('hover:bg-warning/10', 'hover:text-warning')
+  })
+})

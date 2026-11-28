@@ -7,7 +7,7 @@ export function AttachmentMenu({ disabled, onAdd, onError }: {
   disabled: boolean; onAdd: (paths: string[]) => void; onError: (error: unknown) => void
 }) {
   return <DropdownMenu>
-    <DropdownMenuTrigger render={<InputGroupButton size="icon-sm" disabled={disabled} aria-label="添加附件" />}><IconPlus /></DropdownMenuTrigger>
+    <DropdownMenuTrigger render={<InputGroupButton size="icon-sm" disabled={disabled} data-hover-slide aria-label="添加附件" />}><IconPlus /></DropdownMenuTrigger>
     {/* w-auto 覆写原语 w-(--anchor-width)（锚点是 icon-sm 小圆钮，不覆写
         面板被压到按钮宽，「添加图片或文件」会折行）；min-w-max 保证面板永不窄于内容 */}
     <DropdownMenuContent align="start" side="top" className="w-auto min-w-max">

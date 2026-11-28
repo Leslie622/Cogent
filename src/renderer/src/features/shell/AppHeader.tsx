@@ -22,9 +22,11 @@ import {
   IconSquare,
   IconX,
 } from '@tabler/icons-react'
+import { cn } from 'cn'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties
 /** 玻璃外壳面上的 ghost hover 覆盖：用半透明柔白光替代黑灰叠层，在彩色磨砂底上更通透。 */
@@ -43,6 +45,10 @@ export function AppHeader({
   onToggleSidebar: () => void
 }) {
   const [maximized, setMaximized] = useState(false)
+  /* 两组按钮各自加悬停滑动（2026-11-28 试装）：左组 = 折叠钮 + 四个文字菜单（窄屏时是
+     应用菜单钮），右组 = 窗口控制三钮。只加滑动不改高亮 —— 关闭钮的红色 hover 由胶囊原样读出 */
+  const leftSlide = useHoverSlide()
+  const rightSlide = useHoverSlide()
 
   // 最大化状态由 main 推送（maximize/unmaximize 都会触发）
   useEffect(() => window.cogent.onWindowState(setMaximized), [])
@@ -54,12 +60,14 @@ export function AppHeader({
       className="app-header flex h-10 shrink-0 items-center pr-2 text-muted-foreground"
       style={{ WebkitAppRegion: 'drag' } as CSSProperties}
     >
-      <div className="flex items-center gap-2 pl-2" style={NO_DRAG}>
+      <div ref={leftSlide.containerRef} className={cn(leftSlide.containerClassName, 'flex items-center gap-2 pl-2')} style={NO_DRAG}>
+        {leftSlide.pill}
         <Hint tip={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'} side="bottom">
           <Button
             variant="ghost"
             size="icon-sm"
             className={CHROME_HOVER}
+            data-hover-slide
             aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
             onClick={onToggleSidebar}
             disabled={sidebarToggleDisabled}
@@ -78,6 +86,7 @@ export function AppHeader({
               variant="ghost"
               size="header"
               className={CHROME_HOVER}
+              data-hover-slide
             >
               {label}
             </Button>
@@ -85,7 +94,9 @@ export function AppHeader({
         </nav>
         <div className="app-header-compact">
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="应用菜单" className={CHROME_HOVER} />}>
+            <DropdownMenuTrigger
+              render={<Button variant="ghost" size="icon-sm" aria-label="应用菜单" className={CHROME_HOVER} data-hover-slide />}
+            >
               <IconMenu2 />
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-auto min-w-40" align="start">
@@ -96,12 +107,14 @@ export function AppHeader({
       </div>
 
       {/* 窗口控制三钮：gap-1.5（2026-11-16 用户定调两轮拉开：0.5→1→1.5）+ Hint */}
-      <div className="ml-auto flex items-center gap-1.5" style={NO_DRAG}>
+      <div ref={rightSlide.containerRef} className={cn(rightSlide.containerClassName, 'ml-auto flex items-center gap-1.5')} style={NO_DRAG}>
+        {rightSlide.pill}
         <Hint tip="最小化" side="bottom">
           <Button
             variant="ghost"
             size="icon-sm"
             className={CHROME_HOVER}
+            data-hover-slide
             aria-label="最小化"
             onClick={() => void window.cogent.minimizeWindow()}
           >
@@ -113,6 +126,7 @@ export function AppHeader({
             variant="ghost"
             size="icon-sm"
             className={CHROME_HOVER}
+            data-hover-slide
             aria-label={maximized ? '还原' : '最大化'}
             onClick={() => void window.cogent.toggleMaximizeWindow()}
           >
@@ -125,6 +139,7 @@ export function AppHeader({
             variant="ghost"
             size="icon-sm"
             className="hover:bg-destructive hover:text-white"
+            data-hover-slide
             aria-label="关闭"
             onClick={() => void window.cogent.closeWindow()}
           >

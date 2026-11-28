@@ -60,6 +60,8 @@ import {
   type ArchiveSort,
 } from './archive-view'
 import type { SessionSummary } from '@/env.d'
+import { cn } from 'cn'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 /** 排序档（label 即 Select 显示文案；组内行序与行内时间共用档位） */
 const SORTS = [
@@ -77,6 +79,8 @@ export function ArchivedChatsSection() {
   const [project, setProject] = useState<string>('all')
   const [sort, setSort] = useState<ArchiveSort>('updated')
   const [confirming, setConfirming] = useState<DeleteConfirm | null>(null)
+  // 各分组卡组头之间的悬停滑动（展开的组头自带底色，不停上去）
+  const groupsSlide = useHoverSlide()
   const [deleting, setDeleting] = useState(false)
   const sessions = useChatStore((s) => s.sessions)
   const projects = useProjectStore((s) => s.projects)
@@ -218,7 +222,8 @@ export function ArchivedChatsSection() {
           <div className="text-xs text-muted-foreground">调整搜索词或筛选条件再试。</div>
         </div>
       ) : (
-        <div className="mt-8 flex flex-col gap-5">
+        <div ref={groupsSlide.containerRef} className={cn(groupsSlide.containerClassName, 'mt-8 flex flex-col gap-5')}>
+          {groupsSlide.pill}
           {groups.map((group) => (
             <ArchiveGroupCard
               key={group.key}
@@ -296,6 +301,7 @@ function ArchiveGroupCard({
           render={
             <button
               type="button"
+              data-hover-slide
               aria-label={`${group.label} 的归档聊天`}
               className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-medium outline-none hover:bg-muted ${open ? 'bg-muted' : ''}`}
             />
