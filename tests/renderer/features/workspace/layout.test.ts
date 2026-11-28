@@ -16,13 +16,13 @@ describe('工作区手动分栏', () => {
     expect(workspaceWidth(700, false, true, 480)).toBe(700)
     expect(workspaceWidth(700, true, true, 480)).toBe(0)
   })
-  it('可以连续拖窄到160px，越过门槛才折叠', () => {
+  it('可以连续拖窄到200px，越过门槛才折叠', () => {
+    expect(resizeWorkspace(1100, 240)).toEqual({ width: 240 })
     expect(resizeWorkspace(1100, 200)).toEqual({ width: 200 })
-    expect(resizeWorkspace(1100, 160)).toEqual({ width: 160 })
-    expect(resizeWorkspace(1100, 159)).toEqual({ collapsed: true })
+    expect(resizeWorkspace(1100, 199)).toEqual({ collapsed: true })
   })
   it('很小视口的临时裁剪不写入不可恢复的宽度', () => {
-    expect(resizeWorkspace(210, 300)).toEqual({ width: 160 })
+    expect(resizeWorkspace(250, 300)).toEqual({ width: 200 })
     expect(workspaceWidth(1100, false, false, 480)).toBe(480)
   })
 })

@@ -182,7 +182,9 @@ export function WorkspaceSurface({ contentWidth, visible }: { contentWidth: numb
   const show = visible && (isOpen || present)
   const activeTab = scope.tabs.find(tab => tab.id === scope.activeId)
   return <aside ref={root} aria-label="多标签工作区" aria-hidden={!isOpen} data-workspace data-home-tabs data-workspace-mode={scope.expanded ? 'expanded' : 'split'} inert={!isOpen} className="absolute inset-y-0 right-0 z-20 min-h-0 border-l border-border bg-background transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width, visibility: show ? 'visible' : 'hidden', pointerEvents: isOpen ? 'auto' : 'none' }} onTransitionEnd={event => { if (event.target === root.current && event.propertyName === 'width') setAnimating(false) }}>
-    {isOpen && !scope.expanded && <SidebarResizeHandle key={scopeId} side="right" label="调整工作区宽度" className="absolute inset-y-0 -left-px z-30" min={WORKSPACE_COLLAPSE_WIDTH} max={Math.max(WORKSPACE_COLLAPSE_WIDTH, contentWidth - 160)} collapseThreshold={WORKSPACE_COLLAPSE_WIDTH}
+    {/* 折叠阈值 100 = 下限之半（组件默认档）：拖到 200px 后先钉住（阻力区），再内拖 100px 才折，
+        与会话侧栏、文件树、模型设置栏同一手感；此前阈值 = 下限，拖到下限瞬折没有阻力 */}
+    {isOpen && !scope.expanded && <SidebarResizeHandle key={scopeId} side="right" label="调整工作区宽度" className="absolute inset-y-0 -left-px z-30" min={WORKSPACE_COLLAPSE_WIDTH} max={Math.max(WORKSPACE_COLLAPSE_WIDTH, contentWidth - 160)} collapseThreshold={WORKSPACE_COLLAPSE_WIDTH / 2}
       readWidth={() => root.current!.getBoundingClientRect().width}
       writeWidth={px => {
         if (px === 0) {
