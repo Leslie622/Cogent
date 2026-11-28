@@ -30,14 +30,14 @@ function nextFrame() {
   return new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
 }
 
-function stage(startWidth: number) {
+function stage(startWidth: number, max: number | (() => number) = MAX) {
   const writeWidth = vi.fn()
   const onCommit = vi.fn()
   render(
     <SidebarResizeHandle
       side="right"
       min={MIN}
-      max={MAX}
+      max={max}
       collapseThreshold={THRESHOLD}
       readWidth={() => startWidth}
       writeWidth={writeWidth}
@@ -86,6 +86,21 @@ describe('SidebarResizeHandle 阻力区与折叠阈值', () => {
     expect(writeWidth).toHaveBeenLastCalledWith(270)
     fireEvent.pointerUp(window, { pointerId: 1, clientX: 580 })
     expect(onCommit).toHaveBeenCalledWith(270)
+  })
+
+  it('容器变化后，拖拽与键盘均现读宽度上限', async () => {
+    let max = 400
+    const { handle, writeWidth, onCommit } = stage(350, () => max)
+    max = 360
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+    expect(writeWidth).toHaveBeenLastCalledWith(360)
+    max = 500
+    drag(handle, 6, 500, 250)
+    await nextFrame()
+    expect(writeWidth).toHaveBeenLastCalledWith(500)
+    max = 450
+    fireEvent.pointerUp(window, { pointerId: 6, clientX: 250 })
+    expect(onCommit).toHaveBeenLastCalledWith(450)
   })
 
   it('拖过下限钉在下限（阻力区），松手提交下限而非折叠', async () => {

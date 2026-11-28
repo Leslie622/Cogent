@@ -53,21 +53,22 @@ export function fileBreadcrumbs(projectName: string | undefined, roots: FileView
 export function FileWorkspacePane({ tabs, scopeId, projectId, sessionId, grantIds, active, activeTabId, onContextChange }: FileWorkspacePaneProps) {
   const [treeOpen, setTreeOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(FILE_SIDEBAR_DEFAULT_WIDTH)
-  const [bodyWidth, setBodyWidth] = useState(0)
+  const [maxSidebarWidth, setMaxSidebarWidth] = useState(FILE_SIDEBAR_MAX_WIDTH)
   const bodyRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const breadcrumbRef = useRef<HTMLElement>(null)
   useEffect(() => {
     const node = bodyRef.current
     if (node === null || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => setBodyWidth(node.clientWidth))
-    setBodyWidth(node.clientWidth)
+    // 只存影响文件树的上限：宽屏开合侧栏时上限不变，查看器无需逐帧重渲染。
+    const measure = () => setMaxSidebarWidth(node.clientWidth > 0
+      ? Math.max(FILE_SIDEBAR_MIN_WIDTH, Math.min(FILE_SIDEBAR_MAX_WIDTH, node.clientWidth - FILE_PREVIEW_MIN_WIDTH))
+      : FILE_SIDEBAR_MAX_WIDTH)
+    const observer = new ResizeObserver(measure)
+    measure()
     observer.observe(node)
     return () => observer.disconnect()
   }, [])
-  const maxSidebarWidth = bodyWidth > 0
-    ? Math.max(FILE_SIDEBAR_MIN_WIDTH, Math.min(FILE_SIDEBAR_MAX_WIDTH, bodyWidth - FILE_PREVIEW_MIN_WIDTH))
-    : FILE_SIDEBAR_MAX_WIDTH
   const effectiveSidebarWidth = Math.min(sidebarWidth, maxSidebarWidth)
   const hasScopeFiles = tabs.some(tab => tab.scopeId === scopeId)
   const project = useProjectStore(state => state.projects.find(project => project.id === projectId))
