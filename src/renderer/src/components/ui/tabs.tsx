@@ -85,7 +85,7 @@ function TabsTrigger({ className, variant = "default", ...props }: TabsPrimitive
 
 /** 关闭钮与 Tab 同级，避免按钮嵌套；整项共同显示激活底色。 */
 function TabsItem({ className, ...props }: ComponentProps<"div">) {
-  return <div data-slot="tabs-item" className={cn("group flex h-8 w-44 shrink-0 items-center rounded-lg text-muted-foreground transition-colors duration-(--hover-transition-duration) hover:bg-muted/60 has-data-active:bg-muted has-data-active:text-foreground", className)} {...props} />
+  return <div data-slot="tabs-item" className={cn("group flex h-8 w-44 shrink-0 items-center rounded-lg text-muted-foreground transition-colors duration-(--hover-transition-duration) hover:bg-(--chrome-hover) has-data-active:bg-(--chrome-active) has-data-active:shadow-(--chrome-active-shadow) has-data-active:text-foreground", className)} {...props} />
 }
 
 function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {

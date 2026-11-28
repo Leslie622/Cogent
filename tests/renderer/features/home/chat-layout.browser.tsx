@@ -246,7 +246,8 @@ function App() {
     </div>
     <pre id="layout-report" style={{ height: 180, overflow: 'auto' }}>{report}</pre>
     <div ref={root} style={{ width: 1100, height: 530 }}>
-      <HomeChat tabsCollapsed onToggleTabs={() => {}} />
+      {/* 会话头已挂到应用头部（ChatHeader / AppHeader），对话本体自测不再带头部 */}
+      <HomeChat />
     </div>
   </>
 }

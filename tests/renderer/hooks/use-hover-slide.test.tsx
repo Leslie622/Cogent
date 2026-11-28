@@ -287,6 +287,27 @@ describe('useHoverSlide', () => {
     expect(second).not.toHaveAttribute('data-pill-over')
   })
 
+  it('滚动容器自身发生横向或纵向滚动时，胶囊仍对齐内容坐标', () => {
+    stubHoverBackground()
+    render(<Harness />)
+    const list = screen.getByTestId('list')
+    const row = screen.getByRole('button', { name: '甲' })
+    mockRect(list, { left: 100, top: 50, width: 240, height: 96 })
+    mockRect(row, { left: 122, top: 62, width: 100, height: 30 })
+    vi.spyOn(list, 'clientLeft', 'get').mockReturnValue(2)
+    vi.spyOn(list, 'clientTop', 'get').mockReturnValue(2)
+    list.scrollLeft = 180
+    list.scrollTop = 64
+    fireEvent.pointerOver(row, { clientX: 130, clientY: 70 })
+    expect(pillOf(list).style.getPropertyValue('--pill-x')).toBe('200px')
+    expect(pillOf(list).style.getPropertyValue('--pill-y')).toBe('74px')
+    // 同一行随滚动移动，内容坐标仍保持原位。
+    list.scrollLeft = 190
+    mockRect(row, { left: 112, top: 62, width: 100, height: 30 })
+    fireEvent.pointerMove(row, { clientX: 130, clientY: 70 })
+    expect(pillOf(list).style.getPropertyValue('--pill-x')).toBe('200px')
+  })
+
   it('悬停不改底色的行（active 钮）不接管：直接落上去什么都不出；滑过去时胶囊留在原行、过宽限期原地淡出', () => {
     stubHoverBackground()
     render(<Harness />)

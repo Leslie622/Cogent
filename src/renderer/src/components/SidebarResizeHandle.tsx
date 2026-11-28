@@ -1,3 +1,4 @@
+/** 像素分栏把手：拖拽直写 DOM，手势结束才提交；动态上限在操作时现读。 */
 import { useEffect, useRef } from 'react'
 import { cn } from 'cn'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
@@ -5,7 +6,8 @@ import { useDividerGlow } from '@/hooks/use-divider-glow'
 
 interface SidebarResizeHandleProps {
   min: number
-  max: number
+  /** 容器宽变化不必重渲染整棵面板；手势中可直接读取最新上限。 */
+  max: number | (() => number)
   /** 中央胶囊只作拖拽提示，隐藏时仍由整条分割线承接交互。 */
   withHandle?: boolean
   /** 折叠目标宽（px）。content-sidebar 折成 0（缺省）；模型设置左栏折成
@@ -75,6 +77,7 @@ export function SidebarResizeHandle({ min, max, withHandle = true, collapsedWidt
   }
 
   const resizeCursor = horizontalResizeCursor()
+  const readMax = () => typeof max === 'number' ? max : max()
 
   /** 拖拽落点规则（对齐 RRP collapsedThreshold 默认语义 = collapsedSize 与
       minSize 间距之半）：拖到下限以下先钉在下限（阻力感 —— 拒绝继续变窄），
@@ -83,7 +86,7 @@ export function SidebarResizeHandle({ min, max, withHandle = true, collapsedWidt
   const resolve = (raw: number) => {
     if (raw < collapseThreshold) return collapsedWidth
     if (raw < min) return min
-    return Math.min(max, raw)
+    return Math.min(readMax(), raw)
   }
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -163,7 +166,7 @@ export function SidebarResizeHandle({ min, max, withHandle = true, collapsedWidt
     const current = readWidth()
     let next: number
     if (event.key === (side === 'left' ? 'ArrowRight' : 'ArrowLeft')) {
-      next = current <= collapsedWidth ? min : Math.min(max, current + 16)
+      next = current <= collapsedWidth ? min : Math.min(readMax(), current + 16)
     } else {
       next = current - 16 < min ? collapsedWidth : current - 16
     }

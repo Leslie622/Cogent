@@ -120,7 +120,7 @@ function overflowWorkingLine(container: HTMLElement) {
 
 describe('HomeChat 流内 live 工作状态', () => {
   it('短内容的工作状态在正文末尾保留唯一可访问源，不装配 root sibling', () => {
-    const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    const { container } = render(<HomeChat />)
     expect(screen.getAllByText('工作中')).toHaveLength(1)
     const source = container.querySelector('[data-slot="live-working-line-source"]')!
     expect(source).not.toBeNull()
@@ -132,7 +132,7 @@ describe('HomeChat 流内 live 工作状态', () => {
   })
 
   it('上翻和回底不卸载流内源，阅读意图不改 scrollTop', () => {
-    const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    const { container } = render(<HomeChat />)
     const viewport = screen.getByRole('region')
     const source = container.querySelector('[data-slot="live-working-line-source"]')!
     let top = 120
@@ -158,7 +158,7 @@ describe('HomeChat 流内 live 工作状态', () => {
     ['stopped', { running: false, stopping: false, lastRunOutcome: 'stopped' }, 'stopped', '已停止'],
     ['failed', { running: false, lastRunOutcome: 'failed', lastError: '请求失败' }, 'failed', '出错了'],
   ] as const)('live → %s 同批终态只由流内 RunTrace 接棒', (_phase, runtime, outcome, terminalText) => {
-    const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    const { container } = render(<HomeChat />)
     const live = overflowWorkingLine(container)
     act(() => { useChatStore.setState({
       bySession: {
@@ -179,7 +179,7 @@ describe('HomeChat 流内 live 工作状态', () => {
   })
 
   it('切换活动会话时清理旧源，切回运行会话重新建立流内源', () => {
-    const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    const { container } = render(<HomeChat />)
     const source = container.querySelector('[data-slot="live-working-line-source"]')!
     const live = overflowWorkingLine(container)
     act(() => { useChatStore.setState({
@@ -211,7 +211,7 @@ describe('HomeChat 流内 live 工作状态', () => {
 
 describe('HomeChat 的真实停止终态接线', () => {
   it('停止请求在途时唯一工作行显示正在停止，DOM 持续存在', async () => {
-    const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    const { container } = render(<HomeChat />)
     const live = overflowWorkingLine(container)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止' })); await Promise.resolve() })
     expect(container.querySelector('[data-slot="live-working-line-source"]')).toBe(live.source)
@@ -223,7 +223,7 @@ describe('HomeChat 的真实停止终态接线', () => {
   })
 
   it('点击停止 → 未发布尾字 → 权威快照：清停止位后仍显示已停止，尾正文恰一份', async () => {
-    const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    const { container } = render(<HomeChat />)
     overflowWorkingLine(container)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止' })); await Promise.resolve() })
     expect(engineRequest).toHaveBeenCalledWith('agent.abort', { sessionId: SID })
@@ -245,7 +245,7 @@ describe('HomeChat 的真实停止终态接线', () => {
   })
 
   it('其他入口的中止无需本窗停止前置位，仍按引擎结果显示已停止', () => {
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     act(() => { emit({ method: 'run.failed', params: {
       sessionId: SID, reason: 'aborted', message: '已停止', messages: [completed]
     } }) })
@@ -254,7 +254,7 @@ describe('HomeChat 的真实停止终态接线', () => {
   })
 
   it('工具封段前后正文行同一 DOM 节点（组 key/段 key 双稳定，计划/正文衔接连续性修复）', () => {
-    const { container } = render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    const { container } = render(<HomeChat />)
     const findRow = () =>
       [...container.querySelectorAll('[data-slot="message-scroller-item"]')].find((el) => el.textContent.includes('回答中'))!
     const el1 = findRow()
@@ -266,7 +266,7 @@ describe('HomeChat 的真实停止终态接线', () => {
   })
 
   it('点过停止但收到真实 error，头条显示出错了，详情走 toast 不进对话区', async () => {
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止' })); await Promise.resolve() })
     act(() => { emit({ method: 'run.failed', params: {
       sessionId: SID, reason: 'error', message: '真实连接故障', messages: [completed]
@@ -277,7 +277,7 @@ describe('HomeChat 的真实停止终态接线', () => {
   })
 
   it('完成后操作报错不改成功回合，详情不进对话区（App 层 toast 呈现）', async () => {
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     await act(async () => { emit({ method: 'run.completed', params: { sessionId: SID, messages: [completed] } }); await Promise.resolve() })
     engineRequest.mockRejectedValueOnce(new Error('手动压缩失败'))
     await act(async () => { await useChatStore.getState().compactNow() })
@@ -287,7 +287,7 @@ describe('HomeChat 的真实停止终态接线', () => {
   })
 
   it('A 在后台中止不改 B 的工作中，切回 A 才显示其停止结果', async () => {
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止' })); await Promise.resolve() })
     act(() => { useChatStore.setState((state) => ({
       activeSessionId: 'other',
@@ -314,7 +314,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
     useChatStore.setState((state) => ({
       bySession: { ...state.bySession, [SID]: { ...state.bySession[SID]!, messages: [user] } }
     }))
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止' })); await Promise.resolve() })
     act(() => { emit({ method: 'run.failed', params: {
       sessionId: SID, reason: 'aborted', message: '已停止', messages: []
@@ -333,7 +333,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
   })
 
   it('半截文章停止后发送稍等一下，旧头不变用时且正文不重复', async () => {
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止' })); await Promise.resolve() })
     act(() => { emit({ method: 'run.failed', params: {
       sessionId: SID, reason: 'aborted', message: '已停止', messages: [{ ...completed, content: '半截文章，这不是' }]
@@ -352,7 +352,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
   })
 
   it('失败回合在下一条消息正常完成后仍保留出错了', async () => {
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     act(() => { emit({ method: 'run.failed', params: {
       sessionId: SID, reason: 'error', message: '真实故障', messages: []
     } }) })
@@ -368,7 +368,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
   })
 
   it('continue沿用同一user回合，live优先并由新终态更新结果', async () => {
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     act(() => { emit({ method: 'run.failed', params: {
       sessionId: SID, reason: 'aborted', message: '已停止', messages: [{ ...completed, content: '旧前缀' }]
     } }) })
@@ -397,7 +397,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
         ...emptyBucket(), historyLoaded: true, messages: [user, completed]
       } }
     }))
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     expect(screen.getByText('用时 0.10 秒')).toBeInTheDocument()
     engineRequest.mockRejectedValueOnce(new Error('本次提交被拒绝'))
     await act(async () => {
@@ -410,7 +410,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
   })
 
   it('相同提问文本的两个user回合分别保留自己的停止和完成结果', async () => {
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     act(() => { emit({ method: 'run.failed', params: {
       sessionId: SID, reason: 'aborted', message: '已停止', messages: []
     } }) })
@@ -425,7 +425,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
   })
 
   it('同user的continue请求被拒绝后以本次失败更新回合结果', async () => {
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     act(() => { emit({ method: 'run.failed', params: {
       sessionId: SID, reason: 'aborted', message: '已停止', messages: [{ ...completed, content: '保留的旧前缀' }]
     } }) })
@@ -445,7 +445,7 @@ describe('HomeChat 回合结果跨后续消息保留', () => {
         messages: [{ ...completed, id: 'leading-answer', content: '前导历史回答' }, user, streaming]
       } }
     }))
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     act(() => { emit({ method: 'run.failed', params: {
       sessionId: SID, reason: 'aborted', message: '已停止', messages: [completed]
     } }) })
@@ -480,7 +480,7 @@ describe('HomeChat 提交回包与输入区身份', () => {
     let finish!: (value: string | false) => void
     const pending = new Promise<string | false>((resolve) => { finish = resolve })
     useChatStore.setState({ submit: () => { useChatStore.setState({ activeSessionId: 'materialized' }); return pending } })
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     typeText('第一次发送')
     clickSend()
     typeText('发送后继续写')
@@ -507,7 +507,7 @@ describe('HomeChat 提交回包与输入区身份', () => {
 
   it.each(['resolved', 'rejected'] as const)('停止后旧submit %s 不清掉用户后来重新编辑的同文草稿', async (settlement) => {
     settleInitialRun()
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     typeText('本次问题')
     const old = pendingSubmission()
     clickSend()
@@ -526,7 +526,7 @@ describe('HomeChat 提交回包与输入区身份', () => {
 
   it('旧submit成功不能把用户已切换的新聊天视图翻回旧会话', async () => {
     settleInitialRun()
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     typeText('旧会话问题')
     const old = pendingSubmission()
     clickSend()
@@ -541,7 +541,7 @@ describe('HomeChat 提交回包与输入区身份', () => {
 
   it('同文重发的新请求仍在途时，旧成功回包不能提前清新请求草稿', async () => {
     settleInitialRun()
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     typeText('同一个问题')
     const first = pendingSubmission()
     clickSend()
@@ -556,7 +556,7 @@ describe('HomeChat 提交回包与输入区身份', () => {
 
   it('当次submit受理会清原草稿，当次拒绝保留原文供重试', async () => {
     settleInitialRun()
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     typeText('可重试问题')
     engineRequest.mockRejectedValueOnce(new Error('本次提交失败'))
     await act(async () => { clickSend(); await Promise.resolve() })
@@ -586,7 +586,7 @@ describe('HomeChat /new 命令视图切换', () => {
         ...state.bySession[SID]!, runtime: { ...emptyBucket().runtime }
       } }
     }))
-    render(<HomeChat tabsCollapsed onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     expect(screen.getByText('问题')).toBeInTheDocument()
 
     const el = screen.getByRole('textbox', { name: '聊天输入框' })
@@ -631,7 +631,7 @@ describe('HomeChat 悬停滑动装配（输入区工具行 / 截断动作条）'
 
   it('工具行左右两簇各一组：左簇胶囊挂在插件条上、附件钮是行；右簇挂在 composer-actions 上、发送钮是行', () => {
     setRuntime({ running: false })
-    const { container } = render(<HomeChat tabsCollapsed={false} onToggleTabs={() => {}} />)
+    const { container } = render(<HomeChat />)
     // 权限钮 / 计划 chip / 上下文 / 模型在本文件被替身掉，各簇只剩一个真实行；结构接线照常可验
     const toolbar = container.querySelector<HTMLElement>('[data-slot="input-group-addon"][data-align="block-end"]')!
     expect(toolbar).toHaveClass('relative', 'isolate')
@@ -651,7 +651,7 @@ describe('HomeChat 悬停滑动装配（输入区工具行 / 截断动作条）'
 
   it('截断动作条：继续生成 / 立即压缩两钮一组，说明文字不是行', () => {
     setRuntime({ running: false, truncated: true })
-    render(<HomeChat tabsCollapsed={false} onToggleTabs={() => {}} />)
+    render(<HomeChat />)
     const group = screen.getByRole('button', { name: '继续生成' }).parentElement!
     expect(group).toHaveClass('relative', 'isolate')
     expect(group.firstElementChild).toHaveClass('hover-slide-pill')
