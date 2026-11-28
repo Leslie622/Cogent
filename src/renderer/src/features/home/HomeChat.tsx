@@ -1,16 +1,16 @@
 /**
- * 主要区（区域代号见 AGENTS.md）会话本体：三段式 flex-col ——
- *   ① 头部：会话标题（chat store 真数据）+ [更多 + 标签页区折叠开关]（折叠开关
- *      命令/状态由 HomeMain 经 props 下发，与 AppHeader 同一手法）
- *   ② 对话流：MessageScroller（@shadcn/react）—— 吸底/滚到底部悬浮钮现成；
+ * 主要区（区域代号见 AGENTS.md）会话本体：两段式 flex-col ——
+ *   ① 对话流：MessageScroller（@shadcn/react）—— 吸底/滚到底部悬浮钮现成；
  *      消息按回合分组渲染（TurnGroup，ZCode 式两态：过程直播 → 完成收进
  *      「用时」轨迹，见 docs/模块/消息呈现.md）；消息源是 useChatStore
  *      （引擎事件流驱动，流式占位 id='streaming' 由 store 维护）。
  *      对话正文是"正文类内容"，按 AGENTS.md 方针 5 在内容容器上 select-text 放开选中
- *   ③ 输入框：shadcn AI 组件（components/ui/input-group）—— 发送组合键按
+ *   ② 输入框：shadcn AI 组件（components/ui/input-group）—— 发送组合键按
  *      设置页「发送快捷键」分流（缺省 Enter 发送、Shift+Enter 换行；中文
  *      输入法组词中不误发，判 isComposing）、
  *      流式中发送钮变停止钮（agent.abort）
+ * 会话头（标题 + 更多 + 标签页区展开入口）不在本组件：它挂在应用头部的中块
+ * （ChatHeader，由 AppHeader 渲染），与侧栏块、标签页块同处一行。
  * 会话视图的自成一域单元已拆至同目录单文件：回合容器（TurnGroup，内含分组/
  * 切分/聚合，复用 MessageRow）、单条消息（MessageRow，导出 UsageLine/MessageLike）、
  * 对话索引轨道（ConversationIndex，消息流左侧刻度列）、模型下拉（ModelMenu，
@@ -20,11 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   IconArrowUp,
-  IconClock,
   IconDeviceDesktop,
-  IconDots,
-  IconFolder,
-  IconLayoutSidebarRightExpand,
   IconPlayerPlayFilled,
   IconSquare,
   IconStack2Filled,
@@ -33,7 +29,6 @@ import { Hint } from '@/components/Hint'
 import { useHoverSlide } from '@/hooks/use-hover-slide'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import {
   InputGroup,
   InputGroupAddon,
@@ -65,7 +60,6 @@ import {
   useChatStore,
   type SessionBucket,
 } from '@/stores/chat'
-import type { ProjectSummary } from '@/env.d'
 import { useProjectStore } from '@/stores/project'
 import { ProjectPicker } from './ProjectPicker'
 import { ApprovalPanel } from './ApprovalPanel'
@@ -93,110 +87,6 @@ import { ENTITY_SENTINEL, type ComposerEntity } from './composer/types'
 export type { MessageLike } from './MessageRow'
 
 const EMPTY_TURN_OUTCOMES: SessionBucket['turnOutcomes'] = {}
-
-/** 相对时间文案（信息卡「最近活动」行用）：刚刚 / N 分钟前 / N 小时前 /
-    N 天前，更久落本地日期 —— 会话 updatedAt 随消息推进（chat store），
-    项目级无现成字段，由调用方以同项目会话的 max(updatedAt) 下发 */
-function relativeTime(ms: number): string {
-  const delta = Date.now() - ms
-  if (delta < 60_000) return '刚刚'
-  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)} 分钟前`
-  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)} 小时前`
-  if (delta < 30 * 86_400_000) return `${Math.floor(delta / 86_400_000)} 天前`
-  return new Date(ms).toLocaleDateString()
-}
-
-/** 头部：会话标题 + [更多 / 标签页区折叠开关]（标题来自 chat store 的活动会话）。
-    项目会话 hover 标题区（图标+标题整体）出信息卡（zcode 同款，2026-11-16
-    定调替代先前的项目名 tooltip）：标题全文（头部行截断，卡里看全）+ 项目
-    名称/主根路径 + 最近活动；git 分支行暂缺 —— 引擎协议与壳桥均无分支通道
-    （UI布局.md 已记录），留工作区面板后续件。触发区是非交互 span 不包 Button */
-function ChatHeader({
-  title,
-  project,
-  lastActiveAt,
-  tabsCollapsed,
-  onToggleTabs,
-}: {
-  title: string
-  /** 项目会话的归属项目；undefined = 非项目会话不显图标不出卡 */
-  project?: ProjectSummary
-  /** 同项目各会话的最近更新时间（毫秒）；无记录不显活动行 */
-  lastActiveAt?: number
-  tabsCollapsed: boolean
-  onToggleTabs: () => void
-}) {
-  return (
-    <header data-chat-header className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
-      {project !== undefined ? (
-        <HoverCard>
-          {/* delay/closeDelay 是 preview-card Trigger 的 prop（Root 没有）；
-              400 同 Hint 口径 —— 划过标题不闪卡 */}
-          <HoverCardTrigger
-            delay={400}
-            closeDelay={0}
-            render={
-              <span
-                className="flex min-w-0 flex-1 cursor-default items-center gap-1.5"
-                aria-label={`项目：${project.name}`}
-              />
-            }
-          >
-            {/* 图标是按钮（同「更多」钮 ghost 同款，hover 出底）；点击行为空位
-                —— 同头部「更多」钮先占位后接线的惯例 */}
-            <Button variant="ghost" size="icon-sm" aria-label={`项目：${project.name}`}>
-              <IconFolder className="size-4.5" />
-            </Button>
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
-          </HoverCardTrigger>
-          {/* 排版对照 ContextIndicator 的 PopoverContent（13px 主文案 + muted
-              次行 + border-t 分组）；卡片纯展示无动作行。align=start：触发区
-              是整行标题（flex-1），默认居中对齐会让卡片飘到内容区中部 ——
-              左对齐到触发区左缘（图标处）即 zcode 位置 */}
-          <HoverCardContent side="bottom" align="start" sideOffset={8} className="w-72 gap-0 p-3">
-            <div className="flex items-center gap-2">
-              <IconFolder className="size-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
-            </div>
-            <div className="mt-3 flex items-center gap-2 border-t pt-3">
-              <IconFolder className="size-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm text-foreground">{project.name}</div>
-                {/* 主根路径（多根项目其余目录在工作区面板看，同信息区口径） */}
-                <div className="truncate text-xs text-muted-foreground">{project.cwds[0]}</div>
-              </div>
-            </div>
-            {lastActiveAt !== undefined && (
-              <div className="mt-3 flex items-center gap-2">
-                <IconClock className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate text-sm text-foreground">
-                  最近活动 {relativeTime(lastActiveAt)}
-                </span>
-              </div>
-            )}
-          </HoverCardContent>
-        </HoverCard>
-      ) : (
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
-      )}
-      <Hint tip="更多" side="bottom">
-        <Button variant="ghost" size="icon-sm" aria-label="更多">
-          <IconDots className="size-4" />
-        </Button>
-      </Hint>
-      {tabsCollapsed && <Hint tip="展开标签页区" side="bottom">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="展开标签页区"
-          onClick={onToggleTabs}
-        >
-          <IconLayoutSidebarRightExpand className="size-[19px]" />
-        </Button>
-      </Hint>}
-    </header>
-  )
-}
 
 /** 对话流：消息源 = chat store 活动会话（引擎事件流驱动，含流式占位与工具卡行），
     渲染期按回合分组（TurnGroup 管两态呈现）。截断动作条挂在消息末尾
@@ -650,35 +540,8 @@ function ChatComposer({
   )
 }
 
-export function HomeChat({
-  tabsCollapsed,
-  onToggleTabs,
-}: {
-  tabsCollapsed: boolean
-  onToggleTabs: () => void
-}) {
+export function HomeChat() {
   const session = useHomeStore((s) => s.session)
-  const title = useChatStore(
-    (s) => s.sessions.find((x) => x.id === s.activeSessionId)?.title ?? '新聊天'
-  )
-  // 项目会话归属项目（头部信息卡用）：已有会话按 projectId 反查 project
-  // store；"新聊天进行中"态无会话标题语义，不显图标（与头部标题同生灭）。
-  // lastActiveAt = 同项目各会话 updatedAt 的 max（项目级无现成字段，派生），
-  // selector 返回原始值数字，引用稳定不引起额外重渲染
-  const activeProjectId = useChatStore((s) =>
-    session.kind === 'chat' ? s.sessions.find((x) => x.id === s.activeSessionId)?.projectId : undefined
-  )
-  const project = useProjectStore((s) =>
-    activeProjectId !== undefined ? s.projects.find((p) => p.id === activeProjectId) : undefined
-  )
-  const lastActiveAt = useChatStore((s) => {
-    if (activeProjectId === undefined) return undefined
-    let max = 0
-    for (const x of s.sessions) {
-      if (x.projectId === activeProjectId && x.updatedAt > max) max = x.updatedAt
-    }
-    return max > 0 ? max : undefined
-  })
   // 待审批 = ApprovalPanel **替换**输入区（2026-11-11 用户定调：审批卡覆盖
   // 输入位、待审批不支持输入）。草稿由独立仓持有，Composer 卸载不丢字。
   // 挂起提问（4c-2）同款占位（QuestionPanel 与审批面板互斥呈现 —— 都是
@@ -716,13 +579,6 @@ export function HomeChat({
         if (draft.loaded) useAttachmentStore.getState().add(draftId, Array.from(event.dataTransfer.files))
       }}>
       {dragging && <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-lg border-2 border-dashed bg-background/90" role="status">添加到当前聊天</div>}
-      <ChatHeader
-        title={title}
-        project={project}
-        lastActiveAt={lastActiveAt}
-        tabsCollapsed={tabsCollapsed}
-        onToggleTabs={onToggleTabs}
-      />
       {/* 吸底跟随不走库 autoScroll（已关）：其 RO→rAF→scrollTo 链路慢一帧，
           流式期间"增长帧推下、下一帧拉回"即工作中行抖动；跟随由
           message-scroller 的 useStreamingBottomPin 独占（增长当帧贴底），

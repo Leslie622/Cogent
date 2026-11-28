@@ -108,6 +108,17 @@ async function driver(config) {
     throw new Error('超时：' + label)
   }
   const settle = () => evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))))
+  // 等分栏开合过渡（200ms）播完再量终值：过渡的起点会被懒加载面板的挂载往后推，只等两帧不够 ——
+  // 至少 250ms，且等文档里的过渡全部结束（上限 1.5s）
+  const settlePanes = () => evaluate(() => new Promise(resolve => {
+    const started = performance.now()
+    const tick = () => {
+      const running = document.getAnimations().some(animation => animation instanceof CSSTransition)
+      if ((!running && performance.now() - started > 250) || performance.now() - started > 1500) requestAnimationFrame(() => requestAnimationFrame(resolve))
+      else requestAnimationFrame(tick)
+    }
+    tick()
+  }))
   const click = async (selector, clickCount = 1) => {
     await wait(() => evaluate(selector => {
       const element = document.querySelector(selector)
@@ -205,10 +216,13 @@ async function driver(config) {
       return { x: value.x, y: value.y, width: value.width, height: value.height, right: value.right, bottom: value.bottom, inert: element.inert }
     }
     const workspace = document.querySelector('[data-workspace]')
-    return { viewport: innerWidth, frame: rect('[data-workspace-frame]'), workspace: rect('[data-workspace]'), chat: rect('[data-chat-header]'), header: rect('[data-workspace-header]'), mode: workspace.dataset.workspaceMode, overflow: document.documentElement.scrollWidth > innerWidth, workspaceHeaders: workspace.querySelectorAll('[data-workspace-header]').length, chatToggle: !!document.querySelector('[data-chat-header] [aria-label=展开标签页区]'), back: !!workspace.querySelector('[aria-label=返回对话]') }
+    // 标签头在应用头部的标签页区块里（WorkspaceSurface portal 进 AppHeader），不落在 [data-workspace] 内，按全文计数
+    return { viewport: innerWidth, frame: rect('[data-workspace-frame]'), workspace: rect('[data-workspace]'), chat: rect('[data-chat-header]'), header: rect('[data-workspace-header]'), mode: workspace.dataset.workspaceMode, overflow: document.documentElement.scrollWidth > innerWidth, workspaceHeaders: document.querySelectorAll('[data-workspace-header]').length, chatToggle: !!document.querySelector('[data-chat-header] [aria-label=展开标签页区]'), back: !!workspace.querySelector('[aria-label=返回对话]') }
   })
   const verifySplit = async label => {
     await wait(() => evaluate(() => document.querySelector('[data-workspace]')?.dataset.workspaceMode === 'split' && document.querySelector('[data-workspace-header]')?.getBoundingClientRect().height === 48), '并排布局就绪 ' + label)
+    // 这里量的是终值：开合 / 占满都有 200ms 过渡，播完再量
+    await settlePanes()
     const value = await geometry()
     require(value.mode === 'split' && value.workspace.width < value.frame.width && value.workspace.width > 0 && Math.abs(value.workspace.right - value.frame.right) < 1 && !value.overflow, '窗口宽度不自动覆盖对话 ' + label, value)
     require(value.workspaceHeaders === 1 && value.header.height === 48 && value.chat.height === 48 && Math.abs(value.header.y - value.chat.y) < 1 && !value.chatToggle && !value.back, '单行标签栏与对话头部对齐 ' + label, value)
@@ -265,12 +279,21 @@ async function driver(config) {
       const launcher = document.querySelector('[data-workspace-launcher]')
       return launcher.querySelectorAll('button').length === 2 && !/临时浏览|最近关闭/.test(launcher.textContent)
     }), '新标签页仅有文件与浏览器，不显示临时浏览或最近关闭')
+    // 开合过渡播完再量：对话头的开关随中块移动，标签头靠右钉住、动画中已在终位
+    await settlePanes()
     const order = await evaluate(() => {
       const header = document.querySelector('[data-workspace-header]')
-      return ['[aria-label=标签页列表]', '[aria-label=工作区标签页]', '[aria-label=新建标签页]', '[aria-label=展开工作区]', '[aria-label=收起工作区]'].map(selector => { const value = header.querySelector(selector).getBoundingClientRect(); return { selector, x: value.x, right: value.right } })
+      // 标签头内只有 列表 / 标签 / 新建；占满与收起两枚开关在对话头右端（窗口三钮钉在行右端后标签头要让位）
+      return ['[aria-label=标签页列表]', '[aria-label=工作区标签页]', '[aria-label=新建标签页]'].map(selector => { const value = header.querySelector(selector).getBoundingClientRect(); return { selector, x: value.x, right: value.right } })
     })
     measurements.headerOrder = order
-    require(order.every((item, index) => index === 0 || item.x >= order[index - 1].right - 1), '标签栏顺序为列表/标签/新建/占满/折叠', order)
+    require(order.every((item, index) => index === 0 || item.x >= order[index - 1].right - 1), '标签栏顺序为列表/标签/新建', order)
+    const toggles = await evaluate(() => ({
+      blockLeft: document.querySelector('[data-app-header-tabs]').getBoundingClientRect().x,
+      toggles: ['[aria-label=展开工作区]', '[aria-label=收起工作区]'].map(selector => { const value = document.querySelector(selector).getBoundingClientRect(); return { selector, x: value.x, right: value.right, inChatHeader: !!document.querySelector('[data-chat-header] ' + selector) } }),
+    }))
+    measurements.workspaceToggles = toggles
+    require(toggles.toggles.every(item => item.inChatHeader) && toggles.toggles[1].x >= toggles.toggles[0].right - 1 && toggles.toggles[1].right <= toggles.blockLeft + 1 && toggles.toggles[1].right >= toggles.blockLeft - 9, '占满与收起在对话头右端、紧邻标签头', toggles)
     await hint('[aria-label=工作区标签页] [role=tab][aria-selected=true]', '新标签页')
     await hint('[aria-label=新建标签页]', '新建标签页（Ctrl+T）')
     await snapshot('launcher-light-wide')
@@ -287,7 +310,10 @@ async function driver(config) {
       await wait(() => evaluate(width => innerWidth === width, win.getContentBounds().width), '窗口实际缩至 ' + width)
       if (width === 760) await verifyAutomaticCollapse('850px缩至760px')
       else await click('[aria-label=收起工作区]')
+      // 收起动画里对话头的开关随中块右移，不等过渡播完就按旧坐标点会落空；展开同理，播完再量终值
+      await settlePanes()
       await click('[aria-label=展开标签页区]')
+      await settlePanes()
       measurements.narrow.push({ requested: width, ...await verifySplit(width + 'px重新展开') })
       if (width === 680) await snapshot('launcher-light-narrow')
     }
@@ -296,7 +322,8 @@ async function driver(config) {
     await verifySplit('拖动前')
     const drag = await evaluate(() => {
       const handle = document.querySelector('[aria-label=调整工作区宽度]').getBoundingClientRect(), panel = document.querySelector('[data-workspace]').getBoundingClientRect()
-      return { from: { x: Math.round(handle.x + handle.width / 2), y: Math.round(handle.y + handle.height / 2) }, to: { x: Math.round(panel.right - 120), y: Math.round(handle.y + handle.height / 2) }, before: panel.width, requested: 120 }
+      // 下限 200px 先钉住，再内拖过 100px（阈值 = 下限之半）才折：指针要落到 panel.right − 100 以内
+      return { from: { x: Math.round(handle.x + handle.width / 2), y: Math.round(handle.y + handle.height / 2) }, to: { x: Math.round(panel.right - 80), y: Math.round(handle.y + handle.height / 2) }, before: panel.width, requested: 80 }
     })
     measurements.drag = drag
     win.webContents.sendInputEvent({ type: 'mouseMove', ...drag.from })
@@ -306,17 +333,20 @@ async function driver(config) {
       await new Promise(done => setTimeout(done, 12))
     }
     win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...drag.to })
-    await wait(() => evaluate(() => document.querySelector('[data-workspace]').inert && getComputedStyle(document.querySelector('[data-workspace]')).visibility === 'hidden'), '真实拖动低于160px自动折叠')
+    await wait(() => evaluate(() => document.querySelector('[data-workspace]').inert && getComputedStyle(document.querySelector('[data-workspace]')).visibility === 'hidden'), '真实拖动越过阻力区自动折叠')
     await click('[aria-label=展开标签页区]')
     await verifySplit('拖动折叠后重开')
     await click('[aria-label=调整工作区宽度]', 2)
-    await wait(() => evaluate(() => Math.abs(document.querySelector('[data-workspace]').getBoundingClientRect().width - 480) < 1), '真实双击把手恢复480px默认宽度')
+    await wait(() => evaluate(() => Math.abs(document.querySelector('[data-workspace]').getBoundingClientRect().width - 350) < 1), '真实双击把手恢复350px默认宽度')
     await click('[aria-label=展开工作区]')
+    await settlePanes()
     await wait(() => evaluate(() => document.querySelector('[data-workspace]').dataset.workspaceMode === 'expanded'), '手动按钮才占满内容区')
+    await settlePanes()
     measurements.expanded = await geometry()
     require(Math.abs(measurements.expanded.workspace.width - measurements.expanded.frame.width) < 1, '占满宽度精确等于内容区', measurements.expanded)
     await snapshot('launcher-manual-expanded')
     await click('[aria-label=恢复并排]')
+    await settlePanes()
     await verifySplit('手动恢复并排')
 
     stage = '文件工作面'
@@ -354,6 +384,7 @@ async function driver(config) {
     await key('Enter')
     await wait(() => evaluate(selector => document.querySelector(selector + ' [data-file-preview]')?.textContent.includes('文件布局验收'), activePanel), '文件树真实打开并渲染Markdown')
     await click('[aria-label=展开工作区]')
+    await settlePanes()
     await hint('[aria-label=收起文件树]', '收起文件树')
     measurements.files = await evaluate(() => {
       const workspace = document.querySelector('[data-file-workspace]:not([hidden])')
@@ -429,6 +460,7 @@ async function driver(config) {
     nativeTheme.themeSource = 'light'
     await wait(() => evaluate(() => !document.documentElement.classList.contains('dark')), '真实系统浅色主题生效')
     await click('[aria-label=恢复并排]')
+    await settlePanes()
 
     stage = '真实PDF紧凑工具栏'
     // 要同时保留Markdown和PDF，须先显式新建文件标签；树内选择本身只导航当前页。
@@ -543,7 +575,9 @@ async function driver(config) {
     measurements.browserKeepAlive = { guestIdBefore: guestId, guestIdAfter: liveGuest, before: browserBefore, after: browserAfter }
     require(liveGuest === guestId && browserAfter.value === browserBefore.value && browserAfter.scrollY === browserBefore.scrollY, '跨文件/启动页/列表切换保留同一guest与表单滚动', measurements.browserKeepAlive)
     await click('[aria-label=收起工作区]')
+    await settlePanes()
     await click('[aria-label=展开标签页区]')
+    await settlePanes()
     require(await evaluate(selector => document.querySelector(selector + ' webview').getWebContentsId(), browserPane) === guestId && await guest.executeJavaScript('document.querySelector("#form").value') === browserBefore.value, '整体折叠重开保留同一网页')
     const sessionsAfter = await evaluate(() => window.cogent.engineRequest('session.list', {}))
     require(sessionsAfter.length === sessionsBefore.length, '文件与浏览器独立操作不暗建聊天')

@@ -6,6 +6,7 @@ import { AppShell } from '@/features/shell/AppShell'
 import { interfaceSkinVariables } from '@/lib/interface-skins'
 import { useChatStore } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
+import { useWorkspaceStore } from '@/stores/workspace'
 import '@/globals.css'
 
 const frame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve))
@@ -22,6 +23,8 @@ declare global {
       prepare: (width: number, count: number, offset: number, dark: boolean) => Promise<{ name: string; x: number; y: number; width: number; height: number }[]>
       animate: (name: string) => Promise<void>
       checkLongList: () => Promise<{ rows: number; skipped: number; scrollHeight: number }>
+      checkWorkspace: () => Promise<{ cases: number; frames: number; maxFrameGap: number }>
+      prepareWorkspacePixels: (count: number, offset: number, dark: boolean) => Promise<{ name: string; x: number; y: number; width: number; height: number }[]>
     }
   }
 }
@@ -207,6 +210,89 @@ if (new URLSearchParams(location.search).has('pixels')) {
       await settle()
       assert(document.activeElement === last && last.checkVisibility({ contentVisibilityAuto: true }) && list.scrollTop > 0, '键盘聚焦未自动恢复屏外行并滚入视口')
       return { rows: buttons.length, skipped, scrollHeight }
+    },
+    async checkWorkspace() {
+      let frames = 0, maxFrameGap = 0, cases = 0
+      for (const count of [24, 300]) {
+        await window.sidebarPixelHarness.prepare(300, count, 0, false)
+        useWorkspaceStore.getState().newTab()
+        await settle()
+        for (const expanded of [false, true]) {
+          useWorkspaceStore.getState().setLayout({ expanded })
+          await settle()
+          const content = host.querySelector<HTMLElement>('[data-workspace-content]')!
+          for (const label of ['折叠侧边栏', '展开侧边栏']) {
+            const initialRight = host.querySelector('[data-workspace-frame]')!.getBoundingClientRect().right
+            host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click()
+            const start = await frame()
+            let last = start
+            while (last - start < 360) {
+              const timestamp = await frame()
+              maxFrameGap = Math.max(maxFrameGap, timestamp - last)
+              last = timestamp
+              // 等本帧 rAF 的尺寸写入与 RO 结束，再读取将要呈现的几何。
+              await new Promise(resolve => setTimeout(resolve, 0))
+              const panel = host.querySelector('[data-workspace]')!.getBoundingClientRect()
+              const inner = content.getBoundingClientRect()
+              const available = host.querySelector('[data-workspace-frame]')!.getBoundingClientRect()
+              assert(Math.abs(available.right - initialRight) < 1, '侧栏开合使工作区右缘横跳或产生页面滚动条')
+              assert(Math.abs(panel.right - inner.right) < 1 && Math.abs(inner.right - available.right) < 1, '面板与标签内容宽度互相追赶')
+              assert(host.querySelector('[data-workspace-content]') === content, '侧栏开合重建了工作区内容')
+              assert(document.documentElement.scrollWidth <= innerWidth, '应用头部溢出窗口')
+              frames++
+            }
+            cases++
+          }
+        }
+      }
+      // 先激活旧页再点击新建，既有顺序不变，新页追加在可见末尾。
+      const state = useWorkspaceStore.getState()
+      const scopeId = state.activeScopeId
+      for (let i = 0; i < 4; i++) state.newTab()
+      const oldIds = useWorkspaceStore.getState().scopes[scopeId].tabs.map(tab => tab.id)
+      state.activate(oldIds[0])
+      await settle()
+      host.querySelector<HTMLButtonElement>('[aria-label="新建标签页"]')!.click()
+      await settle()
+      const scope = useWorkspaceStore.getState().scopes[scopeId]
+      const tabs = [...host.querySelectorAll<HTMLElement>('[role=tab]')]
+      assert(scope.tabs.slice(0, -1).every((tab, index) => tab.id === oldIds[index]), '新页改变了既有标签顺序')
+      assert(tabs.every((tab, index) => tab.id === 'workspace-tab-' + scope.tabs[index].id), '标签渲染顺序偏离 store')
+      assert(tabs.at(-1)!.getAttribute('aria-selected') === 'true', '新建标签页没有在末尾激活')
+      const active = tabs.at(-1)!.parentElement!.getBoundingClientRect()
+      const list = host.querySelector<HTMLElement>('[role=tablist]')!
+      const viewport = list.getBoundingClientRect()
+      assert(active.left >= viewport.left - 1 && active.right <= viewport.right + 1, '新页未完整显露')
+      for (let ancestor = list.parentElement; ancestor !== null; ancestor = ancestor.parentElement) {
+        assert(ancestor.scrollLeft === 0, '显露新页滚动了标签条之外的祖先')
+      }
+      assert(list.scrollLeft > 0, '标签滚动悬停回归没有产生横向溢出')
+      return { cases, frames, maxFrameGap }
+    },
+    async prepareWorkspacePixels(count, offset, dark) {
+      await window.sidebarPixelHarness.prepare(300, count, offset, dark)
+      useWorkspaceStore.getState().newTab()
+      useWorkspaceStore.getState().setLayout({ expanded: false, width: 350 })
+      await settle()
+      await document.fonts.ready
+      // 上一场景是占满；懒挂载后的宽度过渡可能晚于首次动画枚举开始，先等准备动作真正结束。
+      const started = performance.now()
+      while (performance.now() - started < 250 || host.getAnimations({ subtree: true }).some(animation => animation instanceof CSSTransition)) {
+        assert(performance.now() - started < 1500, '像素场景准备过渡未结束')
+        await frame()
+      }
+      await frame()
+      const region = (name: string, selector: string) => {
+        const rect = host.querySelector(selector)!.getBoundingClientRect()
+        return { name, x: rect.x - 2, y: rect.y - 2, width: rect.width + 4, height: rect.height + 4 }
+      }
+      assert(host.querySelector('[data-workspace]')!.parentElement === host.querySelector('[data-workspace-host]'), '工作区未挂在静止主卡')
+      return [
+        region('title', '[data-workspace-launcher] h1'),
+        region('icon', '[data-workspace-launcher] [data-slot=item-media] svg'),
+        region('description', '[data-workspace-launcher] [data-slot=item-description]'),
+        region('tab', '[role=tab][aria-selected=true]'),
+      ]
     },
   }
 } else {

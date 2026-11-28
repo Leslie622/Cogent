@@ -64,7 +64,7 @@ export function AppSidebar() {
   const slide = useHoverSlide()
 
   return (
-    <aside className="flex w-[50px] shrink-0 flex-col items-center pt-2 pb-3">
+    <aside className="flex w-(--shell-rail-w) shrink-0 flex-col items-center pt-2 pb-3">
       <nav ref={slide.containerRef} className={cn(slide.containerClassName, 'flex flex-col items-center gap-1.5')}>
         {slide.pill}
         {ITEMS.map(({ view: itemView, label, icon: Icon, iconActive: IconFilled }) => {

@@ -8,10 +8,14 @@
  * 直写 DOM），手势结束才经 commit 进状态并落盘 —— 记忆天然只记用户意图，
  * 不存在 RRP onLayoutChanged 里「哪些提交该存」的时序辨析。
  *
+ * 宽度经 shell-panes.ts 内联写给裁剪窗与应用头部左块（各写自己的 width，同一条过渡，见
+ * globals.css 的「外壳分栏宽度」）：开合与拖拽一次写全，两者线性相关，天然对齐。
+ *
  * 读取是持久化边界（约定 §1.1「持久化读取」行）：形状/范围校验，损坏回落默认
  * —— 布局记忆丢了只是回到 300px/展开，不值得按「报错而非静默重建」炸整个应用。
  */
 import { useRef, useState } from 'react'
+import { SIDEBAR_PANE, writeShellPane } from '@/features/shell/shell-panes'
 
 /** 侧栏宽度夹值区间；SidebarResizeHandle 的 min/max 同源取这两个常量 */
 export const SIDEBAR_WIDTH_MIN = 240
@@ -51,8 +55,8 @@ export function useContentSidebarSplit() {
   const [widthPx, setWidthPx] = useState(initial.widthPx)
   const [collapsed, setCollapsed] = useState(initial.collapsed)
 
-  // 裁剪窗（外层，宽度承载折叠动画）与内容层（保宽防动画逐帧回流）的 DOM 引用：
-  // 拖拽期间 SidebarResizeHandle 经 writeWidth 直写两者，绕开 React 渲染
+  // 裁剪窗（读实时宽）与内容层（保宽防动画逐帧回流）的 DOM 引用：拖拽期间
+  // SidebarResizeHandle 经 writeWidth 直写，绕开 React 渲染
   const clipRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
 
@@ -60,10 +64,10 @@ export function useContentSidebarSplit() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(layout))
   }
 
-  /** 拖拽/键盘实时写：直写 DOM。折叠（0）只写裁剪窗 —— 内容层保住上次宽度，
-      展开时原样回来（与 RRP 时代「内容保形被裁」同一视觉） */
+  /** 拖拽/键盘实时写：内联写宽度（裁剪窗与应用头部左块一起）。折叠（0）只写宽度 —— 内容层
+      保住上次宽度，展开时原样回来（与 RRP 时代「内容保形被裁」同一视觉） */
   const writeWidth = (px: number) => {
-    if (clipRef.current) clipRef.current.style.width = `${px}px`
+    writeShellPane(SIDEBAR_PANE, px)
     if (px > 0 && contentRef.current) contentRef.current.style.width = `${px}px`
   }
 

@@ -47,6 +47,8 @@
   --radius: 0.625rem;
   /* 内容卡圆角（卡片自描边 border-l 天然贴弧线走，分屏线不单独画） */
   --shell-radius: var(--radius-xl);
+  /* 应用侧栏（图标栏）宽：AppSidebar 与头部左块的同一条来源，左块 = 图标栏 + 会话侧栏 */
+  --shell-rail-w: 50px;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -272,6 +274,112 @@
 /* 头部和图标栏保留渐变原色，内容侧栏叠轻底区分面层；阅读面垫独立底色。 */
 .chrome-surface {
   background: var(--chrome-surface);
+}
+
+/* ── 外壳分栏宽度 ── 会话侧栏与工作区的宽度由 writeShellPane 内联写到各消费端（shell-panes.ts）：
+   裁剪窗与 header 左块、面板与 header 右块写 width，对话留位写 padding-right：同一条过渡、同帧起止，
+   线性相关的几处因此逐帧对齐，不必镜像宽度。只有 header 中块的让位公式带 max()，读它自己持有的
+   变量 --shell-workspace-w（注册为 <length> 才能插值；不继承，且只内联写在它身上）：继承的变量
+   在祖先上插值、或在元素上内联写自定义属性，都会让整棵子树每帧 / 每次重算样式（实测数据见
+   shell-panes.ts）。拖拽期间由 :has() 关闭过渡 —— 把手 data-separator=active 是杀过渡的观察源，
+   与 SidebarResizeHandle 的状态机同源；两个选择器各盯一条分栏的把手。 */
+@property --shell-workspace-w {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+.shell-pane-sidebar {
+  transition: width 150ms ease-out;
+}
+
+/* 每个消费端只过渡自己被写的那条属性：由公式派生的量（如中块内距 = 槽位 − 变量）即时跟随，
+   再给它挂过渡就成了追赶移动目标，与其它几处错位 */
+.shell-pane-width,
+.shell-pane-inset,
+.shell-pane-var {
+  transition-duration: 200ms;
+  transition-timing-function: ease-out;
+}
+
+.shell-pane-width {
+  transition-property: width;
+}
+
+.shell-pane-inset {
+  transition-property: padding-right;
+}
+
+.shell-pane-var {
+  transition-property: --shell-workspace-w;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.shell-pane-sidebar, .shell-pane-width, .shell-pane-inset, .shell-pane-var) {
+    transition: none;
+  }
+}
+
+.shell-panes:has([data-sidebar-clip] + [data-separator='active']) .shell-pane-sidebar,
+.shell-panes:has([data-workspace] > [data-separator='active']) :is(.shell-pane-width, .shell-pane-inset, .shell-pane-var),
+[data-shell-pane-resizing] {
+  transition: none;
+}
+
+/* ── 应用头部的三个区块 ── 左块 = 图标栏 + 会话侧栏宽，右块 = 工作区宽（含左边线 1px，
+   与下方工作区同一几何）。两道分界线是 AppHeader 里的同一枚短竖线（HEADER_DIVIDER），
+   不在这里画。窗口控制三钮绝对定位钉在行右端，不随任何区块开合移动；
+   槽位 = 右内距 8 + 三钮 3×28 + 间距 2×6。中块按「槽位 − 工作区宽」让位、右块内层固定
+   让出槽位：工作区从 0 拉开的过程中，三钮压到的永远只有留白。 */
+.app-header {
+  --window-controls-slot: 104px;
+}
+
+.app-header-sidebar {
+  /* 宽度内联写入 = 图标栏 + 内容卡左边框 1px + 会话侧栏 + 分屏把手 1px（偏移 52 见
+     data-shell-pane-offset）：右缘与下方对话列左缘重合，块尾短竖线正落在把手上。侧栏收起后
+     停在这个下限 ——「折叠钮 + 应用菜单钮」（28px 钮 + 8px 间距）—— 不再收窄。
+     自作尺寸容器：下面的文字菜单 / 菜单钮按块的实际宽度切换 */
+  container-type: inline-size;
+  min-width: calc(var(--shell-rail-w) + 1px + 36px);
+}
+
+.app-header-menu-button {
+  display: none;
+}
+
+/* 放不下「折叠钮 + 两枚文字菜单」就整段换成菜单钮：图标栏 50 + 文字菜单钮 45.5×2 + 间距 4 +
+   把手 1 ≈ 146。看块的实际宽度而不看 React 的折叠状态 —— 拖拽把侧栏拖过折叠阈值时宽度当帧落 0、
+   松手才提交状态，开合过渡还有中间帧；按状态切换会在这些时刻露出一个只剩「文件」的菜单。
+   display:none 的那段不可聚焦、不进无障碍树，不必再挂 inert */
+@container (width < 146px) {
+  .app-header-menus,
+  .app-header-divider {
+    display: none;
+  }
+
+  .app-header-menu-button {
+    display: flex;
+  }
+}
+
+.app-header-main {
+  padding-right: max(0px, calc(var(--window-controls-slot) - var(--shell-workspace-w)));
+}
+
+.app-header-tabs {
+  position: relative;
+}
+
+.app-header-tabs-idle {
+  /* 非首页：工作区整体隐藏，本块离流不占位。宽度保持不变，回到首页时不重播展开过渡 */
+  position: absolute;
+  inset: 0 0 0 auto;
+  visibility: hidden;
+}
+
+.app-header-tabs-clip {
+  padding-right: var(--window-controls-slot);
 }
 
 /* ── 内容侧栏行（HomeSidebar / SettingsSidebar）── 行是悬停滑动层的接入点（data-hover-slide，
@@ -762,20 +870,6 @@
 
 .context-ring {
   display: none;
-}
-
-.app-header-compact {
-  display: none;
-}
-
-@media (max-width: 760px) {
-  .app-header-wide {
-    display: none;
-  }
-
-  .app-header-compact {
-    display: block;
-  }
 }
 
 @container home-chat (width <= 640px) {

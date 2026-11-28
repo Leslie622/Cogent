@@ -1,14 +1,18 @@
 /** 隔离 Electron/profile 逐帧测量真实侧栏，覆盖 DPI 与减少动画；退出时回收服务及进程。 */
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createServer } from 'vite'
 import electron from 'electron'
 
 const profile = process.argv.includes('--profile')
+const workspace = process.argv.includes('--workspace')
+const evidence = resolve('tmp/workspace-chrome-browser')
+if (workspace) mkdirSync(evidence, { recursive: true })
 const directory = mkdtempSync(join(tmpdir(), 'cogent-sidebar-animation-'))
-const vite = await createServer({ configFile: 'tests/browser-harness.config.ts', server: { host: '127.0.0.1', port: 5198, strictPort: true } })
+// 像素采样使用固定页面快照；工作区其他编辑与证据文件写入不能热替换采样中的样式。
+const vite = await createServer({ configFile: 'tests/browser-harness.config.ts', server: { host: '127.0.0.1', port: 5198, strictPort: true, hmr: false, watch: { ignored: ['**/reference/**', '**/out/**', '**/tmp/**'] } } })
 let child
 try {
   await vite.listen()
@@ -16,8 +20,12 @@ try {
   writeFileSync(driver, `
 const {app,BrowserWindow}=require('electron');
 const {createHash}=require('node:crypto');
+const {writeFileSync}=require('node:fs');
+const {join}=require('node:path');
 app.setPath('userData', ${JSON.stringify(join(directory, 'profile'))});
 app.commandLine.appendSwitch('force-device-scale-factor', process.env.COGENT_SIDEBAR_DPR || '1');
+// 与产品 main 的 Windows 路径一致，不能用默认 GPU 栅格化的结果代替实际绘制。
+if(process.platform==='win32')app.commandLine.appendSwitch('disable-gpu-rasterization');
 setTimeout(()=>{console.error('侧栏动画验收超时');app.exit(1)},90000);
 app.whenReady().then(async()=>{
  const win=new BrowserWindow({show:false,width:1000,height:800,useContentSize:true,webPreferences:{backgroundThrottling:false,offscreen:true}});
@@ -30,6 +38,78 @@ app.whenReady().then(async()=>{
  win.webContents.debugger.attach('1.3');
  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:process.env.COGENT_SIDEBAR_REDUCED==='1'?'reduce':'no-preference'}]});
  console.log('正在加载侧栏动画验收页');
+ if(${workspace}) {
+   await win.loadURL('http://127.0.0.1:5198/tests/renderer/features/home/sidebar-animation.browser.html?pixels');
+   const evaluate=(fn,...args)=>win.webContents.executeJavaScript('('+fn.toString()+')('+args.map(value=>JSON.stringify(value)).join(',')+')',true);
+   await evaluate(async()=>{while(!window.sidebarPixelHarness)await new Promise(resolve=>setTimeout(resolve,20))});
+   const result=await evaluate(()=>window.sidebarPixelHarness.checkWorkspace());
+   let active;
+   let phase='ready';
+   win.webContents.on('console-message',details=>{if(details.message.startsWith('SIDEBAR_PHASE:'))phase=details.message.slice(14)});
+   const sample=image=>{
+     if(!active)return;
+     if(active.bitmapWidth===undefined)active.bitmapWidth=image.toPNG().readUInt32BE(16);
+     const width=active.bitmapWidth,scale=width/1000,pixels=image.toBitmap();
+     for(const region of active.regions){
+       const x=Math.floor(region.x*scale),y=Math.floor(region.y*scale),right=Math.ceil((region.x+region.width)*scale),bottom=Math.ceil((region.y+region.height)*scale),hash=createHash('sha256');
+       for(let row=y;row<bottom;row++)hash.update(pixels.subarray((row*width+x)*4,(row*width+right)*4));
+       const value=hash.digest('hex');
+       if(!region.hashes.has(value)&&region.hashes.size<2)writeFileSync(join(${JSON.stringify(evidence)},'pixels-'+process.env.COGENT_SIDEBAR_DPR+'-'+active.offset+'-'+active.dark+'-'+active.count+'-'+region.name+'-'+region.hashes.size+'.png'),image.crop({x,y,width:right-x,height:bottom-y}).toPNG());
+       if(!region.hashes.has(value))region.firstSeen.push({phase,frame:active.frames});
+       region.hashes.add(value);region.samples++;
+     }
+     active.frames++;
+   };
+   win.webContents.on('paint',(_event,_rect,image)=>sample(image));
+   // 非标准DPR下实测capturePage与paint的像素不同，不能混比；首尾也强制产生真实paint。
+   const nextPaint=()=>new Promise(resolve=>{win.webContents.once('paint',()=>resolve());win.webContents.invalidate()});
+   const pixelCases=[];
+   for(const offset of [0,0.4])for(const dark of [false,true])for(const count of [4,300]){
+     const regions=await evaluate((count,offset,dark)=>window.sidebarPixelHarness.prepareWorkspacePixels(count,offset,dark),count,offset,dark);
+     await nextPaint();await nextPaint();
+     phase='ready';active={offset,dark,count,frames:0,regions:regions.map(region=>({...region,hashes:new Set(),samples:0,firstSeen:[]}))};
+     await nextPaint();
+     for(let cycle=0;cycle<2;cycle++)await evaluate(()=>window.sidebarPixelHarness.animate('会话列表'));
+     await nextPaint();
+     const item={offset,dark,count,frames:active.frames,regions:active.regions.map(({name,hashes,samples,firstSeen})=>({name,variants:hashes.size,samples,firstSeen}))};
+     pixelCases.push(item);active=undefined;
+     if(item.frames<12||item.regions.some(region=>region.variants!==1||region.samples<4))throw new Error('侧栏开合导致标签内容像素抖动：'+JSON.stringify(item));
+   }
+   const themes=[];
+   for(const dark of [false,true]) {
+     await evaluate(async dark=>{
+       document.documentElement.classList.toggle('dark',dark);
+       const {interfaceSkinVariables}=await import('/src/renderer/src/lib/interface-skins.ts');
+       const {useWorkspaceStore}=await import('/src/renderer/src/stores/workspace.ts');
+       useWorkspaceStore.getState().setLayout({expanded:true});
+       for(const [name,value] of Object.entries(interfaceSkinVariables('mint',dark,true,65)))document.documentElement.style.setProperty(name,value);
+       await new Promise(resolve=>setTimeout(resolve,250));
+     },dark);
+     const point=await evaluate(()=>{
+       const list=document.querySelector('[role=tablist]'), viewport=list.getBoundingClientRect();
+       const row=[...list.querySelectorAll('[data-hover-slide]')].reverse().find(row=>{const rect=row.getBoundingClientRect();return rect.left>=viewport.left&&rect.right<=viewport.right});
+       if(!row)throw new Error('没有完整可见的非激活标签');
+       row.dataset.workspaceHoverTarget='';const rect=row.getBoundingClientRect();return{x:rect.x+rect.width/2,y:rect.y+rect.height/2};
+     });
+     await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseMoved',...point});
+     await new Promise(resolve=>setTimeout(resolve,280));
+     themes.push(await evaluate(()=>{
+       const row=document.querySelector('[data-workspace-hover-target]'), pill=document.querySelector('[role=tablist] .hover-slide-pill');
+       const a=row.getBoundingClientRect(),b=pill.getBoundingClientRect();
+       if(pill.dataset.visible!=='true'||Math.abs(a.x-b.x)>1||Math.abs(a.y-b.y)>1||Math.abs(a.width-b.width)>1||Math.abs(a.height-b.height)>1)throw new Error('滚动后的悬停背景错位');
+       const active=document.querySelector('[role=tab][aria-selected=true]').parentElement;
+       const probe=document.createElement('div');probe.style.backgroundColor='var(--chrome-active)';document.body.append(probe);
+       const expected=getComputedStyle(probe).backgroundColor;probe.remove();
+       const background=getComputedStyle(active).backgroundColor;
+       if(background!==expected||!background.startsWith('rgba('))throw new Error('标签激活背景没有复用透明外壳配色：'+background);
+       row.removeAttribute('data-workspace-hover-target');
+       return{dark:document.documentElement.classList.contains('dark'),background,hoverError:Math.max(Math.abs(a.x-b.x),Math.abs(a.y-b.y))};
+     }));
+     writeFileSync(join(${JSON.stringify(evidence)},'workspace-'+(dark?'dark':'light')+'-'+process.env.COGENT_SIDEBAR_DPR+'.png'),(await win.webContents.capturePage()).toPNG());
+   }
+   console.log(JSON.stringify({passed:true,electron:process.versions.electron,dpr:await evaluate(()=>devicePixelRatio),...result,pixelCases,themes},null,2));
+   app.exit(0);return;
+ }
  if(process.env.COGENT_SIDEBAR_PIXEL_ONLY!=='1' && !${profile}) {
    await win.loadURL('http://127.0.0.1:5198/tests/renderer/features/home/sidebar-animation.browser.html');
    const result=await win.webContents.executeJavaScript('new Promise((resolve)=>{const timer=setInterval(()=>{if(window.sidebarAnimationResult){clearInterval(timer);resolve(window.sidebarAnimationResult)}},50);setTimeout(()=>{clearInterval(timer);resolve({passed:false,error:"侧栏动画验收超时："+document.documentElement.dataset.sidebarStage})},60000)})');
@@ -111,7 +191,7 @@ app.whenReady().then(async()=>{
  app.exit(0);
 }).catch(error=>{console.error(error);app.exit(1)});
 `)
-  const modes = profile ? [['1.25', '0']] : process.env.COGENT_SIDEBAR_DPR ? [[process.env.COGENT_SIDEBAR_DPR, '0']] : [['1', '0'], ['1.25', '0'], ['1.5', '0'], ['1', '1']]
+  const modes = process.env.COGENT_SIDEBAR_DPR ? [[process.env.COGENT_SIDEBAR_DPR, '0']] : workspace ? [['1', '0'], ['1.25', '0'], ['1.3125', '0'], ['1.5', '0']] : profile ? [['1.25', '0']] : [['1', '0'], ['1.25', '0'], ['1.5', '0'], ['1', '1']]
   for (const [scale, reduced] of modes) {
     const env = { ...process.env, COGENT_SIDEBAR_DPR: scale, COGENT_SIDEBAR_REDUCED: reduced }
     delete env.ELECTRON_RUN_AS_NODE
