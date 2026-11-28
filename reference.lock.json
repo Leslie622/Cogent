@@ -1,0 +1,61 @@
+{
+  "pi": {
+    "url": "https://github.com/earendil-works/pi",
+    "strategy": "tag",
+    "package": "@earendil-works/pi-coding-agent",
+    "tag": "v1.5.2",
+    "commit": "b4afdddf44e059c67ccf5097e5317d913521b470",
+    "syncedAt": "2026-11-28",
+    "sparse": [
+      "packages/agent",
+      "packages/ai",
+      "packages/coding-agent"
+    ],
+    "history": [
+      {
+        "commit": "74dcca7d4140403eaa81c3e7124e73b63a0cb106",
+        "until": "2026-11-28",
+        "note": "手工克隆时的 master（v1.5.2 之后 45 个提交），未与安装版本对齐；改钉安装版本 tag 时归入历史"
+      }
+    ]
+  },
+  "deepseek-harness": {
+    "url": "https://github.com/deepseek-ai/deepseek-harness",
+    "strategy": "branch",
+    "branch": "master",
+    "commit": "841f76d3c51966375ebed9b25512ebce4ac02079",
+    "syncedAt": "2026-11-28",
+    "history": [
+      {
+        "commit": "e8f7b93a344964de3dca1ace9e72b6e4d6de87cb",
+        "until": "2026-11-28"
+      }
+    ]
+  },
+  "zcode": {
+    "url": "https://github.com/zai-org/ZCode",
+    "strategy": "branch",
+    "branch": "main",
+    "commit": "a4b4445141eb7d3b3e99eada9292775383bfc44e",
+    "syncedAt": "2026-11-28",
+    "history": [
+      {
+        "commit": "c5904686ea8341826b3affe5d993d06a134fa779",
+        "until": "2026-11-28"
+      }
+    ]
+  },
+  "Pi-meme": {
+    "url": "https://gh-proxy.com/https://github.com/xidongdong-153/Pi-meme",
+    "strategy": "branch",
+    "branch": "main",
+    "commit": "7df034c39985f82b6a0d730eae1e2bd0e73922df",
+    "syncedAt": "2026-11-28",
+    "history": [
+      {
+        "commit": "8e39e3b7e66755ab6d6c2ef8855062899e00fcec",
+        "until": "2026-11-28"
+      }
+    ]
+  }
+}

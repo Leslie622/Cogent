@@ -3,7 +3,8 @@
  * 行数预算只提示。规则见 docs/约定.md §4。
  *
  * 只把客观错误判为失败：修起来是秒级，也不会有争议。预算超限取决于内容取舍，
- * 挡住检查只会逼人挪字，所以只列出。
+ * 挡住检查只会逼人挪字，所以只列出。文档里引用的参照仓短 SHA 对照 reference.lock.json，
+ * 指向历史钉板的同样只提示（旧结论只用于原范围，由作者决定复核还是标注年月）。
  *
  * 链接目标以 git 为准。入库的才算有效，没入库也没被忽略的文件算错误；被
  * .gitignore 忽略的本地产物和参照仓不检查。它们在开发机上有、在 CI 的这个时点
@@ -44,8 +45,8 @@ const documents = [
   ...walkMarkdown(join(root, 'licenses'))
 ]
 
-/** 围栏内的行不产出；行号沿用原文件，报错时能直接定位。 */
-function proseLines(text) {
+/** 围栏内的行不产出；行号沿用原文件，报错时能直接定位。默认剥掉行内代码，参照仓的短 SHA 引用却写在行内代码里，那边用 keepInline。 */
+function proseLines(text, keepInline = false) {
   const lines = []
   let fence = null
   text.split('\n').forEach((line, index) => {
@@ -58,7 +59,7 @@ function proseLines(text) {
       fence = mark
       return
     }
-    lines.push({ number: index + 1, text: line.replace(/(`+)[^\n]*?\1/g, '') })
+    lines.push({ number: index + 1, text: keepInline ? line.replace(/\r$/, '') : line.replace(/(`+)[^\n]*?\1/g, '') })
   })
   return lines
 }
@@ -242,9 +243,43 @@ const overBudget = budgets
   .filter(([, count, limit]) => count > limit)
 for (const [path, count, limit] of overBudget) console.log(`${path} ${count} 行，超出约定 §4 的 ${limit} 行预算（只提示）`)
 
+// 参照仓引用对照 reference.lock.json（scripts/sync-reference.mjs 维护）：文档里的短 SHA 若匹配某仓的
+// 历史钉板而不是当前钉板，说明那处对照是旧版本实读。旧结论只用于原范围，不判失败，只列出供复核；
+// 行内带年月的引用（「2026-11 实读」）已是明确的历史标注，不再提示。只认清单里登记过的 commit，
+// 别的十六进制串不碰。
+const lockFile = join(root, 'reference.lock.json')
+let staleCitations = 0
+if (existsSync(lockFile)) {
+  const pins = []
+  for (const [repo, entry] of Object.entries(JSON.parse(readFileSync(lockFile, 'utf8')))) {
+    pins.push({ repo, commit: entry.commit, current: true, label: entry.tag ?? '' })
+    for (const old of entry.history ?? []) pins.push({ repo, commit: old.commit, current: false })
+  }
+  const stale = new Map()
+  for (const file of documents) {
+    for (const { number, text } of proseLines(readFileSync(file, 'utf8'), true)) {
+      if (/\d{4}-\d{2}/.test(text)) continue
+      for (const match of text.matchAll(/(?<![0-9a-f])[0-9a-f]{7,40}(?![0-9a-f])/g)) {
+        const pin = pins.find(candidate => candidate.commit.startsWith(match[0]))
+        if (!pin || pin.current) continue
+        const current = pins.find(candidate => candidate.repo === pin.repo && candidate.current)
+        const entry = stale.get(file) ?? { numbers: [], citations: new Map() }
+        if (!entry.numbers.includes(number)) entry.numbers.push(number)
+        // 同一仓不同长度的短 SHA 只列一次，展示统一截到九位。
+        if (!entry.citations.has(pin.repo)) entry.citations.set(pin.repo, `${pin.repo}@${match[0].slice(0, 9)}（当前 ${current.commit.slice(0, 9)}${current.label ? ` ${current.label}` : ''}）`)
+        stale.set(file, entry)
+        staleCitations++
+      }
+    }
+  }
+  for (const [file, { numbers, citations }] of stale) {
+    console.log(`${show(file)}:${numbers.join('、')} 引用历史钉板 ${[...citations.values()].join('、')}，复核后更新或在行内标注年月（只提示）`)
+  }
+}
+
 if (failures > 0) {
   console.error(`文档检查失败：${failures} 处。`)
   process.exitCode = 1
 } else {
-  console.log(`文档检查通过：${documents.length} 个文档，${linkCount} 个链接，${sectionCount} 处章节引用${overBudget.length > 0 ? `，${overBudget.length} 份文档超行数预算` : ''}。`)
+  console.log(`文档检查通过：${documents.length} 个文档，${linkCount} 个链接，${sectionCount} 处章节引用${overBudget.length > 0 ? `，${overBudget.length} 份文档超行数预算` : ''}${staleCitations > 0 ? `，${staleCitations} 处参照引用指向历史钉板` : ''}。`)
 }

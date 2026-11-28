@@ -107,3 +107,27 @@ it('行数超出预算只提示，不判失败', () => {
   expect(result.status, result.stderr).toBe(0)
   expect(result.stdout).toContain('docs/模块/长页.md 92 行，超出约定 §4 的 80 行预算')
 })
+
+it('参照仓短 SHA 对照钉板清单：历史钉板只提示，当前钉板、带年月、围栏内和未登记的 SHA 不提示', () => {
+  const current = 'b4afdddf44e059c67ccf5097e5317d913521b470'
+  const stale = '74dcca7d4140403eaa81c3e7124e73b63a0cb106'
+  const root = fixture({
+    'AGENTS.md': '# 入口\n\n[笔记](docs/笔记.md)\n',
+    'docs/笔记.md': [
+      '# 笔记', '',
+      `当前：\`pi@${current.slice(0, 9)}\`；历史：\`pi@${stale.slice(0, 9)}\`。`, '',
+      `2026-11 实读 \`pi@${stale.slice(0, 10)}\`，不再提示。`, '',
+      '```md', `pi@${stale}`, '```', '',
+      '未登记的串 `deadbeef0` 不提示。', ''
+    ].join('\n'),
+    'reference.lock.json': JSON.stringify({
+      pi: { url: 'https://example.invalid/pi', strategy: 'tag', package: '@scope/pi', tag: 'v1.5.2', commit: current, syncedAt: '2026-11-28', history: [{ commit: stale, until: '2026-11-28' }] }
+    })
+  })
+  const result = check(root)
+  expect(result.status, result.stderr).toBe(0)
+  expect(result.stdout).toContain(`docs/笔记.md:3 引用历史钉板 pi@${stale.slice(0, 9)}（当前 ${current.slice(0, 9)} v1.5.2），复核后更新或在行内标注年月（只提示）`)
+  expect(result.stdout).toContain('1 处参照引用指向历史钉板')
+  expect(result.stdout).not.toContain('笔记.md:5 ')
+  expect(result.stdout).not.toContain('笔记.md:11')
+})
