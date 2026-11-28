@@ -48,9 +48,10 @@ function TabHeader({ tab, active, onError }: { tab: WorkspaceTab; active: boolea
     const from = tabs.findIndex(t => t.id === tab.id), to = from + direction
     if (to >= 0 && to < tabs.length) useWorkspaceStore.getState().reorder(tab.scopeId, arrayMove(tabs.map(t => t.id), from, to))
   }
+  // 活动标签不是滑动行：它的底色靠 :has([data-active]) 落在整项上，克隆副本没有子节点读不出这层底色，
+  // 会被误判成"悬停改底色"而把胶囊滑上去（2026-11-28 探针实录）。注释写在 return 之前：
+  // JSX 子节点位置的 /* */ 不是注释而是文本，会被渲染进标签条（2026-11-28 用户截图实录）
   return <ContextMenu>
-    /* 活动标签不是滑动行：它的底色靠 :has([data-active]) 落在整项上，克隆副本没有子节点读不出这层底色，
-       会被误判成"悬停改底色"而把胶囊滑上去（2026-11-28 探针实录） */
     <ContextMenuTrigger render={<TabsItem data-hover-slide={active ? undefined : ''} ref={node => { sortable.setNodeRef(node); ref.current = node }} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }} onAuxClick={e => { if (e.button === 1) { e.preventDefault(); close(tab.id) } }} />}>
       <Hint tip={tab.title} side="bottom"><TabsTrigger variant="workspace" value={tab.id} id={'workspace-tab-' + tab.id} aria-controls={'workspace-panel-' + tab.id} ref={sortable.setActivatorNodeRef} {...dragAttributes} {...sortable.listeners}>
         <TabIcon tab={tab} /><span className="truncate">{tab.title}</span>

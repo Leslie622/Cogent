@@ -127,6 +127,8 @@ describe('标签条与头部按钮的悬停滑动装配', () => {
     const tablist = screen.getByRole('tablist', { name: '工作区标签页' })
     expect(tablist).toHaveClass('relative', 'isolate')
     expect(tablist.firstElementChild).toHaveClass('hover-slide-pill')
+    // 标签条里除胶囊与标签项外不得有任何文本节点（JSX 子节点位置的 /* */ 会渲染成文字，2026-11-28 实录）
+    expect([...tablist.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? '').trim() !== '')).toEqual([])
     // 标签项是 ContextMenuTrigger 的渲染元素（Base UI 会把 data-slot 改写成自己的），按行标记找
     const items = [...tablist.querySelectorAll<HTMLElement>('[data-hover-slide]')]
     // 活动标签不是行（底色靠 :has([data-active]) 落在整项上，副本读不出）；其余标签项都是行
