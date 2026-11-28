@@ -118,3 +118,27 @@ describe('标签条及关闭协商', () => {
     expect(useWorkspaceStore.getState().scopes.s.tabs[0].id).toBe(id)
   })
 })
+
+describe('标签条与头部按钮的悬停滑动装配', () => {
+  it('标签条每组一个胶囊、标签项都是行；头部「展开 / 收起」两钮一组，新建钮隔着留白不入组', () => {
+    useWorkspaceStore.getState().openBrowser('https://a.test')
+    useWorkspaceStore.getState().newTab()
+    const { container } = render(<Subject />)
+    const tablist = screen.getByRole('tablist', { name: '工作区标签页' })
+    expect(tablist).toHaveClass('relative', 'isolate')
+    expect(tablist.firstElementChild).toHaveClass('hover-slide-pill')
+    // 标签项是 ContextMenuTrigger 的渲染元素（Base UI 会把 data-slot 改写成自己的），按行标记找
+    const items = [...tablist.querySelectorAll<HTMLElement>('[data-hover-slide]')]
+    // 活动标签不是行（底色靠 :has([data-active]) 落在整项上，副本读不出）；其余标签项都是行
+    expect(items).toHaveLength(1)
+    expect(items[0]).toHaveClass('hover:bg-muted/60', 'has-data-active:bg-muted')
+    expect(screen.getAllByRole('tab')).toHaveLength(2)
+    const header = container.querySelector('[data-workspace-header]') as HTMLElement
+    expect(header).toHaveClass('relative', 'isolate')
+    expect(header.firstElementChild).toHaveClass('hover-slide-pill')
+    expect(screen.getByRole('button', { name: '新建标签页' })).not.toHaveAttribute('data-hover-slide')
+    expect(screen.getByRole('button', { name: '展开工作区' })).toHaveAttribute('data-hover-slide')
+    expect(screen.getByRole('button', { name: '收起工作区' })).toHaveAttribute('data-hover-slide')
+    expect(container.querySelectorAll('.hover-slide-pill')).toHaveLength(2)
+  })
+})

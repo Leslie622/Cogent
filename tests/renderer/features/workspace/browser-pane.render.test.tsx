@@ -331,3 +331,14 @@ describe('BrowserPane 的原生资源接线', () => {
     expect(request.mock.calls.filter(([method]) => method === 'reserve')).toHaveLength(1)
   })
 })
+
+describe('BrowserPane 工具栏悬停滑动装配', () => {
+  it('「后退 / 前进 / 刷新」三钮一组，菜单钮不入组', () => {
+    const { container } = render(<BrowserPane scopeId="draft" tabId="tab" active onState={vi.fn()} />)
+    const nav = container.querySelector('[data-browser-navigation]') as HTMLElement
+    expect(nav).toHaveClass('relative', 'isolate')
+    expect(nav.firstElementChild).toHaveClass('hover-slide-pill')
+    expect([...nav.querySelectorAll<HTMLElement>('[data-hover-slide]')].map((el) => el.getAttribute('aria-label'))).toEqual(['网页后退', '网页前进', '刷新网页'])
+    expect(screen.getByRole('button', { name: '浏览器菜单' })).not.toHaveAttribute('data-hover-slide')
+  })
+})

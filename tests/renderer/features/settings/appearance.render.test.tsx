@@ -29,6 +29,9 @@ afterEach(() => {
     colorMode: 'light',
     interfaceSkin: 'mint',
     shellOpacity: 65,
+    hoverSlide: true,
+    hoverTransition: true,
+    hoverTransitionMs: 150,
     popoverGlass: true,
     popoverGlassOpacity: 60,
     popoverGlassBlur: 10,
@@ -276,6 +279,39 @@ it('浮层毛玻璃总开关与不透明度 / 模糊度 / 饱和度独立调节�
   expect(resetOpacity).toBeDisabled()
   expect(resetBlur).toBeDisabled()
   expect(resetSaturate).toBeDisabled()
+})
+
+it('滑动动画与过渡效果是两个独立开关；过渡时长滑杆 50–2000ms 按 50ms 刻度归整钳制，关时禁用并可恢复默认', () => {
+  render(<AppearanceSection />)
+  const slide = screen.getByRole('switch', { name: '开启滑动动画' })
+  const transition = screen.getByRole('switch', { name: '开启过渡效果' })
+  const reset = screen.getByRole('button', { name: '恢复默认过渡时长' })
+  expect(slide).toHaveAttribute('aria-checked', 'true')
+  expect(transition).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByText('150ms')).toBeInTheDocument()
+  expect(reset).toBeDisabled()
+
+  act(() => {
+    useAppearanceStore.getState().setHoverTransitionMs(170)
+  })
+  expect(screen.getByText('150ms')).toBeInTheDocument()
+  act(() => {
+    useAppearanceStore.getState().setHoverTransitionMs(9999)
+  })
+  expect(screen.getByText('2000ms')).toBeInTheDocument()
+  expect(reset).not.toBeDisabled()
+
+  fireEvent.click(slide)
+  expect(useAppearanceStore.getState().hoverSlide).toBe(false)
+  expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ state: { hoverSlide: false } })
+  fireEvent.click(transition)
+  expect(useAppearanceStore.getState().hoverTransition).toBe(false)
+  expect(reset).toBeDisabled()
+
+  fireEvent.click(transition)
+  fireEvent.click(reset)
+  expect(useAppearanceStore.getState()).toMatchObject({ hoverSlide: false, hoverTransition: true, hoverTransitionMs: 150 })
+  expect(reset).toBeDisabled()
 })
 
 it('代码设置独立成组，默认显示行号且不换行，重读缺省或无效值时保留默认行号', async () => {

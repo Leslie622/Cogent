@@ -2,6 +2,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ConsoleApp } from '@/features/console/ConsoleApp'
+import { ConsoleSidebar } from '@/features/console/ConsoleSidebar'
+import { useAppearanceStore } from '@/stores/appearance'
 import { ConsoleDetail } from '@/features/console/ConsoleDetail'
 import { ConsoleTimeline } from '@/features/console/ConsoleTimeline'
 import { DetailBlock } from '@/features/console/DetailBlock'
@@ -138,5 +141,61 @@ describe('控制台阅读与真实状态', () => {
     await first
     expect(useConsoleStore.getState().entriesError).toBeNull()
     expect(useConsoleStore.getState().entries.map(item => item.seq)).toEqual([1, 2, 3])
+  })
+})
+
+describe('控制台悬停滑动装配', () => {
+  function mountApp() {
+    // react-resizable-panels 挂载即查 ResizeObserver（jsdom 没有）
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+    // 本文件的 window.cogent 只读（setup 定义），按全局桩挂
+    vi.stubGlobal('cogent', {
+      engineRequest: vi.fn((method: string) => Promise.resolve(method.endsWith('.list') ? [] : null)),
+      onEngineEvent: () => () => {},
+      onWindowState: () => () => {},
+      minimizeWindow: vi.fn(),
+      toggleMaximizeWindow: vi.fn(),
+      closeWindow: vi.fn(),
+    })
+    return render(<ConsoleApp />)
+  }
+
+  it('会话行一组（当前会话行自带底色），时间线条目每组一张列表一组；原 hover 类未动', () => {
+    useConsoleStore.setState({
+      sessions: [{ id: 'one', title: '会话一', createdAt: 1, updatedAt: 1 }, { id: 'two', title: '会话二', createdAt: 1, updatedAt: 1 }],
+      sessionId: 'one',
+      entries: [entry(1, 'run.started'), entry(2)],
+    })
+    const { container } = render(
+      <>
+        <ConsoleSidebar />
+        <ConsoleTimeline />
+      </>
+    )
+    const sessionList = screen.getByRole('button', { name: '会话一' }).closest('ul')!
+    expect(sessionList).toHaveClass('relative', 'isolate')
+    expect(sessionList.firstElementChild).toHaveClass('hover-slide-pill')
+    expect(sessionList.querySelectorAll('[data-hover-slide]')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: '会话一' })).toHaveClass('bg-foreground/5')
+    expect(screen.getByRole('button', { name: '会话二' })).toHaveClass('hover:bg-foreground/5')
+    const timeline = container.querySelector('ul.rounded-lg.border') as HTMLElement
+    expect(timeline).toHaveClass('relative', 'isolate')
+    expect(timeline.firstElementChild).toHaveClass('hover-slide-pill')
+    expect(timeline.querySelectorAll('[data-hover-slide]')).toHaveLength(2)
+    expect(container.querySelectorAll('.hover-slide-pill')).toHaveLength(2)
+  })
+
+  it('窗口控制三钮一组，关闭钮保留红色 hover 类；外观关闭时不渲染胶囊、容器类不变', () => {
+    mountApp()
+    const close = screen.getByRole('button', { name: '关闭' })
+    const group = close.parentElement!
+    expect(group).toHaveClass('relative', 'isolate')
+    expect(group.firstElementChild).toHaveClass('hover-slide-pill')
+    expect(group.querySelectorAll('[data-hover-slide]')).toHaveLength(3)
+    expect(close).toHaveClass('hover:bg-destructive', 'hover:text-white')
+    act(() => { useAppearanceStore.setState({ hoverSlide: false }) })
+    expect(group.querySelector('.hover-slide-pill')).toBeNull()
+    expect(group).not.toHaveClass('relative', 'isolate')
+    act(() => { useAppearanceStore.setState({ hoverSlide: true }) })
   })
 })

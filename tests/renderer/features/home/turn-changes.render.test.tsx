@@ -29,8 +29,8 @@ vi.mock('@pierre/diffs/react', () => ({
 
 vi.mock('@/stores/appearance', () => ({
   useIsDarkMode: () => false,
-  useAppearanceStore: (selector: (s: { showLineNumbers: boolean; codeWrap: boolean }) => unknown) =>
-    selector({ showLineNumbers: true, codeWrap: false })
+  useAppearanceStore: (selector: (s: { showLineNumbers: boolean; codeWrap: boolean; hoverSlide: boolean }) => unknown) =>
+    selector({ showLineNumbers: true, codeWrap: false, hoverSlide: true })
 }))
 
 const sampleSummary: TurnChangesSummary = {
@@ -165,6 +165,15 @@ describe('TurnChangesBar & DiffPreview', () => {
     render(<DiffPreview tab={tab} active />)
     await waitFor(() => expect(screen.getByTestId('pierre-multifile-diff')).toBeInTheDocument())
     expect(screen.getByTestId('pierre-multifile-diff')).toHaveAttribute('data-diff-style', 'unified')
+
+    // 视图切换两钮之间的悬停滑动：胶囊居首、组容器 relative isolate、两钮都是行，
+    // 当前档保留自己的底色类（悬停不改底色，胶囊不停上去）
+    const toggle = screen.getByRole('group', { name: '差异视图模式' })
+    expect(toggle).toHaveClass('relative', 'isolate')
+    expect(toggle.firstElementChild).toHaveClass('hover-slide-pill')
+    expect(toggle.querySelectorAll('[data-hover-slide]')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: '统一视图' })).toHaveAttribute('data-hover-slide')
+    expect(screen.getByRole('button', { name: '统一视图' })).toHaveClass('bg-muted', 'hover:bg-muted')
 
     fireEvent.click(screen.getByRole('button', { name: '双栏对照' }))
     expect(screen.getByTestId('pierre-multifile-diff')).toHaveAttribute('data-diff-style', 'split')

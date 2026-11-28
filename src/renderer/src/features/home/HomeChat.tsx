@@ -30,6 +30,8 @@ import {
   IconStack2Filled,
 } from '@tabler/icons-react'
 import { Hint } from '@/components/Hint'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
+import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import {
@@ -232,6 +234,8 @@ function ChatMessages() {
   }
   // 段间排期接力种子：随活动会话更换（切会话时消息全部重挂，旧段排期自然作废）
   const revealPacing = useMemo(() => createStreamingRevealPacing(), [activeSessionId])
+  // 截断动作条两个按钮之间的悬停滑动（2026-11-28）；由外观「开启滑动动画」全局控制
+  const bannerSlide = useHoverSlide()
 
   return (
     <RevealPacingContext.Provider value={revealPacing}>
@@ -280,11 +284,13 @@ function ChatMessages() {
               续写指令并再给满预算），「立即压缩」走 session.compact（腾地后重发更
               稳）。流式中隐藏（续写中 truncated 已被乐观清位，双保险） */}
           {truncated && !running && (
-            <div className="flex items-center justify-center gap-1.5 text-xs text-warning">
+            <div ref={bannerSlide.containerRef} className={cn(bannerSlide.containerClassName, 'flex items-center justify-center gap-1.5 text-xs text-warning')}>
+              {bannerSlide.pill}
               <span>回复被输出长度上限截断</span>
               <Button
                 variant="ghost"
                 size="xs"
+                data-hover-slide
                 className="h-6 gap-1 rounded-lg px-2 text-warning hover:bg-warning/10 hover:text-warning"
                 onClick={() => void useChatStore.getState().continueGeneration()}
               >
@@ -294,6 +300,7 @@ function ChatMessages() {
               <Button
                 variant="ghost"
                 size="xs"
+                data-hover-slide
                 className="h-6 gap-1 rounded-lg px-2 text-warning hover:bg-warning/10 hover:text-warning"
                 onClick={() => void useChatStore.getState().compactNow()}
               >
@@ -373,6 +380,11 @@ function ChatComposer({
   const activeModelId = useEngineStore((s) => s.activeModelId)
   const thinkingLevel = useEngineStore((s) => s.thinkingLevel)
   const [commandError, setCommandError] = useState<string | null>(null)
+  // 工具行悬停滑动（2026-11-28）：左右两簇各一组 —— 左簇（附件 / 权限 / 计划 chip）挂在插件条本身上，
+  // 右簇（上下文 / 模型 / 发送）挂在 composer-actions 上；中间的弹性留白不是行，胶囊不横跨它。
+  // 触发钮自己的悬停类不动，由外观「开启滑动动画」全局控制
+  const toolSlide = useHoverSlide()
+  const actionSlide = useHoverSlide()
   // 活动模型的 provider：双键查找（findActiveModel）。id 单键两处撞车 —— 全集里
   // 撞未配 key 的收录家（azure 也收录 deepseek-v4-pro），可用集里撞同名可用家
   // （zai 目录与自定义网关都有 glm-5.3，都配了 key 时永远命中目录在前那份，
@@ -569,13 +581,15 @@ function ChatComposer({
           />
           {/* gap-1：工具行三块（+ / 权限钮 / 计划 chip）紧凑（2026-11-16 用户
               定调，曾 gap-2 偏松）；分隔线自身 mx 已归零由本 gap 接管间距 */}
-          <InputGroupAddon align="block-end" className="composer-toolbar gap-1 p-2">
+          <InputGroupAddon align="block-end" ref={toolSlide.containerRef} className={cn(toolSlide.containerClassName, 'composer-toolbar gap-1 p-2')}>
+            {toolSlide.pill}
             <AttachmentMenu disabled={!draft.loaded} onAdd={add} onError={reportError} />
             {/* 权限模式菜单（三档单选 + 顶部计划开关项）+ 计划开关外置 chip
                 （正交开关 v3：chip 常显开关态，菜单项等价入口，两处同源同步） */}
             <PermissionMenu session={session} />
             <PlanToggle session={session} />
-            <div className="composer-actions ml-auto flex min-w-0 items-center gap-3">
+            <div ref={actionSlide.containerRef} className={cn(actionSlide.containerClassName, 'composer-actions ml-auto flex min-w-0 items-center gap-3')}>
+              {actionSlide.pill}
               {/* 上下文指示器紧邻模型下拉：分母（contextWindow）跟着模型走 */}
               <ContextIndicator session={session} />
               <ModelMenu />
@@ -586,6 +600,7 @@ function ChatComposer({
                 <Hint tip="停止" side="top">
                   <Button
                     size="icon-sm"
+                    data-hover-slide
                     className="size-7 cursor-pointer bg-foreground/85 hover:bg-foreground"
                     aria-label="停止"
                     onClick={() => void abort()}
@@ -602,6 +617,7 @@ function ChatComposer({
                        （Hint 外层接住 pointer 事件），显式声明禁用光标；允许
                        pointer 事件穿透到钮上是安全的 —— button disabled 属性
                        本身就不派发 click */
+                    data-hover-slide
                     className="size-7 cursor-pointer bg-foreground/85 hover:bg-foreground disabled:pointer-events-auto disabled:cursor-not-allowed disabled:hover:bg-foreground/85"
                     aria-label={sendLabel}
                     disabled={blocked || !hasSubmittableContent}

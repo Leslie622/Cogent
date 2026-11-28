@@ -2,6 +2,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { Copy, Download, Maximize, Minus, Plus, Scan } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { cn } from 'cn'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useFilePreviewStore, type FileViewState } from '@/stores/file-preview'
 import { useVisualScroll } from './use-visual-scroll'
@@ -28,6 +30,9 @@ const CHECKERBOARD = {
 
 export default function ImagePreview({ url, name, tabId, active, scrollMode = 'source', onSave }: ImagePreviewProps) {
   const saved = useFilePreviewStore<FileViewState | undefined>(state => state.views[tabId])
+  // 控件行两组悬停滑动：缩放四钮一组，「复制 / 下载」一组（中间隔着倍率文字，胶囊不横跨）
+  const zoomSlide = useHoverSlide()
+  const fileSlide = useHoverSlide()
   const [natural, setNatural] = useState<NaturalSize | null>(null)
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const [failure, setFailure] = useState<{ url: string; text: string } | null>(null)
@@ -156,14 +161,18 @@ export default function ImagePreview({ url, name, tabId, active, scrollMode = 's
   }
   const disabled = !active || !ready
   return <div className="flex h-full min-h-0 flex-col" data-image-preview aria-busy={busy}>
-    <div className="flex shrink-0 flex-wrap items-center gap-1 p-2" aria-label="图片控件">
-      <Button variant="ghost" size="icon-sm" aria-label="缩小图片" disabled={disabled || geometry.scale <= geometry.minScale} onClick={() => zoomTo.current(geometry.scale / 1.25)}><Minus /></Button>
-      <Button variant="ghost" size="sm" aria-label="适配图片" disabled={disabled} onClick={() => reset(null)}><Maximize />适配</Button>
-      <Button variant="ghost" size="sm" aria-label="图片原始尺寸" disabled={disabled} onClick={() => reset(1)}><Scan />100%</Button>
-      <Button variant="ghost" size="icon-sm" aria-label="放大图片" disabled={disabled || geometry.scale >= geometry.maxScale} onClick={() => zoomTo.current(geometry.scale * 1.25)}><Plus /></Button>
+    <div ref={zoomSlide.containerRef} className={cn(zoomSlide.containerClassName, 'flex shrink-0 flex-wrap items-center gap-1 p-2')} aria-label="图片控件">
+      {zoomSlide.pill}
+      <Button variant="ghost" size="icon-sm" data-hover-slide aria-label="缩小图片" disabled={disabled || geometry.scale <= geometry.minScale} onClick={() => zoomTo.current(geometry.scale / 1.25)}><Minus /></Button>
+      <Button variant="ghost" size="sm" data-hover-slide aria-label="适配图片" disabled={disabled} onClick={() => reset(null)}><Maximize />适配</Button>
+      <Button variant="ghost" size="sm" data-hover-slide aria-label="图片原始尺寸" disabled={disabled} onClick={() => reset(1)}><Scan />100%</Button>
+      <Button variant="ghost" size="icon-sm" data-hover-slide aria-label="放大图片" disabled={disabled || geometry.scale >= geometry.maxScale} onClick={() => zoomTo.current(geometry.scale * 1.25)}><Plus /></Button>
       <span className="mr-auto text-xs tabular-nums text-muted-foreground" data-image-preview-zoom>{ready ? `${Math.round(geometry.scale * 100)}%` : '—'}</span>
-      <Button variant="ghost" size="icon-sm" aria-label="复制图片" disabled={disabled || busy} onClick={() => void run('copy')}><Copy /></Button>
-      <Button variant="ghost" size="icon-sm" aria-label="下载原图" disabled={disabled || busy} onClick={() => void run('save')}><Download /></Button>
+      <div ref={fileSlide.containerRef} className={cn(fileSlide.containerClassName, 'flex items-center gap-1')}>
+        {fileSlide.pill}
+        <Button variant="ghost" size="icon-sm" data-hover-slide aria-label="复制图片" disabled={disabled || busy} onClick={() => void run('copy')}><Copy /></Button>
+        <Button variant="ghost" size="icon-sm" data-hover-slide aria-label="下载原图" disabled={disabled || busy} onClick={() => void run('save')}><Download /></Button>
+      </div>
     </div>
     {currentFailure !== null && <p role="alert" className="shrink-0 px-3 py-2 text-sm text-destructive">{currentFailure}，请用系统打开或检查SVG源码。</p>}
     {feedback?.url === url && <p role={feedback.error ? 'alert' : 'status'} className="shrink-0 px-3 py-1 text-xs">{feedback.text}</p>}

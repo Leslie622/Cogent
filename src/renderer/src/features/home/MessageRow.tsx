@@ -8,6 +8,7 @@
  */
 import { memo } from 'react'
 import { IconCopy, IconPencil } from '@tabler/icons-react'
+import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Message, MessageContent, MessageFooter } from '@/components/ui/message'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
@@ -16,6 +17,7 @@ import { Reasoning } from '@/components/ui/reasoning'
 import { formatDuration } from '@/lib/format-duration'
 import { formatCost } from '@/lib/format-cost'
 import { useAppearanceStore } from '@/stores/appearance'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 import { formatTokens } from './ContextIndicator'
 import { CompactionBar } from './CompactionBar'
 import type { MessageUsage } from '@/env.d'
@@ -101,6 +103,39 @@ export function UsageLine({
   return <div className="text-xs text-muted-foreground tabular-nums select-none">{parts.join(' · ')}</div>
 }
 
+/** 用户消息行尾：时间戳 + 复制 / 编辑两个并列图标钮，钮之间接悬停滑动（2026-11-28）；
+ *  时间戳不是行。胶囊读钮自己的 ghost 悬停底色，由外观「开启滑动动画」全局控制 */
+function UserMessageFooter({ message }: { message: { content: string; timestamp: number } }) {
+  const slide = useHoverSlide()
+  return (
+    <MessageFooter ref={slide.containerRef} className={cn(slide.containerClassName, 'gap-1 px-0')}>
+      {slide.pill}
+      {/* 时间戳是 chrome：select-none（气泡正文保持可选，zcode 时间戳同款） */}
+      <span className="text-xs text-muted-foreground select-none">{formatTime(message.timestamp)}</span>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        className="size-6"
+        data-hover-slide
+        aria-label="复制"
+        onClick={() => void navigator.clipboard.writeText(message.content)}
+      >
+        <IconCopy className="size-3.5" />
+      </Button>
+      {/* 编辑：重发用户消息属后续件（依赖消息级编辑协议），先占位 */}
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        className="size-6"
+        data-hover-slide
+        aria-label="编辑"
+      >
+        <IconPencil className="size-3.5" />
+      </Button>
+    </MessageFooter>
+  )
+}
+
 /** 单条消息：用户 = 灰气泡右挂 + 时间戳/复制/编辑（纯文本，主流一致）；助手 =
  *  平铺 Markdown 正文（Streamdown）+ 用量统计行。memo：chat store 每 delta 全量
  *  setState 换数组，但历史消息对象引用稳定 —— memo 后逐 token 的重解析只落在
@@ -129,28 +164,7 @@ export const MessageRow = memo(function MessageRow({ message }: { message: Messa
               {message.content !== '' && <span className="whitespace-pre-wrap">{message.content}</span>}
             </BubbleContent>
           </Bubble>}
-          <MessageFooter className="gap-1 px-0">
-            {/* 时间戳是 chrome：select-none（气泡正文保持可选，zcode 时间戳同款） */}
-            <span className="text-xs text-muted-foreground select-none">{formatTime(message.timestamp)}</span>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="size-6"
-              aria-label="复制"
-              onClick={() => void navigator.clipboard.writeText(message.content)}
-            >
-              <IconCopy className="size-3.5" />
-            </Button>
-            {/* 编辑：重发用户消息属后续件（依赖消息级编辑协议），先占位 */}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="size-6"
-              aria-label="编辑"
-            >
-              <IconPencil className="size-3.5" />
-            </Button>
-          </MessageFooter>
+          <UserMessageFooter message={message} />
         </MessageContent>
       </Message>
     )

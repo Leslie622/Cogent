@@ -6,7 +6,7 @@
 import { SETTINGS_GROUPS } from './data'
 import { cn } from 'cn'
 import { useSettingsStore } from '@/stores/settings'
-import { useSidebarHoverPill } from '@/hooks/use-sidebar-hover-pill'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 import { BackToSearchResultsButton, SettingsSearchBox } from './search/SettingsSearchBox'
 import { useSettingsSearch } from './search/use-settings-search'
 
@@ -16,7 +16,7 @@ export function SettingsSidebar() {
   const setSection = useSettingsStore((s) => s.setSection)
   const browseSectionFromSearch = useSettingsStore((s) => s.browseSectionFromSearch)
   const { hasQuery, matchedSectionIds } = useSettingsSearch()
-  const { containerRef, pillRef } = useSidebarHoverPill()
+  const slide = useHoverSlide()
 
   const visibleGroups = hasQuery
     ? SETTINGS_GROUPS.map((group) => ({
@@ -39,13 +39,8 @@ export function SettingsSidebar() {
           <BackToSearchResultsButton className="mt-2 w-full" />
         )}
 
-        <div ref={containerRef} className="relative">
-          <div
-            ref={pillRef}
-            aria-hidden="true"
-            data-visible="false"
-            className="sidebar-hover-pill rounded-md bg-accent-foreground/5"
-          />
+        <div ref={slide.containerRef} className={slide.containerClassName}>
+          {slide.pill}
           {hasQuery && visibleGroups.length === 0 ? (
             <div className="mt-4 px-2 py-6 text-center text-xs text-muted-foreground">
               没有匹配的设置页
@@ -63,7 +58,7 @@ export function SettingsSidebar() {
                     <button
                       key={id}
                       type="button"
-                      data-sidebar-row
+                      data-hover-slide
                       data-active={active || undefined}
                       onClick={() => (hasQuery ? browseSectionFromSearch(id) : setSection(id))}
                       aria-current={active ? 'true' : undefined}

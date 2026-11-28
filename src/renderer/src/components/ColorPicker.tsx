@@ -134,7 +134,7 @@ export function ColorPicker({ initialColor, themeColors, onChange }: {
             title={color}
             aria-label={`预设色 ${color}`}
             aria-pressed={checked}
-            className="size-4 shrink-0 rounded-sm border border-foreground/15 transition-[transform,translate,scale,rotate,outline-color] hover:scale-110 aria-pressed:ring-2 aria-pressed:ring-ring aria-pressed:ring-offset-1 aria-pressed:ring-offset-popover"
+            className="size-4 shrink-0 rounded-sm border border-foreground/15 transition-[transform,translate,scale,rotate,outline-color] duration-(--hover-transition-duration) hover:scale-110 aria-pressed:ring-2 aria-pressed:ring-ring aria-pressed:ring-offset-1 aria-pressed:ring-offset-popover"
             style={{ background: color }}
             onClick={() => change({ ...hexToHsva(color), a: hsva.a })}
           />

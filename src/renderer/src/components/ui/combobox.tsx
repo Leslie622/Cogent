@@ -3,7 +3,13 @@ import { Combobox as ComboboxPrimitive } from "@base-ui/react/combobox"
 import { cn } from "cn"
 import { CheckIcon, ChevronDownIcon } from "lucide-react"
 import { InputGroup, InputGroupInput } from "@/components/ui/input-group"
+import { MenuSlideRows, useMenuSlideEnabled } from "@/components/ui/menu-slide"
 
+/**
+ * 滑动胶囊（2026-11-28）：由外观「开启滑动动画」全局决定（menu-slide.tsx）。Combobox 的高亮是
+ * data-highlighted 属性、输入框持有焦点，所以用属性驱动：开 = 整个 List 外包行容器 + 胶囊
+ * （children 可以是渲染函数，包不得 children）、行加 data-hover-slide，原类不动；关 = 原样。
+ */
 const Combobox = ComboboxPrimitive.Root
 const ComboboxStatus = ComboboxPrimitive.Status
 
@@ -50,19 +56,27 @@ function ComboboxContent({
 }
 
 function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
-  return (
+  const slide = useMenuSlideEnabled()
+  const list = (
     <ComboboxPrimitive.List
       data-slot="combobox-list"
-      className={cn("no-scrollbar max-h-[min(calc(--spacing(72)---spacing(9)),calc(var(--available-height)---spacing(9)))] scroll-py-1 overflow-y-auto overscroll-contain p-1 data-empty:p-0", className)}
+      className={cn(
+        "no-scrollbar max-h-[min(calc(--spacing(72)---spacing(9)),calc(var(--available-height)---spacing(9)))] scroll-py-1 overflow-y-auto overscroll-contain p-1 data-empty:p-0",
+        className
+      )}
       {...props}
     />
   )
+  // List 会滚：行容器包在外面，胶囊位置随捕获到的 scroll 事件重算
+  return slide ? <MenuSlideRows mode="highlight">{list}</MenuSlideRows> : list
 }
 
 function ComboboxItem({ className, children, ...props }: ComboboxPrimitive.Item.Props) {
+  const slide = useMenuSlideEnabled()
   return (
     <ComboboxPrimitive.Item
       data-slot="combobox-item"
+      data-hover-slide={slide ? "" : undefined}
       className={cn("relative flex w-full cursor-default items-center gap-2 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50", className)}
       {...props}
     >

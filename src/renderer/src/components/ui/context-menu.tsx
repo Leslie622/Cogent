@@ -3,6 +3,7 @@ import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { ChevronRightIcon, CheckIcon } from "lucide-react"
+import { MENU_SLIDE_ROOT_PROPS, MenuSlideRows, useMenuSlideEnabled } from '@/components/ui/menu-slide'
 
 /**
  * 菜单尺寸档（2026-11-16 加 lg，与 dropdown-menu 同款手法）：Content 下发
@@ -10,11 +11,21 @@ import { ChevronRightIcon, CheckIcon } from "lucide-react"
  * 祖先变体（[[data-size=lg]_&]: 形态经 vite 管线提取实际不生成，见
  * UI布局.md 坑 3）。size 不传 = 继承外层（context 沿 React 树传播、portal
  * 不断 —— 子菜单自动跟随主面板）。
+ *
+ * 滑动胶囊（2026-11-28）：与 dropdown-menu 同款，由外观偏好「开启滑动动画」全局决定
+ * （menu-slide.tsx）；ContextMenuRoot 内部就是 Menu.Root，resetOnPointerLeave 原样透传。
  */
 const ContextMenuSizeContext = React.createContext<"default" | "lg">("default")
+/** 「开启滑动动画」是否生效；Content 与各行按它决定包不包胶囊、打不打行标记 */
+const ContextMenuSlideContext = React.createContext(false)
 
 function ContextMenu({ ...props }: ContextMenuPrimitive.Root.Props) {
-  return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />
+  const slide = useMenuSlideEnabled()
+  return (
+    <ContextMenuSlideContext.Provider value={slide}>
+      <ContextMenuPrimitive.Root data-slot="context-menu" {...props} {...(slide ? MENU_SLIDE_ROOT_PROPS : {})} />
+    </ContextMenuSlideContext.Provider>
+  )
 }
 
 function ContextMenuPortal({ ...props }: ContextMenuPrimitive.Portal.Props) {
@@ -43,6 +54,7 @@ function ContextMenuContent({
   side = "right",
   sideOffset = 0,
   size,
+  children,
   ...props
 }: ContextMenuPrimitive.Popup.Props &
   Pick<
@@ -52,6 +64,7 @@ function ContextMenuContent({
   VariantProps<typeof contextMenuContentVariants>) {
   const inherited = React.useContext(ContextMenuSizeContext)
   const resolved = size ?? inherited
+  const slide = React.useContext(ContextMenuSlideContext)
   return (
     <ContextMenuSizeContext.Provider value={resolved}>
       <ContextMenuPrimitive.Portal>
@@ -66,7 +79,9 @@ function ContextMenuContent({
             data-slot="context-menu-content"
             className={cn(contextMenuContentVariants({ size: resolved }), className)}
             {...props}
-          />
+          >
+            {slide ? <MenuSlideRows>{children}</MenuSlideRows> : children}
+          </ContextMenuPrimitive.Popup>
         </ContextMenuPrimitive.Positioner>
       </ContextMenuPrimitive.Portal>
     </ContextMenuSizeContext.Provider>
@@ -128,11 +143,13 @@ function ContextMenuItem({
   variant?: "default" | "destructive"
 }) {
   const size = React.useContext(ContextMenuSizeContext)
+  const slide = React.useContext(ContextMenuSlideContext)
   return (
     <ContextMenuPrimitive.Item
       data-slot="context-menu-item"
       data-inset={inset}
       data-variant={variant}
+      data-hover-slide={slide ? "" : undefined}
       className={cn(
         "group/context-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 focus:*:[svg]:text-accent-foreground data-[variant=destructive]:*:[svg]:text-destructive",
         size === "lg" && "gap-2 rounded-lg px-2 py-1.5",
@@ -158,10 +175,12 @@ function ContextMenuSubTrigger({
   inset?: boolean
 }) {
   const size = React.useContext(ContextMenuSizeContext)
+  const slide = React.useContext(ContextMenuSlideContext)
   return (
     <ContextMenuPrimitive.SubmenuTrigger
       data-slot="context-menu-sub-trigger"
       data-inset={inset}
+      data-hover-slide={slide ? "" : undefined}
       className={cn(
         "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:pl-7 data-open:bg-accent data-open:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         size === "lg" && "gap-2 rounded-lg px-2 py-1.5",
@@ -197,10 +216,12 @@ function ContextMenuCheckboxItem({
 }: ContextMenuPrimitive.CheckboxItem.Props & {
   inset?: boolean
 }) {
+  const slide = React.useContext(ContextMenuSlideContext)
   return (
     <ContextMenuPrimitive.CheckboxItem
       data-slot="context-menu-checkbox-item"
       data-inset={inset}
+      data-hover-slide={slide ? "" : undefined}
       className={cn(
         "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
@@ -237,10 +258,12 @@ function ContextMenuRadioItem({
 }: ContextMenuPrimitive.RadioItem.Props & {
   inset?: boolean
 }) {
+  const slide = React.useContext(ContextMenuSlideContext)
   return (
     <ContextMenuPrimitive.RadioItem
       data-slot="context-menu-radio-item"
       data-inset={inset}
+      data-hover-slide={slide ? "" : undefined}
       className={cn(
         "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className

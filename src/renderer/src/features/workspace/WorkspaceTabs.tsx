@@ -6,7 +6,9 @@ import { SortableContext, useSortable, horizontalListSortingStrategy, arrayMove 
 import { CSS } from '@dnd-kit/utilities'
 import { ChevronsDown, Expand, File, FileDiff, Folder, Globe, LoaderCircle, Minimize2, PanelRightClose, Plus, Search, X } from 'lucide-react'
 import { Tabs, TabsItem, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 import { Hint } from '@/components/Hint'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -47,7 +49,9 @@ function TabHeader({ tab, active, onError }: { tab: WorkspaceTab; active: boolea
     if (to >= 0 && to < tabs.length) useWorkspaceStore.getState().reorder(tab.scopeId, arrayMove(tabs.map(t => t.id), from, to))
   }
   return <ContextMenu>
-    <ContextMenuTrigger render={<TabsItem ref={node => { sortable.setNodeRef(node); ref.current = node }} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }} onAuxClick={e => { if (e.button === 1) { e.preventDefault(); close(tab.id) } }} />}>
+    /* 活动标签不是滑动行：它的底色靠 :has([data-active]) 落在整项上，克隆副本没有子节点读不出这层底色，
+       会被误判成"悬停改底色"而把胶囊滑上去（2026-11-28 探针实录） */
+    <ContextMenuTrigger render={<TabsItem data-hover-slide={active ? undefined : ''} ref={node => { sortable.setNodeRef(node); ref.current = node }} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }} onAuxClick={e => { if (e.button === 1) { e.preventDefault(); close(tab.id) } }} />}>
       <Hint tip={tab.title} side="bottom"><TabsTrigger variant="workspace" value={tab.id} id={'workspace-tab-' + tab.id} aria-controls={'workspace-panel-' + tab.id} ref={sortable.setActivatorNodeRef} {...dragAttributes} {...sortable.listeners}>
         <TabIcon tab={tab} /><span className="truncate">{tab.title}</span>
       </TabsTrigger></Hint>
@@ -74,6 +78,12 @@ export function WorkspaceTabs({ tabs, activeId, expanded = false, onError }: { t
   const [listOpen, setListOpen] = useState(false)
   const [query, setQuery] = useState('')
   const header = useRef<HTMLDivElement>(null)
+  /* 标签列表弹层里的并列行（各标签 + 底部两个动作钮）之间加悬停滑动（2026-11-28）：胶囊挂在弹层上，
+     搜索框与说明文字不是行；由外观「开启滑动动画」全局控制 */
+  const slide = useHoverSlide()
+  // 标签条（活动标签自带底色，不停上去）与头部右侧「展开 / 收起」两钮各一组；新建钮隔着弹性留白，不入组
+  const tabSlide = useHoverSlide()
+  const toolsSlide = useHoverSlide()
   const lastFocus = useRef<HTMLElement | null>(null)
   useLayoutEffect(() => {
     // 关闭同级按钮会移除浏览器焦点；仅接回丢失的焦点，不抢走对话或网页输入。
@@ -87,15 +97,22 @@ export function WorkspaceTabs({ tabs, activeId, expanded = false, onError }: { t
     if (tab?.kind === 'file') void useFilePreviewStore.getState().loadTab(tab.id)
     setListOpen(false)
   }
-  return <div ref={header} onFocusCapture={event => { lastFocus.current = event.target }} data-workspace-header className="flex h-12 min-w-0 shrink-0 items-center gap-1 border-b border-border px-2">
+  return <div ref={node => { header.current = node; toolsSlide.containerRef(node) }} onFocusCapture={event => { lastFocus.current = event.target }} data-workspace-header className={cn(toolsSlide.containerClassName, 'flex h-12 min-w-0 shrink-0 items-center gap-1 border-b border-border px-2')}>
+    {toolsSlide.pill}
     <Popover open={listOpen} onOpenChange={open => { setListOpen(open); if (open) setQuery('') }}>
       <Hint tip="标签页列表" side="bottom"><PopoverTrigger render={<Button variant="ghost" size="icon-sm" aria-label="标签页列表" />}><ChevronsDown /></PopoverTrigger></Hint>
-      <PopoverContent align="start" initialFocus={false} className="w-80 max-w-[calc(100vw-1rem)]">
+      <PopoverContent
+        ref={slide.containerRef}
+        align="start"
+        initialFocus={false}
+        className={cn(slide.containerClassName, 'w-80 max-w-[calc(100vw-1rem)]')}
+      >
+        {slide.pill}
         <InputGroup><InputGroupAddon><Search /></InputGroupAddon><InputGroupInput aria-label="搜索标签页" placeholder="搜索标签页…" value={query} onChange={event => setQuery(event.target.value)} /></InputGroup>
         <p className="text-xs text-muted-foreground">打开的标签页</p>
         <ItemGroup className="max-h-72 overflow-y-auto">
           {filtered.map(tab => <Item size="xs" variant={tab.id === activeId ? 'muted' : 'default'} className="relative" key={tab.id}>
-            <Button variant="ghost" className="absolute inset-0 h-full w-full" aria-label={tab.title} aria-current={tab.id === activeId ? 'page' : undefined} onClick={() => { useWorkspaceStore.getState().activate(tab.id); setListOpen(false) }} />
+            <Button variant="ghost" className="absolute inset-0 h-full w-full" data-hover-slide aria-label={tab.title} aria-current={tab.id === activeId ? 'page' : undefined} onClick={() => { useWorkspaceStore.getState().activate(tab.id); setListOpen(false) }} />
             <ItemMedia variant="icon" className="pointer-events-none relative"><TabIcon tab={tab} /></ItemMedia>
             <ItemContent className="pointer-events-none relative min-w-0"><span className="truncate">{tab.title}</span></ItemContent>
             <ItemActions className="relative"><Hint tip="关闭标签页"><Button variant="ghost" size="icon-xs" aria-label={'在列表中关闭 ' + tab.title} onClick={() => { void closeWorkspaceTab(tab.id).catch(error => onError(String(error))) }}><X /></Button></Hint></ItemActions>
@@ -103,8 +120,8 @@ export function WorkspaceTabs({ tabs, activeId, expanded = false, onError }: { t
           {filtered.length === 0 && <p className="py-3 text-center text-sm text-muted-foreground">没有匹配的标签页</p>}
         </ItemGroup>
         <Separator />
-        <Button variant="ghost" className="justify-start" onClick={reopen}>重新打开关闭的标签页</Button>
-        <Button variant="ghost" className="justify-start" onClick={() => { setListOpen(false); void closeWorkspaceTabs(tabs.map(tab => tab.id)).catch(error => onError(String(error))) }}>关闭全部标签页</Button>
+        <Button variant="ghost" className="justify-start" data-hover-slide onClick={reopen}>重新打开关闭的标签页</Button>
+        <Button variant="ghost" className="justify-start" data-hover-slide onClick={() => { setListOpen(false); void closeWorkspaceTabs(tabs.map(tab => tab.id)).catch(error => onError(String(error))) }}>关闭全部标签页</Button>
       </PopoverContent>
     </Popover>
     <Tabs value={activeId} onValueChange={value => { if (typeof value === 'string') useWorkspaceStore.getState().activate(value) }} className="min-w-0 shrink">
@@ -114,7 +131,8 @@ export function WorkspaceTabs({ tabs, activeId, expanded = false, onError }: { t
         useWorkspaceStore.getState().reorder(tabs[0].scopeId, arrayMove(ids, ids.indexOf(String(active.id)), ids.indexOf(String(over.id))))
       }}>
         <SortableContext items={tabs.map(t => t.id)} strategy={horizontalListSortingStrategy}>
-          <TabsList variant="workspace" aria-label="工作区标签页" onWheel={event => { if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) event.currentTarget.scrollLeft += event.deltaY }}>
+          <TabsList ref={tabSlide.containerRef} variant="workspace" aria-label="工作区标签页" className={tabSlide.containerClassName} onWheel={event => { if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) event.currentTarget.scrollLeft += event.deltaY }}>
+            {tabSlide.pill}
             {tabs.map(tab => <TabHeader key={tab.id} tab={tab} active={tab.id === activeId} onError={onError} />)}
           </TabsList>
         </SortableContext>
@@ -122,7 +140,7 @@ export function WorkspaceTabs({ tabs, activeId, expanded = false, onError }: { t
     </Tabs>
     <Hint tip="新建标签页（Ctrl+T）" side="bottom"><Button variant="ghost" size="icon-sm" aria-label="新建标签页" onClick={() => useWorkspaceStore.getState().newTab()}><Plus /></Button></Hint>
     <div className="min-w-0 flex-1" />
-    <Hint tip={expanded ? '恢复并排' : '占满内容区'} side="bottom"><Button variant="ghost" size="icon-sm" aria-label={expanded ? '恢复并排' : '展开工作区'} onClick={() => useWorkspaceStore.getState().setLayout({ expanded: !expanded })}>{expanded ? <Minimize2 /> : <Expand />}</Button></Hint>
-    <Hint tip="收起工作区" side="bottom"><Button variant="ghost" size="icon-sm" aria-label="收起工作区" onClick={() => useWorkspaceStore.getState().setLayout({ collapsed: true })}><PanelRightClose /></Button></Hint>
+    <Hint tip={expanded ? '恢复并排' : '占满内容区'} side="bottom"><Button variant="ghost" size="icon-sm" data-hover-slide aria-label={expanded ? '恢复并排' : '展开工作区'} onClick={() => useWorkspaceStore.getState().setLayout({ expanded: !expanded })}>{expanded ? <Minimize2 /> : <Expand />}</Button></Hint>
+    <Hint tip="收起工作区" side="bottom"><Button variant="ghost" size="icon-sm" data-hover-slide aria-label="收起工作区" onClick={() => useWorkspaceStore.getState().setLayout({ collapsed: true })}><PanelRightClose /></Button></Hint>
   </div>
 }

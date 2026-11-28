@@ -62,6 +62,7 @@ export function ModelMenu() {
           <Button
             variant="ghost"
             size="xs"
+            data-hover-slide
             className="composer-model-trigger h-7 gap-1.5 px-2 text-xs has-[>svg]:px-2"
             aria-label={active ? `选择模型：${active.id}` : '选择模型'}
           />

@@ -18,6 +18,8 @@ export function bindAppearanceDom(): () => void {
       popoverGlassOpacity,
       popoverGlassBlur,
       popoverGlassSaturate,
+      hoverTransition,
+      hoverTransitionMs,
       codeWrap,
       accent,
       uiFontSize,
@@ -48,6 +50,8 @@ export function bindAppearanceDom(): () => void {
     root.style.setProperty('--chrome-surface', skin['--chrome-surface'])
     root.style.setProperty('--sidebar', skin['--sidebar'])
     root.toggleAttribute('data-code-wrap', codeWrap)
+    // 悬停过渡时长：base 层默认规则与对齐后的 duration-(…) 都读它；关 = 0ms（减少动画由 CSS 媒体查询再压成 0）
+    root.style.setProperty('--hover-transition-duration', `${hoverTransition ? hoverTransitionMs : 0}ms`)
     root.style.setProperty('--ui-font-size', `${uiFontSize}px`)
     if (codeFontSize === null) root.style.removeProperty('--app-code-size')
     else root.style.setProperty('--app-code-size', `${codeFontSize}px`)

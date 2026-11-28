@@ -239,3 +239,19 @@ describe('图片原字节动作与异步边界', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 })
+
+describe('图片控件行的悬停滑动装配', () => {
+  it('缩放四钮一组、「复制 / 下载」一组，倍率文字不是行', () => {
+    const { container } = render(<ImagePreview url="blob:slide" name="slide.png" tabId={tabId} active onSave={vi.fn()} />)
+    const controls = screen.getByLabelText('图片控件')
+    expect(controls).toHaveClass('relative', 'isolate')
+    expect(controls.firstElementChild).toHaveClass('hover-slide-pill')
+    const own = [...controls.children].filter((el) => el.hasAttribute('data-hover-slide')).map((el) => el.getAttribute('aria-label'))
+    expect(own).toEqual(['缩小图片', '适配图片', '图片原始尺寸', '放大图片'])
+    const pair = screen.getByRole('button', { name: '复制图片' }).parentElement!
+    expect(pair).toHaveClass('relative', 'isolate')
+    expect(pair.firstElementChild).toHaveClass('hover-slide-pill')
+    expect(pair.querySelectorAll('[data-hover-slide]')).toHaveLength(2)
+    expect(container.querySelectorAll('.hover-slide-pill')).toHaveLength(2)
+  })
+})

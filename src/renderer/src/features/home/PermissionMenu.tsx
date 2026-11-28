@@ -178,6 +178,7 @@ export function PermissionMenu({ session }: { session: HomeSession }) {
                   ? 'text-chrome-accent hover:text-chrome-accent'
                   : 'text-muted-foreground hover:text-foreground'
             )}
+            data-hover-slide
             aria-label={`权限模式：${MODES[current].label}（打开菜单）`}
           />
         }

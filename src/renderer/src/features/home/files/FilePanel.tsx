@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Hint } from '@/components/Hint'
+import { cn } from 'cn'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -124,6 +126,8 @@ export function FileToolbar({ tabId, active, leading, label, showClose = false, 
   const [status, setStatus] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
+  // 「打开 + 文件操作」按钮组两钮之间的悬停滑动（同差异视图切换）
+  const openSlide = useHoverSlide()
   const file = preview?.descriptor ?? null
   const canAct = file !== null && preview?.leaseId != null
   const Icon = ICONS[file?.kind ?? 'other']
@@ -150,12 +154,13 @@ export function FileToolbar({ tabId, active, leading, label, showClose = false, 
       {leading}
       <div className="min-w-0 flex-1">{label ?? <span className="flex min-w-0 items-center gap-2 text-sm"><Icon className="size-4 shrink-0" /><Hint tip={<span className="break-all">{file?.path ?? preview?.rawTarget ?? '文件'}</span>}><span className="truncate">{file?.name ?? preview?.rawTarget ?? '文件'}</span></Hint></span>}</div>
       {html && <Hint tip="网页预览"><Button variant="ghost" size="icon-sm" aria-label="网页预览" onClick={openHtml}><Globe /></Button></Hint>}
-      {(tabId !== null || onChooseFile !== undefined) && <ButtonGroup aria-label="文件打开操作" className="shrink-0">
+      {(tabId !== null || onChooseFile !== undefined) && <ButtonGroup ref={openSlide.containerRef} aria-label="文件打开操作" className={cn(openSlide.containerClassName, 'shrink-0')}>
+        {openSlide.pill}
         {tabId === null
-          ? <Hint tip="打开本地文件"><Button variant="outline" size="sm" aria-label="打开文件" disabled={choosingFile} onClick={onChooseFile}>打开</Button></Hint>
-          : <Hint tip="用系统应用打开"><Button variant="outline" size="sm" aria-label="系统打开" disabled={file === null || preview?.leaseId == null} onClick={() => void action('open')}><ExternalLink />打开</Button></Hint>}
+          ? <Hint tip="打开本地文件"><Button variant="outline" size="sm" data-hover-slide aria-label="打开文件" disabled={choosingFile} onClick={onChooseFile}>打开</Button></Hint>
+          : <Hint tip="用系统应用打开"><Button variant="outline" size="sm" data-hover-slide aria-label="系统打开" disabled={file === null || preview?.leaseId == null} onClick={() => void action('open')}><ExternalLink />打开</Button></Hint>}
         <DropdownMenu open={active && menuOpen} onOpenChange={setMenuOpen}>
-          <Hint tip="文件操作"><DropdownMenuTrigger render={<Button variant="outline" size="icon-sm" aria-label="文件操作" disabled={tabId !== null && onChooseFile === undefined && (file === null || preview?.leaseId == null)} />}><ChevronDown /></DropdownMenuTrigger></Hint>
+          <Hint tip="文件操作"><DropdownMenuTrigger render={<Button variant="outline" size="icon-sm" data-hover-slide aria-label="文件操作" disabled={tabId !== null && onChooseFile === undefined && (file === null || preview?.leaseId == null)} />}><ChevronDown /></DropdownMenuTrigger></Hint>
           <DropdownMenuContent align="end">
             {onChooseFile !== undefined && <DropdownMenuItem disabled={choosingFile} onClick={onChooseFile}>打开本地文件…</DropdownMenuItem>}
             {onChooseFile !== undefined && tabId !== null && <DropdownMenuSeparator />}

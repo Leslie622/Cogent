@@ -19,6 +19,8 @@ import { useEngineStore } from '@/stores/engine'
 import { matchModelPreset } from '@shared/model-presets'
 import type { CustomProviderDef, DiscoveredModel, ModelDef, ModelSummary } from '@/env.d'
 import { BADGE, formatContext } from './models-recipes'
+import { cn } from 'cn'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 type ApiFormat = NonNullable<CustomProviderDef['apiFormat']>
 
@@ -47,6 +49,8 @@ export function ModelDiscoveryDialog({
   const [candidates, setCandidates] = useState<DiscoveredModel[]>([])
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  // 候选行之间的悬停滑动
+  const slide = useHoverSlide()
 
   useEffect(() => {
     if (!open) return
@@ -188,7 +192,8 @@ export function ModelDiscoveryDialog({
             </div>
 
             <div className="min-h-0 max-h-80 flex-1 overflow-y-auto -mx-4 px-4">
-              <div className="divide-y divide-border rounded-lg border border-border">
+              <div ref={slide.containerRef} className={cn(slide.containerClassName, 'divide-y divide-border rounded-lg border border-border')}>
+                {slide.pill}
                 {filtered.map((m) => {
                   const alreadyAdded = existingIds.has(m.id)
                   const checked = alreadyAdded || selected.has(m.id)
@@ -198,6 +203,7 @@ export function ModelDiscoveryDialog({
                   return (
                     <label
                       key={m.id}
+                      data-hover-slide
                       className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent-foreground/5"
                     >
                       <Checkbox

@@ -44,6 +44,7 @@ export function PlanToggle({ session }: { session: HomeSession }) {
         <span
           role="group"
           aria-label="计划模式开启中"
+          data-hover-slide
           className={cn(
             buttonVariants({ variant: 'ghost', size: 'xs' }),
             'group h-7 cursor-default gap-1.5'
@@ -56,7 +57,7 @@ export function PlanToggle({ session }: { session: HomeSession }) {
             size="icon-2xs"
             aria-label="关闭计划模式"
             onClick={close}
-            className="pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+            className="pointer-events-none opacity-0 transition-opacity duration-(--hover-transition-duration) group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
           >
             <IconX aria-hidden className="size-3.5" />
           </Button>

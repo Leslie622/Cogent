@@ -11,6 +11,7 @@ import { ButtonGroup } from '@/components/ui/button-group'
 import { useAppearanceStore, useIsDarkMode } from '@/stores/appearance'
 import { useWorkspaceStore, type WorkspaceTab } from '@/stores/workspace'
 import { cn } from '@/lib/utils'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 type DiffTab = Extract<WorkspaceTab, { kind: 'diff' }>
 
@@ -60,6 +61,8 @@ export default function DiffPreview({ tab, active }: { tab: DiffTab; active: boo
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [diffStyle, setDiffStyle] = useState<'unified' | 'split'>('unified')
+  // 视图切换两钮之间的悬停滑动（2026-11-28）：当前档自带底色、悬停不改底色，胶囊不停上去
+  const viewSlide = useHoverSlide()
   const [reloadSeq, setReloadSeq] = useState(0)
   const dark = useIsDarkMode()
   const showLineNumbers = useAppearanceStore((s) => s.showLineNumbers)
@@ -169,11 +172,13 @@ export default function DiffPreview({ tab, active }: { tab: DiffTab; active: boo
           )}
         </div>
         {isTextDiff && (
-          <ButtonGroup className="shrink-0" aria-label="差异视图模式">
+          <ButtonGroup ref={viewSlide.containerRef} className={cn(viewSlide.containerClassName, 'shrink-0')} aria-label="差异视图模式">
+            {viewSlide.pill}
             <Hint tip="统一视图">
               <Button
                 size="icon-sm"
                 variant="outline"
+                data-hover-slide
                 aria-label="统一视图"
                 aria-pressed={diffStyle === 'unified'}
                 className={cn(diffStyle === 'unified' && 'bg-muted text-foreground hover:bg-muted')}
@@ -186,6 +191,7 @@ export default function DiffPreview({ tab, active }: { tab: DiffTab; active: boo
               <Button
                 size="icon-sm"
                 variant="outline"
+                data-hover-slide
                 aria-label="双栏对照"
                 aria-pressed={diffStyle === 'split'}
                 className={cn(diffStyle === 'split' && 'bg-muted text-foreground hover:bg-muted')}

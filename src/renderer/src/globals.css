@@ -274,52 +274,71 @@
   background: var(--chrome-surface);
 }
 
-/* ── 侧边栏列表悬停磁吸动效（HomeSidebar / SettingsSidebar 共用）──
-   单层滑动胶囊在列表项间平滑滑行并自适应高度；选中/弹窗态在胶囊覆上时淡出自身底色，
-   避免双层 5% 叠色变深。图标仅随悬停平滑切换实色，不做位移或缩放抖动。 */
-.sidebar-hover-pill {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--pill-h, 2rem);
-  translate: 0 var(--pill-y, 0px);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    translate 200ms cubic-bezier(0.22, 1, 0.36, 1),
-    height 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 120ms ease-out;
-  will-change: translate, opacity;
+/* ── 内容侧栏行（HomeSidebar / SettingsSidebar）── 行是悬停滑动层的接入点（data-hover-slide，
+   见下方 .hover-slide-pill）：悬停底色与选中 / 弹窗态同为 5% 软叠；滑动开启时胶囊读走这层
+   底色并在行间滑行（选中行悬停前后同色，胶囊不停上去），关闭时行按本规则自画。图标仅随
+   悬停平滑切换实色，不做位移或缩放。:where() 压低特异性，让胶囊的压制规则稳定压过这里。 */
+:where(.sidebar-row) {
+  transition: background-color var(--hover-transition-duration, 150ms) ease-out;
 }
 
-.sidebar-hover-pill[data-visible='true'] {
-  opacity: 1;
-}
-
-.sidebar-row {
-  transition: background-color 150ms ease-out;
-}
-
-.sidebar-row[data-active='true']:not([data-pill-over]),
-.sidebar-row[data-popup-open]:not([data-pill-over]),
-.sidebar-row:has([data-popup-open]):not([data-pill-over]) {
+:where(.sidebar-row[data-active='true']),
+:where(.sidebar-row[data-popup-open]),
+:where(.sidebar-row:has([data-popup-open])),
+:where(.sidebar-row:hover) {
   background-color: color-mix(in oklab, var(--accent-foreground) 5%, transparent);
 }
 
-.sidebar-row-icon {
-  transition: color 150ms ease-out;
+:where(.sidebar-row-icon) {
+  transition: color var(--hover-transition-duration, 150ms) ease-out;
 }
 
 .sidebar-row:hover .sidebar-row-icon {
   color: var(--foreground);
 }
 
+
+/* ── 悬停滑动层（useHoverSlide；由外观「开启滑动动画」全局控制，接入点见各组件）──
+   只加滑动、不改高亮：进入行时读它自己的 hover 底色与圆角涂到胶囊上，行自身底色在胶囊
+   覆着期间置透明（未分层规则，压过 @layer utilities 里的 hover:bg-*）。容器 relative isolate，
+   胶囊 z-index:-1 垫在行内容之下 —— 未隔离会沉到祖先背景之下，不垫底则盖住行内容。
+   动画走 left / top / width / height 与背景色：translate / opacity 会把胶囊提升为合成层，
+   其上的文字被降级成灰度抗锯齿。 */
+.hover-slide-pill {
+  position: absolute;
+  top: var(--pill-y, 0px);
+  left: var(--pill-x, 0px);
+  z-index: -1;
+  width: var(--pill-w, 0px);
+  height: var(--pill-h, 0px);
+  pointer-events: none;
+  contain: layout paint;
+  background-color: transparent;
+  transition:
+    left 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    top 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 120ms ease-out,
+    border-radius 120ms ease-out;
+}
+
+.hover-slide-pill[data-visible='true'] {
+  background-color: var(--pill-bg, transparent);
+}
+
+[data-hover-slide][data-pill-over] {
+  background-color: transparent;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .sidebar-hover-pill,
-  .sidebar-row,
-  .sidebar-row-icon {
+  .hover-slide-pill {
     transition: none;
+  }
+
+  /* 系统「减少动画」优先于外观时长：!important 压过 appearance-dom 投影在 <html> 上的内联值 */
+  html {
+    --hover-transition-duration: 0ms !important;
   }
 }
 
@@ -828,6 +847,38 @@
     [data-slot='input-group'], [data-slot='attachment'],
     [data-slot='code-block'], [data-slot='slider-thumb'], .cm-editor) {
     transition: outline-color 150ms ease-out;
+  }
+
+  /* 悬停过渡时长的兜底默认值：appearance-dom 投影在 <html> 内联值之上覆盖；没有这行时
+     var() 无回退的工具类（duration-(--hover-transition-duration)）在投影尚未运行的前几帧会是 0s */
+  html {
+    --hover-transition-duration: 150ms;
+  }
+
+  /* 悬停与浮层行的默认过渡（外观「开启过渡效果」+ 时长滑杆，lib/appearance-dom.ts 投影
+     --hover-transition-duration）：按 class 属性在运行时匹配是否含 hover: 变体（group-hover: 等
+     同样命中，cn() 拼接结果也算），浮层行的高亮走 Base UI 焦点、类名里没有 hover:，按 data-slot
+     单列。只过渡绘制类属性，transform / translate / scale 不入默认清单。
+     放在 base 层：任何显式 transition-* / duration-* / transition-none 工具类都会整体覆盖它
+     （后层胜出），拖拽杀过渡、侧栏开合等刻意安排不受影响；未分层的自定义规则同样高于这里。
+     新增浮层行类型时在下面的选择器列表加一项。 */
+  :where([class*='hover:'],
+    [data-slot$='-menu-item'],
+    [data-slot$='-menu-sub-trigger'],
+    [data-slot$='-menu-checkbox-item'],
+    [data-slot$='-menu-radio-item'],
+    [data-slot='select-item'],
+    [data-slot='combobox-item'],
+    [data-slot='command-item']) {
+    transition:
+      background-color var(--hover-transition-duration, 150ms) ease-out,
+      border-color var(--hover-transition-duration, 150ms) ease-out,
+      color var(--hover-transition-duration, 150ms) ease-out,
+      outline-color var(--hover-transition-duration, 150ms) ease-out,
+      box-shadow var(--hover-transition-duration, 150ms) ease-out,
+      opacity var(--hover-transition-duration, 150ms) ease-out,
+      fill var(--hover-transition-duration, 150ms) ease-out,
+      stroke var(--hover-transition-duration, 150ms) ease-out;
   }
 
   html,

@@ -24,6 +24,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { IconChevronDown, IconPlus, IconRefresh } from '@tabler/icons-react'
 import { cn } from 'cn'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import {
@@ -75,6 +76,7 @@ function ProviderNavRow({
   return (
     <button
       type="button"
+      data-hover-slide
       onClick={onClick}
       aria-current={active ? 'true' : undefined}
       className={cn(
@@ -113,6 +115,7 @@ function ProviderIconButton({
       type="button"
       onClick={onClick}
       title={name}
+      data-hover-slide
       aria-current={active ? 'true' : undefined}
       aria-label={`${name}（${ok ? '已就绪' : '待配置'}）`}
       className={cn(
@@ -160,6 +163,9 @@ export function ModelsSection() {
   const [selectedId, setSelectedId] = useState(BUILTIN_PROVIDERS[0].id)
   // 左栏分栏：像素宽状态机 + localStorage 记忆，机制同 content-sidebar
   const rail = useProviderRailSplit()
+  // 左栏两层各自的悬停滑动：清单层（供应商行 + 折叠触发）与图标栏层；当前供应商行自带底色，不停上去
+  const listSlide = useHoverSlide()
+  const iconSlide = useHoverSlide()
   // 凭据链路健康位：挂载查一次（error 非 null → 页头下方横幅；恢复动作是
   // 重存 key，横幅不提供按钮，等下一次 setApiKey 后用户手动刷新即可见）
   const [credentialsError, setCredentialsError] = useState<string | null>(null)
@@ -304,14 +310,16 @@ export function ModelsSection() {
             style={{ width: rail.collapsed ? RAIL_COLLAPSED : rail.widthPx }}
           >
             <div
-              ref={rail.listRef}
+              ref={(node) => { rail.listRef.current = node; listSlide.containerRef(node) }}
               inert={rail.collapsed ? true : undefined}
               className={cn(
+                listSlide.containerClassName,
                 'absolute inset-y-0 left-0 min-w-44 overflow-y-auto px-3 pb-3 transition-opacity duration-200 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
                 rail.collapsed && 'opacity-0'
               )}
               style={{ width: rail.widthPx }}
             >
+              {listSlide.pill}
               <section className="flex flex-col gap-0.5">
                 <div className="sticky top-0 z-10 bg-background pt-3 pb-1">
                   <div className="flex h-6 items-center px-2 text-xs text-muted-foreground">内置供应商</div>
@@ -331,7 +339,7 @@ export function ModelsSection() {
                 <section className="mt-1 flex flex-col gap-0.5">
                   <Collapsible defaultOpen={extraBuiltinProviders.some((p) => keyConfigured[p.id] === true || p.id === selectedId)}>
                     <div className="sticky top-0 z-10 bg-background py-1">
-                      <CollapsibleTrigger className="flex h-7 w-full items-center gap-1 rounded-lg px-2 text-xs text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground">
+                      <CollapsibleTrigger data-hover-slide className="flex h-7 w-full items-center gap-1 rounded-lg px-2 text-xs text-muted-foreground hover:bg-accent-foreground/5 hover:text-foreground">
                         <IconChevronDown className="size-3.5 transition-transform duration-200 [[data-state=closed]_&]:-rotate-90" />
                         <span>更多内置供应商（{extraBuiltinProviders.length}）</span>
                       </CollapsibleTrigger>
@@ -378,7 +386,8 @@ export function ModelsSection() {
                 !rail.collapsed && 'opacity-0'
               )}
             >
-              <div className="flex flex-col items-center gap-1 p-1.5">
+              <div ref={iconSlide.containerRef} className={cn(iconSlide.containerClassName, 'flex flex-col items-center gap-1 p-1.5')}>
+                {iconSlide.pill}
                 {BUILTIN_PROVIDERS.map((provider) => (
                   <ProviderIconButton
                     key={provider.id}

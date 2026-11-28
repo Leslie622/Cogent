@@ -39,6 +39,7 @@ import { showErrorToast } from '@/components/ui/sonner'
 import { unwrapIpcError } from '@/lib/ipc'
 import { useProjectStore } from '@/stores/project'
 import type { ProjectSummary } from '@/env.d'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 /** 第一步的三张类型卡（kind: 'cloud'/'remote' 本期禁选，见文件头） */
 type ProjectKind = 'local' | 'cloud' | 'remote'
@@ -106,6 +107,7 @@ function KindCard({
       type="button"
       role="radio"
       aria-checked={selected}
+      data-hover-slide
       onClick={() => onSelect(card.kind)}
       className={cn(
         shell,
@@ -152,6 +154,9 @@ export function ProjectDialog({
   const [name, setName] = useState(project?.name ?? '')
   /** 已选工作区根目录列表（首个 = 主根；协议 cwds: string[]）；编辑模式预填 */
   const [cwds, setCwds] = useState<string[]>(project?.cwds ?? [])
+  // 项目类型卡之间的悬停滑动（2026-11-28）：并列可选卡按行组处理；已选卡自带底色、悬停不改底色，
+  // 胶囊不停上去；禁选卡是 div、无悬停，不是行
+  const slide = useHoverSlide()
   const [confirming, setConfirming] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const create = useProjectStore((s) => s.create)
@@ -230,8 +235,10 @@ export function ProjectDialog({
             <div
               role="radiogroup"
               aria-label="项目类型"
-              className="grid grid-cols-2 gap-3"
+              ref={slide.containerRef}
+              className={cn(slide.containerClassName, 'grid grid-cols-2 gap-3')}
             >
+              {slide.pill}
               {KIND_CARDS.map((card) => (
                 <KindCard
                   key={card.kind}
@@ -295,7 +302,7 @@ export function ProjectDialog({
                       type="button"
                       aria-label={`移除 ${dir}`}
                       onClick={() => setCwds(cwds.filter((d) => d !== dir))}
-                      className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                      className="text-muted-foreground opacity-0 transition-opacity duration-(--hover-transition-duration) hover:text-foreground group-hover:opacity-100"
                     >
                       <IconX className="size-4" />
                     </button>

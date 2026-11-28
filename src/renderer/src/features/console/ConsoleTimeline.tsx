@@ -11,6 +11,8 @@ import { KINDS, layerDot, summarizeOverview } from './kinds'
 import { Hint } from '@/components/Hint'
 import { Button } from '@/components/ui/button'
 import { DetailSection } from './DetailSection'
+import { cn } from 'cn'
+import { useHoverSlide } from '@/hooks/use-hover-slide'
 
 /** 时刻 → HH:mm:ss.mmm（毫秒是观学习重点：分片节奏/耗时都要看得到） */
 function formatTime(ts: number): string {
@@ -125,6 +127,8 @@ function RunBlock({
   selectedSeq: number | null
   onSelect: (seq: number) => void
 }) {
+  // 本组条目行之间的悬停滑动（选中行自带底色，不停上去）
+  const slide = useHoverSlide()
   const started = group.allEntries[0]
   const preview = started.kind === 'run.started' ? started.title.replace(/^run #\d+ · /, '') : ''
   const lastKind = group.allEntries.at(-1)!.kind
@@ -140,7 +144,8 @@ function RunBlock({
           {status}
         </span>
       }>
-      <ul className="flex flex-col rounded-lg border">
+      <ul ref={slide.containerRef} className={cn(slide.containerClassName, 'flex flex-col rounded-lg border')}>
+        {slide.pill}
         {group.entries.map((entry) => (
           <EntryRow key={entry.seq} entry={entry} selected={entry.seq === selectedSeq} onSelect={onSelect} />
         ))}
@@ -169,6 +174,7 @@ function EntryRow({
       <Hint tip={`${entry.title}${summary !== '' ? ` · ${summary}` : ''}`} side="right">
         <button
           type="button"
+          data-hover-slide
           className={`flex h-8 w-full items-center gap-2 border-b px-2.5 text-left last:border-b-0 ${
             selected ? 'bg-foreground/5' : 'hover:bg-foreground/5'
           }`}
