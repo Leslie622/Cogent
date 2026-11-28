@@ -110,7 +110,7 @@ describe('WorkspaceChangesService', () => {
     await service.finalize('s1', 't1', owner, 'completed')
     const [summary] = await service.get('s1', 't1')
     expect(summary.coverage).toBe('complete')
-    expect(summary.warnings.some((w) => w.includes('nested-repo'))).toBe(true)
+    expect(summary.warnings.some((w) => w.includes('nested-repo'))).toBe(false)
     expect(summary.items.map((i) => i.path)).toEqual(['app.ts', 'dist/out.js'])
 
     const appDiff = await service.diff('s1', 't1', summary.revision, summary.items[0].changeId)
@@ -157,12 +157,27 @@ describe('WorkspaceChangesService', () => {
     await service.storage.commit({
       summary: {
         version: 1, sessionId: 's1', turnId: 't-legacy', revision: 1, state: 'ready',
-        coverage: 'tools-only', totalAdded: 0, totalDeleted: 0, incompleteCount: 0, items: [], warnings: ['未绑定工作区目录，仅追踪文件工具改动']
+        coverage: 'tools-only', totalAdded: 0, totalDeleted: 0, incompleteCount: 0, items: [],
+        warnings: ['未绑定工作区目录，仅追踪文件工具改动', '跳过嵌套 Git 仓库目录：reference/pi']
       },
       entries: []
     }, new AbortController().signal)
     const [legacy] = await service.get('s1', 't-legacy')
     expect(legacy.warnings).toEqual([])
+
+    // 全量扫描且净改动消零时，收尾必须清理未变化的基线 blob，避免盘上残留
+    const { readdir } = await import('node:fs/promises')
+    const zeroOwner = {}
+    await writeFile(join(ws, 'unchanged.txt'), 'keep-clean\n')
+    service.begin('s-zero', 't-zero', zeroOwner, [ws])
+    await service.beforeTool('s-zero', 't-zero', zeroOwner, 'powershell', { command: 'Get-Content unchanged.txt' }, ws)
+    await service.finalize('s-zero', 't-zero', zeroOwner, 'completed')
+    const [zeroSummary] = await service.get('s-zero', 't-zero')
+    expect(zeroSummary.items).toEqual([])
+    expect(zeroSummary.warnings).toEqual([])
+    const blobsDir = join(hostRoot, 'changes', 'v1', 'sessions', 's-zero', 'blobs')
+    const blobBuckets = existsSync(blobsDir) ? await readdir(blobsDir) : []
+    expect(blobBuckets).toEqual([])
 
     // 删会话清理
     await service.releaseSession('s1')

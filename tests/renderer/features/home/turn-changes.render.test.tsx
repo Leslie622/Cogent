@@ -168,9 +168,9 @@ describe('TurnChangesBar & DiffPreview', () => {
     expect(screen.getByText('部分统计')).toBeInTheDocument()
     cleanup()
 
-    renderWith('t-warn', { ...emptyBase, turnId: 't-warn', coverage: 'complete', warnings: ['跳过嵌套 Git 仓库目录：sub'] })
+    renderWith('t-warn', { ...emptyBase, turnId: 't-warn', coverage: 'complete', warnings: ['工作区扫描超时或被取消，改动清单可能不完整'] })
     expect(screen.getByText('本轮无净文件更改')).toBeInTheDocument()
-    expect(screen.getByText('跳过嵌套 Git 仓库目录：sub')).toBeInTheDocument()
+    expect(screen.getByText('工作区扫描超时或被取消，改动清单可能不完整')).toBeInTheDocument()
   })
 
   it('DiffPreview 加载冻结对比并支持统一/双栏切换及二进制降级', async () => {

@@ -177,7 +177,7 @@ export async function scanWorkspaceRoots(
       }
 
       if (!current.isRoot && dirents.some((d) => d.name === '.git')) {
-        warnings.push(`跳过嵌套 Git 仓库目录：${relative(current.root.path, current.dir).split(sep).join('/')}`)
+        // 嵌套 Git 仓库作为扫描边界静默跳过（与 .git / node_modules 同口径），不产生用户可见告警。
         incompleteDirs.add(current.dirCanon)
         continue
       }
