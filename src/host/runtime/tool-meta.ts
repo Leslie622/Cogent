@@ -55,6 +55,7 @@ export const COGENT_TOOL_NAMES: string[] = [
  */
 export const MCP_TOOL_ALLOWLIST: string[] = [
   'mcp__*',
+  'tool_search',
   'list_mcp_resources',
   'list_mcp_resource_templates',
   'read_mcp_resource'
@@ -75,6 +76,7 @@ export function summarizeArgs(name: string, args: unknown): string {
  * 历史条目（glob）只为旧转录投影服务，不在 COGENT_TOOL_NAMES 里。
  */
 const TOOL_METAS: Record<string, { kind: ToolKind; summarize: (args: unknown) => string }> = {
+  tool_search: { kind: 'read', summarize: (a) => summarizeArgs('tool_search', a) },
   report_outputs: { kind: 'read', summarize: () => 'report_outputs(交付清单)' },
   read_attachment: { kind: 'read', summarize: (a) => summarizeArgs('read_attachment', a) },
   skill: { kind: 'read', summarize: summarizeSkillArgs },

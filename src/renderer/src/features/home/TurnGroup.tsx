@@ -256,6 +256,7 @@ const ProcessItem = memo(function ProcessItem({ item, approval }: { item: Messag
         summary={item.summary}
         status={item.status}
         result={item.resultSummary}
+        mcpResult={item.mcpResult}
         progress={item.progress}
         diff={item.diff}
         approval={approval}

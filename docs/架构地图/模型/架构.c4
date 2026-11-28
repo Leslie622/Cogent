@@ -177,7 +177,7 @@ model {
         technology '运行时装配（消费能力配置）'
         description '消费 Host 服务层能力配置快照，按 pi 官方工具和扩展形状装配进内核会话；含交互工具，子会话为预留。'
         tools = component '内置工具' { technology '文件 · 搜索 · 执行' }
-        mcp = component 'MCP 工具' { technology '外部工具连接与装配' }
+        mcp = component 'MCP 工具' { technology 'Host共享连接 · pi会话工具桥' }
         skills = component '技能' { technology '知识与提示段加载' }
         hooks = component '钩子' { technology '生命周期干预' }
         interaction = component '交互工具' { technology '提问 · 方案 · 任务清单' }
@@ -211,7 +211,7 @@ model {
       description 'Main 原子写入设置、文件目录授权与浏览器站点策略。'
     }
     credentials = component '加密凭据' {
-      technology 'credentials.json'
+      technology '模型与MCP凭据 · safeStorage'
       description 'safeStorage 密文存储；损坏或跨机恢复时显式提示，不静默清空。'
     }
     business = component '业务配置与规则' {

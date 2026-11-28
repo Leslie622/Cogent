@@ -2,14 +2,14 @@
  * 输入区触发符解析与候选模糊匹配（纯函数，无 DOM/Lexical 依赖）。
  * - `/` 唤起命令+技能面板；
  * - `$`、`¥`(U+00A5)、`￥`(U+FFE5) 均归一为 `$` 唤起技能面板（兼容中文输入法 Shift+4）；
- * - `@` 暂不接线（插件/会话底座未就绪）。
+ * - `@` 唤起当前作用域下 MCP 资源，不把普通邮箱或正文标签当结构化引用。
  */
 import type { ActiveTrigger, ComposerSuggestionItem, TriggerKind } from './types'
 
-const ACTIVE_TRIGGER_RE = /(?:^|[\s\uFFFC])([/$¥￥])([^\s/$¥￥]*)$/
+const ACTIVE_TRIGGER_RE = /(?:^|[\s\uFFFC])([/@$¥￥])([^\s/@$¥￥]*)$/
 
 function normalizeTrigger(raw: string): TriggerKind {
-  return raw === '/' ? '/' : '$'
+  return raw === '/' ? '/' : raw === '@' ? '@' : '$'
 }
 
 /**
@@ -60,7 +60,7 @@ function scoreText(text: string, query: string): number | null {
 export function scoreSuggestion(item: ComposerSuggestionItem, query: string): number | null {
   const trimmed = query.trim().toLowerCase()
   if (trimmed.length === 0) return 0
-  const bareLabel = item.label.replace(/^[/|$]/, '')
+  const bareLabel = item.label.replace(/^[/@$]/, '')
   const scores: number[] = []
   const bare = scoreText(bareLabel, trimmed)
   if (bare !== null) scores.push(bare)
@@ -91,7 +91,8 @@ export function filterSuggestions(
     if (score !== null) scored.push({ item, score, order })
   })
   scored.sort((a, b) => {
-    if (a.item.group !== b.item.group) return a.item.group === 'command' ? -1 : 1
+    const groups = { command: 0, skill: 1, 'mcp-prompt': 2, 'mcp-resource': 3 }
+    if (a.item.group !== b.item.group) return groups[a.item.group] - groups[b.item.group]
     if (a.score !== b.score) return a.score - b.score
     return a.order - b.order
   })

@@ -8,6 +8,8 @@
  *   保留 core 传入的每次调用 signal，再委托 pi 原链；
  * - **嵌套审批**：ctx.executeTool 直接调用 pi 私有扩展分发器，不经过上述公开链。
  *   官方 tool_call 事件按 parentToolCallId 筛嵌套项，复用同一 ApprovalBridge。
+ *   当前宿主工具都不再发起嵌套调用（read_attachment 的媒体委托已移除），分支留作安全网：
+ *   今后任何扩展经 ctx.executeTool 调工具，审批照样生效。
  *   当前扩展 context.signal 公开提供 agent.signal；不能把分发器没有第二形参
  *   误读成扩展上下文完全拿不到信号。升级 pi 时重查两条入口；
  * - **厂商标量观测**：AgentOptions 三回调（onPayload/onResponse/
@@ -60,7 +62,7 @@ export function createCogentHooks(opts: CogentHooksOptions): InlineExtension {
       if (opts.nestedApproval !== undefined) {
         pi.on('tool_call', async (event, ctx) => {
           if (event.parentToolCallId === undefined) return
-          // 当前 pi 的公开扩展 context.signal 来自 agent.signal；read_attachment 透传同一 run 信号。
+          // 当前 pi 的公开扩展 context.signal 来自 agent.signal；嵌套调用透传同一 run 信号。
           return opts.nestedApproval!.decide(event.toolName, event.toolCallId, event.input, ctx.signal)
         })
       }

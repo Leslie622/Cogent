@@ -5,11 +5,13 @@
  * 表单 / JSON 双模式：JSON 直编生态形状，可改表单未暴露的字段（timeout 等）；
  * 模式互切带双向换算，坏 JSON 不放行切换。序列化/解析在 mcp-import.ts。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -21,78 +23,103 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { unwrapIpcError } from '@/lib/ipc'
 import { FIELD_GAP, FIELD_LABEL } from './models-recipes'
 import { defToJsonText, entriesOf, JSON_TEMPLATE, linesOf, parseEntries, parseImport, parseLines } from './mcp-import'
-import type { McpExposure, McpServerDef } from '@/env.d'
+import type { McpExposure, McpServerDef, McpScope } from '@shared/mcp'
 
-/** 暴露档下拉（Cogent 只用 direct，其余档供手改配置的忠实回显） */
+/** 原 codemode 配置保留于 JSON；表单按当前可用的延迟暴露显示。 */
 const EXPOSURES = [
+  { value: 'deferred', label: 'deferred · 按需搜索工具' },
   { value: 'direct', label: 'direct · 工具直接给模型' },
-  { value: 'codemode', label: 'codemode · 仅脚本可调（Cogent 未装载）' },
-  { value: 'deferred', label: 'deferred · 经 tool_search（Cogent 未装载）' },
-  { value: 'hidden', label: 'hidden · 注册但不可达' }
+  { value: 'hidden', label: 'hidden · 隐藏工具' }
 ] as const
 
 const TYPES = [
   { value: 'stdio', label: 'stdio · 本地命令' },
-  { value: 'http', label: 'http · Streamable HTTP' }
+  { value: 'http', label: 'http · Streamable HTTP' },
+  { value: 'sse', label: 'sse · Legacy SSE' }
 ] as const
 
 export function McpServerDialog({
   open,
   initial,
   onClose,
-  onSave
+  onSave,
+  scope = {}
 }: {
   open: boolean
   /** 编辑态传既有定义；新增传 null */
   initial: McpServerDef | null
   onClose: () => void
-  onSave: (def: McpServerDef, originalName: string | null) => void
+  onSave: (def: McpServerDef, originalName: string | null) => void | boolean | Promise<void | boolean>
+  scope?: McpScope
 }) {
   const [name, setName] = useState('')
-  const [type, setType] = useState<'stdio' | 'http'>('stdio')
+  const [type, setType] = useState<'stdio' | 'http' | 'sse'>('stdio')
+  const [draft, setDraft] = useState<McpServerDef | null>(null)
   const [command, setCommand] = useState('')
   const [args, setArgs] = useState('')
   const [env, setEnv] = useState('')
   const [url, setUrl] = useState('')
   const [headers, setHeaders] = useState('')
   const [description, setDescription] = useState('')
-  const [exposure, setExposure] = useState<McpExposure>('direct')
+  const [exposure, setExposure] = useState<McpExposure>('deferred')
+  const [cwd, setCwd] = useState('')
+  const [timeout, setTimeoutValue] = useState('')
+  const [sanitizeHostEnv, setSanitizeHostEnv] = useState(true)
+  const [oauth, setOauth] = useState('')
+  const [pending, setPending] = useState(false)
+  const [probeResult, setProbeResult] = useState<string | null>(null)
+  const generation = useRef(0)
   const [mode, setMode] = useState<'form' | 'json'>('form')
   const [jsonText, setJsonText] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
 
   /** def → 表单态（打开重置与 JSON→表单切换共用；useCallback 稳定引用供 effect 依赖） */
   const applyDef = useCallback((d: McpServerDef | null): void => {
+    setDraft(d)
     setName(d?.name ?? '')
     setType(d?.type ?? 'stdio')
     setCommand(d?.type === 'stdio' ? d.command : '')
     setArgs(linesOf(d?.type === 'stdio' ? d.args : undefined))
     setEnv(entriesOf(d?.type === 'stdio' ? d.env : undefined, '='))
-    setUrl(d?.type === 'http' ? d.url : '')
-    setHeaders(entriesOf(d?.type === 'http' ? d.headers : undefined, ':'))
+    setUrl(d !== null && d.type !== 'stdio' ? d.url : '')
+    setHeaders(entriesOf(d !== null && d.type !== 'stdio' ? d.headers : undefined, ':'))
     setDescription(d?.description ?? '')
-    setExposure(d?.exposure ?? 'direct')
+    setExposure(d?.exposure === 'codemode' ? 'deferred' : d?.exposure ?? 'deferred')
+    setCwd(d?.type === 'stdio' ? d.cwd ?? '' : '')
+    setSanitizeHostEnv(d?.type === 'stdio' ? d.sanitizeHostEnv !== false : true)
+    setTimeoutValue(d?.timeout === undefined ? '' : String(d.timeout))
+    setOauth(d !== null && d.type !== 'stdio' && d.oauth !== undefined ? JSON.stringify(d.oauth, null, 2) : '')
   }, [])
 
   // 每次打开重置（initial 区分新增/编辑），恒回表单模式
   useEffect(() => {
+    generation.current++
     if (!open) return
     applyDef(initial)
     setMode('form')
     setJsonText('')
     setFormError(null)
+    setProbeResult(null)
+    setPending(false)
   }, [open, initial, applyDef])
 
   /** 表单态 → def（空可选字段省略；不做校验 —— JSON 序列化半成品也要能出，校验在保存） */
   const buildDef = (): McpServerDef => {
     const parsedArgs = parseLines(args)
-    const parsedEnv = parseEntries(env, '=')
-    const parsedHeaders = parseEntries(headers, ':')
+    const parsedEnv = type === 'stdio' ? parseEntries(env, '=') : {}
+    const parsedHeaders = type === 'stdio' ? {} : parseEntries(headers, ':')
+    const seconds = timeout.trim() === '' ? undefined : Number(timeout)
+    if (seconds !== undefined && (!Number.isFinite(seconds) || seconds <= 0)) throw new Error('超时需要大于 0 的秒数')
+    const parsedOauth: unknown = type === 'stdio' || oauth.trim() === '' ? undefined : JSON.parse(oauth)
+    if (parsedOauth !== undefined && (typeof parsedOauth !== 'object' || parsedOauth === null || Array.isArray(parsedOauth))) throw new Error('OAuth 配置需要 JSON 对象')
     const shared = {
       ...(description.trim().length > 0 && { description: description.trim() }),
       // enabled 编辑时保留原值（表单不管启停 —— 列表行开关管；JSON 模式写入的
       // 显式值会经 parseImport 原样带回 —— 直编即用户意图）
-      ...(initial?.enabled !== undefined && { enabled: initial.enabled }),
+      ...(draft?.enabled !== undefined && { enabled: draft.enabled }),
+      ...(draft?.toolExposure !== undefined && { toolExposure: draft.toolExposure }),
+      ...(draft?.extraFields !== undefined && { extraFields: draft.extraFields }),
+      ...(seconds !== undefined && { timeout: seconds }),
       exposure
     }
     return type === 'stdio'
@@ -102,6 +129,8 @@ export function McpServerDialog({
           command: command.trim(),
           ...(parsedArgs.length > 0 && { args: parsedArgs }),
           ...(Object.keys(parsedEnv).length > 0 && { env: parsedEnv }),
+          ...(cwd.trim() !== '' && { cwd: cwd.trim() }),
+          sanitizeHostEnv,
           ...shared
         }
       : {
@@ -109,6 +138,7 @@ export function McpServerDialog({
           type,
           url: url.trim(),
           ...(Object.keys(parsedHeaders).length > 0 && { headers: parsedHeaders }),
+          ...(parsedOauth !== undefined && { oauth: parsedOauth }),
           ...shared
         }
   }
@@ -117,7 +147,7 @@ export function McpServerDialog({
   const parseJsonDef = (): { def: McpServerDef | null; error: string | null } => {
     try {
       const { defs, errors } = parseImport(jsonText)
-      if (defs.length !== 1) {
+      if (defs.length !== 1 || errors.length > 0) {
         return {
           def: null,
           error: errors.length > 0 ? errors.join('；') : `JSON 需要恰好一个服务器条目（当前 ${defs.length} 个，多个走「导入」）`
@@ -126,6 +156,7 @@ export function McpServerDialog({
       if (initial !== null && defs[0].name !== initial.name) {
         return { def: null, error: '编辑时名称不可改（表单模式中已锁定）' }
       }
+      if (initial !== null && defs[0].type !== initial.type) return { def: null, error: '编辑时传输类型不可改' }
       return { def: defs[0], error: null }
     } catch (error) {
       return { def: null, error: unwrapIpcError(error) }
@@ -137,7 +168,8 @@ export function McpServerDialog({
     if (next === 'json') {
       // 表单 → JSON：全新空表单给起手模板（直接改 / 粘贴覆盖）；
       // 半填表单原样序列化（空名键留在 JSON 里改）
-      const d = buildDef()
+      let d: McpServerDef
+      try { d = buildDef() } catch (error) { setFormError(unwrapIpcError(error)); return }
       const blank = d.name === '' && (d.type === 'stdio' ? d.command : d.url).trim() === ''
       setJsonText(blank ? JSON_TEMPLATE : defToJsonText(d))
       setMode('json')
@@ -155,7 +187,10 @@ export function McpServerDialog({
     setFormError(null)
   }
 
-  const save = (): void => {
+  const save = async (): Promise<void> => {
+    const operation = generation.current
+    setPending(true)
+    try {
     if (mode === 'json') {
       if (jsonText.trim().length === 0) {
         setFormError('粘贴或编辑服务器 JSON')
@@ -166,7 +201,7 @@ export function McpServerDialog({
         setFormError(error)
         return
       }
-      onSave(def, initial?.name ?? null)
+      await onSave(def, initial?.name ?? null)
       return
     }
     const trimmed = name.trim()
@@ -178,11 +213,26 @@ export function McpServerDialog({
       setFormError('stdio 服务器需要启动命令')
       return
     }
-    if (type === 'http' && url.trim().length === 0) {
-      setFormError('http 服务器需要 URL')
+    if (type !== 'stdio' && url.trim().length === 0) {
+      setFormError('远程服务器需要 URL')
       return
     }
-    onSave(buildDef(), initial?.name ?? null)
+    await onSave(buildDef(), initial?.name ?? null)
+    } catch (error) { if (generation.current === operation) setFormError(unwrapIpcError(error)) }
+    finally { if (generation.current === operation) setPending(false) }
+  }
+
+  const probe = async (): Promise<void> => {
+    const operation = generation.current
+    setPending(true); setFormError(null); setProbeResult(null)
+    try {
+      const parsed = mode === 'json' ? parseJsonDef() : { def: buildDef(), error: null }
+      if (parsed.def === null) throw new Error(parsed.error ?? '配置无效')
+      const result = await window.cogent.engineRequest('mcp.probe', { ...scope, def: parsed.def })
+      if (generation.current !== operation) return
+      setProbeResult(result.state === 'connected' ? `连接成功 · ${result.tools.length} 个工具${result.latencyMs === undefined ? '' : ` · ${result.latencyMs} ms`}` : result.error ?? (result.state === 'needs-auth' ? '服务器需要 OAuth 登录，保存后可登录' : '连接未就绪'))
+    } catch (error) { if (generation.current === operation) setFormError(unwrapIpcError(error)) }
+    finally { if (generation.current === operation) setPending(false) }
   }
 
   return (
@@ -303,6 +353,16 @@ export function McpServerDialog({
                   </SelectContent>
                 </Select>
               </div>
+              <Collapsible>
+                <CollapsibleTrigger render={<Button variant="disclosure" size="xs" />}>高级选项</CollapsibleTrigger>
+                <CollapsibleContent className="flex flex-col gap-4 pt-4">
+                  <label className="flex flex-col gap-1.5">请求超时（秒）<Input aria-label="请求超时（秒）" inputMode="decimal" value={timeout} onChange={(event) => setTimeoutValue(event.target.value)} placeholder="60" /></label>
+                  {type === 'stdio' ? <>
+                    <label className="flex flex-col gap-1.5">工作目录<Input aria-label="工作目录" value={cwd} onChange={(event) => setCwd(event.target.value)} placeholder="${workspaceFolder}" /></label>
+                    <label className="flex items-center justify-between gap-3">隔离宿主敏感环境变量<Switch aria-label="隔离宿主敏感环境变量" checked={sanitizeHostEnv} onCheckedChange={setSanitizeHostEnv} /></label>
+                  </> : <label className="flex flex-col gap-1.5">OAuth 配置（JSON，可选）<Textarea aria-label="OAuth 配置" value={oauth} onChange={(event) => setOauth(event.target.value)} rows={5} className="font-mono text-xs" placeholder={'{ "clientId": "...", "clientSecret": "${env:MCP_CLIENT_SECRET}" }'} /></label>}
+                </CollapsibleContent>
+              </Collapsible>
             </TabsContent>
 
             <TabsContent value="json">
@@ -324,12 +384,14 @@ export function McpServerDialog({
         </Tabs>
 
         {formError !== null && <div className="mt-3 text-sm text-destructive">{formError}</div>}
+        {probeResult !== null && <p role="status" className="text-sm text-muted-foreground">{probeResult}</p>}
 
         <DialogFooter>
-          <Button variant="ghost" size="default" onClick={onClose}>
+          <Button variant="outline" disabled={pending} onClick={() => void probe()}>测试连接</Button>
+          <Button variant="ghost" size="default" disabled={pending} onClick={onClose}>
             取消
           </Button>
-          <Button size="default" onClick={save}>
+          <Button size="default" disabled={pending} onClick={() => void save()}>
             保存
           </Button>
         </DialogFooter>

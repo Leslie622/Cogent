@@ -50,7 +50,7 @@ describe('ToolCard 头行结构（类别词 + 主文案 + 尾标）', () => {
     expect(screen.getByText('-1')).toBeInTheDocument()
   })
 
-  it('MCP 工具主文案显示 server.tool（裸工具名无识别量）', () => {
+  it('MCP 工具主文案显示 server · tool（裸工具名无识别量）', () => {
     render(
       <ToolCard
         name="mcp__image_search__search_image"
@@ -59,7 +59,7 @@ describe('ToolCard 头行结构（类别词 + 主文案 + 尾标）', () => {
       />
     )
     expect(screen.getByText('MCP')).toBeInTheDocument()
-    expect(screen.getByText('image_search.search_image')).toBeInTheDocument()
+    expect(screen.getByText('image_search · search_image')).toBeInTheDocument()
   })
 
   it('拒绝：置灰单行 + 「已拒绝」尾词', () => {
@@ -158,7 +158,7 @@ describe('ToolCard 输出详细程度', () => {
     </>)
     expect(screen.getByText('执行失败')).toBeVisible()
     expect(screen.getByText('已拒绝')).toBeVisible()
-    expect(screen.getByText('search.query')).toBeVisible()
+    expect(screen.getByText('search · query')).toBeVisible()
     expect(container.querySelector('.cursor-help')).toBeNull()
     expect(screen.queryByText('具体失败原因')).not.toBeInTheDocument()
     expect(screen.queryByText('private.ts')).not.toBeInTheDocument()

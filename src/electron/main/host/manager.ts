@@ -27,6 +27,7 @@ import {
   type TokenScope
 } from '../../../protocol'
 import type { AppStatus } from '../../../shared/ipc'
+import type { McpCredentialSnapshot } from '../credentials/mcp-store'
 
 /** 引擎 Node 版本下限 = pi 的 engines 要求 */
 const MIN_NODE: readonly [number, number, number] = [22, 19, 0]
@@ -54,6 +55,8 @@ export interface HostOptions {
    */
   handshakeCredentials?: Record<string, { apiKey: string }>
   readCredentials?: () => Record<string, { apiKey: string }>
+  /** MCP 凭据由壳侧加密存储，重启时现读，明文仅经同代 stdio 交接。 */
+  readMcpCredentials?: () => McpCredentialSnapshot
   /**
    * 开引擎 HTTP 门（阶段 3a 起默认开：webview 页面消费者需要；loopback +
    * 恒鉴权，见 模块/HTTP通道.md）。注入 COGENT_HTTP_RPC=1，随机端口经
@@ -82,6 +85,7 @@ export class HostManager {
   private httpPort: number | undefined
   /** 引擎事件出口：registerIpc 时注入（main 收到事件即转发给 renderer） */
   private eventSink: ((event: RpcEvent) => void) | null = null
+  private mcpEventSink: ((event: RpcEvent, generation: number) => void) | null = null
 
   constructor(options: HostOptions) {
     this.opts = options
@@ -92,8 +96,15 @@ export class HostManager {
     this.eventSink = sink
   }
 
+  setMcpEventSink(sink: (event: RpcEvent, generation: number) => void): void { this.mcpEventSink = sink }
+
   /** 事件出口的触发点（onLine 帧路由调用）；未注册出口时事件丢弃并记日志 */
   private emitEvent(event: RpcEvent): void {
+    // OAuth 凭据与授权 URL 仅交给壳；即使处理器尚未挂载也绝不广播或打印载荷。
+    if (event.method === 'mcp.oauth.persistState' || event.method === 'mcp.oauth.openUrl') {
+      this.mcpEventSink?.(event, this.generation)
+      return
+    }
     if (!this.eventSink) {
       console.error('[main] engine event arrived before sink registered:', event.method)
       return
@@ -175,13 +186,18 @@ export class HostManager {
     })
 
     let snapshot
-    try { snapshot = this.opts.readCredentials?.() ?? this.opts.handshakeCredentials }
+    let mcpSnapshot: McpCredentialSnapshot | undefined
+    try {
+      snapshot = this.opts.readCredentials?.() ?? this.opts.handshakeCredentials
+      mcpSnapshot = this.opts.readMcpCredentials?.()
+    }
     catch (error) { this.terminate((error as Error).message); throw error }
     const handshake = withTimeout(
       this.send('initialize', {
         client: 'cogent-main',
         protocolVersion: PROTOCOL_VERSION,
-        ...(snapshot ? { credentials: snapshot } : {})
+        ...(snapshot ? { credentials: snapshot } : {}),
+        ...(mcpSnapshot !== undefined && { mcpOAuthStates: mcpSnapshot.oauthStates })
       }),
       HANDSHAKE_TIMEOUT_MS,
       () => `引擎握手超时（${HANDSHAKE_TIMEOUT_MS}ms）；最后阶段：${startupStage}`
@@ -259,6 +275,28 @@ export class HostManager {
     this.credentialsTail = operation
     void operation.catch(() => {})
     return operation.catch(cause => { throw new Error(`凭据已保存，应用到引擎失败: ${(cause as Error).message}`, { cause }) })
+  }
+
+  /** 与模型凭据共用启动交接队列，防止旧快照覆盖刚提交的 OAuth 状态。 */
+  applyMcpCredentials(snapshot: McpCredentialSnapshot): Promise<void> {
+    if (this.closed) return Promise.resolve()
+    const generation = this.generation, child = this.child, initialized = this.initialized
+    const operation = this.credentialsTail.catch(() => {}).then(async () => {
+      await initialized
+      if (this.child !== child || this.generation !== generation || this.closed) throw new Error('host closed')
+      // 并发 OAuth 保存可能刚提交新状态；发送时现读单写者，仍保留登出的删除语义。
+      const current = this.opts.readMcpCredentials?.() ?? snapshot
+      await this.send('mcp.secrets.sync', { oauthStates: current.oauthStates })
+    })
+    this.credentialsTail = operation
+    void operation.catch(() => {})
+    return operation.catch(cause => { throw new Error(`MCP 凭据已保存，应用到引擎失败: ${(cause as Error).message}`, { cause }) })
+  }
+
+  /** OAuth 保存确认可发生于握手期间，不等待握手本身，避免双向交接死锁。 */
+  async confirmMcpPersistence(params: { requestId: string; error?: string }, generation: number): Promise<void> {
+    if (generation !== this.generation || this.closed) throw new Error('host closed')
+    await this.send('mcp.oauth.persistResult', params)
   }
 
   private send<M extends keyof ProtocolMethods>(

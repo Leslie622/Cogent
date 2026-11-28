@@ -18,8 +18,9 @@ const previousCogent = window.cogent
 vi.stubGlobal('cogent', {
   ...previousCogent,
   engineRequest: engineRequest.mockImplementation((method) =>
-    Promise.resolve(method === 'skills.list' ? { skills: [] } : [])
-  )
+    Promise.resolve(method === 'skills.list' ? { skills: [] } : method === 'mcp.prompts.list' ? { prompts: [] } : method === 'mcp.resources.list' ? { resources: [], resourceTemplates: [] } : [])
+  ),
+  onEngineEvent: () => () => {}
 })
 
 // jsdom 的 Range 没有布局方法，Lexical 提交选区更新时会调用，补零矩形。

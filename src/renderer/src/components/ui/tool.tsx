@@ -11,6 +11,7 @@
  * bash 流式尾部快照挂定高直播窗 + indeterminate 扫光细条。
  */
 import { useState } from 'react'
+import type { McpToolPresentation } from '@shared/mcp'
 import {
   CircleHelpIcon,
   FileDiffIcon,
@@ -45,6 +46,7 @@ const TOOL_ICON: Record<string, React.ReactNode> = {
   read: <FileTextIcon />,
   read_attachment: <FileTextIcon />,
   skill: <WandSparklesIcon />,
+  tool_search: <SearchIcon />,
   glob: <FolderSearchIcon />,
   find: <FolderSearchIcon />,
   grep: <SearchIcon />,
@@ -173,6 +175,7 @@ export function ToolCard({
   name,
   summary,
   status,
+  mcpResult,
   result,
   progress,
   diff,
@@ -185,6 +188,7 @@ export function ToolCard({
   status: ToolStatus
   /** 结果一行摘要（截断；错误时为失败原因 —— Tooltip 内容源） */
   result?: string
+  mcpResult?: McpToolPresentation
   /** 执行中的流式尾部快照（bash；终态由 result 接管） */
   progress?: string
   /** edit 的展示 diff（带行号 +-/ 上下文） */
@@ -198,7 +202,7 @@ export function ToolCard({
   const showDetails = useAppearanceStore((state) => state.outputVerbosity === 'high')
   const toolIcon = TOOL_ICON[name] ?? <WrenchIcon />
   const kindLabel = toolKindLabel(name)
-  // 主文案：MCP 显示 server.tool（裸工具名无识别量），ask_user 数问题数
+  // 主文案：MCP 显示 server · tool；详细档另保留核心参数摘要。
   // （参数是 questions 数组，裸剥壳会给用户看原始 JSON），其余剥 summary 壳
   const primary =
     mcpDisplayName(name) ?? (showDetails
@@ -214,6 +218,9 @@ export function ToolCard({
       <TraceTitle className="shrink-0">{kindLabel}</TraceTitle>
       {primary !== '' && (
         <span className="min-w-0 truncate font-mono text-xs">{primary}</span>
+      )}
+      {showDetails && name.startsWith('mcp__') && parseToolSummary(name, summary) !== '' && (
+        <span className="min-w-0 truncate text-xs text-muted-foreground">{parseToolSummary(name, summary)}</span>
       )}
       {counts !== undefined && (
         <span className="shrink-0 font-mono text-xs tabular-nums">
@@ -246,11 +253,14 @@ export function ToolCard({
   return (
     <TraceCollapsible open={open} onOpenChange={setOpen}>
       <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
-      {(hasResult || hasDiff) && (
+      {(hasResult || hasDiff || mcpResult !== undefined) && (
         <TraceCollapsibleContent>
           {/* diff 块在前（edit 的"改了什么"是主内容），结果摘要在后；
               失败原因已由行尾 Tooltip 承担，CodeBlock 统一 default 变体不再红 */}
           {hasDiff && <DiffBlock diff={diff} />}
+          {mcpResult?.structuredContent !== undefined && <CodeBlock size="sm"><CodeBlockContent wrap className="max-h-64">{JSON.stringify(mcpResult.structuredContent, null, 2)}</CodeBlockContent></CodeBlock>}
+          {mcpResult?.images?.map((image, index) => <img key={index} alt={`MCP 返回的图片 ${index + 1}`} src={`data:${image.mimeType};base64,${image.data}`} className="max-h-80 max-w-full rounded-lg border object-contain" />)}
+          {mcpResult?.resourceLinks?.map((resource) => <div key={resource.uri} className="rounded-lg border p-3 text-sm"><div>{resource.name}</div><div className="break-all text-xs text-muted-foreground">{resource.uri}</div>{resource.description && <p className="text-xs">{resource.description}</p>}</div>)}
           {hasResult && (
             name === 'skill' && status !== 'error' ? (
               <SkillBlock name={primary} content={result} />

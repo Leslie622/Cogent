@@ -24,6 +24,7 @@ import {
   compact,
   createAgentSession,
   createMcpExtension,
+  createToolSearchExtension,
   DefaultResourceLoader,
   SessionManager as PiSessionManager,
   SettingsManager,
@@ -45,9 +46,11 @@ import {
   convertToLlmMessages,
   planStaleToolResultPrunes
 } from '../runtime/compaction'
-import { spillMcpToolResult } from '../runtime/tool-spill'
+import { isMcpResultTool, spillMcpStructuredResult, spillMcpToolResult } from '../runtime/tool-spill'
 import type { McpSettingsPatch } from '../runtime/mcp-config'
 import { COGENT_TOOL_NAMES, MCP_TOOL_ALLOWLIST } from '../runtime/tool-meta'
+import { createCogentMcpExtension } from './cogent-mcp-extension'
+import type { McpRuntimeManager } from '../runtime/mcp-runtime'
 import type { FileContext, FileReference } from '../../shared/files'
 import { toolFileReferences } from '../runtime/files/paths'
 
@@ -77,6 +80,12 @@ export interface PiSessionOptions {
   onUserEntry?: (entryId: string, cwd: string) => {
     attachment?: Omit<AttachmentInput, 'userEntryId'>
     skillInput?: Omit<SkillInput, 'userEntryId'>
+    mcpInput?: {
+      version: 1
+      text: string
+      resources?: Array<{ server: string; uri: string }>
+      prompts?: Array<{ server: string; name: string; arguments?: Record<string, string> }>
+    }
     fileContext?: FileContext
   } | undefined
   onFileReferences?: (callId: string, refs: FileReference[]) => void
@@ -88,6 +97,9 @@ export interface PiSessionOptions {
   hostRoot: string
   /** Cogent 会话 id = pi 会话 id */
   sessionId: string
+  /** MCP 连接归 Host 单例；项目身份用于独立信任检查。 */
+  projectId?: string
+  mcpRuntime?: McpRuntimeManager
   modelRuntime: ModelRuntime
   /** Cogent 自拼系统提示词（buildSystemPrompt 的产物，本 pi 实例生命周期内不变） */
   systemPrompt: string
@@ -100,6 +112,8 @@ export interface PiSessionOptions {
    * 热刷新（权限通告 / 技能清单 / 任务清单 / 已批准计划 共用此机制）。
    */
   sections?: (sessionAssetsSection: string | null) => Record<string, string | null>
+  /** 按附件 id 解析仍在的原件路径；压缩后的资产索引据此补 path，缺失返回 undefined。 */
+  attachmentPath?: (id: string) => string | undefined
   /** before_agent_start 段注入完成后的完整系统提示词观测回调。 */
   onSystemPromptRendered?: (systemPrompt: string) => void
   /**
@@ -153,6 +167,7 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
       const input = opts.onUserEntry?.(id, opts.cwd)
       if (input?.attachment !== undefined) piSessionManager.appendCustomEntry('cogent.attachment-input.v1', { ...input.attachment, userEntryId: id })
       if (input?.skillInput !== undefined) piSessionManager.appendCustomEntry('cogent.skill-input.v1', { ...input.skillInput, userEntryId: id })
+      if (input?.mcpInput !== undefined) piSessionManager.appendCustomEntry('cogent.mcp-input.v1', { ...input.mcpInput, userEntryId: id })
       if (input?.fileContext !== undefined) piSessionManager.appendCustomEntry('cogent.file-context.v1', input.fileContext)
     }
     opts.onMessageCommitted?.(message, id)
@@ -227,7 +242,9 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
       // （"Every call runs through pi's tool pipeline" —— mcp/index.ts:20-21），
       // 因此下方链式包裹的 beforeToolCall 审批对 mcp__* 同样生效，零新增链路。
       // 连接后台跑；direct 工具的 server 首请求最多等 startupWaitMs（默认 10s）。
-      ...(mcp !== undefined
+      ...(opts.mcpRuntime !== undefined
+        ? [createCogentMcpExtension({ runtime: opts.mcpRuntime, cwd: opts.cwd, projectId: opts.projectId, sessionId: opts.sessionId }), createToolSearchExtension()]
+        : mcp !== undefined
         ? [
             createMcpExtension({
               loadConfig: () => mcp.snapshot,
@@ -240,7 +257,7 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
       createCogentHooks({
         sections:
           opts.sections !== undefined
-            ? () => opts.sections!(buildShadowSessionAssetsSection(piSessionManager.getBranch()))
+            ? () => opts.sections!(buildShadowSessionAssetsSection(piSessionManager.getBranch(), opts.attachmentPath))
             : undefined,
         onSystemPromptRendered: opts.onSystemPromptRendered,
         nestedApproval: opts.approval,
@@ -309,6 +326,11 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
     tools: [...COGENT_TOOL_NAMES, ...MCP_TOOL_ALLOWLIST, ...(opts.customTools?.map((t) => t.name) ?? [])]
   })
   sessionRef.current = session
+  if (opts.mcpRuntime !== undefined) {
+    const releaseMcpScope = opts.mcpRuntime.retainScope({ cwd: opts.cwd, projectId: opts.projectId })
+    const dispose = session.dispose.bind(session)
+    session.dispose = () => { releaseMcpScope(); dispose() }
+  }
 
   // 扩展生命周期绑定（SDK 消费者必做的一步，Pi-meme session.ts:917 同款）：
   // CLI 各 mode（print/interactive/rpc-mode）在 createAgentSession 后调
@@ -318,7 +340,8 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
   // TUI 宿主；uiContext 缺省 = 扩展的 ui.notify 等走 headless 空实现。
   // 已知边界：pi 的 dispose() 不发 session_shutdown —— MCP 连接/子进程
   // 活到 Host 进程退出（与 pi print-mode 同语义，session 删除不回收）。
-  await session.bindExtensions({ mode: 'rpc' })
+  try { await session.bindExtensions({ mode: 'rpc' }) }
+  catch (error) { session.dispose(); throw error }
 
   // 直接调用保留 core signal，嵌套调用另走上面的官方事件；共用审批桥且不重复询问。
   session.agent.beforeToolCall = wrapApprovalChain(session.agent.beforeToolCall, opts.approval)
@@ -334,10 +357,27 @@ export async function createPiSession(opts: PiSessionOptions): Promise<{
       return receipt === undefined ? result : { ...result, ...receipt }
     }
     const isError = result?.isError ?? context.isError
-    if (!isError && context.toolCall.name.startsWith('mcp__')) {
+    if (isMcpResultTool(context.toolCall.name)) {
       const content = result?.content ?? context.result.content
       const spilled = spillMcpToolResult(context.toolCall.name, content, opts.hostRoot)
-      if (spilled !== undefined) return { ...result, content: spilled.content }
+      const structured = result?.structuredContent !== undefined ? result.structuredContent : context.result.structuredContent
+      const structuredSpill = spillMcpStructuredResult(context.toolCall.name, structured, opts.hostRoot)
+      const originalDetails: unknown = result?.details !== undefined ? result.details : context.result.details
+      const details = typeof originalDetails === 'object' && originalDetails !== null && !Array.isArray(originalDetails)
+        ? originalDetails as Record<string, unknown> : undefined
+      const detailsSpill = details === undefined ? undefined : spillMcpStructuredResult(context.toolCall.name, details.structuredContent, opts.hostRoot)
+      if (spilled !== undefined || structuredSpill !== undefined || detailsSpill !== undefined) {
+        const bounded = spilled?.content ?? content
+        const fullOutputPath = structuredSpill?.fullOutputPath ?? spilled?.artifactPath ?? detailsSpill?.fullOutputPath
+        return {
+          ...result,
+          content: bounded,
+          ...(structuredSpill === undefined ? {} : {
+            structuredContent: JSON.parse(JSON.stringify({ content: bounded, ...structuredSpill, isError })) as import('@earendil-works/pi-ai').JsonValue
+          }),
+          details: { ...details, ...(detailsSpill === undefined ? {} : { structuredContent: detailsSpill }), ...(fullOutputPath === undefined ? {} : { fullOutputPath }) }
+        }
+      }
     }
     return result
   }

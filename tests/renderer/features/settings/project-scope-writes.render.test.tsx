@@ -1,5 +1,5 @@
 /** 项目设置的回包、编辑正文与写入错误沿原作用域归属。 */
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { showErrorToast } from '@/components/ui/sonner'
 import { McpSection } from '@/features/settings/McpSection'
@@ -28,6 +28,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  cleanup()
   useChatStore.setState(initialChat, true)
   useProjectStore.setState(initialProject, true)
   vi.unstubAllGlobals()
@@ -64,9 +65,9 @@ it('MCP 旧项目列表不能覆盖新项目，切换时未完成的写入失败
     if (params.cwd === a && firstA) { firstA = false; return oldList.promise }
     return Promise.resolve(mcpList(params.cwd === b ? 'beta-server' : 'alpha-server'))
   })
-  vi.stubGlobal('cogent', { engineRequest: request })
+  vi.stubGlobal('cogent', { engineRequest: request, onEngineEvent: vi.fn(() => () => {}) })
   render(<McpSection />)
-  expect(request).toHaveBeenCalledWith('mcp.list', { cwd: a })
+  expect(request).toHaveBeenCalledWith('mcp.list', { cwd: a, projectId: 'a' })
   switchTo('b')
   await screen.findByRole('switch', { name: 'beta-server 启用' })
   await act(async () => { oldList.resolve(mcpList('old-server')); await oldList.promise })

@@ -28,12 +28,13 @@ describe('extractActiveTrigger', () => {
     expect(extractActiveTrigger(text)).toEqual({ kind: '$', query: 'next', start: 1, end: 6 })
   })
 
-  it('词中斜杠、URL、含空格查询与 @ 不触发', () => {
+  it('词中斜杠、URL、含空格查询与邮箱不触发', () => {
     expect(extractActiveTrigger('https://example.com')).toBeNull()
     expect(extractActiveTrigger('/compact 参数')).toBeNull()
     expect(extractActiveTrigger('abc$def')).toBeNull()
-    expect(extractActiveTrigger('@plugin')).toBeNull()
-    expect(extractActiveTrigger('@')).toBeNull()
+    expect(extractActiveTrigger('user@example.com')).toBeNull()
+    expect(extractActiveTrigger('@资源')).toEqual({ kind: '@', query: '资源', start: 0, end: 3 })
+    expect(extractActiveTrigger('@')).toEqual({ kind: '@', query: '', start: 0, end: 1 })
   })
 
   it('triggerSignature 稳定区分不同触发位置与查询', () => {

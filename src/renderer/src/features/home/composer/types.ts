@@ -2,6 +2,7 @@
  * 输入区命令与技能实体的共享类型定义。
  * 约束：实体通过编辑器原子节点写入 Draft.entities，纯文本不触发任何命令或技能展开。
  */
+import type { McpPromptInfo } from '@shared/mcp'
 
 /** 编辑器与草稿中占位哨兵字符（与 entities 数组按出现序一一对应） */
 export const ENTITY_SENTINEL = '\uFFFC'
@@ -32,8 +33,10 @@ export type ComposerEntity =
       name: InsertedCommandName
       mode: 'standalone' | 'prompt'
     }
+  | { id: string; kind: 'mcp-resource'; name: string; server: string; uri: string }
+  | { id: string; kind: 'mcp-prompt'; name: string; server: string; arguments?: Record<string, string> }
 
-export type TriggerKind = '/' | '$'
+export type TriggerKind = '/' | '$' | '@'
 
 export interface ActiveTrigger {
   kind: TriggerKind
@@ -72,7 +75,7 @@ export interface SlashCommandDef {
 
 export interface ComposerSuggestionItem {
   id: string
-  group: 'command' | 'skill'
+  group: 'command' | 'skill' | 'mcp-prompt' | 'mcp-resource'
   label: string
   description: string
   /** 右侧来源或行为徽标（如「项目」「用户」「生态」「仅单独发送」「快捷操作」） */
@@ -82,6 +85,8 @@ export interface ComposerSuggestionItem {
   payload:
     | { kind: 'command'; command: SlashCommandDef }
     | { kind: 'skill'; name: string; scope: 'user' | 'project' | 'bundled'; eco?: boolean }
+    | { kind: 'mcp-resource'; name: string; server: string; uri: string }
+    | { kind: 'mcp-prompt'; prompt: McpPromptInfo }
 }
 
 export function isComposerEntity(value: unknown): value is ComposerEntity {
@@ -102,5 +107,23 @@ export function isComposerEntity(value: unknown): value is ComposerEntity {
       (item.mode === 'standalone' || item.mode === 'prompt')
     )
   }
+  if (item.kind === 'mcp-resource') return typeof item.name === 'string' && item.name !== '' &&
+    typeof item.server === 'string' && item.server !== '' && typeof item.uri === 'string' && item.uri !== ''
+  if (item.kind === 'mcp-prompt') {
+    const args: unknown = item.arguments
+    return typeof item.name === 'string' && item.name !== '' && typeof item.server === 'string' && item.server !== '' &&
+      (args === undefined || (typeof args === 'object' && args !== null &&
+        !Array.isArray(args) && Object.values(args).every(value => typeof value === 'string')))
+  }
   return false
+}
+
+/** 原始输入与复制文本保留可读标签，真正的资源/提示词由结构化引用决定。 */
+export function composerEntityText(entity: ComposerEntity): string {
+  switch (entity.kind) {
+    case 'skill': return `$${entity.name}`
+    case 'command': return `/${entity.name}`
+    case 'mcp-resource': return `@${entity.server}:${entity.name}`
+    case 'mcp-prompt': return `/mcp:${entity.server}:${entity.name}`
+  }
 }

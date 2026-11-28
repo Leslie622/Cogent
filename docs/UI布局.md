@@ -167,8 +167,8 @@ UI 默认不可选中；正文容器放开 `select-text`，TraceLine/用量/时�
   保留图标，Hint/aria-label 改“作为文件发送”。对话拖入用局部遮罩，不做全窗上传层。
 - 模型选项与当前模型子菜单入口、设置模型行按有效 input 显示“视觉”Badge sm（最小16px高、小字阶）；关闭能力后标签同步移除。模型菜单不显示“输入：…（模型声明）”说明行；
   `DropdownMenuLabel` 使用 Base UI 的分组上下文，不能直接挂在 Content 下。
-  PDF/视频不冒充模型能力；MCP 设置用
-  SettingsGroup/SettingsRow + Dialog 配置三类分析绑定，显示服务/输入方式诊断。
+  PDF/视频不冒充模型能力；MCP 设置聚焦服务器，行内显示状态/工具数，详情提供目录和诊断；
+  不提供附件分析参数绑定或独立密钥管理入口，登出仅对已保存 OAuth 授权显示。
 
 - `PermissionMenu` 的 `MODES`/`ModeItem` 是档位视觉真源：两行名称/说明、
   当前项右浮勾、模式图标；完全访问 warning、自主 chrome-accent、确认档 muted。

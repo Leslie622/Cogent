@@ -225,7 +225,7 @@ export const viewLayouts: Record<ViewId, ViewLayoutSpec> = {
       'flow.mcpFlow.server.host': { col: 4, lane: 1 },
     },
     notes: {
-      'flow.mcpFlow.client': '用户级唯一定义真源，项目级禁新增服务，首次发消息定格快照',
+      'flow.mcpFlow.client': '项目新增先审阅，连接独立于会话；凭据加密托管，工具与交互按作用域同步',
       'flow.mcpFlow.server': '独立翻译进程不启第二引擎，直连运行中同一 Host，桌面与外部共享状态',
     },
   },
@@ -245,7 +245,7 @@ export const viewLayouts: Record<ViewId, ViewLayoutSpec> = {
       'flow.mcpCode.hostEntry': { col: 4, lane: 1 },
     },
     laneLabels: {
-      0: 'MCP 座（消费外部）：配置合并 → 扩展连接 → 白名单与审批落盘',
+      0: 'MCP 座（消费外部）：配置与信任 → Host连接池与凭据桥 → pi工具搜索 → 审批与交互',
       1: '对外 MCP（暴露服务）：凭据文件 → 独立入口 → 重读直发与唯一 Host',
       2: '等待终态两段式订阅（先 WS ready 再 HTTP /rpc）',
     },

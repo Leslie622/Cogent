@@ -1,6 +1,6 @@
 /**
  * MCP 工具大输出执行期截断与落盘（docs/计划/上下文工程实现.md）：
- * - 作用域：拦截 `mcp__*` 非错误工具结果，超过 24,000 字符时将完整文本落盘至
+ * - 作用域：拦截 `mcp__*` 与资源三件工具结果，超过 24,000 字符时将完整文本落盘至
  *   `<hostRoot>/tool-outputs/v1/<uuid>.txt`，上下文仅保留头 16K + 尾 4K 与内部文件路径；
  * - 代理对安全切片（sliceHeadSafe / sliceTailSafe）同时供 L1 工具结果裁剪器复用；
  * - 非文本块（如图片）原样保留，写盘失败时降级为纯头尾截断并记录诊断，不阻断工具返回。
@@ -12,6 +12,11 @@ import type { ImageContent, TextContent } from '@earendil-works/pi-ai'
 export const MCP_TOOL_SPILL_MAX_CHARS = 24_000
 export const MCP_TOOL_SPILL_HEAD_CHARS = 16_000
 export const MCP_TOOL_SPILL_TAIL_CHARS = 4_000
+
+/** 服务端工具和客户端资源工具共用一个模型输出预算。 */
+export function isMcpResultTool(toolName: string): boolean {
+  return toolName.startsWith('mcp__') || ['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'].includes(toolName)
+}
 
 /** 头部安全切片：避免切在 UTF-16 高代理项中间导致孤立代理对。 */
 export function sliceHeadSafe(text: string, maxChars: number): string {
@@ -36,6 +41,15 @@ export interface SpillMcpResult {
   originalChars: number
 }
 
+/** JSON 结果的完整副本独立落盘，调用方以文件引用保留访问能力，避免树内重复大对象。 */
+export function spillMcpStructuredResult(toolName: string, value: unknown, hostRoot: string): { fullOutputPath: string } | undefined {
+  if (value === undefined || !isMcpResultTool(toolName)) return undefined
+  const text = JSON.stringify(value)
+  if (text.length <= MCP_TOOL_SPILL_MAX_CHARS) return undefined
+  const spilled = spillMcpToolResult(toolName, [{ type: 'text', text }], hostRoot)
+  return spilled?.artifactPath === undefined ? undefined : { fullOutputPath: spilled.artifactPath }
+}
+
 /**
  * 检查并对超长 `mcp__*` 工具结果执行头尾截断与落盘。
  * 非 MCP 工具或未超阈值返回 undefined（零拷贝直通）。
@@ -46,7 +60,7 @@ export function spillMcpToolResult(
   hostRoot: string,
   limits: { maxChars?: number; headChars?: number; tailChars?: number } = {}
 ): SpillMcpResult | undefined {
-  if (!toolName.startsWith('mcp__')) return undefined
+  if (!isMcpResultTool(toolName)) return undefined
   const maxChars = limits.maxChars ?? MCP_TOOL_SPILL_MAX_CHARS
   const headChars = limits.headChars ?? MCP_TOOL_SPILL_HEAD_CHARS
   const tailChars = limits.tailChars ?? MCP_TOOL_SPILL_TAIL_CHARS

@@ -25,6 +25,7 @@ export function flattenSegments(segments: ChatMessage[]): MessageItem[] {
         summary: call.summary,
         status: call.status,
         resultSummary: call.resultSummary,
+        ...(call.mcpResult !== undefined && { mcpResult: call.mcpResult }),
         diff: call.diff,
         fileRefs: call.fileRefs,
         startedAt: call.startedAt,

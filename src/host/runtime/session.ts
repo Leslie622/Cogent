@@ -33,7 +33,7 @@ import { BusinessConfig } from './business-config'
 import { SessionSearchService } from './search/service'
 import type { SearchQuery, SearchPage } from '../../shared/session-search'
 import { findPiTranscriptFile } from '../kernel/transcript'
-import { toChatMessages, summarizeToolResult, tailToolResult, extractResultDiff, projectUsage, sumOptional, accumulateUsage } from './message-projection'
+import { toChatMessages, summarizeToolResult, tailToolResult, extractResultDiff, extractMcpResult, projectUsage, sumOptional, accumulateUsage } from './message-projection'
 export { toChatMessages } from './message-projection'
 
 import type { Agent, AgentMessage, ThinkingLevel } from '@earendil-works/pi-agent-core'
@@ -50,6 +50,10 @@ import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { ProtocolError, RpcErrorCode } from '../../protocol'
+import { McpRuntimeManager } from './mcp-runtime'
+import type { McpElicitationService } from './mcp-elicitation'
+import type { McpPromptRef, McpResourceRef } from '../../protocol'
+import { prepareMcpInput } from './mcp-input'
 import type {
   ChatMessage,
   CustomProviderDef,
@@ -184,6 +188,7 @@ interface StreamingState {
   fileReferences: Map<string, FileReference[]>
   attachmentInput?: { inputId: string; text: string; attachments: AttachmentRef[]; directories?: DirectoryRef[]; bound: boolean }
   skillInput?: { text: string; skills?: Array<{ name: string }>; command?: { name: 'init' }; bound: boolean }
+  mcpInput?: { text: string; resources: McpResourceRef[]; prompts: McpPromptRef[]; bound: boolean }
   /** 本轮用户显式点名的技能集（`$skill` 实体或 `/skill:` 命令）：放行 `disable-model-invocation` 技能走 `skill` 工具 */
   explicitSkills?: Set<string>
   images?: import('@earendil-works/pi-ai').ImageContent[]
@@ -275,6 +280,7 @@ export class SessionManager implements CogentKernel {
       summary: string
       ruleRoots: string[]
       withinRoots: boolean
+      mcpMeta?: { serverName: string; originalToolName: string; destructive: boolean; openWorld: boolean }
       resolve: (result: { block: boolean; reason?: string }) => void
     }
   >()
@@ -326,7 +332,9 @@ export class SessionManager implements CogentKernel {
     private readonly skillStore: SkillStore,
     private inspectStore: InspectStore,
     modelRuntime: ModelRuntime,
-    hostRoot: string
+    hostRoot: string,
+    readonly mcpRuntime: McpRuntimeManager = new McpRuntimeManager({ config: mcpConfig, hostRoot }),
+    private readonly mcpElicitation?: McpElicitationService
   ) {
     this.projects = projects
     this.approvals = approvals
@@ -627,6 +635,7 @@ export class SessionManager implements CogentKernel {
     this.settleApprovals(sessionId, '会话已删除')
     this.settleInteractions(sessionId)
     this.sessions.delete(sessionId)
+    this.approvals.clearMcp(sessionId)
     this.streaming.delete(sessionId)
     this.compacting.delete(sessionId)
     this.trackDeletion(sessionId, closing.then(() => this.cleanupDeleted(sessionId, this.transcriptCwd(session))))
@@ -679,9 +688,10 @@ export class SessionManager implements CogentKernel {
 
   interactionSnapshot(sessionId: string) {
     return {
-      approvals: [...this.pendingApprovals].filter(([, p]) => p.sessionId === sessionId).map(([requestId, p]) => ({ sessionId, requestId, callId: p.callId, toolName: p.toolName, kind: p.kind, summary: p.summary, outsideRoots: !p.withinRoots })),
+      approvals: [...this.pendingApprovals].filter(([, p]) => p.sessionId === sessionId).map(([requestId, p]) => ({ sessionId, requestId, callId: p.callId, toolName: p.toolName, kind: p.kind, summary: p.summary, outsideRoots: !p.withinRoots, ...(p.mcpMeta !== undefined && { mcpMeta: p.mcpMeta }) })),
       questions: [...this.pendingQuestions].filter(([, p]) => p.sessionId === sessionId).map(([requestId, p]) => ({ sessionId, requestId, questions: p.questions })),
-      plans: [...this.pendingPlans].filter(([, p]) => p.sessionId === sessionId).map(([requestId, p]) => ({ sessionId, requestId, plan: p.plan }))
+      plans: [...this.pendingPlans].filter(([, p]) => p.sessionId === sessionId).map(([requestId, p]) => ({ sessionId, requestId, plan: p.plan })),
+      elicitations: this.mcpElicitation?.list(sessionId) ?? []
     }
   }
 
@@ -851,7 +861,9 @@ export class SessionManager implements CogentKernel {
     inputId: string = crypto.randomUUID(),
     directories: DirectoryRef[] = [],
     skills: string[] = [],
-    command?: { name: 'init' }
+    command?: { name: 'init' },
+    mcpResources: McpResourceRef[] = [],
+    mcpPrompts: McpPromptRef[] = []
   ): { runId: string; turnId: string } {
     const session = this.requireSession(sessionId)
     this.assertWorkspaceAvailable(session)
@@ -927,6 +939,7 @@ export class SessionManager implements CogentKernel {
       tools: []
     }
     const titlePolicy = this.titleSettings.get()
+    if (mcpResources.length > 0 || mcpPrompts.length > 0) streaming.mcpInput = { text, resources: mcpResources, prompts: mcpPrompts, bound: false }
     if (firstInput && !previousInput && titleSaved && titlePolicy.enabled && session.summary.titleManual !== true) {
       streaming.titleInput = {
         text: Array.from([
@@ -1047,13 +1060,14 @@ export class SessionManager implements CogentKernel {
           // pi 的 prompt 归一化会把解码失败降成 omitted 文本；先显式预检，不能让 UI 显示已发送而静默丢图。
           const processed = await resizeImage(readFileSync(prepared[index].locator), ref.mime, pi.model.inputLimits?.images?.resize)
           if (this.finishPreparingRun(session, pi, streaming)) return
-          if (processed === null) throw new Error(`图片无法解码或缩放：${ref.name}。可重新附加或切换到分析工具。`)
+          if (processed === null) throw new Error(`图片无法解码或缩放：${ref.name}。可重新附加或检查图片文件。`)
           images.push({ type: 'image', data: processed.data, mimeType: processed.mimeType })
           const note = formatDimensionNote(processed)
           if (note !== undefined) lines.push(note)
         }
         lines.push(JSON.stringify({ id: ref.id, name: ref.name, mime: ref.mime, size: ref.size,
-          path: prepared[index].locator, content: nativeImage ? '图片随消息发送' : '尚未读取；需要内容时调用 read_attachment' }))
+          // content 只陈述事实：内容有没有随本条消息发给模型。读不到的类型用哪个工具，由模型对着工具目录自己选。
+          path: prepared[index].locator, content: nativeImage ? '已随消息发送' : '未随消息发送' }))
       }
       streaming.images = images
       if (lines.length > 0) prompt += formatAttachmentsBlock(lines)
@@ -1062,6 +1076,19 @@ export class SessionManager implements CogentKernel {
         // 目录保持实时引用，按需用现有工具访问；它不是项目根，也不授予额外写权限。
         prompt += formatDirectoryReferencesBlock(directories)
       }
+    }
+    if (streaming.mcpInput !== undefined) {
+      const controller = streaming.attachmentPreparation ?? new AbortController()
+      streaming.attachmentPreparation = controller
+      const prepared = await prepareMcpInput({ runtime: this.mcpRuntime,
+        scope: { cwd: streaming.workspace.cwd, projectId: this.projectIdOf(session) },
+        resources: streaming.mcpInput.resources, prompts: streaming.mcpInput.prompts,
+        hostRoot: this.hostRoot, sessionId: session.summary.id,
+        supportsImages: pi.model?.input.includes('image') === true, signal: controller.signal })
+      if (this.finishPreparingRun(session, pi, streaming)) return
+      streaming.images = [...(streaming.images ?? []), ...prepared.images]
+      assertNewImageMessage(streaming.images.length, pi.model)
+      prompt += prepared.text
     }
     await this.promptRun(session, pi, streaming, prompt)
     await this.settleRun(session, pi, streaming)
@@ -1371,7 +1398,7 @@ export class SessionManager implements CogentKernel {
     }
     try {
       await Promise.race([drain(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('会话退出超过 5 秒，强制收尾')), 5_000) })])
-    } finally { clearTimeout(timer); this.disposeAll() }
+    } finally { clearTimeout(timer); this.disposeAll(); await this.mcpRuntime.disposeAll() }
   }
 
   /** 进程退出前统一收尾（引擎随宿主关闭；pi dispose 内聚 abort 全部运行） */
@@ -1384,6 +1411,7 @@ export class SessionManager implements CogentKernel {
     for (const run of this.streaming.values()) run.attachmentPreparation?.abort()
     for (const session of this.sessions.values()) session.pi?.dispose()
     for (const sessionId of this.sessions.keys()) {
+      this.approvals.clearMcp(sessionId)
       this.settleApprovals(sessionId, '引擎退出')
       this.settleInteractions(sessionId)
     }
@@ -1404,15 +1432,22 @@ export class SessionManager implements CogentKernel {
     approved: boolean,
     message?: string,
     always?: 'workspace',
-    switchMode?: 'auto' | 'autonomous'
+    switchMode?: 'auto' | 'autonomous',
+    mcpAlways?: 'tool' | 'server-readonly'
   ): { ok: true; summary?: SessionSummary } {
     const pending = this.pendingApprovals.get(requestId)
     if (pending === undefined) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, `审批请求不存在或已被裁决: ${requestId}`)
     }
     const session = this.requireSession(pending.sessionId)
+    if (mcpAlways !== undefined) {
+      if (!approved || pending.mcpMeta === undefined) throw new ProtocolError(RpcErrorCode.InvalidParams, '此审批不支持 MCP 会话授权')
+      if (mcpAlways === 'server-readonly' && pending.kind !== 'read') throw new ProtocolError(RpcErrorCode.InvalidParams, '仅只读 MCP 工具支持服务器只读授权')
+      this.approvals.addMcp(session.summary.id, mcpAlways, pending.toolName, pending.mcpMeta.serverName)
+    }
     // 持久裁决绑定请求时的边界。拒绝后保留 pending，宿主仍能裁决本次。
     if (always === 'workspace') {
+      if (pending.mcpMeta !== undefined) throw new ProtocolError(RpcErrorCode.InvalidParams, 'MCP 工具请使用会话级工具授权')
       const roots = this.workspaceRoots(session)
       if (!pending.withinRoots || pending.ruleRoots.length === 0 ||
           roots.length !== pending.ruleRoots.length || roots.some((root) => !pending.ruleRoots.includes(root))) {
@@ -1527,18 +1562,22 @@ export class SessionManager implements CogentKernel {
     const meta = toolMeta(toolName)
     // 未知名字兜底 read：与事件转译同口径（pi 只执行注册过的工具，未知 =
     // 注册表 bug，stderr 已在转译层留诊断，这里按无害的只读放行）
-    const kind = meta?.kind ?? 'read'
+    const mcp = toolName.startsWith('mcp__') ? this.mcpRuntime.getToolMeta({ cwd: this.captureWorkspace(session).cwd, projectId: this.projectIdOf(session) }, toolName) : undefined
+    const mcpReadOnly = mcp?.annotations?.readOnlyHint === true && mcp.annotations.destructiveHint !== true
+    const kind = toolName.startsWith('mcp__') ? (mcpReadOnly ? 'read' : 'exec') : meta?.kind ?? 'read'
+    const mcpMeta = mcp === undefined ? undefined : { serverName: mcp.serverName, originalToolName: mcp.originalToolName, destructive: mcp.annotations?.destructiveHint === true, openWorld: mcp.annotations?.openWorldHint === true }
     // 审计纪律（钩子座 4d）：read 类不经审批域，零条目；其余每条判定路径
     // 都落 approval.decided（放行也留痕），ask 路径另有 approval.asked 成对
     const audit = this.ensureInspector(session)
-    if (kind === 'read') return Promise.resolve({ block: false })
+    const mode = session.summary.permissionMode ?? 'ask'
+    if (kind === 'read' && (mcp === undefined || mode !== 'ask' || session.summary.planEnabled === true)) return Promise.resolve({ block: false })
     // 计划开关短路优先于档位放行（zcode permission/service.ts:148 同序）：
     // 「完全访问 + 计划开着」= 只读 —— 开关语义不受档位影响
     if (session.summary.planEnabled === true) {
       audit.approvalDecided({ toolName, verdict: 'plan' })
       return Promise.resolve({ block: true, reason: '计划模式（只读）下写类与执行类工具被禁止' })
     }
-    const mode = session.summary.permissionMode ?? 'ask'
+    if (mcp !== undefined && this.approvals.allowsMcp(session.summary.id, toolName, mcp.serverName, mcpReadOnly)) return Promise.resolve({ block: false })
     if (mode === 'auto') {
       audit.approvalDecided({ toolName, verdict: 'auto' })
       return this.prepareToolChanges(session, toolName, args, signal)
@@ -1558,7 +1597,7 @@ export class SessionManager implements CogentKernel {
       return this.prepareToolChanges(session, toolName, args, signal)
     }
     // 写类只匹配覆盖本次目标的已授权根，新增根不会沿用旧根的规则。
-    if (roots.length > 0 && withinRoots && this.approvals.allows(isFileWrite ? targetRoots : roots, kind)) {
+    if (mcp === undefined && roots.length > 0 && withinRoots && this.approvals.allows(isFileWrite ? targetRoots : roots, kind)) {
       audit.approvalDecided({ toolName, verdict: 'always-workspace' })
       return this.prepareToolChanges(session, toolName, args, signal)
     }
@@ -1570,7 +1609,7 @@ export class SessionManager implements CogentKernel {
     return new Promise<{ block: boolean; reason?: string }>((resolve) => {
       // 先登记再发事件：respondApproval 走这张表找 resolver，时序上不存在
       // 「事件未到、respond 先行」的窗口（宿主是收到事件才可能裁决）
-      this.pendingApprovals.set(requestId, { sessionId, kind, toolName, callId, summary, ruleRoots: roots, withinRoots, resolve })
+      this.pendingApprovals.set(requestId, { sessionId, kind, toolName, callId, summary, ruleRoots: roots, withinRoots, resolve, ...(mcpMeta !== undefined && { mcpMeta }) })
       audit.approvalAsked({ requestId, toolName, kind, summary, mode, outsideRoots: !withinRoots })
       this.notify('approval.request', {
         sessionId,
@@ -1579,7 +1618,8 @@ export class SessionManager implements CogentKernel {
         toolName,
         kind,
         summary,
-        ...(!withinRoots && { outsideRoots: true })
+        ...(!withinRoots && { outsideRoots: true }),
+        ...(mcpMeta !== undefined && { mcpMeta })
       })
       signal?.addEventListener('abort', () => {
         // 已被 respondApproval 消费则不动（用户裁决与中止竞态，先到先得）
@@ -1593,6 +1633,7 @@ export class SessionManager implements CogentKernel {
 
   /** 某会话的全部挂起审批以 block 收尾（删除/退出兜底；abort 走 signal listener） */
   private settleApprovals(sessionId: string, reason: string): void {
+    this.mcpElicitation?.cancelSession(sessionId)
     for (const [requestId, pending] of this.pendingApprovals) {
       if (pending.sessionId !== sessionId) continue
       this.pendingApprovals.delete(requestId)
@@ -1751,7 +1792,7 @@ export class SessionManager implements CogentKernel {
     // MCP 快照（Pi-meme 快照语义）：pi 内核装配时定格 user+project 合并结果，
     // 之后改配置不影响本会话（新会话生效）。诊断（项目级越权条目等）不拦装配
     // —— 坏条目已在快照里剔除，MCP 是增益面，stderr 留痕即可
-    const mcpSnapshot = this.mcpConfig.snapshot(boundRoots[0] ?? homedir())
+    const mcpSnapshot = this.mcpConfig.snapshot(boundRoots[0] ?? homedir(), this.projectIdOf(session))
     if (mcpSnapshot.errors.length > 0) {
       process.stderr.write(`[host] MCP 配置诊断（会话 ${sessionId}）: ${mcpSnapshot.errors.join('；')}\n`)
     }
@@ -1774,6 +1815,8 @@ export class SessionManager implements CogentKernel {
       transcriptCwd: this.transcriptCwd(session),
       hostRoot: this.hostRoot,
       sessionId,
+      mcpRuntime: this.mcpRuntime,
+      projectId: this.projectIdOf(session),
       onUserEntry: (entryId, cwd) => {
         // 装配期间导入的是历史条目，当前回合的输入由接管后的 pi 保存。
         if (session.pi === undefined) return undefined
@@ -1786,6 +1829,7 @@ export class SessionManager implements CogentKernel {
         this.startTitle(session, run)
         const input = run.attachmentInput
         const skillIn = run.skillInput
+        const mcpIn = run.mcpInput
         const attachment =
           input !== undefined && !input.bound
             ? ((input.bound = true),
@@ -1810,6 +1854,7 @@ export class SessionManager implements CogentKernel {
         return {
           fileContext,
           ...(attachment !== undefined && { attachment }),
+          ...(mcpIn !== undefined && !mcpIn.bound && ((mcpIn.bound = true), { mcpInput: { version: 1 as const, text: mcpIn.text, resources: mcpIn.resources, prompts: mcpIn.prompts } })),
           ...(skillInput !== undefined && { skillInput })
         }
       },
@@ -1828,6 +1873,8 @@ export class SessionManager implements CogentKernel {
           planSection: session.plan !== undefined ? planSectionText(session.plan) : null,
           sessionAssetsSection
         }),
+      // 压缩后的资产索引带原件路径：记录和原件都在才给，模型据此用工具读取早期附件。
+      attachmentPath: (id) => this.attachments.existingPath(id),
       onSystemPromptRendered: (rendered) => {
         session.inspector?.systemPromptRendered(rendered)
       },
@@ -1861,8 +1908,7 @@ export class SessionManager implements CogentKernel {
           const context = run.fileContext!
           return this.outputs.stage(sessionId, { ...context, cwd }, run, callId, declarations, signal)
         }),
-        createReadAttachmentTool({ service: this.attachments, sessionId, hostRoot: this.hostRoot,
-          bindings: new AttachmentConfig(this.hostRoot).media(), mcp: mcpSnapshot }),
+        createReadAttachmentTool({ service: this.attachments, sessionId, hostRoot: this.hostRoot }),
         createTodoTool({
           updateTodos: (todos) => {
             session.todos = todos
@@ -2160,6 +2206,7 @@ export class SessionManager implements CogentKernel {
         // kind/摘要取静态元数据表（与 buildTools 同源；不依赖会话工具实例 ——
         // 事件路径上两者必然一致，表查询天然覆盖历史工具名）
         const meta = toolMeta(event.toolName)
+        const mcp = event.toolName.startsWith('mcp__') ? this.mcpRuntime.getToolMeta({ cwd: streaming.workspace.cwd, projectId: this.projectIdOf(session) }, event.toolName) : undefined
         if (meta === undefined) {
           // pi 只执行注册过的工具，未知名字 = 引擎注册表与循环不一致的 bug：
           // 事件流不炸、stderr 留诊断、呈现按只读兜底（fail-visible，不静默）
@@ -2168,7 +2215,7 @@ export class SessionManager implements CogentKernel {
         const record: ToolCallRecord = {
           callId: event.toolCallId,
           name: event.toolName,
-          kind: meta?.kind ?? 'read',
+          kind: mcp === undefined ? meta?.kind ?? 'read' : mcp.annotations?.readOnlyHint === true && mcp.annotations.destructiveHint !== true ? 'read' : 'exec',
           summary: meta !== undefined ? meta.summarize(event.args) : `${event.toolName}(?)`,
           status: 'ok',
           // 工具时长区间起点（UI 聚合「模型 Xs · 工具 Ys」分解用）
@@ -2212,12 +2259,14 @@ export class SessionManager implements CogentKernel {
         if (!event.isError && (event.toolName === 'write' || event.toolName === 'edit') && streaming.turnId !== undefined) this.outputs.wrote(sessionId, streaming.turnId)
         const summary = summarizeToolResult(event.result, event.toolName)
         const diff = extractResultDiff(event.result)
+        const mcpResult = extractMcpResult(event.result, event.toolName)
         const record = streaming.tools.find((t) => t.callId === event.toolCallId)
         const fileRefs = [...streaming.fileReferences].filter(([id]) => id === event.toolCallId || id.startsWith(event.toolCallId + '/')).flatMap(([, refs]) => refs)
         if (record !== undefined) {
           if (fileRefs.length > 0) record.fileRefs = fileRefs
           record.status = event.isError ? 'error' : 'ok'
           record.resultSummary = summary
+          if (mcpResult !== undefined) record.mcpResult = mcpResult
           if (diff !== undefined) record.diff = diff
           // 区间终点（与 startedAt 同为引擎打点；历史回查路径另从 toolResult
           // 消息重建，两条来源同一形状）
@@ -2228,6 +2277,7 @@ export class SessionManager implements CogentKernel {
           callId: event.toolCallId,
           isError: event.isError,
           summary,
+          ...(mcpResult !== undefined && { mcpResult }),
           ...(fileRefs.length > 0 && { fileRefs }),
           diff
         })

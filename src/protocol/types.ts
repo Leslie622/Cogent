@@ -1,3 +1,4 @@
+import type { McpMethods, McpEvents, McpResourceRef, McpPromptRef } from './mcp'
 /**
  * Cogent Agent 服务协议 —— 对外契约，跨项目复用边界。
  *
@@ -201,6 +202,7 @@ export interface ContextEstimate {
  * 未执行（审批拒绝 / 计划模式只读拦截 / 中止 —— 模型收到的是 error 结果 + 原因）。
  */
 export interface ToolCallRecord {
+  mcpResult?: import('./mcp').McpToolPresentation
   fileRefs?: FileReference[]
   /** pi toolCall 块 id（事件流与历史回查的配对键） */
   callId: string
@@ -370,6 +372,7 @@ export interface InitializeParams {
    * optional：老宿主/冒烟脚本可以不带；key 只在引擎内存存活，不落引擎侧磁盘。
    */
   credentials?: Record<string, { apiKey: string }>
+  mcpOAuthStates?: Record<string, unknown>
 }
 
 export interface InitializeResult {
@@ -384,6 +387,8 @@ export interface InitializeResult {
 
 export interface AgentSubmitParams {
   attachmentIds?: string[]
+  mcpResources?: McpResourceRef[]
+  mcpPrompts?: McpPromptRef[]
   directories?: import('../shared/attachments').DirectoryRef[]
   /** 随消息显式选中的技能实体名列表（按输入序，由 Host 活快照展开） */
   skills?: string[]
@@ -430,6 +435,7 @@ export interface ApprovalRespondParams {
    * settings.local.json 事故，调研见 技术笔记/工具系统与审批.md）。
    */
   always?: 'workspace'
+  mcpAlways?: 'tool' | 'server-readonly'
   /**
    * 「允许，并切换为 X」（zcode 同款）：允许本次 + 会话
    * 切到该模式 + **记为项目默认**（同一项目的新会话沿用）。只收两档放宽模式
@@ -486,7 +492,7 @@ export interface SessionMessagesParams {
   sessionId: string
 }
 export interface SessionMessagesResult {
-  interactions?: { approvals: ProtocolEvents['approval.request'][]; questions: ProtocolEvents['question.asked'][]; plans: ProtocolEvents['plan.requested'][] }
+  interactions?: { approvals: ProtocolEvents['approval.request'][]; questions: ProtocolEvents['question.asked'][]; plans: ProtocolEvents['plan.requested'][]; elicitations?: ProtocolEvents['mcp.elicitation.request'][] }
   eventWatermark?: number
   runtime?: { running: boolean; runId?: string; turnId?: string; activeMessageId?: string }
   messages: ChatMessage[]
@@ -860,100 +866,8 @@ export interface ProvidersCustomSyncResult {
   synced: number
 }
 
-// ———— MCP 座（阶段 4a：Host 管理的 MCP 客户端配置）————
-
-/**
- * MCP 工具的暴露档（pi McpExposure 的协议镜像，零运行时依赖手写）：
- * direct = 工具直接声明给模型（Cogent 默认档）；deferred/codemode 依赖
- * tool_search/codemode 工具（Cogent 未装载，仅供手改配置的忠实显示）；
- * hidden = 注册但不可达。
- */
-export type McpExposure = 'direct' | 'deferred' | 'codemode' | 'hidden'
-
-/**
- * MCP server 定义（mcp.sync 的载荷项）：pi-mcp `mcpServers` 通用形状的
- * 协议展开 —— stdio/http 判别联合 + name 显式字段（盘上文件以 name 为键，
- * 协议里展开成数组项便于逐项校验）。存盘时由引擎折回通用形状
- * （与生态互拷，见 docs/模块/MCP座.md）。
- */
-export type McpServerDef = { name: string } & (
-  | {
-      type: 'stdio'
-      command: string
-      args?: string[]
-      env?: Record<string, string>
-      cwd?: string
-    }
-  | {
-      type: 'http'
-      url: string
-      headers?: Record<string, string>
-    }
-) & {
-    description?: string
-    /** 缺省 true */
-    enabled?: boolean
-    /** 缺省 direct（UI 表单恒显式下发；盘上手改缺省按 pi 的 codemode 显示） */
-    exposure?: McpExposure
-    /** 每请求超时秒数（缺省 60） */
-    timeout?: number
-  }
-
-/** mcp.list 的 server 摘要（设置页卡片行 + 编辑表单数据源） */
-export interface McpServerSummary {
-  name: string
-  type: 'stdio' | 'http'
-  /** 一行展示：stdio = command + args；http = url */
-  detail: string
-  description?: string
-  enabled: boolean
-  exposure: McpExposure
-  /**
-   * 完整定义（4a-2：编辑表单的回填源）。摘要字段是显示口径（含缺省化），
-   * 编辑要以用户写入的原值为基 —— def 即盘上条目折回的协议形状。
-   */
-  def: McpServerDef
-  /**
-   * 项目 override 已作用于该项（list 带 cwd 时的合并视图口径）：enabled/
-   * exposure 是生效值（用户级原值仍在 def）。缺省 = 无 override 或本就是
-   * 用户级视图。
-   */
-  overrideApplied?: boolean
-  /** 项目 override 文件里该项的原样内容（list 带 cwd 时；overrideApplied 才有） */
-  override?: { enabled?: boolean; exposure?: McpExposure }
-}
-
-export interface McpListResult {
-  servers: McpServerSummary[]
-  /**
-   * 配置文件诊断（损坏 JSON / 非法条目 / 项目级越权条目）：不炸列表，
-   * 逐条列出供 UI 呈现 —— 配置文件是外部输入（约定.md §1.1 持久化读取）
-   */
-  errors: string[]
-}
-
-/**
- * 全量写项目级 override（mcp.override，作用域管理批次）：**全量替换**该项的
- * 项目 override —— 传入键写入 <cwd>/.cogent/mcp.json，空 patch = 清除该项
- * override（回落用户级定义）。UI 从 list 的 override 字段起步改一键再整发。
- */
-export interface McpOverrideParams {
-  cwd: string
-  name: string
-  enabled?: boolean
-  exposure?: McpExposure
-}
-export interface McpOverrideResult {
-  ok: true
-}
-
-/** 全量同步 user 级定义（替换语义，与 providers.custom.sync 同构） */
-export interface McpSyncParams {
-  servers: McpServerDef[]
-}
-export interface McpSyncResult {
-  synced: number
-}
+// MCP 独立契约保持原出口，协议运行时仍为零依赖。
+export type * from './mcp'
 
 // ———— 技能座（docs/模块/技能座.md & docs/计划/技能座升级实现.md）————
 //
@@ -1217,7 +1131,7 @@ export interface CapabilityIssueResult {
 /**
  * method 注册表：键名即线上协议。新增 method = 在此加一行 + 服务端加 handler。
  */
-export interface ProtocolMethods extends DefaultsMethods, AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, ChangeMethods, FileViewHostMethods, SessionTitleMethods, SessionSearchMethods {
+export interface ProtocolMethods extends McpMethods, DefaultsMethods, AttachmentMethods, FileMethods, FileInternalMethods, OutputMethods, ChangeMethods, FileViewHostMethods, SessionTitleMethods, SessionSearchMethods {
   'host.shutdown': { params: Record<string, never>; result: { ok: true } }
   'providers.custom.get': { params: Record<string, never>; result: ProvidersCustomSyncParams }
   initialize: { params: InitializeParams; result: InitializeResult }
@@ -1256,11 +1170,8 @@ export interface ProtocolMethods extends DefaultsMethods, AttachmentMethods, Fil
   'models.discover': { params: ModelsDiscoverParams; result: ModelsDiscoverResult }
   'providers.custom.sync': { params: ProvidersCustomSyncParams; result: ProvidersCustomSyncResult }
   /** MCP 座：server 摘要 + 配置诊断（缺省 user 级视图；带 cwd = 项目合并视图） */
-  'mcp.list': { params: { cwd?: string }; result: McpListResult }
   /** MCP 座：全量写 user 级定义（新增/编辑/删除/导入的写路径） */
-  'mcp.sync': { params: McpSyncParams; result: McpSyncResult }
   /** MCP 座：全量替换某项的项目级 override（空 patch = 清除回落用户级） */
-  'mcp.override': { params: McpOverrideParams; result: McpOverrideResult }
   /** 技能座：技能摘要 + 发现诊断（带 cwd = 两级合并视图） */
   'skills.list': { params: { cwd?: string }; result: SkillListResult }
   /** 技能座：读单枚技能正文（编辑表单回填；zcode skills inspect 同位） */
@@ -1287,7 +1198,7 @@ export interface ProtocolMethods extends DefaultsMethods, AttachmentMethods, Fil
 
 // ———— 事件映射（host → 宿主；骨架期先定形状，随实现细化） ————
 
-export interface ProtocolEvents {
+export interface ProtocolEvents extends McpEvents {
   'project.changed': { projectId: string; summary?: ProjectSummary }
   'session.defaultsChanged': SessionDefaults
   'providers.custom.changed': Record<string, never>
@@ -1366,7 +1277,7 @@ export interface ProtocolEvents {
    * diff = edit 工具的展示 diff（与 ToolCallRecord.diff 同源，流式路径数据源，
    * 2026-11-11 additive）。
    */
-  'tool.completed': { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string; fileRefs?: FileReference[] }
+  'tool.completed': { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string; fileRefs?: FileReference[]; mcpResult?: import('./mcp').McpToolPresentation }
   /**
    * 工具执行中的流式进度（已定稿，additive）：长时工具
    *（当前 = bash）的尾部输出快照，引擎侧 100ms 节流。text = 滚动快照全文
@@ -1389,6 +1300,7 @@ export interface ProtocolEvents {
      * 记忆，永不覆盖越界）。缺省 = false。
      */
     outsideRoots?: boolean
+    mcpMeta?: { serverName: string; originalToolName: string; destructive: boolean; openWorld: boolean }
   }
   /**
    * 任务清单更新（交互座 4c）：todo_write 每次落笔即推全量清单（快照语义，

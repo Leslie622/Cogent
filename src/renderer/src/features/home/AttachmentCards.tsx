@@ -6,15 +6,13 @@ import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, Att
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import type { DraftAttachment } from '@/stores/attachments'
-import { formatAttachmentBytes as formatBytes, hasLocalAttachmentReader, mediaBindingIssue, NATIVE_IMAGE_MIMES, type AttachmentRef, type MediaBindings } from '@shared/attachments'
+import { formatAttachmentBytes as formatBytes, hasLocalAttachmentReader, NATIVE_IMAGE_MIMES, type AttachmentRef } from '@shared/attachments'
 import { unwrapIpcError } from '@/lib/ipc'
 
-export function isReferenceOnlyAttachment(ref: AttachmentRef, imageInput: boolean, media: MediaBindings): boolean {
+/** 模型不能原生接收、宿主也没有本地解析器时只能作为文件引用发送；之后能读到什么取决于模型选的工具。 */
+export function isReferenceOnlyAttachment(ref: AttachmentRef, imageInput: boolean): boolean {
   if (imageInput && NATIVE_IMAGE_MIMES.includes(ref.mime)) return false
-  const kind = ref.mime.startsWith('image/') ? 'image' : ref.mime.startsWith('video/') ? 'video' : 'document'
-  if (kind === 'document' && hasLocalAttachmentReader(ref)) return false
-  const binding = media[kind]
-  return binding === undefined || mediaBindingIssue(ref, binding) !== undefined
+  return !hasLocalAttachmentReader(ref)
 }
 function isImage(item: DraftAttachment): boolean {
   if (item.directory !== undefined) return false

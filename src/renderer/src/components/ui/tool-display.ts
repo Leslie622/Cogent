@@ -18,6 +18,7 @@ const KIND_LABELS: Record<string, string> = {
   read: '读取',
   read_attachment: '附件',
   skill: '技能',
+  tool_search: '搜索工具',
   write: '写入',
   edit: '编辑',
   grep: '搜索',
@@ -48,7 +49,7 @@ export function toolKindLabel(name: string): string {
  */
 export function mcpDisplayName(name: string): string | undefined {
   if (!name.startsWith('mcp__')) return undefined
-  return name.slice('mcp__'.length).replace('__', '.')
+  return name.slice('mcp__'.length).replace('__', ' · ')
 }
 
 /** summary 剥壳：`read(src/index.ts)` → `src/index.ts`；括号不配对返回原文 */

@@ -115,11 +115,11 @@ model {
     // 3a. MCP 双轨机制（逻辑版）
     mcpFlow = system 'MCP 双轨机制' {
       client = system '上轨 · 消费外部工具（MCP 座）' {
-        technology '用户级唯一定义真源 · 项目级仅可覆盖启停与暴露档'
-        config = component '两级配置与整包校验' { technology '校验命名碰撞与暴露档 · 非法整包拒收' }
-        trust = component '项目信任门与快照定格' { technology '拦项目新增服务 · 首轮定格快照' }
-        connect = component '后台连接与工具暴露' { technology '激活后后台连接 · 首轮最多等 10 秒' }
-        guard = component '执行审批与 24K 落盘' { technology '统一按执行档审批 · 超 24K 落盘留头尾' }
+        technology '两级定义 · 摘要信任 · 共享连接'
+        config = component '两级配置与安全提交' { technology '无损配置 · 环境与项目变量' }
+        trust = component '项目定义与摘要信任' { technology '项目身份 + 真实路径 + 文件摘要' }
+        connect = component '共享连接与按需工具' { technology '统一连接池 · 实时目录 · 回合热同步' }
+        guard = component '工具分级与交互回填' { technology '按风险审批 · 表单补充 · 大结果落盘' }
       }
       server = system '下轨 · 对外暴露工具（对外 MCP）' {
         technology '独立翻译进程直连同一 Host · 桌面与外部共享状态'
@@ -132,7 +132,7 @@ model {
       }
 
       client.config -[call]-> client.trust '合并两级配置'
-      client.trust -[call]-> client.connect '定格快照激活'
+      client.trust -[call]-> client.connect '受信定义接入共享连接'
       client.connect -[call]-> client.guard '注册工具调用'
 
       server.access -[call]-> server.entry '提供本机凭据'
@@ -145,10 +145,10 @@ model {
 
     // 3b. MCP 双轨机制（源码调用图）
     mcpCode = system 'MCP 双轨机制（源码调用图）' {
-      mcpStore = component 'McpSection · McpConfigStore' { technology 'validateMcpServerConfig · OVERRIDE_KEYS' }
-      mcpExt = component 'buildPiSession · createMcpExtension' { technology 'snapshot · bindExtensions(rpc)' }
-      mcpAllow = component 'MCP_TOOL_ALLOWLIST' { technology 'mcp__* · 3 资源工具 · 10s 等待' }
-      mcpGuard = component 'decideApproval · spillMcpToolResult' { technology 'exec 档审批 · 24K 落盘头16K尾4K' }
+      mcpStore = component 'McpConfigStore · McpTrustStore' { technology 'resolve · projectId + sha256' }
+      mcpExt = component 'McpRuntimeManager · McpSecretBridge' { technology 'McpClient · OAuth · safeStorage' }
+      mcpAllow = component 'createCogentMcpExtension · tool_search' { technology 'deferred · direct · 回合同步' }
+      mcpGuard = component 'decideApproval · McpElicitationService' { technology 'annotations · 交互归属 · 24K落盘' }
 
       accessFile = component 'refreshMcpAccessFile · auth.ts' { technology 'capability.issue · /auth/exchange' }
       mcpServer = component 'StdioServerTransport · toolSpecs' { technology 'createCogentMcpServer · 14/6 工具' }
@@ -157,8 +157,8 @@ model {
       hostEntry = component 'verifyToken · scopeDenial · handlers' { technology 'createSessionParams 默认 planEnabled' }
 
       mcpStore -[call]-> mcpExt '项目信任门过滤'
-      mcpExt -[call]-> mcpAllow 'session_start 连接'
-      mcpAllow -[call]-> mcpGuard 'direct 工具调用'
+      mcpExt -[call]-> mcpAllow '能力修订供给会话桥'
+      mcpAllow -[call]-> mcpGuard '搜索或直接工具调用'
 
       accessFile -[call]-> mcpServer '原子写 mcp-access.json'
       mcpServer -[call]-> readAcc '每次调用重读'
@@ -252,7 +252,7 @@ model {
       cancelWrap = component 'wrapRequestCancellation' { technology 'prepareRequest · signal.throwIfAborted' }
       inspector = component 'attachInspector · assertAttachmentRequest' { technology 'onPayload · onResponse · onProviderStreamEvent' }
 
-      mcpExt = component 'createMcpExtension · bindExtensions' { technology 'mode: rpc · session_start' }
+      mcpExt = component 'createCogentMcpExtension · bindExtensions' { technology 'mode: rpc · 回合热同步' }
       nativeExt = component '.pi/extensions (jiti)' { technology 'DefaultResourceLoader 原生发现' }
       plugins = component '本地插件分发层（决定 37）' { technology 'manifest 三路径回退 · 暂缓实施' }
 

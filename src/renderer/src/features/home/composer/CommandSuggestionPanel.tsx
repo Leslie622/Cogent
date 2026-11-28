@@ -2,9 +2,9 @@
  * 输入区上方的命令 / 技能候选浮层（毛玻璃材质 + 分组排布 + 键盘导航）。
  * `/` 显示「命令」与「技能」两组；`$`/`￥` 专显「技能」。
  */
-import { useEffect, useRef, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, type ReactNode } from 'react'
 import { ArrowDownIcon, ArrowUpIcon, CornerDownLeftIcon } from 'lucide-react'
-import { IconInfoCircle, IconTerminal2, IconWand } from '@tabler/icons-react'
+import { IconDatabase, IconInfoCircle, IconPlug, IconTerminal2, IconWand } from '@tabler/icons-react'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
 import type { ComposerSuggestionItem, TriggerKind } from './types'
@@ -15,6 +15,7 @@ interface CommandSuggestionPanelProps {
   selectedIndex: number
   selectionSource?: 'keyboard' | 'pointer'
   loading?: boolean
+  error?: string
   onSelectIndex: (index: number) => void
   onPick: (item: ComposerSuggestionItem) => void
 }
@@ -25,20 +26,23 @@ export function CommandSuggestionPanel({
   selectedIndex,
   selectionSource = 'keyboard',
   loading = false,
+  error,
   onSelectIndex,
   onPick
 }: CommandSuggestionPanelProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const activeRef = useRef<HTMLButtonElement | null>(null)
 
-  const commandItems: Array<{ item: ComposerSuggestionItem; index: number }> = []
-  const skillItems: Array<{ item: ComposerSuggestionItem; index: number }> = []
+  const groups: Array<{ key: ComposerSuggestionItem['group']; label: string; entries: Array<{ item: ComposerSuggestionItem; index: number }> }> = [
+    { key: 'command', label: '命令', entries: [] }, { key: 'skill', label: '技能', entries: [] },
+    { key: 'mcp-prompt', label: 'MCP 提示词', entries: [] }, { key: 'mcp-resource', label: 'MCP 资源', entries: [] }
+  ]
   items.forEach((item, index) => {
-    if (item.group === 'command') commandItems.push({ item, index })
-    else skillItems.push({ item, index })
+    groups.find(group => group.key === item.group)!.entries.push({ item, index })
   })
+  const visibleGroups = groups.filter(group => group.entries.length > 0)
 
-  const showGroupHeaders = triggerKind === '/' && (commandItems.length > 0 || skillItems.length > 0)
+  const showGroupHeaders = triggerKind !== '$' && items.length > 0
 
   useEffect(() => {
     // 鼠标悬停切换高亮不触发自动滚动，避免光标移到边缘行时列表突然跳动
@@ -85,7 +89,7 @@ export function CommandSuggestionPanel({
     </div>
   )
 
-  const footerText = triggerKind === '$' ? '输入内容以搜索技能' : '输入内容以搜索命令或技能'
+  const footerText = triggerKind === '$' ? '输入内容以搜索技能' : triggerKind === '@' ? '输入内容以搜索 MCP 资源' : '输入内容以搜索命令、技能或 MCP 提示词'
 
   const renderRow = (item: ComposerSuggestionItem, index: number) => {
     const active = index === selectedIndex
@@ -119,13 +123,13 @@ export function CommandSuggestionPanel({
               : 'border-border/60 bg-background/60 text-foreground/80 dark:border-white/10 dark:bg-white/[0.06]'
           )}
         >
-          {isSkill ? <IconWand className="size-3.5" /> : <IconTerminal2 className="size-3.5" />}
+          {item.group === 'mcp-resource' ? <IconDatabase className="size-3.5" /> : item.group === 'mcp-prompt' ? <IconPlug className="size-3.5" /> : isSkill ? <IconWand className="size-3.5" /> : <IconTerminal2 className="size-3.5" />}
         </span>
 
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <span
             className={cn(
-              'shrink-0 text-sm font-medium tracking-[-0.01em]',
+              'min-w-0 truncate text-sm font-medium tracking-[-0.01em]',
               !isSkill && 'font-mono'
             )}
           >
@@ -163,7 +167,7 @@ export function CommandSuggestionPanel({
   return (
     <div
       role="listbox"
-      aria-label={triggerKind === '$' ? '技能候选列表' : '命令与技能候选列表'}
+      aria-label={triggerKind === '$' ? '技能候选列表' : triggerKind === '@' ? 'MCP 资源候选列表' : '命令、技能与 MCP 提示词候选列表'}
       data-composer-suggestion-panel
       className={cn(
         'absolute right-0 bottom-full left-0 z-30 mb-2 overflow-hidden rounded-2xl',
@@ -176,27 +180,20 @@ export function CommandSuggestionPanel({
       <div ref={scrollRef} className="max-h-72 overflow-y-auto scroll-smooth px-1.5 pb-1.5">
         {items.length === 0 ? (
           <div className="px-3 py-5 text-center text-xs text-muted-foreground">
-            {loading
-              ? '正在加载可用技能…'
+            {error ?? (loading
+              ? '正在加载候选…'
               : triggerKind === '$'
                 ? '没有匹配的已启用技能'
-                : '没有匹配的命令或技能'}
+                : triggerKind === '@' ? '没有匹配的 MCP 资源' : '没有匹配的命令、技能或 MCP 提示词')}
           </div>
         ) : (
           <div className={cn('flex flex-col', !showGroupHeaders && 'pt-1.5')}>
-            {commandItems.length > 0 && (
-              <>
-                {showGroupHeaders && renderGroupHeader('命令', false)}
-                {renderRows(commandItems, skillItems.length > 0)}
-              </>
-            )}
-
-            {skillItems.length > 0 && (
-              <>
-                {showGroupHeaders && renderGroupHeader('技能', commandItems.length > 0)}
-                {renderRows(skillItems)}
-              </>
-            )}
+            {visibleGroups.map((group, index) => (
+              <Fragment key={group.key}>
+                {showGroupHeaders && renderGroupHeader(group.label, index > 0)}
+                {renderRows(group.entries, index < visibleGroups.length - 1)}
+              </Fragment>
+            ))}
           </div>
         )}
       </div>

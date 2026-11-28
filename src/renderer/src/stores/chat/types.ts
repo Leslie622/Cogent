@@ -7,6 +7,7 @@
 import type { ChatMessage, MessageUsage, PermissionMode, SessionSummary, TodoItem } from '@/env.d'
 import type { AttachmentRef, DirectoryRef } from '@shared/attachments'
 import type { FileReference } from '@shared/files'
+import type { McpElicitationRequest, McpPromptRef, McpResourceRef } from '../../../../protocol/mcp'
 
 /** 引擎 SessionSummary 的 renderer 侧直接镜像（env.d.ts），不再本地重复声明 */
 export type { SessionSummary }
@@ -17,6 +18,7 @@ export type { SessionSummary }
  * 展平生成（flattenSegments）—— 两条来源同一形状，渲染单一（components/ui/tool）。
  */
 export interface ToolItem {
+  mcpResult?: import('../../../../protocol/mcp').McpToolPresentation
   fileRefs?: FileReference[]
   /** = 引擎 callId（事件流与终态配对键，跨 run 唯一） */
   id: string
@@ -68,6 +70,7 @@ export interface ApprovalItem {
  * 挂起各发一个 approval.request，面板逐条呈现逐条裁决。
  */
 export interface PendingApproval {
+  mcpMeta?: { serverName: string; originalToolName: string; destructive: boolean; openWorld: boolean }
   requestId: string
   callId?: string
   toolName: string
@@ -184,6 +187,7 @@ export interface SessionBucket {
   pendingQuestions: PendingQuestion[]
   /** 挂起方案审批（PlanPanel 数据源）：plan.requested 建、respond/abort 收尾 */
   pendingPlans: PendingPlan[]
+  pendingElicitations?: McpElicitationRequest[]
 }
 
 export interface ChatState {
@@ -230,7 +234,9 @@ export interface ChatState {
     attachments?: AttachmentRef[],
     directories?: DirectoryRef[],
     skills?: string[],
-    command?: { name: 'init' }
+    command?: { name: 'init' },
+    mcpResources?: McpResourceRef[],
+    mcpPrompts?: McpPromptRef[]
   ) => Promise<string | false>
   abort: () => Promise<void>
   /** 审批裁决（专属 IPC 通道）：先收面板/落痕迹行（乐观），引擎侧竞态失败不回滚；
@@ -241,7 +247,7 @@ export interface ChatState {
   respondApproval: (
     requestId: string,
     approved: boolean,
-    options?: { message?: string; always?: 'workspace'; switchMode?: 'auto' | 'autonomous' }
+    options?: { message?: string; always?: 'workspace'; switchMode?: 'auto' | 'autonomous'; mcpAlways?: 'tool' | 'server-readonly' }
   ) => Promise<void>
   /** 手动续写（截断动作条）：注入引擎侧续写指令再跑 —— 无用户
       泡（指令消息在引擎投影层并入相邻段），乐观置运行态，事件流照常驱动 */

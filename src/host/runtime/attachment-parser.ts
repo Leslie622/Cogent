@@ -71,7 +71,7 @@ export async function parseAttachment(request: ParseRequest): Promise<ParsedAtta
       const content = await page.getTextContent()
       const text = content.items.map((item) => 'str' in item ? item.str + (item.hasEOL ? '\n' : ' ') : '').join('')
       const warnings = ['仅提取页面文字；未分析图片、图表和排版。']
-      if (text.trim() === '') warnings.push('本页未提取到文字，可能为空白/扫描页；需要 document 分析工具。')
+      if (text.trim() === '') warnings.push('本页未提取到文字，可能是空白页或扫描件。')
       return { text: `第 ${pageNumber} / ${pdf.numPages} 页\n${text}`, source: '本地 PDF.js 文字提取', warnings, requiresVisual: text.trim() === '',
         total: pdf.numPages, ...(pageNumber < pdf.numPages && { nextCursor: pageNumber }) }
     } finally { await task.destroy() }

@@ -72,6 +72,7 @@ import { PlanToggle } from './PlanToggle'
 import { TodoStrip } from './TodoStrip'
 import { QuestionPanel } from './QuestionPanel'
 import { PlanPanel } from './PlanPanel'
+import { ElicitationPanel } from './ElicitationPanel'
 import { findActiveModel, useEngineStore, type SendShortcut } from '@/stores/engine'
 import { SearchNavigator } from './search/SearchNavigator'
 import { ConversationIndex } from './ConversationIndex'
@@ -381,9 +382,8 @@ function ChatComposer({
     findActiveModel(s.models, s.keyConfigured, s.activeModelId, s.activeProviderId)?.provider
   )
   const imageInput = useEngineStore((s) => findActiveModel(s.models, s.keyConfigured, s.activeModelId, s.activeProviderId)?.input?.includes('image') === true)
-  const media = useAttachmentStore((s) => s.media)
   const items = draft.items
-  const referenceOnly = items.some((item) => item.ref !== undefined && isReferenceOnlyAttachment(item.ref, imageInput, media))
+  const referenceOnly = items.some((item) => item.ref !== undefined && isReferenceOnlyAttachment(item.ref, imageInput))
   const overCapacity = items.reduce((n, item) => n + item.size, 0) > ATTACHMENT_LIMITS.messageBytes
   const blocked = !draft.loaded || items.some((item) => item.status !== 'ready') || overCapacity
   const sendLabel = referenceOnly ? '作为文件发送' : '发送'
@@ -487,7 +487,9 @@ function ChatComposer({
           items.flatMap((item) => (item.ref === undefined ? [] : [item.ref])),
           items.flatMap((item) => (item.directory === undefined ? [] : [item.directory])),
           prepared.skills,
-          prepared.command
+          prepared.command,
+          prepared.mcpResources,
+          prepared.mcpPrompts
         )
         if (acceptedSessionId === false) return
         const consumed = useAttachmentStore.getState().consume(draftId, draft, token)
@@ -557,6 +559,7 @@ function ChatComposer({
             placeholder="随心输入，输入 / 使用命令，输入 $ 使用技能"
             sendShortcut={sendShortcut}
             primaryCwd={primaryCwd}
+            projectId={projectId}
             commandContext={commandContext}
             onChange={(nextText, nextEntities) => {
               if (commandError !== null) setCommandError(null)
@@ -673,6 +676,7 @@ export function HomeChat({
   const hasPendingPlan = useChatStore(
     (s) => (s.bySession[s.activeSessionId ?? '']?.pendingPlans.length ?? 0) > 0
   )
+  const hasPendingElicitation = useChatStore((s) => (s.bySession[s.activeSessionId ?? '']?.pendingElicitations?.length ?? 0) > 0)
   const activeSessionSummary = useChatStore((s) =>
     session.kind === 'chat' ? s.sessions.find((x) => x.id === session.chatId) : undefined
   )
@@ -721,6 +725,8 @@ export function HomeChat({
           <ApprovalPanel />
         ) : hasPendingPlan ? (
           <PlanPanel />
+        ) : hasPendingElicitation ? (
+          <ElicitationPanel />
         ) : hasPendingQuestion ? (
           <QuestionPanel />
         ) : (

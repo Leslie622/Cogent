@@ -1,4 +1,10 @@
 import type { DefaultsMethods, SessionDefaults } from '@shared/host-config'
+import type { McpShellApi } from '@shared/mcp-ipc'
+import type { RendererMcpMethods, RendererMcpEvent, McpResourceRef, McpPromptRef, McpElicitationRequest } from '@shared/mcp'
+export type { McpExposure, McpServerDef, McpServerSummary, McpServerRuntimeStatus, McpToolInfo, McpPendingTrustFile, McpElicitationRequest } from '@shared/mcp'
+
+type McpParams = { [K in keyof RendererMcpMethods]: RendererMcpMethods[K]['params'] }
+type McpResults = { [K in keyof RendererMcpMethods]: RendererMcpMethods[K]['result'] }
 type DefaultsParams = { [K in keyof DefaultsMethods]: DefaultsMethods[K]['params'] }
 type DefaultsResults = { [K in keyof DefaultsMethods]: DefaultsMethods[K]['result'] }
 /// <reference types="vite/client" />
@@ -38,6 +44,7 @@ type AttachmentResults = { [K in keyof AttachmentMethods]: AttachmentMethods[K][
 declare global {
   interface Window {
     cogent: {
+      mcp: McpShellApi
       fileViewsRequest: <M extends keyof FileViewMethods>(method: M, params: FileViewMethods[M]['params']) => Promise<FileViewMethods[M]['result']>
       browserRequest: <M extends keyof BrowserMethods>(method: M, params: BrowserMethods[M]['params']) => Promise<BrowserMethods[M]['result']>
       onBrowserEvent: (callback: (event: BrowserEvent) => void) => () => void
@@ -85,7 +92,7 @@ declare global {
       respondApproval: (
         requestId: string,
         approved: boolean,
-        options?: { message?: string; always?: 'workspace'; switchMode?: 'auto' | 'autonomous' }
+        options?: { message?: string; always?: 'workspace'; switchMode?: 'auto' | 'autonomous'; mcpAlways?: 'tool' | 'server-readonly' }
       ) => Promise<{ ok: true; summary?: SessionSummary }>
       /** 回答挂起中的 ask_user（交互座 4c-2；respondApproval 同款专属通道）：
           answers 按问题序（选项 label / 自由输入；多选问题 = string[]） */
@@ -159,6 +166,7 @@ declare global {
 /** 引擎方法名（renderer 可触达的子集；白名单在 main 侧 ipc/engine.ts 收窄 ——
     providers.custom.sync 已退出：自定义 provider 的写路径只有 custom-providers:set） */
 export type EngineMethod =
+  | keyof RendererMcpMethods
   | keyof DefaultsMethods
   | keyof SessionSearchMethods
   | keyof SessionTitleMethods
@@ -192,9 +200,6 @@ export type EngineMethod =
   | 'models.discover'
   | 'inspect.entries'
   | 'inspect.entry'
-  | 'mcp.list'
-  | 'mcp.sync'
-  | 'mcp.override'
   | 'skills.list'
   | 'skills.read'
   | 'skills.save'
@@ -288,7 +293,7 @@ export interface ProjectSummary {
 }
 
 /** 与 protocol/types.ts 对应 method 的参数形状（renderer 侧镜像声明） */
-export interface EngineMethodParams extends DefaultsParams, AttachmentParams, FileParams, OutputParams, ChangeParams, TitleParams, SearchParams {
+export interface EngineMethodParams extends DefaultsParams, AttachmentParams, FileParams, OutputParams, ChangeParams, TitleParams, SearchParams, McpParams {
   'session.list': Record<string, never>
   'session.create': { title?: string; cwd?: string; projectId?: string; permissionMode?: PermissionMode; planEnabled?: boolean }
   'session.delete': { sessionId: string }
@@ -317,6 +322,8 @@ export interface EngineMethodParams extends DefaultsParams, AttachmentParams, Fi
     inputId?: string
     directories?: DirectoryRef[]
     skills?: string[]
+    mcpResources?: McpResourceRef[]
+    mcpPrompts?: McpPromptRef[]
     command?: { name: 'init' }
   }
   'agent.abort': { sessionId: string }
@@ -331,9 +338,6 @@ export interface EngineMethodParams extends DefaultsParams, AttachmentParams, Fi
   }
   'inspect.entries': { sessionId: string }
   'inspect.entry': { sessionId: string; seq: number }
-  'mcp.list': { cwd?: string }
-  'mcp.sync': { servers: McpServerDef[] }
-  'mcp.override': { cwd: string; name: string; enabled?: boolean; exposure?: McpExposure }
   'skills.list': { cwd?: string }
   'skills.read': { scope: SkillScope; name: string; cwd?: string }
   'skills.save': {
@@ -358,11 +362,11 @@ export interface TodoItem {
 }
 
 /** 与 protocol/types.ts 对应 method 的结果形状（renderer 侧镜像声明） */
-export interface EngineMethodResult extends DefaultsResults, AttachmentResults, FileResults, OutputResults, ChangeResults, TitleResults, SearchResults {
+export interface EngineMethodResult extends DefaultsResults, AttachmentResults, FileResults, OutputResults, ChangeResults, TitleResults, SearchResults, McpResults {
   'session.list': SessionSummary[]
   'session.create': SessionSummary
   'session.delete': { deleted: boolean; cleanupPending?: boolean; cleanupError?: string }
-  'session.messages': { interactions?: { approvals: Extract<EngineEventBody, { method: 'approval.request' }>['params'][]; questions: Extract<EngineEventBody, { method: 'question.asked' }>['params'][]; plans: Extract<EngineEventBody, { method: 'plan.requested' }>['params'][] }; messages: ChatMessage[]; todos?: TodoItem[]; eventWatermark?: number; runtime?: { running: boolean; runId?: string; turnId?: string; activeMessageId?: string } }
+  'session.messages': { interactions?: { approvals: Extract<EngineEventBody, { method: 'approval.request' }>['params'][]; questions: Extract<EngineEventBody, { method: 'question.asked' }>['params'][]; plans: Extract<EngineEventBody, { method: 'plan.requested' }>['params'][]; elicitations?: McpElicitationRequest[] }; messages: ChatMessage[]; todos?: TodoItem[]; eventWatermark?: number; runtime?: { running: boolean; runId?: string; turnId?: string; activeMessageId?: string } }
   'session.setPinned': { summary: SessionSummary }
   'session.rename': { summary: SessionSummary }
   'session.archive': { summary: SessionSummary }
@@ -385,9 +389,6 @@ export interface EngineMethodResult extends DefaultsResults, AttachmentResults, 
   'models.discover': { models: DiscoveredModel[] }
   'inspect.entries': { entries: InspectEntrySummary[] }
   'inspect.entry': InspectEntryDetail
-  'mcp.list': { servers: McpServerSummary[]; errors: string[] }
-  'mcp.sync': { synced: number }
-  'mcp.override': { ok: true }
   'skills.list': { skills: SkillSummary[]; errors: string[]; stateErrors?: string[] }
   'skills.read': {
     description: string
@@ -406,36 +407,6 @@ export interface EngineMethodResult extends DefaultsResults, AttachmentResults, 
   'skills.save': { ok: true }
   'skills.delete': { ok: true }
   'skills.setEnabled': { ok: true }
-}
-
-/** MCP 工具暴露档（与 protocol McpExposure 镜像）：Cogent 只用 direct，其余档
-    供手改配置的忠实显示 */
-export type McpExposure = 'direct' | 'deferred' | 'codemode' | 'hidden'
-
-/** MCP server 定义（与 protocol McpServerDef 镜像；stdio/http 判别联合） */
-export type McpServerDef = { name: string } & (
-  | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string>; cwd?: string }
-  | { type: 'http'; url: string; headers?: Record<string, string> }
-) & {
-    description?: string
-    enabled?: boolean
-    exposure?: McpExposure
-    timeout?: number
-  }
-
-/** MCP server 摘要（mcp.list 行；def = 编辑表单回填源） */
-export interface McpServerSummary {
-  name: string
-  type: 'stdio' | 'http'
-  detail: string
-  description?: string
-  enabled: boolean
-  exposure: McpExposure
-  def: McpServerDef
-  /** 项目 override 已作用于该项（带 cwd 的合并视图口径） */
-  overrideApplied?: boolean
-  /** 项目 override 文件里该项的原样内容（UI 起草新 patch 的基线） */
-  override?: { enabled?: boolean; exposure?: McpExposure }
 }
 
 /** 技能定义所在作用域（与 protocol SkillScope 镜像） */
@@ -489,6 +460,7 @@ export interface SkillSummary {
  */
 export type EngineEvent = EngineEventBody & { sequence?: number }
 type EngineEventBody =
+  | RendererMcpEvent
   | { method: 'project.changed'; params: { projectId: string; summary?: ProjectSummary } }
   | { method: 'host.disconnected'; params: { message: string } }
   | { method: 'session.defaultsChanged'; params: SessionDefaults }
@@ -538,7 +510,7 @@ type EngineEventBody =
       params: { sessionId: string; messageId: string; delta: string; kind?: 'text' | 'thinking' }
     }
   | { method: 'tool.started'; params: { sessionId: string; callId: string; name: string; kind: string; summary?: string } }
-  | { method: 'tool.completed'; params: { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string; fileRefs?: FileReference[] } }
+  | { method: 'tool.completed'; params: { sessionId: string; callId: string; isError: boolean; summary: string; diff?: string; fileRefs?: FileReference[]; mcpResult?: import('@shared/mcp').McpToolPresentation } }
   | { method: 'tool.progress'; params: { sessionId: string; callId: string; text: string } }
   | {
       method: 'approval.request'
@@ -551,6 +523,7 @@ type EngineEventBody =
         summary: string
         /** 写类目标在工作区根之外（面板据此隐藏「始终允许此工作区」） */
         outsideRoots?: boolean
+        mcpMeta?: { serverName: string; originalToolName: string; destructive: boolean; openWorld: boolean }
       }
     }
   | { method: 'inspect.event'; params: { sessionId: string; entry: InspectEntrySummary } }
@@ -677,6 +650,7 @@ export interface ChatMessage {
 
 /** 工具调用投影（工具卡数据形状；与 protocol ToolCallRecord 镜像） */
 export interface ToolCallRecord {
+  mcpResult?: import('@shared/mcp').McpToolPresentation
   fileRefs?: FileReference[]
   callId: string
   name: string

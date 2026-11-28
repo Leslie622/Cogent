@@ -29,8 +29,8 @@ describe('parseToolSummary', () => {
 })
 
 describe('mcpDisplayName', () => {
-  it('mcp__server__tool → server.tool；非 mcp 名返回 undefined', () => {
-    expect(mcpDisplayName('mcp__image_search__search_image')).toBe('image_search.search_image')
+  it('mcp__server__tool → server · tool；非 mcp 名返回 undefined', () => {
+    expect(mcpDisplayName('mcp__image_search__search_image')).toBe('image_search · search_image')
     expect(mcpDisplayName('read')).toBeUndefined()
   })
 })

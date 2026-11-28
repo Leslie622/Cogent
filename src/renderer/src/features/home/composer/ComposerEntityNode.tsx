@@ -12,16 +12,16 @@ import {
   type SerializedLexicalNode,
   type Spread
 } from 'lexical'
-import { IconTerminal2, IconWand } from '@tabler/icons-react'
+import { IconDatabase, IconPlug, IconTerminal2, IconWand } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
-import { ENTITY_SENTINEL, type ComposerEntity } from './types'
+import { composerEntityText, ENTITY_SENTINEL, type ComposerEntity } from './types'
 
 export function EntityChip({
   kind,
   name,
   className
 }: {
-  kind: 'skill' | 'command'
+  kind: ComposerEntity['kind']
   name: string
   className?: string
 }) {
@@ -38,12 +38,12 @@ export function EntityChip({
         className
       )}
     >
-      {isSkill ? (
+      {kind === 'mcp-resource' ? <IconDatabase className="size-3.5 shrink-0" /> : kind === 'mcp-prompt' ? <IconPlug className="size-3.5 shrink-0" /> : isSkill ? (
         <IconWand className="size-3.5 shrink-0 stroke-[2]" />
       ) : (
         <IconTerminal2 className="size-3.5 shrink-0 stroke-[2]" />
       )}
-      <span>{isSkill ? name : `/${name}`}</span>
+      <span>{isSkill ? name : kind === 'mcp-resource' ? `@${name}` : kind === 'mcp-prompt' ? `/mcp:${name}` : `/${name}`}</span>
     </span>
   )
 }
@@ -97,8 +97,7 @@ export class ComposerEntityNode extends DecoratorNode<ReactElement> {
 
   exportDOM(): DOMExportOutput {
     const span = document.createElement('span')
-    span.textContent =
-      this.__entity.kind === 'skill' ? `$${this.__entity.name}` : `/${this.__entity.name}`
+    span.textContent = composerEntityText(this.__entity)
     return { element: span }
   }
 
@@ -123,7 +122,8 @@ export class ComposerEntityNode extends DecoratorNode<ReactElement> {
   }
 
   decorate(): ReactElement {
-    return <EntityChip kind={this.__entity.kind} name={this.__entity.name} />
+    const entity = this.__entity
+    return <EntityChip kind={entity.kind} name={entity.kind === 'mcp-resource' || entity.kind === 'mcp-prompt' ? `${entity.server}:${entity.name}` : entity.name} />
   }
 }
 

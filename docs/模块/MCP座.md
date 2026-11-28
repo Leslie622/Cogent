@@ -1,89 +1,81 @@
 # MCP 座
 
-> Host 侧管理 **MCP 客户端**配置与授权，pi `createMcpExtension` 官方工厂
-> 装配进会话（决定 27：不造轮子）—— 外部 MCP server 的工具直接进 Agent 循环。
-> 不含对外 MCP Server（Cogent 作为服务端，方向相反，见[对外MCP](对外MCP.md)）。
-> 原理与四家对比看[../技术笔记/MCP座.md](../技术笔记/MCP座.md)。
+> Cogent 作为 MCP 客户端消费外部服务；对外 MCP Server 方向相反，见[对外MCP](对外MCP.md)。
+> 原理与实读对照见[技术笔记](../技术笔记/MCP座.md)，真实服务验收见[手测册](../测试用例/MCP座.md)。
 
-## 是什么 / 在哪
+## 入口与所有权
 
-- store：`src/host/runtime/mcp-config.ts` —— 两级文件 + 校验 + 合并；
-- 协议方法：`mcp.list`（摘要+诊断，readonly 档；缺省 user 级视图，带 cwd =
-  项目合并视图：生效值 + overrideApplied/override 原样，def 恒用户级原值）/
-  `mcp.sync`（全量写 user 级定义）/ `mcp.override`（全量替换某项的项目
-  override，空 patch = 清除回落）—— 后两者 write 档，注册表在 host-main；
-- 装配：`kernel/pi-session-factory.ts` —— `extensionFactories` 加入
-  `createMcpExtension({ loadConfig, logPath, updateConfig })`；
-- 审批投影：`runtime/tool-meta.ts` —— `mcp__*` 前缀 → exec 档；
-- UI：设置页「MCP 服务器」分区（`renderer/features/settings/McpSection.tsx`，
-  zcode 形态：分组作用域下拉 + 计数 + 搜索工具行 + 「已安装 N」组标题行
-  （右侧刷新/导入/新建）+ 图标方块条目行 +
-  虚线空态；新增/编辑弹窗 = 表单/JSON 双模式，JSON 为生态形状单条直编、
-  可改表单未暴露的 timeout 等字段）—— renderer 经 `engine:request` 通用代理直达三个方法（白名单在
-  `main/ipc/engine.ts`；MCP 配置真源在引擎，无壳侧双写，与 providers 的
-  专属通道恰成对照）。**作用域**：本机·用户 = 定义面（增删改/导入，整表
-  mcp.sync）；项目 = 合并视图，下拉分组列出全部项目可分项目浏览
-  （useProjectScope：默认跟随活跃会话归属的项目、手动挑过即固定；cwd =
-  选中项目主根 cwds[0]），开关/重置走
-  mcp.override（写工作区 .cogent/mcp.json，只影响该项目）。搜索 = 本地过滤。
-  列表与弹窗按作用域及项目主根绑定，切换后不接收旧视图的回包。写入在发起作用域执行，切换后发生写入失败时明确提示原作用域。
-  连接状态（zcode 绿/红点）无数据面 —— 连接活在 pi 会话内部，暴露需协议
-  扩展（列后续）。
+| 职责 | 入口与真源 |
+| --- | --- |
+| 配置、作用域、信任 | `runtime/mcp-config.ts`、`mcp-trust.ts`；Host 单写 `mcp.json` / `mcp-trust.json` |
+| 连接、状态、能力目录 | `runtime/mcp-runtime.ts` 的 `McpRuntimeManager`；Host 单实例，复用 pi-mcp `McpClient` |
+| 传输 | `runtime/mcp-transports.ts`；stdio、Streamable HTTP、Legacy SSE，关闭时回收子进程树 |
+| 会话工具桥 | `kernel/cogent-mcp-extension.ts`、`pi-session-factory.ts`；pi 扩展与 `tool_search` |
+| OAuth 凭据 | `runtime/mcp-oauth.ts` / `mcp-secrets.ts`；main `credentials/mcp-store.ts` 单写加密文件 |
+| RPC 与 UI | `runtime/mcp-handlers.ts`；设置 `McpSection`、`McpServerDialog`、`McpManagementDialogs` |
 
-## 数据与生命周期
+## 配置、存储与生效
 
-```
-~/.cogent/mcp.json            # user 级（唯一可定义 server 的地方，mcpServers 通用形状）
-<工作区主根>/.cogent/mcp.json  # 项目级（仅 override：enabled/exposure/toolExposure）
+```text
+用户 mcp.json → 项目 .mcp.json → 项目 .cogent/mcp.json（右侧优先）
+        ↓ 定义校验、override 合并、projectId + 真实路径 + sha256 信任
+McpRuntimeManager → 共享连接与实时目录 → 回合边界同步 pi 工具和提示段
+        ↑ main safeStorage → initialize / OAuth 状态交接 → Host 仅内存使用
 ```
 
-```
-mcp.sync（全量替换 user 级，任一非法整包拒绝不半写）
-      │
-SessionManager.buildPiSession（pi 内核惰性装配 = 首次 submit）
-      │  snapshot(主根) = user 定义 + project override 合并   ← 快照定格点
-      │  （Pi-meme 快照语义：之后改配置不影响本会话，新会话生效）
-      ▼
-createPiSession → createMcpExtension(loadConfig: () => 快照)
-      │  session_start（bindExtensions 发）→ 连接后台启动
-      │  direct 工具 → 注册并声明给模型（首请求最多等 startupWaitMs=10s）
-      ▼
-mcp__<server>__<tool> ──经 pi 工具管线──▶ beforeToolCall 审批链（exec 档
-      默认 ask；autonomous 下仍逐次询问 —— 未经用户配置的第三方工具保守起步）
-```
+- 存储根为 `COGENT_HOME ?? ~/.cogent`；配置使用生态 `mcpServers` 形状，未知字段、
+  `oauth`、`toolExposure`、`cwd`、`timeout` 无损往返。整包非法时不半写。
+- 项目文件可定义新服务，也可只覆盖同名服务的 `enabled/exposure/toolExposure`。
+  新定义未经审阅不连接、不探测、不暴露能力；信任持久化到 `mcp-trust.json`。
+  文件变动或项目身份不匹配即失效；授权时再次核路径及精确字节摘要。
+- 三个来源按真实路径去重，同一物理文件只按先出现的来源读取一次：默认主目录会话的
+  `<cwd>/.cogent/mcp.json` 就是用户文件，用户服务仍是受信的用户定义并复用全局连接。
+  这种重合下没有独立的项目覆盖槽位，项目页覆盖明确拒绝，不改用户级定义。
+- 缺省 `deferred`，由 `tool_search` 发现并激活；可按 server/工具切 `direct`、
+  `deferred`、`hidden`。旧 `codemode` 明确归一到 `deferred`，不再静默不可达。
+- 系统提示的 `mcp_servers` 段把 deferred 工具的目录亮给模型：按服务列工具名和描述首行，
+  外部文本并成单行并转义；整段超过 4000 字符先降为只列名字，再退回服务名加数量。
+  目录只让能力可见，不替模型选工具。
+- `${VAR}`、`${env:VAR}`、`${VAR:-default}`、`${workspaceFolder}`、
+  `${COGENT_PROJECT_DIR}` 只在连接瞬间单遍展开；缺失必需值报错。
+  stdio 默认清洗宿主敏感 env，server 显式声明的键正常注入；不改技能正文模板语义。
+- 用户配置按校验后的原定义保存，不自动迁移静态 env/header/clientSecret/URL 凭据。
+  不支持 `${secret:KEY}`；旧引用明确报错并提示改用环境变量，读取不改配置；
+  旧凭据文件在显式 OAuth 写入成功前保留供恢复。
+- 用户级且不依赖项目目录的连接跨会话复用；项目定义或含项目路径的连接按真实主根隔离，
+  复用前仍逐项目检查信任。会话销毁释放引用，项目连接闲置默认 15 分钟回收；Host 退出统一关闭。
+- 配置修改、重连及服务端能力通知刷新目录，下一回合热生效。调用执行前再次检查当前
+  工具是否可达，旧连接和排队调用不能绕过禁用/信任失效。日志位于 `pi/mcp.log`，有界轮转并脱敏。
 
-## 怎么工作（要点）
+## 认证与交互边界
 
-- **校验**：条目形状用 pi-mcp 的 `validateMcpServerConfig`（名字字符规则、
-  stdio/http 判别）；exposure/toolExposure 值域镜像 pi core 校验（该函数
-  未从包导出）。损坏 JSON / 项目级越权条目逐条诊断收集，不炸（list/snapshot
-  带回 errors，装配期 stderr 留痕）；
-- **信任门**：项目级 mcp.json 带 command/url/type（= 定义新 server）直接
-  拒绝 —— 低信文件开不了新进程（zcode sha256 工作区信任门的轻量等价物）；
-- **工具激活**：createAgentSession 的 `tools` 显式列表会过滤扩展工具 ——
-  未列名的 direct MCP 工具注册但不声明给模型。allowlist 追加
-  `mcp__*` + 资源三件（tool-meta 的 `MCP_TOOL_ALLOWLIST`）放行；
-- **SDK 生命周期**：`createAgentSession` 后必须 `bindExtensions({ mode:'rpc' })`
-  —— session_start（MCP 装载配置/启动连接点）由它发出，CLI 各 mode 里调、
-  SDK 消费者漏了它则 MCP 扩展零初始化且无诊断（Pi-meme session.ts:917 同款）；
-- 日志：`<COGENT_HOME>/pi/mcp.log`（pi 域）；settings 补丁写回（updateConfig）
-  按条目来源落 override 文件或 user 文件，默认值语义与 pi 一致。
-- 图片/视频/文档分析绑定见[附件模块](图片与文件附件.md)；通过 ctx.executeTool 委托，
-  宿主[嵌套审批入口](钩子座.md)复用现有挂起表、取消与审计。参数 schema 在实际调用时校验。
+- main 仅把 OAuth 状态加密保存到 `mcp-credentials.json`，静态认证按配置或环境变量提供。
+  读取遇损坏、跨机解密失败或安全存储不可用时返回空 OAuth 快照，记录日志及 `status().error`，
+  不阻断桌面启动、不覆写旧文件；后续显式加密写成功才覆盖并解除故障。
+  写入时 `safeStorage` 不可用或 Linux `basic_text` 后端均拒绝，不回退明文。
+  OAuth 写回须等待 main 提交确认，同代 Host 的启动与状态交接有序执行；旧文件的 secret 表不再消费。
+- OAuth 复用 pi 的发现、PKCE、DCR、预注册客户端、刷新锁与 loopback 回调；
+  支持手动回调、取消和登出。CIMD 需要发行方公开客户端元数据文档并显式配置
+  `COGENT_MCP_OAUTH_METADATA_BASE_URL`，缺失时报错，不能冒充其他产品身份。
+- MCP 工具仍经过 pi 工具管线和[审批](审批与权限.md)。已受信服务的 annotations
+  参与只读/执行分类；`ask` 中只读 MCP 也询问，破坏性/未声明工具归执行档。
+  支持会话内允许某工具或某 server 的只读工具；分类不替代配置和工具授权。
+- Resources 支持标准三个模型工具与输入区 `@` 实体；Prompts 进入 `/mcp:server:prompt`
+  候选和参数表单。Host 提交时按会话作用域展开，历史显示原始输入；大文本落盘，
+  图片须当前模型支持原生图片，不能把 base64 文本当作识图。
+- Form/URL Elicitation 按调用会话挂起，走 `mcp.elicitation.request/resolved` 与专属 IPC；
+  非法答案保留表单，取消/超时/断开清理。共享连接串行归属交互，避免串会话回填。
+- 设置页展示连接状态、工具暴露档、资源/提示词、诊断、重连、信任与 OAuth 登录。
+  仅 `oauthAuthorized` 为真才显示登出；状态事件严格按当前用户/项目作用域接收。
+  不提供密钥管理或附件参数绑定入口；附件读取不委托 MCP，`attachments.media` / `saveMedia`
+  保留为弃用兼容，见[附件](图片与文件附件.md)。
 
-## 边界（配置与生命周期约束）
+## 验收
 
-- OAuth sign-in 不做（连接需登录时工具不可用；交互式授权流列后续）；
-- 无热刷新：配置变更新会话生效（进行中会话持有快照）；
-- 不做 `${VAR}` 变量替换、不做 SSE 传输、项目级不能定义 server；
-- **MCP 子进程活到 Host 进程退出**：pi 的 `dispose()` 不发 session_shutdown，
-  连接不随会话删除回收（与 pi print-mode 同语义）；
-- annotations 分级未做：beforeToolCall 载荷拿不到工具定义（见技术笔记）。
-
-验收：`tests/integration/mcp.test.ts` —— mock stdio echo server 经 `mcp.sync`
-配置后：direct 工具声明进一轮请求、审批链对 `mcp__mock__echo` 弹 exec 档、
-echo 结果回灌二轮闭合、`mcp.sync` 置 disabled 后新会话工具消失；
-`mcp-config.test.ts` 单测钉 store 行为（校验/合并/补丁/损坏诊断）；
-手动（4a-2）：设置页添加真实 server（如 `npx -y
-@modelcontextprotocol/server-filesystem <目录>`）→ 新会话让模型列目录 →
-工具卡正常呈现、审批弹面板；禁用后新会话工具消失。
+验收：配置/变量/信任/连接池/OAuth/壳桥/交互/输入引用各有 `tests/host/runtime/mcp-*.test.ts`
+及 `tests/electron/main/` 定向回归；`tests/integration/mcp.test.ts` 与 `mcp-primitives.test.ts`
+验证真实 Host、mock MCP/模型的工具搜索、同会话热刷新、审批、附件带路径直接调用、资源、提示词和交互闭环。
+工具目录的三档降级与外部文本清洗在 `tests/host/kernel/mcp-catalog.test.ts`。
+`tests/integration/mcp-oauth.test.ts` 覆盖本地受保护 HTTP MCP 的 DCR/PKCE 登录、私有持久化确认、工具调用与登出。
+Composer、设置页与交互面板由 `tests/renderer/` 验证行为。真实厂商 OAuth、Electron 外部浏览器
+登录及多平台子进程树回收仍按[手测册](../测试用例/MCP座.md)逐项记录，自动测试不代表实机通过。

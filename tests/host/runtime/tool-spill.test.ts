@@ -12,6 +12,7 @@ import {
   MCP_TOOL_SPILL_MAX_CHARS,
   sliceHeadSafe,
   sliceTailSafe,
+  spillMcpStructuredResult,
   spillMcpToolResult
 } from '../../../src/host/runtime/tool-spill'
 
@@ -79,5 +80,20 @@ describe('spillMcpToolResult', () => {
     const text = res!.content[0].type === 'text' ? res!.content[0].text : ''
     expect(text).toContain('工具输出已截断')
     expect(text.length).toBeLessThan(full.length)
+  })
+
+  it('资源三件工具与结构化JSON也保存完整内容', () => {
+    const root = makeTempDir('cogent-spill-primitives-')
+    const text = '资源正文'.repeat(10_000)
+    for (const tool of ['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource']) {
+      const result = spillMcpToolResult(tool, [{ type: 'text', text }], root)
+      expect(result?.artifactPath).toBeDefined()
+      expect(readFileSync(result!.artifactPath!, 'utf8')).toBe(text)
+    }
+    const full = { content: [{ type: 'text', text: 'short' }], structuredContent: { body: text } }
+    const reference = spillMcpStructuredResult('mcp__demo__fetch', full, root)
+    expect(reference).toBeDefined()
+    expect(JSON.parse(readFileSync(reference!.fullOutputPath, 'utf8'))).toEqual(full)
+    expect(spillMcpStructuredResult('read', full, root)).toBeUndefined()
   })
 })

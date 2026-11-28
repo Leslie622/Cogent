@@ -28,6 +28,18 @@ export function bindEngineEvents(): () => void {
     if ('sessionId' in event.params) messageDeltas.flush(event.params.sessionId)
     else if (event.method === 'session.summaryChanged') messageDeltas.flush(event.params.summary.id)
     switch (event.method) {
+      case 'mcp.elicitation.request': {
+        const request = event.params
+        useChatStore.setState((state) => patchBucket(state, request.sessionId, (bucket) => ({ ...bucket,
+          pendingElicitations: [...(bucket.pendingElicitations ?? []).filter((pending) => pending.requestId !== request.requestId), request] })))
+        return
+      }
+      case 'mcp.elicitation.resolved': {
+        const { sessionId, requestId } = event.params
+        useChatStore.setState((state) => state.bySession[sessionId] === undefined ? state : patchBucket(state, sessionId, (bucket) => ({ ...bucket,
+          pendingElicitations: (bucket.pendingElicitations ?? []).filter((pending) => pending.requestId !== requestId) })))
+        return
+      }
       case 'project.changed': {
         const { projectId, summary } = event.params
         const previous = useProjectStore.getState().projects.find(project => project.id === projectId)
@@ -98,7 +110,7 @@ export function bindEngineEvents(): () => void {
         invalidateHistories()
         messageDeltas.flushAll()
         useChatStore.setState(state => ({ bySession: Object.fromEntries(Object.entries(state.bySession).map(([id, bucket]) => [id, bucket && { ...bucket, historyLoaded: false,
-          pendingApprovals: [], pendingQuestions: [], pendingPlans: [], runtime: { ...bucket.runtime, running: false, stopping: false, compacting: false,
+          pendingApprovals: [], pendingQuestions: [], pendingPlans: [], pendingElicitations: [], runtime: { ...bucket.runtime, running: false, stopping: false, compacting: false,
             runRequestId: null, stopRequestId: null, lastRunOutcome: null, lastError: bucket.runtime.running ? '连接已断开，运行结果待确认' : bucket.runtime.lastError } }])) }))
         return
       }
@@ -131,7 +143,7 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'tool.completed': {
-        const { sessionId, callId, isError, summary, diff, fileRefs } = event.params
+        const { sessionId, callId, isError, summary, diff, fileRefs, mcpResult } = event.params
         useChatStore.setState((state) => {
           const bucket = state.bySession[sessionId]
           if (bucket === undefined) return state
@@ -146,7 +158,7 @@ export function bindEngineEvents(): () => void {
                 ...bucket,
                 messages: bucket.messages.map((m): MessageItem =>
                   m.type === 'tool' && m.id === callId
-                    ? { ...m, status: nextStatus, resultSummary: summary, diff, fileRefs, progress: undefined }
+                    ? { ...m, status: nextStatus, resultSummary: summary, diff, fileRefs, progress: undefined, ...(mcpResult !== undefined && { mcpResult }) }
                     : m
                 )
               }
@@ -178,7 +190,7 @@ export function bindEngineEvents(): () => void {
         return
       }
       case 'approval.request': {
-        const { sessionId, requestId, callId, toolName, kind, summary, outsideRoots } = event.params
+        const { sessionId, requestId, callId, toolName, kind, summary, outsideRoots, mcpMeta } = event.params
         useChatStore.setState((state) =>
           // pending 不进消息流 —— 会话桶的挂起位，确认面板（ApprovalPanel）
           // 是唯一呈现位；数组追加（并行写工具会并发多个请求）
@@ -186,7 +198,7 @@ export function bindEngineEvents(): () => void {
             ...bucket,
             pendingApprovals: [
               ...bucket.pendingApprovals,
-              { requestId, callId, toolName, toolKind: kind, summary, ...(outsideRoots === true && { outsideRoots: true }) }
+              { requestId, callId, toolName, toolKind: kind, summary, ...(outsideRoots === true && { outsideRoots: true }), ...(mcpMeta !== undefined && { mcpMeta }) }
             ]
           }))
         )
@@ -394,6 +406,7 @@ export function bindEngineEvents(): () => void {
                 turnOutcomes: recordTurnOutcome(bucket, 'completed'),
                 // 面板兜底清空（常态路径裁决时已收；防御 run 终态与裁决竞态的残留）
                 pendingApprovals: [],
+                pendingElicitations: [],
                 runtime: {
                   ...bucket.runtime,
                   running: false,
@@ -446,6 +459,7 @@ export function bindEngineEvents(): () => void {
           }
           const failedBase: SessionBucket = {
             ...reset,
+            pendingElicitations: [],
             runtime: resetRuntime,
             turnOutcomes: recordTurnOutcome(reset, wasStopped ? 'stopped' : 'failed')
           }

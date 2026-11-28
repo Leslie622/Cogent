@@ -1,11 +1,20 @@
 /** 启动失败的诊断必须穿过 main 代理保留下来，并收掉进程与并发请求。 */
 import { EventEmitter } from 'node:events'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HostManager } from '../../../../src/electron/main/host/manager'
+import { McpCredentialStore } from '../../../../src/electron/main/credentials/mcp-store'
 
-const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }))
+const { spawn, cipher } = vi.hoisted(() => ({ spawn: vi.fn(), cipher: {
+  isEncryptionAvailable: vi.fn(() => true), getSelectedStorageBackend: vi.fn(() => 'keychain'),
+  decryptString: vi.fn((value: Buffer) => value.toString().slice(7))
+} }))
 vi.mock('node:child_process', () => ({ spawn }))
+vi.mock('electron', () => ({ safeStorage: cipher }))
+vi.mock('../../../../src/electron/main/storage-root', () => ({ storageRoot: () => '/unused' }))
 
 function makeChild() {
   return Object.assign(new EventEmitter(), {
@@ -21,6 +30,9 @@ describe('HostManager 启动诊断', () => {
     vi.useFakeTimers()
     vi.spyOn(console, 'info').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
+    cipher.isEncryptionAvailable.mockReturnValue(true)
+    cipher.getSelectedStorageBackend.mockReturnValue('keychain')
+    cipher.decryptString.mockImplementation((value: Buffer) => value.toString().slice(7))
     child = makeChild()
     spawn.mockReturnValue(child)
     host = new HostManager({ entryPath: '/app/host.js', nodeBin: '/runtime/node' })
@@ -34,6 +46,7 @@ describe('HostManager 启动诊断', () => {
     child.stderr.destroy()
     vi.useRealTimers()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('超时带最后启动阶段，拒绝并发请求时保留原因，并结束子进程', async () => {
@@ -137,6 +150,99 @@ describe('HostManager 启动诊断', () => {
     expect(host.getStatus().state).toBe('running')
     expect(child.kill).not.toHaveBeenCalled()
     old.stdin.destroy(); old.stdout.destroy(); old.stderr.destroy()
+  })
+
+  it.each(['JSON损坏', '解密失败', '安全存储不可用', 'basic_text后端'])('MCP凭据%s不阻断Host启动握手，保留原文件与故障诊断', async (failure) => {
+    const root = mkdtempSync(join(tmpdir(), 'cogent-mcp-startup-'))
+    try {
+      const path = join(root, 'mcp-credentials.json')
+      const content = failure === 'JSON损坏' ? '{bad-json' : JSON.stringify({ version: 1,
+        oauthStates: { old: Buffer.from('cipher:{"serverUrl":"https://mcp.example"}').toString('base64') } })
+      writeFileSync(path, content)
+      if (failure === '解密失败') cipher.decryptString.mockImplementationOnce(() => { throw new Error('DPAPI 解密失败') })
+      if (failure === '安全存储不可用') cipher.isEncryptionAvailable.mockReturnValue(false)
+      if (failure === 'basic_text后端') {
+        vi.stubGlobal('process', { ...process, platform: 'linux' })
+        cipher.getSelectedStorageBackend.mockReturnValue('basic_text')
+      }
+      const store = new McpCredentialStore(root)
+      host = new HostManager({ entryPath: '/app/host.js', nodeBin: '/runtime/node', readMcpCredentials: () => store.readAll() })
+      const frames: Array<{ id: number; params: unknown }> = []
+      child.stdin.on('data', (line: Buffer) => frames.push(JSON.parse(line.toString()) as typeof frames[number]))
+      const starting = host.start()
+      expect(frames[0].params).toMatchObject({ mcpOAuthStates: {} })
+      expect(frames[0].params).not.toHaveProperty('mcpSecrets')
+      child.stdout.write(JSON.stringify({ id: frames[0].id, result: { node: 'v22.23.5' } }) + '\n')
+      await starting
+      expect(host.getStatus().state).toBe('running')
+      expect(child.kill).not.toHaveBeenCalled()
+      expect(store.status().error).not.toBeNull()
+      expect(readFileSync(path, 'utf8')).toBe(content)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('MCP OAuth快照与启动期变更按提交顺序交接，普通请求等待新凭据生效', async () => {
+    let latest = { oauthStates: { server: { token: 'old' } } }
+    host = new HostManager({ entryPath: '/app/host.js', nodeBin: '/runtime/node',
+      readMcpCredentials: () => latest })
+    const frames: Array<{ id: number; method: string; params: unknown }> = []
+    child.stdin.on('data', (line: Buffer) => frames.push(JSON.parse(line.toString()) as typeof frames[number]))
+    const reply = (index: number, result: unknown = { ok: true }) => child.stdout.write(JSON.stringify({ id: frames[index].id, result }) + '\n')
+    const starting = host.start()
+    expect(frames[0].params).toMatchObject({ mcpOAuthStates: { server: { token: 'old' } } })
+    latest = { oauthStates: { server: { token: 'new' } } }
+    const changed = host.applyMcpCredentials(latest)
+    const listed = host.request('session.list', {})
+    reply(0, { node: 'v22.23.5' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(frames[1]).toMatchObject({ method: 'mcp.secrets.sync', params: { oauthStates: { server: { token: 'new' } } } })
+    expect(host.getStatus().state).toBe('starting')
+    reply(1); await changed; await starting; await vi.advanceTimersByTimeAsync(0)
+    expect(frames[2].method).toBe('session.list')
+    reply(2, []); expect(await listed).toEqual([])
+  })
+
+  it('等待握手时新增OAuth状态不被旧快照清空，登出的删除仍生效', async () => {
+    let latest: { oauthStates: Record<string, unknown> } = { oauthStates: { first: { token: 'old' } } }
+    host = new HostManager({ entryPath: '/app/host.js', nodeBin: '/runtime/node', readMcpCredentials: () => latest })
+    const frames: Array<{ id: number; method: string; params: unknown }> = []
+    child.stdin.on('data', (line: Buffer) => frames.push(JSON.parse(line.toString()) as typeof frames[number]))
+    const reply = (index: number, result: unknown = { ok: true }) => child.stdout.write(JSON.stringify({ id: frames[index].id, result }) + '\n')
+    const starting = host.start()
+    latest = { oauthStates: { first: { token: 'new' } } }
+    const changed = host.applyMcpCredentials(latest)
+    // 模拟initialize期间另一条OAuth保存链已在main提交，旧排队载荷仍没有该状态。
+    latest = { oauthStates: { ...latest.oauthStates, second: { token: 'authorized' } } }
+    reply(0, { node: 'v22.23.5' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(frames[1]).toMatchObject({ method: 'mcp.secrets.sync', params: { oauthStates: { first: { token: 'new' }, second: { token: 'authorized' } } } })
+    reply(1); await changed; await starting
+    latest = { oauthStates: { second: { token: 'authorized' } } }
+    const removed = host.applyMcpCredentials(latest)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(frames[2]).toMatchObject({ method: 'mcp.secrets.sync', params: { oauthStates: { second: { token: 'authorized' } } } })
+    expect((frames[2].params as { oauthStates: Record<string, unknown> }).oauthStates).not.toHaveProperty('first')
+    reply(2); await removed
+  })
+
+  it('MCP OAuth私有事件不广播，保存确认不等待握手且拒绝旧代确认', async () => {
+    const frames: Array<{ id: number; method: string }> = []
+    child.stdin.on('data', (line: Buffer) => frames.push(JSON.parse(line.toString()) as typeof frames[number]))
+    const renderer = vi.fn(), privateEvents = vi.fn()
+    host.setEventSink(renderer)
+    host.setMcpEventSink(privateEvents)
+    const starting = host.start()
+    child.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'mcp.oauth.persistState', params: { requestId: 'save-1', key: 'synthetic', state: { serverUrl: 'https://mcp.example' } } }) + '\n')
+    child.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'mcp.oauth.openUrl', params: { loginId: 'login-1', url: 'https://auth.example' } }) + '\n')
+    expect(privateEvents).toHaveBeenCalledTimes(2)
+    expect(renderer).not.toHaveBeenCalled()
+    const confirmation = host.confirmMcpPersistence({ requestId: 'save-1' }, host.getGeneration())
+    expect(frames[1].method).toBe('mcp.oauth.persistResult')
+    child.stdout.write(JSON.stringify({ id: frames[1].id, result: { ok: true } }) + '\n')
+    await confirmation
+    child.stdout.write(JSON.stringify({ id: frames[0].id, result: { node: 'v22.23.5' } }) + '\n')
+    await starting
+    await expect(host.confirmMcpPersistence({ requestId: 'save-1' }, host.getGeneration() - 1)).rejects.toThrow('host closed')
   })
 
   it('正常停止先发私有清理请求，收到确认后才结束子进程', async () => {

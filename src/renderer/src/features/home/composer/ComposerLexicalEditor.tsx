@@ -5,6 +5,7 @@
  * - 完整接管中文 IME、发送快捷键、粘贴图片/文件、草稿双向同步与独占命令插入。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { z } from 'zod'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -14,9 +15,11 @@ import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import {
   $createLineBreakNode,
+  $createRangeSelection,
   $createParagraphNode,
   $createTextNode,
   $getRoot,
+  $getNodeByKey,
   $getSelection,
   $isElementNode,
   $isLineBreakNode,
@@ -24,6 +27,7 @@ import {
   $isParagraphNode,
   $isRangeSelection,
   $isTextNode,
+  $setSelection,
   BLUR_COMMAND,
   COMMAND_PRIORITY_HIGH,
   KEY_ARROW_DOWN_COMMAND,
@@ -39,6 +43,7 @@ import {
 } from 'lexical'
 import type { SendShortcut } from '@/stores/engine'
 import type { SkillSummary } from '@/env.d'
+import type { McpPromptInfo, McpResourceInfo } from '@shared/mcp'
 import { cn } from '@/lib/utils'
 import {
   $createComposerEntityNode,
@@ -46,8 +51,11 @@ import {
   ComposerEntityNode
 } from './ComposerEntityNode'
 import { CommandSuggestionPanel } from './CommandSuggestionPanel'
+import { McpPromptArgumentsDialog } from './McpPromptArgumentsDialog'
 import {
   buildCommandSuggestions,
+  buildMcpPromptSuggestions,
+  buildMcpResourceSuggestions,
   buildSkillSuggestions,
   type CommandAvailabilityContext
 } from './commands'
@@ -75,6 +83,7 @@ export interface ComposerLexicalEditorProps {
   placeholder?: string
   sendShortcut: SendShortcut
   primaryCwd?: string
+  projectId?: string
   commandContext: CommandAvailabilityContext
   onChange: (text: string, entities: ComposerEntity[]) => void
   onSend: () => void
@@ -158,10 +167,24 @@ function entitiesEqual(a: readonly ComposerEntity[], b: readonly ComposerEntity[
   for (let i = 0; i < a.length; i++) {
     const left = a[i]
     const right = b[i]
-    if (left.id !== right.id || left.kind !== right.kind || left.name !== right.name) return false
+    if (JSON.stringify(left) !== JSON.stringify(right)) return false
   }
   return true
 }
+
+interface PromptSelection {
+  item: ComposerSuggestionItem & { payload: { kind: 'mcp-prompt'; prompt: McpPromptInfo } }
+  anchorKey: string
+  start: number
+  end: number
+  token: string
+  draftId: string
+  scopeKey: string
+}
+
+// IPC响应是版本与传输边界：MCP目录响应损坏只令该组报错，不能让既有命令/技能输入崩溃。
+const mcpResourceList = z.object({ resources: z.array(z.object({ server: z.string(), name: z.string(), uri: z.string(), description: z.string().optional(), mimeType: z.string().optional() })) })
+const mcpPromptList = z.object({ prompts: z.array(z.object({ server: z.string(), name: z.string(), description: z.string().optional(), arguments: z.array(z.object({ name: z.string(), description: z.string().optional(), required: z.boolean().optional() })).optional() })) })
 
 function EditorControllerPlugin({
   draftId,
@@ -170,6 +193,7 @@ function EditorControllerPlugin({
   disabled,
   sendShortcut,
   primaryCwd,
+  projectId,
   commandContext,
   onChange,
   onSend,
@@ -183,6 +207,13 @@ function EditorControllerPlugin({
   const [selectionSource, setSelectionSource] = useState<'keyboard' | 'pointer'>('keyboard')
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [skillsLoading, setSkillsLoading] = useState(false)
+  const scopeKey = JSON.stringify([primaryCwd, projectId])
+  const [mcpSnapshot, setMcpSnapshot] = useState<{ scopeKey: string; resources: McpResourceInfo[]; prompts: McpPromptInfo[] }>({ scopeKey: '', resources: [], prompts: [] })
+  const [mcpLoading, setMcpLoading] = useState(false)
+  const [mcpError, setMcpError] = useState<string | undefined>()
+  const [mcpRevision, setMcpRevision] = useState(0)
+  const [pendingPrompt, setPendingPrompt] = useState<PromptSelection | null>(null)
+  const statusSignatureRef = useRef('')
 
   const dismissedSigRef = useRef<string | null>(null)
   const lastDraftIdRef = useRef<string | null>(null)
@@ -210,12 +241,13 @@ function EditorControllerPlugin({
     if (draftSwitched) {
       dismissedSigRef.current = null
       setActiveTrigger(null)
+      setPendingPrompt(null)
     }
   }, [editor, draftId, text, entities])
 
   // 打开面板或切换工作区时刷新可用技能快照（与 Host 活快照对齐）
   useEffect(() => {
-    if (activeTrigger === null) return
+    if (activeTrigger === null || activeTrigger.kind === '@') return
     let cancelled = false
     setSkillsLoading(true)
     void window.cogent
@@ -234,12 +266,53 @@ function EditorControllerPlugin({
     }
   }, [activeTrigger?.kind, primaryCwd])
 
+  // 状态通知只按实际能力修订刷新；不同项目的迟到回包不得出现在当前候选列表。
+  useEffect(() => window.cogent.onEngineEvent(event => {
+    if (event.method !== 'mcp.statusChanged') return
+    if (event.params.projectId !== undefined && event.params.projectId !== projectId) return
+    if (event.params.cwd !== undefined && event.params.cwd !== primaryCwd) return
+    const signature = JSON.stringify(event.params.servers.map(server => [server.poolKey, server.state, server.revision]))
+    if (signature === statusSignatureRef.current) return
+    statusSignatureRef.current = signature
+    setMcpRevision(revision => revision + 1)
+  }), [primaryCwd, projectId])
+
+  useEffect(() => {
+    if (activeTrigger === null || activeTrigger.kind === '$') return
+    let cancelled = false
+    setMcpLoading(true)
+    setMcpError(undefined)
+    const scope = { ...(primaryCwd !== undefined && { cwd: primaryCwd }), ...(projectId !== undefined && { projectId }) }
+    const request = activeTrigger.kind === '@'
+      ? window.cogent.engineRequest('mcp.resources.list', scope).then((value: unknown) => {
+        const result = mcpResourceList.safeParse(value)
+        if (!result.success) throw new Error('MCP 资源目录响应格式不合法，请重试连接')
+        return { resources: result.data.resources, prompts: [] }
+      })
+      : window.cogent.engineRequest('mcp.prompts.list', scope).then((value: unknown) => {
+        const result = mcpPromptList.safeParse(value)
+        if (!result.success) throw new Error('MCP 提示词目录响应格式不合法，请重试连接')
+        return { resources: [], prompts: result.data.prompts }
+      })
+    void request.then(result => {
+      if (!cancelled) setMcpSnapshot({ scopeKey, ...result })
+    }).catch((error: unknown) => {
+      if (cancelled) return
+      setMcpSnapshot({ scopeKey, resources: [], prompts: [] })
+      setMcpError(`MCP 候选加载失败：${error instanceof Error ? error.message : String(error)}`)
+    }).finally(() => { if (!cancelled) setMcpLoading(false) })
+    return () => { cancelled = true }
+  }, [activeTrigger?.kind, primaryCwd, projectId, scopeKey, mcpRevision])
+
+  useEffect(() => { setPendingPrompt(null) }, [scopeKey])
+
   const allSuggestions = useMemo<ComposerSuggestionItem[]>(() => {
     if (activeTrigger === null) return []
+    if (activeTrigger.kind === '@') return buildMcpResourceSuggestions(mcpSnapshot.scopeKey === scopeKey ? mcpSnapshot.resources : [])
     const skillItems = buildSkillSuggestions(skills)
     if (activeTrigger.kind === '$') return skillItems
-    return [...buildCommandSuggestions(commandContext), ...skillItems]
-  }, [activeTrigger?.kind, skills, commandContext])
+    return [...buildCommandSuggestions(commandContext), ...skillItems, ...buildMcpPromptSuggestions(mcpSnapshot.scopeKey === scopeKey ? mcpSnapshot.prompts : [])]
+  }, [activeTrigger?.kind, skills, commandContext, mcpSnapshot, scopeKey])
 
   const filteredSuggestions = useMemo(
     () => (activeTrigger === null ? [] : filterSuggestions(allSuggestions, activeTrigger.query)),
@@ -258,10 +331,34 @@ function EditorControllerPlugin({
   }, [disabled, activeTrigger, filteredSuggestions])
 
   const applySuggestion = useCallback(
-    (item: ComposerSuggestionItem) => {
+    (item: ComposerSuggestionItem, promptArguments?: Record<string, string>, savedSelection?: PromptSelection) => {
+      if (item.payload.kind === 'mcp-prompt' && (item.payload.prompt.arguments?.length ?? 0) > 0 && promptArguments === undefined) {
+        const payload = item.payload
+        editor.getEditorState().read(() => {
+          const selection = $getSelection()
+          if (!$isRangeSelection(selection) || !selection.isCollapsed()) return
+          const node = selection.anchor.getNode()
+          if (!$isTextNode(node)) return
+          const trigger = extractActiveTrigger(node.getTextContent().slice(0, selection.anchor.offset))
+          if (trigger === null) return
+          setPendingPrompt({ item: { ...item, payload }, anchorKey: node.getKey(), start: trigger.start, end: trigger.end,
+            token: node.getTextContent().slice(trigger.start, trigger.end), draftId, scopeKey })
+        })
+        dismissedSigRef.current = triggerSignature(activeTrigger)
+        setActiveTrigger(null)
+        return
+      }
+      if (savedSelection !== undefined && (savedSelection.draftId !== draftId || savedSelection.scopeKey !== scopeKey)) return
       let pendingAction: LocalSlashAction | undefined
       editor.update(
         () => {
+          if (savedSelection !== undefined) {
+            const node = $getNodeByKey(savedSelection.anchorKey)
+            if (!$isTextNode(node) || node.getTextContent().slice(savedSelection.start, savedSelection.end) !== savedSelection.token) return
+            const restored = $createRangeSelection()
+            restored.setTextNodeRange(node, savedSelection.end, node, savedSelection.end)
+            $setSelection(restored)
+          }
           const selection = $getSelection()
           if (!$isRangeSelection(selection) || !selection.isCollapsed()) return
           const anchorNode = selection.anchor.getNode()
@@ -292,12 +389,18 @@ function EditorControllerPlugin({
             return
           }
 
-          const entity: ComposerEntity = {
+          const payload = item.payload
+          const entity: ComposerEntity = payload.kind === 'mcp-resource' ? {
+            id: crypto.randomUUID(), kind: 'mcp-resource', name: payload.name, server: payload.server, uri: payload.uri
+          } : payload.kind === 'mcp-prompt' ? {
+            id: crypto.randomUUID(), kind: 'mcp-prompt', name: payload.prompt.name, server: payload.prompt.server,
+            ...(promptArguments !== undefined && { arguments: promptArguments })
+          } : {
             id: crypto.randomUUID(),
             kind: 'skill',
-            name: item.payload.name,
-            scope: item.payload.scope,
-            ...(item.payload.eco === true && { eco: true })
+            name: payload.name,
+            scope: payload.scope,
+            ...(payload.eco === true && { eco: true })
           }
 
           const entityNode = $createComposerEntityNode(entity)
@@ -321,7 +424,7 @@ function EditorControllerPlugin({
       setActiveTrigger(null)
       setSelectedIndex(0)
     },
-    [editor]
+    [editor, draftId, scopeKey, activeTrigger]
   )
 
   // 监听选区与文本变化提取触发词
@@ -589,7 +692,8 @@ function EditorControllerPlugin({
           items={filteredSuggestions}
           selectedIndex={selectedIndex}
           selectionSource={selectionSource}
-          loading={skillsLoading}
+          loading={activeTrigger.kind === '@' ? mcpLoading : skillsLoading || mcpLoading}
+          error={mcpError}
           onSelectIndex={(index) => {
             setSelectionSource('pointer')
             setSelectedIndex(index)
@@ -597,6 +701,10 @@ function EditorControllerPlugin({
           onPick={applySuggestion}
         />
       )}
+      {pendingPrompt !== null && <McpPromptArgumentsDialog key={`${pendingPrompt.draftId}:${pendingPrompt.scopeKey}:${pendingPrompt.item.id}`}
+        prompt={pendingPrompt.item.payload.prompt}
+        onCancel={() => { setPendingPrompt(null); requestAnimationFrame(() => editor.focus()) }}
+        onConfirm={args => { applySuggestion(pendingPrompt.item, args, pendingPrompt); setPendingPrompt(null) }} />}
     </>
   )
 }
@@ -644,6 +752,7 @@ export function ComposerLexicalEditor(props: ComposerLexicalEditorProps) {
           disabled={props.disabled}
           sendShortcut={props.sendShortcut}
           primaryCwd={props.primaryCwd}
+          projectId={props.projectId}
           commandContext={props.commandContext}
           onChange={props.onChange}
           onSend={props.onSend}

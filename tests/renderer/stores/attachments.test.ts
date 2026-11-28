@@ -21,10 +21,9 @@ function sourceMock(importer: (path: string) => Promise<AttachmentRef>, size: (p
 }
 beforeEach(() => {
   localStorage.clear(); vi.useFakeTimers()
-  useAttachmentStore.setState({ drafts: {}, media: {} })
+  useAttachmentStore.setState({ drafts: {} })
   request.mockReset().mockImplementation((method: string, params: { id?: string }) => {
     if (method === 'attachments.draft') return Promise.resolve({ id: params.id, text: '', attachments: [] })
-    if (method === 'attachments.media') return Promise.resolve({})
     if (method === 'attachments.resolve') return Promise.resolve({ ref, path: 'managed-path' })
     if (method === 'attachments.describe') return Promise.resolve({ name: ref.name, size: ref.size, mime: ref.mime })
     if (method === 'attachments.importPath') return Promise.resolve(ref)

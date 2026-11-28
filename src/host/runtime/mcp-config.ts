@@ -1,399 +1,300 @@
 /**
- * MCP 客户端配置 store（阶段 4a，docs/模块/MCP座.md）——
- * Host 侧的 MCP server 配置真源，pi `createMcpExtension` 的配置供给方。
- *
- * 两级文件（与 pi 语义对齐，出处 reference/pi/packages/coding-agent/src/
- * extensions/mcp/config.ts:83-131）：
- * - user 级 `<root>/mcp.json`：server 定义（唯一可定义新 server 的地方），
- *   `mcpServers` 通用形状（pi-mcp config.d.ts —— 与生态互拷）；
- * - 项目级 `<cwd>/.cogent/mcp.json`：仅 override（enabled/exposure/
- *   toolExposure，`isMcpServerOverride` 判别）—— 低信文件开不了新进程，
- *   是天然的信任门（zcode 工作区信任门的轻量等价物）。
- *
- * 快照语义（Pi-meme 手法，packages/pi-runtime/src/sdk/session.ts:793 同款
- * 思路）：SessionManager 装配 pi 会话时调 snapshot() 定格合并结果，之后
- * 改配置不影响在跑会话（新会话生效）；updateConfig 写回文件供 /mcp 通道
- * （headless 不可达，保留契约完整）。
- *
- * 边界：配置文件是外部输入（约定.md §1.1 持久化读取）——损坏 JSON /
- * 非法条目逐条诊断收集，不炸构造（list/snapshot 带回 errors）；mcp.sync
- * 是手动设置动作，非法输入显式 throw（fail-fast）。
+ * Host 拥有的 MCP 配置真源（docs/模块/MCP座.md）。
+ * 用户定义 → 标准项目文件 → Cogent 项目文件；项目新定义必须逐文件摘要受信。
+ * 同一物理文件只按先出现的来源读取一次，项目槽位与用户文件重合时不降级为项目定义。
+ * 原始定义无损回填，运行配置统一 deferred；读取不触发网络或子进程。
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import {
-  isMcpServerOverride,
-  mcpNamespace,
-  validateMcpServerConfig,
-  type McpServerConfigResult
-} from '@earendil-works/pi-mcp'
-import type { LoadedMcpConfig, McpExposure, McpServerConfig, McpServerEntry } from '@earendil-works/pi-coding-agent'
-// McpExposure 取 pi 的类型（两处声明同构，避免双导入冲突）
-import type { McpListResult, McpServerDef, McpServerSummary } from '../../protocol'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { isMcpServerOverride, mcpNamespace, validateMcpServerConfig } from '@earendil-works/pi-mcp'
+import type { LoadedMcpConfig, McpServerEntry } from '@earendil-works/pi-coding-agent'
+import type { McpExposure, McpListResult, McpPendingTrustFile, McpServerDef, McpServerSummary } from '../../protocol'
 import { ProtocolError, RpcErrorCode } from '../../protocol'
+import { mcpFileDigest, McpTrustStore, writeMcpFileAtomically } from './mcp-trust'
 
-/** 项目级 override 可写的键（pi OVERRIDE_KEYS，config.ts:71 同款） */
 const OVERRIDE_KEYS = ['enabled', 'exposure', 'toolExposure'] as const
+const EXPOSURES: readonly McpExposure[] = ['codemode', 'deferred', 'direct', 'hidden']
+const KNOWN_FIELDS = new Set(['type', 'command', 'args', 'env', 'cwd', 'sanitizeHostEnv', 'url', 'headers', 'oauth', 'description', 'enabled', 'exposure', 'toolExposure', 'timeout'])
 
-const MCP_EXPOSURES: readonly McpExposure[] = ['codemode', 'deferred', 'direct', 'hidden']
-
-/** pi 的 core/mcp-servers.ts:180-190 同款检查（pi 包未从 index 导出该函数，此处镜像）：
-    pi-mcp 的校验器对未知字段（exposure/toolExposure 是 pi 应用层字段）原样保留不查 */
-function checkExposureFields(name: string, config: Record<string, unknown>): string | undefined {
-  const exposures = MCP_EXPOSURES.map((value) => `"${value}"`).join(', ')
-  if (config.exposure !== undefined && !MCP_EXPOSURES.includes(config.exposure as McpExposure)) {
-    return `server "${name}": exposure must be one of ${exposures}`
-  }
-  if (config.toolExposure !== undefined) {
-    const entries = config.toolExposure
-    if (typeof entries !== 'object' || entries === null || Array.isArray(entries)) {
-      return `server "${name}": toolExposure must map tool names to exposures`
-    }
-    for (const [tool, value] of Object.entries(entries as Record<string, unknown>)) {
-      if (!MCP_EXPOSURES.includes(value as McpExposure)) {
-        return `server "${name}": toolExposure "${tool}" must be one of ${exposures}`
-      }
-    }
-  }
-  return undefined
+export interface CogentMcpEntry {
+  name: string
+  config: McpServerDef
+  source: string
+  scope: 'global' | 'project'
+  origin: 'user' | 'project-file' | 'project-cogent'
+  trusted: boolean
+  override?: string
+  /** 原始定义供 UI 回填；运行配置中的默认值与 override 不回写。 */
+  definition?: McpServerDef
 }
 
-/**
- * pi-mcp 校验器的返回类型是 `McpServerConfig & Record<string, unknown>`
- * （未知字段原样保留不查）——exposure/toolExposure 是 pi 应用层字段，不在
- * 其类型上。值域已由 checkExposureFields 运行时核过，这里只收掉索引签名
- * 补类型面（忘掉 Record 不丢运行时字段， widen 而非断言）。
- */
-type ValidatedMcpConfig = Extract<McpServerConfigResult, { kind: 'stdio' | 'http' }>['config']
+export interface McpSettingsPatch {
+  enabled?: boolean
+  exposure?: McpExposure
+  toolExposure?: Record<string, McpExposure>
+}
 
-function asPiConfig(config: ValidatedMcpConfig): McpServerConfig {
-  return config
+interface ConfigFile {
+  document: Record<string, unknown>
+  servers: Record<string, unknown>
+  text: string
+  sha256: string
+  source: string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** 读 mcp.json 顶层（BOM 容错：Windows 手改文件常见）——解析失败带回诊断而非炸 */
-function readConfigFile(path: string): { mcpServers: Record<string, unknown>; error?: string } {
-  if (!existsSync(path)) return { mcpServers: {} }
-  let text = readFileSync(path, 'utf8')
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch (error) {
-    return { mcpServers: {}, error: `${path}: ${error instanceof Error ? error.message : String(error)}` }
-  }
-  if (!isRecord(parsed) || (parsed.mcpServers !== undefined && !isRecord(parsed.mcpServers))) {
-    return { mcpServers: {}, error: `${path}: expected an object with an "mcpServers" object` }
-  }
-  return { mcpServers: parsed.mcpServers ?? {} }
+function exposureError(config: { exposure?: unknown; toolExposure?: unknown }): string | undefined {
+  if (config.exposure !== undefined && !EXPOSURES.includes(config.exposure as McpExposure)) return 'exposure must be direct, deferred, codemode or hidden'
+  if (config.toolExposure !== undefined && (!isRecord(config.toolExposure) || Object.values(config.toolExposure).some((value) => !EXPOSURES.includes(value as McpExposure)))) return 'toolExposure must map tool names to exposures'
+  return undefined
 }
 
-/** 协议 def → 盘上通用形状（type 恒显式写出：自描述，手改文件可读） */
-function defToRaw(def: McpServerDef): Record<string, unknown> {
+/** 扩展字段只透传到盘，已知字段始终以收窄后的定义为准。 */
+export function mcpDefToRaw(definition: McpServerDef): Record<string, unknown> {
+  const { name: _name, extraFields, ...fields } = definition
+  if (Object.keys(extraFields ?? {}).some((key) => KNOWN_FIELDS.has(key))) throw new ProtocolError(RpcErrorCode.InvalidParams, 'extraFields 只能包含未知扩展字段')
+  return { ...extraFields, ...fields }
+}
+
+/** 配置为外部输入：复用 pi 字段校验；SSE 复用 HTTP 合同，不绕过 OAuth 校验。 */
+export function parseMcpServerDefinition(name: string, raw: unknown): McpServerDef {
+  if (!isRecord(raw)) throw new ProtocolError(RpcErrorCode.InvalidParams, `server "${name}" must be an object`)
+  const customError = exposureError(raw)
+  if (customError !== undefined) throw new ProtocolError(RpcErrorCode.InvalidParams, `server "${name}": ${customError}`)
+  if (raw.sanitizeHostEnv !== undefined && typeof raw.sanitizeHostEnv !== 'boolean') throw new ProtocolError(RpcErrorCode.InvalidParams, `server "${name}": sanitizeHostEnv must be a boolean`)
+  if (raw.timeout !== undefined && (typeof raw.timeout !== 'number' || !Number.isFinite(raw.timeout))) throw new ProtocolError(RpcErrorCode.InvalidParams, `server "${name}": timeout must be finite`)
+  const candidate: Record<string, unknown> = { ...raw, ...(raw.type === 'sse' && { type: 'http' }) }
+  // 含引用的 URL 在建连瞬间展开后校验；配置读取不得求值或触碰凭据。
+  if (typeof candidate.url === 'string' && candidate.url.includes('${')) candidate.url = 'https://mcp-template.invalid'
+  const result = validateMcpServerConfig(name, candidate, {
+    checkMetadataDocumentCallback: (callbackUrl) => callbackUrl === undefined || /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/callback$/.test(callbackUrl)
+      ? undefined : 'CIMD callback must be /callback on localhost or 127.0.0.1'
+  })
+  if (result.kind === 'invalid') throw new ProtocolError(RpcErrorCode.InvalidParams, result.error)
+  const extraFields = Object.fromEntries(Object.entries(raw).filter(([key]) => !KNOWN_FIELDS.has(key)))
   const shared = {
-    ...(def.description !== undefined && { description: def.description }),
-    ...(def.enabled !== undefined && { enabled: def.enabled }),
-    ...(def.exposure !== undefined && { exposure: def.exposure }),
-    ...(def.timeout !== undefined && { timeout: def.timeout })
+    ...(raw.description !== undefined && { description: raw.description as string }),
+    ...(raw.enabled !== undefined && { enabled: raw.enabled as boolean }),
+    ...(raw.exposure !== undefined && { exposure: raw.exposure as McpExposure }),
+    ...(raw.toolExposure !== undefined && { toolExposure: raw.toolExposure as Record<string, McpExposure> }),
+    ...(raw.timeout !== undefined && { timeout: raw.timeout }),
+    ...(Object.keys(extraFields).length > 0 && { extraFields })
   }
-  return def.type === 'stdio'
-    ? {
-        type: 'stdio',
-        command: def.command,
-        ...(def.args !== undefined && { args: def.args }),
-        ...(def.env !== undefined && { env: def.env }),
-        ...(def.cwd !== undefined && { cwd: def.cwd }),
-        ...shared
-      }
-    : { type: 'http', url: def.url, ...(def.headers !== undefined && { headers: def.headers }), ...shared }
-}
-
-/** 原子替换写（JsonStorageDriver 同款纪律，json-driver.ts:46-53：tmp + rename，Windows 同卷原子） */
-function atomicWrite(path: string, text: string): void {
-  mkdirSync(dirname(path), { recursive: true })
-  const tmp = `${path}.tmp`
-  writeFileSync(tmp, text)
-  try {
-    renameSync(tmp, path)
-  } catch (error) {
-    rmSync(tmp, { force: true })
-    throw error
+  if (result.kind === 'stdio') return {
+    name, type: 'stdio', command: result.config.command,
+    ...(result.config.args !== undefined && { args: result.config.args }),
+    ...(result.config.env !== undefined && { env: result.config.env }),
+    ...(result.config.cwd !== undefined && { cwd: result.config.cwd }),
+    ...(raw.sanitizeHostEnv !== undefined && { sanitizeHostEnv: raw.sanitizeHostEnv }), ...shared
+  }
+  return {
+    name, type: raw.type === 'sse' ? 'sse' : 'http', url: raw.url as string,
+    ...(result.config.headers !== undefined && { headers: result.config.headers }),
+    ...(result.config.oauth !== undefined && { oauth: result.config.oauth }), ...shared
   }
 }
 
-/** pi settings 补丁（config.ts:150-154 McpServerConfigPatch 的结构镜像；pi 包未导出该类型） */
-export interface McpSettingsPatch {
-  enabled?: boolean
-  exposure?: McpExposure
+function effectiveExposure(exposure: McpExposure | undefined): McpExposure {
+  return exposure === undefined || exposure === 'codemode' ? 'deferred' : exposure
+}
+
+function effectiveConfig(definition: McpServerDef): McpServerDef {
+  return { ...definition, exposure: effectiveExposure(definition.exposure), ...(definition.toolExposure !== undefined && {
+    toolExposure: Object.fromEntries(Object.entries(definition.toolExposure).map(([name, exposure]) => [name, effectiveExposure(exposure)]))
+  }) }
+}
+
+function readConfigFile(filePath: string): ConfigFile {
+  if (!existsSync(filePath)) return { document: {}, servers: {}, text: '', sha256: '', source: filePath }
+  const source = realpathSync.native(filePath)
+  const bytes = readFileSync(source)
+  const text = bytes.toString('utf8')
+  const parsed: unknown = JSON.parse(text.replace(/^\uFEFF/, ''))
+  if (!isRecord(parsed) || (parsed.mcpServers !== undefined && !isRecord(parsed.mcpServers))) throw new Error(`${filePath}: expected an object with an "mcpServers" object`)
+  return { document: parsed, servers: parsed.mcpServers ?? {}, text, sha256: mcpFileDigest(bytes), source }
+}
+
+/** 文件身份按真实路径比较（Windows 不区分大小写）；不存在的文件退回绝对路径。 */
+function fileIdentity(path: string): string {
+  const canonical = existsSync(path) ? realpathSync.native(path) : resolve(path)
+  return process.platform === 'win32' ? canonical.toLowerCase() : canonical
+}
+
+function errorText(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+
+function checkNamespace(name: string, entries: ReadonlyMap<string, unknown>): void {
+  const collision = [...entries.keys()].find((other) => other !== name && mcpNamespace(other) === mcpNamespace(name))
+  if (collision !== undefined) throw new Error(`server "${name}" 与 "${collision}" 工具命名空间冲突`)
+}
+
+/** 整包纯校验供 RPC 在任何 vault 写入前调用；同步保存复用同一批规则。 */
+export function validateMcpDefinitions(definitions: readonly McpServerDef[]): Record<string, Record<string, unknown>> {
+  const validated = new Map<string, McpServerDef>()
+  const rawEntries: Array<[string, Record<string, unknown>]> = []
+  for (const definition of definitions) {
+    if (validated.has(definition.name)) throw new ProtocolError(RpcErrorCode.InvalidParams, `server 名重复: ${definition.name}`)
+    const raw = mcpDefToRaw(definition)
+    const parsed = parseMcpServerDefinition(definition.name, raw)
+    try { checkNamespace(definition.name, validated) } catch (error) { throw new ProtocolError(RpcErrorCode.InvalidParams, errorText(error)) }
+    validated.set(definition.name, parsed)
+    rawEntries.push([definition.name, raw])
+  }
+  return Object.fromEntries(rawEntries)
 }
 
 export class McpConfigStore {
   private readonly userFile: string
+  readonly trust: McpTrustStore
 
-  constructor(root: string) {
+  constructor(root: string, trust?: McpTrustStore) {
     this.userFile = join(root, 'mcp.json')
+    this.trust = trust ?? new McpTrustStore(root)
   }
 
-  /** 项目级 override 文件路径（会话主根下的 .cogent/mcp.json） */
-  private projectFile(cwd: string): string {
-    return join(cwd, '.cogent', 'mcp.json')
-  }
+  private projectFile(cwd: string): string { return join(cwd, '.cogent', 'mcp.json') }
 
-  /** user 级条目校验装载（list 与 snapshot 的共用底座） */
-  private loadUser(errors: string[]): Map<string, McpServerEntry> {
-    const servers = new Map<string, McpServerEntry>()
-    const { mcpServers, error } = readConfigFile(this.userFile)
-    if (error !== undefined) errors.push(error)
-    for (const [name, value] of Object.entries(mcpServers)) {
-      const result = validateMcpServerConfig(name, value)
-      if (result.kind === 'invalid') {
-        errors.push(`${this.userFile}: ${result.error}`)
-        continue
-      }
-      const exposureError = checkExposureFields(name, result.config)
-      if (exposureError !== undefined) {
-        errors.push(`${this.userFile}: ${exposureError}`)
-        continue
-      }
-      // 名字只差 -/_ 的两个 server 共享工具命名空间（pi config.ts:119-124 同查）
-      const clash = [...servers.keys()].find((other) => other !== name && mcpNamespace(other) === mcpNamespace(name))
-      if (clash !== undefined) {
-        errors.push(`${this.userFile}: server "${name}" conflicts with "${clash}"`)
-        continue
-      }
-      servers.set(name, { name, config: asPiConfig(result.config), source: this.userFile, scope: 'global' })
-    }
-    return servers
-  }
-
-  /** 条目 → 协议摘要（list 投影共用；def = 盘上用户级原值折回协议形状） */
-  private summarize({ name, config }: McpServerEntry): McpServerSummary {
-    return {
-      name,
-      type: 'url' in config ? 'http' : 'stdio',
-      detail: 'url' in config ? config.url : [config.command, ...(config.args ?? [])].join(' '),
-      ...(config.description !== undefined && { description: config.description }),
-      enabled: config.enabled !== false,
-      exposure: config.exposure ?? 'codemode',
-      def: 'url' in config
-        ? {
-            name,
-            type: 'http',
-            url: config.url,
-            ...(config.headers !== undefined && { headers: config.headers }),
-            ...(config.description !== undefined && { description: config.description }),
-            ...(config.enabled !== undefined && { enabled: config.enabled }),
-            ...(config.exposure !== undefined && { exposure: config.exposure }),
-            ...(config.timeout !== undefined && { timeout: config.timeout })
+  resolve(cwd?: string, projectId?: string): { servers: CogentMcpEntry[]; errors: string[]; pendingTrustFiles: McpPendingTrustFile[] } {
+    const entries = new Map<string, CogentMcpEntry>()
+    const errors = [...this.trust.errors]
+    const pending = new Map<string, McpPendingTrustFile>()
+    const files: Array<{ path: string; origin: CogentMcpEntry['origin'] }> = [{ path: this.userFile, origin: 'user' }]
+    if (cwd !== undefined) files.push({ path: join(cwd, '.mcp.json'), origin: 'project-file' }, { path: this.projectFile(cwd), origin: 'project-cogent' })
+    const seen = new Set<string>()
+    for (const { path, origin } of files) {
+      // 默认主目录会话的 <cwd>/.cogent/mcp.json 就是用户文件：再读一遍会把用户定义变成未受信的项目定义。
+      const identity = fileIdentity(path)
+      if (seen.has(identity)) continue
+      seen.add(identity)
+      let file: ConfigFile
+      try { file = readConfigFile(path) } catch (error) { errors.push(`${path}: ${errorText(error)}`); continue }
+      for (const [name, raw] of Object.entries(file.servers)) {
+        try {
+          if (origin !== 'user' && isRecord(raw) && isMcpServerOverride(raw)) {
+            const base = entries.get(name)
+            if (base === undefined) throw new Error(`server "${name}" 没有可覆盖的用户级定义`)
+            const extra = Object.keys(raw).filter((key) => !(OVERRIDE_KEYS as readonly string[]).includes(key))
+            if (extra.length > 0) throw new Error(`server "${name}" 的 override 只能覆盖 ${OVERRIDE_KEYS.join(', ')}`)
+            const override = parseMcpServerDefinition(name, { ...mcpDefToRaw(base.config), ...raw })
+            entries.set(name, { ...base, config: effectiveConfig(override), override: file.source })
+            continue
           }
-        : {
-            name,
-            type: 'stdio',
-            command: config.command,
-            ...(config.args !== undefined && { args: config.args }),
-            ...(config.env !== undefined && { env: config.env }),
-            ...(config.cwd !== undefined && { cwd: config.cwd }),
-            ...(config.description !== undefined && { description: config.description }),
-            ...(config.enabled !== undefined && { enabled: config.enabled }),
-            ...(config.exposure !== undefined && { exposure: config.exposure }),
-            ...(config.timeout !== undefined && { timeout: config.timeout })
+          const definition = parseMcpServerDefinition(name, raw)
+          checkNamespace(name, entries)
+          const trusted = origin === 'user' || this.trust.isTrusted(projectId, file.source, file.sha256, name)
+          entries.set(name, { name, config: effectiveConfig(definition), definition, source: file.source, scope: origin === 'user' ? 'global' : 'project', origin, trusted })
+          if (!trusted) {
+            let item = pending.get(file.source)
+            if (item === undefined) {
+              item = { ...(projectId !== undefined && { projectId }), filePath: file.source, sha256: file.sha256, servers: [] }
+              pending.set(file.source, item)
+            }
+            item.servers.push({ name, type: definition.type, ...(definition.type === 'stdio' ? { command: definition.command } : { url: definition.url }),
+              envKeys: definition.type === 'stdio' ? Object.keys(definition.env ?? {}) : [], headerKeys: definition.type === 'stdio' ? [] : Object.keys(definition.headers ?? {}) })
           }
+        } catch (error) { errors.push(`${path}: ${errorText(error)}`) }
+      }
     }
+    const pendingTrustFiles = [...pending.values()].map((file) => ({ ...file,
+      servers: file.servers.filter((server) => entries.get(server.name)?.source === file.filePath)
+    })).filter((file) => file.servers.length > 0)
+    return { servers: [...entries.values()], errors, pendingTrustFiles }
   }
 
-  /**
-   * mcp.list 响应：缺省 user 级视图；带 cwd = 项目合并视图（enabled/exposure
-   * 为 override 后的生效值，def 仍是用户级原值，override 原样带给 UI 起草）。
-   */
-  list(cwd?: string): McpListResult {
-    if (cwd === undefined) {
-      const errors: string[] = []
-      return { servers: [...this.loadUser(errors).values()].map((e) => this.summarize(e)), errors }
-    }
-    const merged = this.merged(cwd)
-    const summaries = merged.entries.map((entry) => {
-      const override = merged.overrides.get(entry.name)
-      const user = merged.userEntries.get(entry.name)
+  list(cwd?: string, projectId?: string): McpListResult {
+    const resolved = this.resolve(cwd, projectId)
+    const servers: McpServerSummary[] = resolved.servers.map((entry) => {
+      const definition = entry.definition ?? entry.config
+      let override: McpSettingsPatch | undefined
+      if (entry.override !== undefined) {
+        try {
+          const raw = readConfigFile(entry.override).servers[entry.name]
+          if (isRecord(raw) && isMcpServerOverride(raw) && exposureError(raw) === undefined) override = raw
+        } catch (error) { resolved.errors.push(`${entry.override}: ${errorText(error)}`) }
+      }
       return {
-        ...this.summarize(entry),
-        // def 恒为用户级原值（编辑表单的回填源不随作用域视图漂移）
-        ...(user !== undefined && { def: this.summarize(user).def }),
-        ...(override !== undefined && {
-          overrideApplied: true,
-          override: {
-            ...(override.enabled !== undefined && { enabled: override.enabled }),
-            ...(override.exposure !== undefined && { exposure: override.exposure })
-          }
-        })
+        name: entry.name, type: entry.config.type,
+        detail: entry.config.type === 'stdio' ? [entry.config.command, ...(entry.config.args ?? [])].join(' ') : entry.config.url,
+        ...(entry.config.description !== undefined && { description: entry.config.description }),
+        enabled: entry.config.enabled !== false, exposure: effectiveExposure(entry.config.exposure), def: definition,
+        origin: entry.origin, source: entry.source, trusted: entry.trusted,
+        ...(entry.config.toolExposure !== undefined && { toolExposure: entry.config.toolExposure }),
+        ...(entry.override !== undefined && { overrideApplied: true, ...(override !== undefined && { override }) })
       }
     })
-    return { servers: summaries, errors: merged.errors }
+    return { servers, errors: resolved.errors, pendingTrustFiles: resolved.pendingTrustFiles }
   }
 
-  /**
-   * user + 项目 override 的合并装载（snapshot 与 list(cwd) 共用底座）。
-   * 项目级条目限制比 pi 更严 —— 只收 override（带 command/url/type 的定义
-   * 条目显式报错跳过，pi 允许项目定义 server，Cogent 的信任门不开）。
-   * overrides = 逐名字的项目 override 原样内容（list 合并视图给 UI 起草用）。
-   */
-  private merged(cwd: string): {
-    entries: McpServerEntry[]
-    overrides: Map<string, { enabled?: boolean; exposure?: McpExposure }>
-    /** override 应用前的用户级条目（list 合并视图的 def 投影源） */
-    userEntries: Map<string, McpServerEntry>
-    errors: string[]
-  } {
-    const errors: string[] = []
-    const servers = this.loadUser(errors)
-    const userEntries = new Map(servers)
-    const overrides = new Map<string, { enabled?: boolean; exposure?: McpExposure }>()
-    const projectPath = this.projectFile(cwd)
-    const { mcpServers: projectEntries, error } = readConfigFile(projectPath)
-    if (error !== undefined) errors.push(error)
-    for (const [name, value] of Object.entries(projectEntries)) {
-      if (!isRecord(value)) {
-        errors.push(`${projectPath}: server "${name}" must be an object`)
-        continue
-      }
-      // override 判别（isMcpServerOverride：无 command/url/type 即 override 条目）
-      if (!isMcpServerOverride(value)) {
-        errors.push(`${projectPath}: server "${name}" 定义了新 server —— 项目级 mcp.json 只能覆盖 ${OVERRIDE_KEYS.join('/')}（定义请放用户级 ~/.cogent/mcp.json）`)
-        continue
-      }
-      const base = servers.get(name)
-      if (base === undefined) {
-        errors.push(`${projectPath}: server "${name}" 没有可覆盖的用户级定义`)
-        continue
-      }
-      const extra = Object.keys(value).filter((key) => !(OVERRIDE_KEYS as readonly string[]).includes(key))
-      if (extra.length > 0) {
-        errors.push(`${projectPath}: server "${name}" 的 override 只能设 ${OVERRIDE_KEYS.join(', ')}`)
-        continue
-      }
-      const mergedEntry = validateMcpServerConfig(name, { ...base.config, ...value })
-      if (mergedEntry.kind === 'invalid') {
-        errors.push(`${projectPath}: ${mergedEntry.error}`)
-        continue
-      }
-      servers.set(name, { ...base, config: asPiConfig(mergedEntry.config), override: projectPath })
-      // 值域已在上方 extra 键检查 + pi 校验器过，enabled/exposure 原样摘出
-      overrides.set(name, {
-        ...(value.enabled !== undefined && { enabled: value.enabled === true }),
-        ...(value.exposure !== undefined && { exposure: value.exposure as McpExposure })
-      })
+  /** 旧工厂的适配；新连接池直接用 resolve，不会通过此处将 SSE 降成 HTTP。 */
+  snapshot(cwd: string, projectId?: string): LoadedMcpConfig {
+    const resolved = this.resolve(cwd, projectId)
+    const servers: McpServerEntry[] = []
+    for (const entry of resolved.servers) {
+      if (!entry.trusted || entry.config.type === 'sse') continue
+      const config = entry.config.type === 'stdio' ? entry.config : { ...entry.config, type: 'http' as const }
+      servers.push({ name: entry.name, config, source: entry.source, scope: entry.scope, ...(entry.override !== undefined && { override: entry.override }) })
     }
-    return { entries: [...servers.values()], overrides, userEntries, errors }
+    return { servers, errors: resolved.errors }
   }
 
-  /**
-   * 合并快照（会话装配用，Pi-meme 快照语义的定格点）。
-   */
-  snapshot(cwd: string): LoadedMcpConfig {
-    const { entries, errors } = this.merged(cwd)
-    return { servers: entries, errors }
-  }
-
-  /**
-   * 全量替换某项的项目 override（mcp.override 委托）：写 <cwd>/.cogent/mcp.json
-   * 的 mcpServers[name] = patch；空 patch = 删除该项 override（回落用户级）。
-   * 目标必须有用户级定义（信任门：项目文件开不了新条目）。
-   */
   override(cwd: string, name: string, patch: McpSettingsPatch): void {
-    const errors: string[] = []
-    if (!this.loadUser(errors).has(name)) {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, `没有名为 "${name}" 的用户级 MCP server 可覆盖`)
+    const patchError = exposureError(patch)
+    if (patchError !== undefined || (patch.enabled !== undefined && typeof patch.enabled !== 'boolean')) throw new ProtocolError(RpcErrorCode.InvalidParams, patchError ?? 'enabled must be boolean')
+    // 项目自己的定义在其来源文件原位更新；新摘要自然失去旧授权，绝不改成用户级定义。
+    const effective = this.resolve(cwd).servers.find((entry) => entry.name === name)
+    if (effective?.scope === 'project' && effective.override === undefined) {
+      const file = readConfigFile(effective.source)
+      const raw = file.servers[name]
+      if (!isRecord(raw) || isMcpServerOverride(raw)) throw new ProtocolError(RpcErrorCode.InvalidParams, '项目 MCP 定义已变化，请刷新后重试')
+      const candidate = { ...raw, ...patch }
+      parseMcpServerDefinition(name, candidate)
+      writeMcpFileAtomically(effective.source, `${JSON.stringify({ ...file.document, mcpServers: { ...file.servers, [name]: candidate } }, null, /^([ \t]+)\S/m.exec(file.text)?.[1] ?? '  ')}\n`)
+      return
     }
-    const path = this.projectFile(cwd)
-    let text = existsSync(path) ? readFileSync(path, 'utf8') : ''
-    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
-    const parsed: unknown = text === '' ? {} : JSON.parse(text)
-    if (!isRecord(parsed) || (parsed.mcpServers !== undefined && !isRecord(parsed.mcpServers))) {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, `${path}: expected an object with an "mcpServers" object`)
-    }
-    const servers = isRecord(parsed.mcpServers) ? parsed.mcpServers : undefined
-    const hasEmptyKeys = Object.keys(patch).length === 0
-    if (hasEmptyKeys) {
-      if (servers?.[name] !== undefined) delete servers[name]
-    } else {
-      parsed.mcpServers = { ...servers, [name]: patch }
-    }
-    const indent = (/^([ \t]+)\S/m.exec(text)?.[1]) ?? '  '
-    atomicWrite(path, `${JSON.stringify(parsed, null, indent)}\n`)
+    if (effective === undefined && !this.resolve().servers.some((entry) => entry.name === name)) throw new ProtocolError(RpcErrorCode.InvalidParams, `没有名为 "${name}" 的用户级 MCP server 可覆盖`)
+    const projectFile = this.projectFile(cwd)
+    // 项目主根就是用户级配置目录时没有独立的项目槽位：明确拒绝，不把单个项目的意图写进所有会话共用的用户定义。
+    if (effective?.override === undefined && fileIdentity(projectFile) === fileIdentity(this.userFile)) throw new ProtocolError(RpcErrorCode.InvalidParams, '此项目的主根就是用户级 MCP 配置目录，无法单独覆盖用户级定义，请在用户级设置中修改')
+    const path = effective?.override ?? projectFile
+    const file = readConfigFile(path)
+    const previous = file.servers[name]
+    if (isRecord(previous) && !isMcpServerOverride(previous)) throw new ProtocolError(RpcErrorCode.InvalidParams, '项目文件已有同名 server 定义，不能以 override 覆盖定义')
+    const next = { ...file.servers }
+    if (Object.keys(patch).length === 0) delete next[name]
+    else Object.defineProperty(next, name, { value: patch, enumerable: true, configurable: true, writable: true })
+    const indent = /^([ \t]+)\S/m.exec(file.text)?.[1] ?? '  '
+    writeMcpFileAtomically(path, `${JSON.stringify({ ...file.document, mcpServers: next }, null, indent)}\n`)
   }
 
-  /**
-   * 全量写 user 级定义（mcp.sync 委托，替换语义）：先整包校验，任一非法
-   * 即 throw（手动设置动作要明确反馈，不半写）；通过后原子写盘。
-   * 载荷已在 dispatch 入口按协议类型收窄（stdio 帧边界），这里只跑
-   * 入口窄化覆盖不到的规则：server 名字符规则（pi-mcp 校验器）与命名空间撞名。
-   */
-  sync(defs: McpServerDef[]): number {
-    const raw: Record<string, unknown> = {}
-    const errors: string[] = []
-    const seen = new Set<string>()
-    for (const def of defs) {
-      if (seen.has(def.name)) {
-        errors.push(`server 名重复: ${def.name}`)
-        continue
-      }
-      seen.add(def.name)
-      const result = validateMcpServerConfig(def.name, defToRaw(def))
-      if (result.kind === 'invalid') {
-        errors.push(`server "${def.name}": ${result.error}`)
-        continue
-      }
-      const clash = defs.some((other) => other.name !== def.name && mcpNamespace(other.name) === mcpNamespace(def.name))
-      if (clash) {
-        errors.push(`server "${def.name}" 与其他条目只差 -/_，工具命名空间冲突`)
-        continue
-      }
-      raw[def.name] = defToRaw(def)
-    }
-    if (errors.length > 0) {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, errors.join('；'))
-    }
-    atomicWrite(this.userFile, `${JSON.stringify({ mcpServers: raw }, null, 2)}\n`)
-    return defs.length
+  sync(definitions: McpServerDef[]): number {
+    const servers = validateMcpDefinitions(definitions)
+    // 编辑 server 不应清掉其他客户端的顶层扩展配置。
+    const file = readConfigFile(this.userFile)
+    writeMcpFileAtomically(this.userFile, `${JSON.stringify({ ...file.document, mcpServers: servers }, null, 2)}\n`)
+    return definitions.length
   }
 
-  /**
-   * 设置补丁写回（createMcpExtension 的 updateConfig 通道）：目标 = 项目级
-   * override 文件（条目带 override 时）否则用户级定义文件。pi 的
-   * updateMcpServerConfig（config.ts:161-185）同款语义 —— 默认值（enabled:
-   * true / codemode）在定义文件里删键、在 override 里保留显式值。
-   */
-  applyPatch(entry: McpServerEntry, patch: McpSettingsPatch): void {
+  applyPatch(entry: Pick<McpServerEntry, 'name' | 'source' | 'override'>, patch: McpSettingsPatch): void {
     const path = entry.override ?? entry.source
-    let text = existsSync(path) ? readFileSync(path, 'utf8') : ''
-    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
-    const parsed: unknown = text === '' ? {} : JSON.parse(text)
-    if (!isRecord(parsed) || (parsed.mcpServers !== undefined && !isRecord(parsed.mcpServers))) {
-      throw new Error(`${path}: expected an object with an "mcpServers" object`)
-    }
-    const servers = isRecord(parsed.mcpServers) ? parsed.mcpServers : undefined
-    let server = servers?.[entry.name]
-    // override 文件里缺条目 = 新增 override（pi updateMcpServerConfig 的 override 语义）
-    if (server === undefined && entry.override !== undefined) {
-      server = {}
-      parsed.mcpServers = { ...servers, [entry.name]: server }
-    }
-    if (!isRecord(server)) {
-      throw new Error(`${path} 未定义 MCP server "${entry.name}"`)
-    }
+    const file = readConfigFile(path)
+    const raw = file.servers[entry.name]
+    if (!isRecord(raw) && entry.override === undefined) throw new Error(`${path} 未定义 MCP server "${entry.name}"`)
+    const server = isRecord(raw) ? { ...raw } : {}
     const keepDefaults = isMcpServerOverride(server)
+    const patchError = exposureError(patch)
+    if (patchError !== undefined) throw new ProtocolError(RpcErrorCode.InvalidParams, patchError)
     if (patch.enabled !== undefined) {
       if (patch.enabled && !keepDefaults) delete server.enabled
       else server.enabled = patch.enabled
     }
     if (patch.exposure !== undefined) {
-      if (patch.exposure === 'codemode' && !keepDefaults) delete server.exposure
+      if (patch.exposure === 'deferred' && !keepDefaults) delete server.exposure
       else server.exposure = patch.exposure
     }
-    // 保留原缩进（手改文件的习惯格式不被整包重排）
-    const indent = (/^([ \t]+)\S/m.exec(text)?.[1]) ?? '  '
-    atomicWrite(path, `${JSON.stringify(parsed, null, indent)}\n`)
+    if (patch.toolExposure !== undefined) server.toolExposure = patch.toolExposure
+    const indent = /^([ \t]+)\S/m.exec(file.text)?.[1] ?? '  '
+    writeMcpFileAtomically(path, `${JSON.stringify({ ...file.document, mcpServers: { ...file.servers, [entry.name]: server } }, null, indent)}\n`)
   }
 }

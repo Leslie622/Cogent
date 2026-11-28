@@ -35,13 +35,45 @@ describe('parseImport', () => {
     expect(() => parseImport('[1]')).toThrow('JSON 对象')
   })
 
-  it('可选字段按类型过滤透传（description/enabled/exposure/timeout；headers 非全串忽略）', () => {
-    const { defs } = parseImport(
+  it('可选字段校验：无效 headers 明确报错，避免导入时静默丢掉认证字段', () => {
+    const { defs, errors } = parseImport(
       '{"a": {"url": "https://x", "description": "d", "enabled": true, "exposure": "hidden", "timeout": 5, "headers": {"A": 1}}}'
     )
-    expect(defs[0]).toEqual({
-      name: 'a', type: 'http', url: 'https://x', description: 'd', enabled: true, exposure: 'hidden', timeout: 5
-    })
+    expect(defs).toEqual([])
+    expect(errors).toEqual(['"a" env / headers 的值必须是字符串'])
+  })
+
+  it('VS Code 输入变量改为环境引用，SSE/OAuth 与未知字段往返不丢失', () => {
+    const imported = parseImport(JSON.stringify({ servers: { remote: { type: 'sse', url: 'https://example.com/sse', headers: { Authorization: 'Bearer ${input:token}' }, oauth: { clientRegistration: 'dcr' }, toolExposure: { read: 'direct' }, vendor: { enabled: true } } } }))
+    expect(imported.errors).toEqual([])
+    expect(imported.warnings).toEqual(['remote：输入变量 token 已改为环境变量引用，请先配置环境变量 token'])
+    expect(imported.defs[0]).toMatchObject({ type: 'sse', headers: { Authorization: 'Bearer ${env:token}' }, oauth: { clientRegistration: 'dcr' }, extraFields: { vendor: { enabled: true } } })
+    const roundTrip = parseImport(defToJsonText(imported.defs[0]))
+    expect(roundTrip.defs).toEqual(imported.defs)
+  })
+
+  it('无法直接作为环境名的输入变量保留并提示用户修改，避免猜测出错', () => {
+    const result = parseImport('{"servers":{"remote":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${input:api-token}"}}}}')
+    expect(result.errors).toEqual([])
+    expect(result.warnings).toEqual(['remote：请将输入变量 api-token 替换为 ${env:YOUR_TOKEN} 并配置对应环境变量'])
+    expect(result.defs[0]).toMatchObject({ headers: { Authorization: 'Bearer ${input:api-token}' } })
+  })
+
+  it('OpenCode 本地数组命令、environment 和环境引用归一化', () => {
+    const result = parseImport(JSON.stringify({ mcp: { local: { type: 'local', command: ['node', 'server.js'], environment: { TOKEN: '{env:MY_TOKEN}' }, enabled: false } } }))
+    expect(result.errors).toEqual([])
+    expect(result.defs).toEqual([{ name: 'local', type: 'stdio', command: 'node', args: ['server.js'], env: { TOKEN: '${MY_TOKEN}' }, enabled: false }])
+  })
+
+  it('stdio 工作目录、宿主隔离标记与超时通过 JSON 往返保留', () => {
+    const def = { name: 'local', type: 'stdio' as const, command: 'node', cwd: '${workspaceFolder}', sanitizeHostEnv: false, timeout: 120, toolExposure: { write: 'hidden' as const }, extraFields: { vendor: 1 } }
+    expect(parseImport(defToJsonText(def)).defs).toEqual([def])
+  })
+
+  it('无效传输匹配和字段类型不会被导入解析器静默改写', () => {
+    expect(parseImport('{"bad":{"type":"sse","command":"node"}}').errors).toEqual(['"bad" 传输类型与 command / url 不一致'])
+    expect(parseImport('{"bad":{"command":"node","description":123}}').errors).toEqual(['"bad" description 需要字符串'])
+    expect(parseImport('{"bad":{"command":"node","enabled":"false"}}').errors).toEqual(['"bad" enabled 需要布尔值'])
   })
 })
 
@@ -50,8 +82,9 @@ describe('表单文本序列化', () => {
     expect(parseLines(' a \n\n b \n')).toEqual(['a', 'b'])
   })
 
-  it('parseEntries 按首个分隔符切（值里可含分隔符）；无分隔符行丢弃', () => {
-    expect(parseEntries('K=a=b\n坏行', '=')).toEqual({ K: 'a=b' })
+  it('parseEntries 按首个分隔符切（值里可含分隔符）；无分隔符行明确报错', () => {
+    expect(parseEntries('K=a=b', '=')).toEqual({ K: 'a=b' })
+    expect(() => parseEntries('K=a=b\n坏行', '=')).toThrow('每行需要')
     expect(entriesOf({ K: 'v' }, ':')).toBe('K:v')
   })
 

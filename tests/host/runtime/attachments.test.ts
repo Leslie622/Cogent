@@ -32,6 +32,16 @@ describe('附件存储', () => {
     expect(() => service.forSession(a.id, 'another')).toThrow('不属于')
     const restored = new AttachmentService(root); expect(readFileSync(restored.path(a.id), 'utf8')).toBe('你好')
   })
+  it('压缩后资产索引用的原件路径：记录与原件都在才返回，已释放、丢失或非法 id 返回 undefined', async () => {
+    const { root, service } = setup(); const original = join(root, 'a.txt'); writeFileSync(original, '内容')
+    const a = await service.importPath(original)
+    expect(service.existingPath(a.id)).toBe(service.path(a.id))
+    rmSync(service.path(a.id))
+    expect(service.existingPath(a.id)).toBeUndefined()
+    service.release(a.id, () => false); expect(() => service.get(a.id)).toThrow()
+    expect(service.existingPath(a.id)).toBeUndefined()
+    expect(service.existingPath('../secret')).toBeUndefined()
+  })
   it('拒绝目录、过大声明、非法 id、损坏原件和重复引用', async () => {
     const { root, service } = setup()
     await expect(service.importPath(root)).rejects.toThrow('文件夹')

@@ -1,101 +1,76 @@
-# MCP 座 —— Host 管配置，pi 管连接
+# MCP 座：Host 连接池与 pi 会话桥
 
-> 本文解释配置所有权、扩展装配和生命周期；现状见 [MCP座模块](../模块/MCP座.md)。
+> 当前行为与验收入口见[MCP座](../模块/MCP座.md)。本笔记解释连接所有权、动态工具、信任和凭据边界。
 
-## 1. 问题
+## 所有权与调用链
 
-让外部 MCP server 的工具直接进 Agent 循环，但连接管理、工具命名、超时、
-OAuth 这些轮子不该重造。Cogent 的拆法：**Host 只管配置与授权**（存哪些
-server、谁开谁关、工具过不过审批），**连接与注册全部委托 pi 官方扩展**。
+旧版按会话调用 pi `createMcpExtension`，配置固定在装配快照中，设置页看不到连接本体。
+当前 `McpRuntimeManager` 在 Host 统一持有连接；`createCogentMcpExtension` 负责将当前作用域
+可用工具、资源及提示段装进 pi 会话，所有工具调用继续经过 `beforeToolCall` 和宿主审批。
+复用 `@earendil-works/pi-mcp@1.5.2` 的客户端、stdio/HTTP 传输和 OAuth；Legacy SSE 为
+应用层适配，不另外实现 JSON-RPC、MCP 握手、分页或授权协议。
 
-## 2. pi 的做法（装配面）
+```text
+McpConfigStore.resolve → McpTrustStore → McpRuntimeManager.ensureScope
+                                      ↓ 连接池/能力修订/会话调用上下文
+              createCogentMcpExtension → pi ToolDefinition → beforeToolCall
+                                      ↑ 工具搜索/下回合刷新/调用前再核授权
+```
 
-pi 的 `createMcpExtension(options)` 工厂（`reference/pi/packages/coding-agent/
-src/extensions/mcp/index.ts:280`）把全部应用差异留成覆盖点：`loadConfig`
-（配置装载）、`updateConfig`（设置写回）、`credentials`（OAuth 存储）、
-`logPath`、`startupWaitMs`。关键承诺（index.ts:20-21）：**"Every call runs
-through pi's tool pipeline"** —— MCP 工具与内置工具同待遇地过 `tool_call`
-钩子与 permission 扩展，Cogent 的链式 beforeToolCall 审批（决定 28）零新增链路
-自动覆盖。配置形状用 pi-mcp 的 `mcpServers` 通用形状（stdio: command/args/
-env/cwd；Streamable HTTP: url/headers/oauth），"configurations can be copied
-between them" —— 存盘即生态互拷。
+连接身份依据配置与目录依赖；工具暴露策略按调用作用域独立求值，不能由共享连接的第一个
+会话覆盖其他项目。发现服务端交互请求时，单条连接中的有上下文调用串行执行，才能把
+不含原工具调用 ID 的 `elicitation/create` 归属到正确会话。取消信号贯通 tools/call、
+resources/read、prompts/get；服务端能力刷新亦排队，避免刷新与交互抢占上下文。
 
-## 3. 对比
+## 本次实读对照与采用
 
-下表保留原实施调研的对照与出处；这是调研结论迁移，不表示文档整理重新执行了上游测试。
-pi 路径以 `reference/pi/packages/coding-agent/src/` 为根；zcode 的 core 路径以
-`reference/zcode/apps/zcode-cli/packages/core/src/` 为根，dsh 指 `reference/deepseek-harness/`。
+版本：`pi@74dcca7d4`、`zcode@c5904686`、`deepseek-harness@e8f7b93a`。
+以下结论来自本次打开的同主题源码，不表示已运行这些上游仓库的测试。
 
-| 主题 | pi（内核，主体） | zcode | dsh | Cogent 采用 |
-| --- | --- | --- | --- | --- |
-| 扩展入口 | `createMcpExtension(options)` 工厂，`loadConfig`/`updateConfig`/`credentials`/`openUrl` 全部可覆盖 —— `reference/pi/packages/coding-agent/src/extensions/mcp/index.ts:70-92,280` | 自研 runtime methods（`core/src/runtime/methods/mcp.ts:57-195`） | manager/client 分层（`packages/mcp/mcp-manager`） | **pi 工厂 + `loadConfig` 注入 Host 配置**（Cogent 不自研连接管理） |
-| 配置格式 | `mcpServers` 通用形状：stdio（command/args/env/cwd）+ Streamable HTTP（url/headers/oauth），"configurations can be copied between them" —— `node_modules/@earendil-works/pi-mcp/dist/config.d.ts:1-96` | 双来源（`.zcode/config.json` 键 `mcp.servers` + `.agents/mcp.json`）—— `mcpSyncService.ts:40-56` | profile YAML + Settings 热编辑 + 插件自注册 | **直接用 pi-mcp 形状存 `~/.cogent/mcp.json`**（与生态互拷；校验用现成 `validateMcpServerConfig`） |
-| 作用域/覆盖 | global（agent dir mcp.json）+ project（受信项目 mcp.json）；项目条目无 command/url/type = 只覆盖 `enabled/exposure/toolExposure`（`isMcpServerOverride`，`config.d.ts:111-115`；`OVERRIDE_KEYS`，pi `mcp/config.ts:71`） | user + workspace 双文件 | 六级 rank 目录（技能侧）；MCP 走 profile/插件 | **user 级定义 server；项目级只允许 override**（pi 现成语义 = 天然信任门：低信文件开不了新进程） |
-| 工具进 agent | `mcp__<server>__<tool>`；exposure 四档（direct 直接声明 / deferred 经 tool_search / codemode / hidden）—— `mcp/index.ts:8-16,118-122` | 同款命名 + 默认延迟暴露（`tool_search` 目录）—— `mcp/name.ts:3-24` | 同款 + 有损归一化追加 12 位哈希防碰撞 —— `tools.ts:89-105` | **direct 起步**（GUI agent，模型直接用；命名冲突极小概率，pi 已压非法字符） |
-| 审批/安全 | **MCP 工具走 pi tool pipeline，permission 扩展与内置工具同待遇** —— `mcp/index.ts:20-21`；stdio env 为叠加式注入（配置显式给才加） | 全部默认 `needsApproval`，按 annotations 分级（readOnly→low/destructive→high）—— `core/src/mcp/index.ts:129-148`；工作区信任门 sha256 —— `workspace-mcp-trust/index.ts:23-36` | stdio 环境清洗（剔 KEY/PASSWORD/SECRET/TOKEN）—— `mcp-client/transport.ts:22-40`；`${credential:REF}` 模板 + 脱敏 | **决定 28 审批链天然覆盖（pi pipeline）**；MCP 工具 ToolKind 投影默认 ask 档（beforeToolCall 取不到 annotations，原因见下文）；env 沿 pi 配置语义，不增加另一套变量模板或清洗层 |
-| 刷新语义 | 连接后台跑，direct 工具的 server 首请求等 `startupWaitMs`（默认 10s）—— `mcp/index.ts:6-8,94` | 回合边界按 `tools/list_changed` 增量刷新 —— `methods/mcp.ts:218-262` | 整代原子交换（失败保旧集）—— mcp-manager README:147 | **首发：配置变更新会话生效**；回合级热刷新列后续 |
+| 主题 | 实读源码与结论 | Cogent 采用 |
+| --- | --- | --- |
+| 动态工具移除 | pi `packages/coding-agent/src/extensions/mcp/index.ts:388–452` 为工具分配防碰撞名字；SDK 没有注销接口，将已移除工具重新注册为 `hidden` | 会话桥在回合边界对比目录，移除/禁用工具重新注册为隐藏，执行时再查当前连接；不调用不存在的 unregister API |
+| 工具搜索装配 | pi `packages/coding-agent/src/extensions/tool-search/index.ts:12–16` 注册 inactive 的搜索工具，SDK 消费者需显式装配并激活 | 装配 `createToolSearchExtension()`，存在 deferred 工具时激活 `tool_search`；用户搜索激活的工具在允许范围内保留 |
+| 工具目录可见 | zcode `apps/zcode-cli/packages/core/src/tool/search/description.ts:13`：deferred 工具至少把名字亮给模型，取到定义前只有名字；pi 的 `tool_search` 描述不列可搜索的工具（`dist/extensions/tool-search/tool.js:236–239`）；pi 用 `<段名>…</段名>` 包每个系统提示段（`dist/core/system-prompt.js:117`） | `mcp_servers` 段按服务列出工具名和描述首行，三档降级同技能清单；来自外部服务的文本并成单行并做 XML 转义；目录只让能力可见，不替模型选工具 |
+| 项目信任 | zcode `apps/zcode-cli/packages/bootstrap/src/workspace-mcp-trust/index.ts:24–35,58–80,174` 以 workspaceIdentity、工作目录、来源、执行配置摘要绑定授权 | Cogent 用注册表 projectId + 真实文件路径 + 精确文件字节 sha256；来源变动重新审阅，未受信不探测，不借用其他项目已连池实例 |
+| 环境隔离 | dsh `packages/mcp/mcp-client/src/transport.ts:21–37` 先清洗宿主 env 再叠加显式配置 | stdio 清洗敏感宿主键，保留 server 显式声明；MCP 配置的环境变量展开与非机密技能正文隔离 |
+| 协议与 OAuth | 已安装 pi-mcp 的 `dist/client.d.ts`、`dist/oauth/{sign-in,loopback,auth-provider,client-settings}.d.ts` 提供通知、反向请求、PKCE、回调、注册与刷新锁 | 连接观测、凭据桥与 UI 归 Host/main；协议流直接调用公开 API，不借助上游私有成员 |
 
-### 3.1 SDK 消费者必须自己调 `bindExtensions` —— session_start 不会自己来
+## 凭据提交与安全失败
 
-**症状**：扩展装进 `extensionFactories`、bundle 里 createMcpExtension 都在，
-但 MCP 工具零装载、零诊断，`loadConfig` 从未被调用。
+main 是 `mcp-credentials.json` 唯一写者，仅静默托管 OAuth 状态。`McpCredentialStore` 读取
+损坏文件、跨机密文或不可用安全存储时记录 `startupError`，通过日志和 `status().error` 保留
+诊断，再向握手提供空 OAuth 快照。读取不覆盖原文件，避免凭据故障卡住整个桌面；用户后续
+显式写入时仍先校验加密与后端，拒绝 Linux `basic_text`，成功原子提交后才更新缓存并解除故障。
+`getSelectedStorageBackend()` 仅 Linux 存在，Windows/macOS 不调用该 API；Windows 缺失该函数的
+回归以及隔离 Electron 的实际加密读写探针已验证这一边界。
+旧版文件的 secret 表不再解密或消费；成功的 OAuth 写入仅保留 OAuth 持久化内容。
 
-**定位**：pi 的 `session_start` 事件（MCP 扩展装载配置、启动连接的唯一
-入口，mcp/index.ts:1115）不是 `createAgentSession` 发的 —— 它由
-`AgentSession.bindExtensions()` 发（dist core/agent-session.js:2776），
-而 bindExtensions 的调用方全部在 **CLI 产品层**（print-mode.ts:83 /
-interactive-mode.ts:2100 / rpc-mode.ts:323）。SDK 层消费者不调它，挂
-session_start 的扩展就永远不初始化。Pi-meme 的 SDK 封装同样手工调
-（packages/pi-runtime/src/sdk/session.ts:917 `session.bindExtensions({ mode:'rpc', ... })`）
-—— 这是「pi 内核 vs CLI 产品」分层的又一个实例（前一次是 /mcp 管理器
-为何不存在于 headless）。修法：createPiSession 在 createAgentSession 后
-`await session.bindExtensions({ mode: 'rpc' })`。
+Host 的 `McpSecretBridge` 仅保留 OAuth 内存状态；`save` 发私有 stdio 请求，收到 main 的
+`persistResult` 后才发布。授权 URL 与 OAuth 状态写回由 `HostManager` 独立消费，不进入
+renderer 广播或通用事件日志。启动交接按 Host 代次核验，排队发送时重读最终提交的 OAuth 表；
+同 key 刷新串行锁防止重复消耗旋转 token。授权身份按服务器名、规范 URL 和作用域隔离，
+仅存在 access/refresh token 才投影 `oauthAuthorized`；注册元数据与静态 header 不算已授权。
 
-### 3.2 `tools` 显式列表会过滤扩展工具 —— direct MCP 工具需要 allowlist 放行
+静态 env、认证 header、`oauth.clientSecret` 和 URL 按原定义校验保存，不自动生成 UUID 键
+或改写配置，也不依赖 main 保存静态凭据。环境变量及项目路径在连接时单遍展开，宿主敏感
+env 仍默认清洗；不再提供手动密钥管理或 `${secret:KEY}` 语法。旧引用明确报错并提示改为
+环境变量，不自动把旧密文迁回明文，也不因读取改写用户/项目配置或旧凭据文件。
 
-**症状**：bindExtensions 修好后 mock server 连上、审批也弹了，但一轮请求
-的 tools 数组里没有 `mcp__mock__echo` —— 模型调它只会得到
-"Tool not found"。
+CIMD 除代码支持外，还依赖发行方公开符合 pi 文档布局的客户端元数据与回调 URI 声明。
+`COGENT_MCP_OAUTH_METADATA_BASE_URL` 必须为无用户名、密码、查询或片段的 HTTPS 地址。
+未提供时显式 CIMD 登录报可操作错误；`auto` 按上游发现规则走可用注册方式，不伪造 pi 身份。
 
-**定位**：agent-session.js 的 `_isActivatable`（约 1210 行）：allowlist
-不匹配的 mcp__ 工具，只有**非 direct** 档（经 tool_search）才可激活；
-direct 档必须被 allowlist 匹配（精确名或 `*` 模式，createToolNameMatcher
-支持，core/mcp-servers.js:22）。Cogent 的 `tools: COGENT_TOOL_NAMES` 是
-显式列表 → direct MCP 工具全部被挡。修法：allowlist 追加
-`MCP_TOOL_ALLOWLIST = ['mcp__*', 资源三件]`（tool-meta.ts）。zcode 没有
-这个坑是因为它不走 pi 的 tools 选项 —— 自研注册表无此过滤层。
+## 运行与呈现的两种原文
 
-### 3.3 annotations 降级映射：拿不到的边界
+模型收到的 MCP 资源/提示词正文属于来源数据，并非用户原话。`prepareMcpInput` 处理文本、
+受支持图片及嵌入资源，大文本超 24K 落 `pi/mcp-input/`。`cogent.mcp-input.v1` 记录原始输入和
+结构化引用；`readPiTranscript` 与 `toChatMessages` 回显用户实际输入，历史/搜索不重写模型转录。
+工具结果继续走既有 24K 落盘保护，保留结构化结果、图片与资源链接供对话流呈现。
 
-zcode 按 MCP annotations 分级（readOnly→低风险，core/src/mcp/index.ts:
-129-148）。pi 侧工具定义确实带 annotations（extensions/mcp/tools.ts:
-239-273 toToolAnnotations），但审批钩子的载荷 BeforeToolCallContext
-（pi-agent-core types.ts:83-92）只有 assistantMessage/toolCall/args/context
-—— **不含工具定义**，beforeToolCall 面上取不到 annotations。Cogent 统一投影为 exec；要做降级映射，需要工具注册表查询面，不能从工具名猜只读性。
-
-## 4. 取舍
-
-- **快照 vs 活配置**：loadConfig 返回装配期定格的快照（Pi-meme 手法）——
-  进行中会话不受配置变更影响，语义可预期；代价是改配置必须新会话。
-  pi CLI 是活的（/mcp 管理器原地生效），但那是交互式管理器的配套，headless
-  没有对应的观测面，快照更诚实；
-- **项目级仅 override**：pi 允许受信项目 mcp.json 定义 server；Cogent 收紧
-  为只收 override（isMcpServerOverride 判别 + 白名单键）—— 项目文件是
-  低信面，开新进程的定义权留在 user 级。zcode 的等价物是工作区信任门
-  （sha256 digest），更重；首发取轻量版；
-- **dispose 不发 session_shutdown**：pi 的 AgentSession.dispose() 只 abort +
-  invalidate 扩展上下文，不发 session_shutdown（只有 reload 发）—— MCP
-  连接/子进程活到进程退出。pi 自己的 print-mode 也是这个语义（进程退出
-  收场）。Cogent 接受同语义并记边界（长跑 Host 高频建删会话时再立项）。
-
-## 5. 在 Cogent 的落点
-
-- `src/host/runtime/mcp-config.ts`：两级文件 store（校验/合并/快照/补丁）；
-- `src/host/runtime/tool-meta.ts`：`mcp__*` → exec 档投影 +
-  `MCP_TOOL_ALLOWLIST`；
-- `src/host/kernel/pi-session-factory.ts`：createMcpExtension 装配 +
-  `bindExtensions({ mode: 'rpc' })`（SDK 生命周期补齐）；
-- `src/host/host-main.ts`：`mcp.list` / `mcp.sync`（入口收窄 + store 委托）；
-- `src/protocol/types.ts`：McpServerDef/McpServerSummary/McpExposure；
-- `tests/integration/mcp.test.ts` + `mock-mcp-server.mjs`：端到端
-  （协议往返/direct 声明/审批链/回灌闭合/禁用生效）。
+验证重点是行为而非类名：跨会话只连一次、不同项目不能借信任、改配置下一回合生效、
+失效工具不能被旧调用执行、错误答案不消费挂起、取消精确清理会话、凭据提交失败不污染旧值。
+`tests/integration/mcp-oauth.test.ts` 使用本地 DCR/PKCE 授权服务与受保护 HTTP MCP，验证
+未授权、回调换 token、私有持久化确认、自动重连、实际工具调用及登出后的状态回落。
+真实厂商 OAuth、发行方 CIMD 文档发布、Electron 浏览器交互及各平台进程回收须按
+[手测册](../测试用例/MCP座.md)核验，不能由 mock 测试推断已通过。

@@ -25,6 +25,7 @@ export function registerApprovalIpc({ host }: IpcDeps): void {
       message?: unknown
       always?: unknown
       switchMode?: unknown
+      mcpAlways?: unknown
     }
     if (typeof payload.requestId !== 'string' || payload.requestId.length === 0 || typeof payload.approved !== 'boolean') {
       throw new Error('approval:respond 非法调用：需要 { requestId: string, approved: boolean }')
@@ -34,6 +35,9 @@ export function registerApprovalIpc({ host }: IpcDeps): void {
     }
     if (payload.always !== undefined && payload.always !== 'workspace') {
       throw new Error("approval:respond 非法调用：always 只支持 'workspace'")
+    }
+    if (payload.mcpAlways !== undefined && payload.mcpAlways !== 'tool' && payload.mcpAlways !== 'server-readonly') {
+      throw new Error("approval:respond 非法调用：mcpAlways 只支持 'tool' | 'server-readonly'")
     }
     if (
       payload.switchMode !== undefined &&
@@ -47,6 +51,7 @@ export function registerApprovalIpc({ host }: IpcDeps): void {
       approved: payload.approved,
       ...(payload.message !== undefined && { message: payload.message }),
       ...(payload.always !== undefined && { always: payload.always }),
+      ...(payload.mcpAlways !== undefined && { mcpAlways: payload.mcpAlways }),
       ...(payload.switchMode !== undefined && { switchMode: payload.switchMode })
     })
   })

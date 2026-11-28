@@ -80,7 +80,8 @@ export function emptyBucket(): SessionBucket {
     },
     pendingApprovals: [],
     pendingQuestions: [],
-    pendingPlans: []
+    pendingPlans: [],
+    pendingElicitations: []
   }
 }
 
@@ -184,7 +185,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           [sessionId]: { ...(state.bySession[sessionId] ?? emptyBucket()), historyLoaded: true,
             messages: flattenSegments(messages).map(item => item.type === undefined && item.role === 'assistant' && item.id === runtime?.activeMessageId ? { ...item, placeholder: true } : item), ...(todos !== undefined && { todos }),
             ...(runtime && { runtime: { ...(state.bySession[sessionId]?.runtime ?? emptyBucket().runtime), ...runtime } }),
-            ...(interactions && { pendingApprovals: interactions.approvals.map(p => ({ ...p, toolKind: p.kind })), pendingQuestions: interactions.questions, pendingPlans: interactions.plans }) }
+            ...(interactions && { pendingApprovals: interactions.approvals.map(p => ({ ...p, toolKind: p.kind })), pendingQuestions: interactions.questions, pendingPlans: interactions.plans, pendingElicitations: interactions.elicitations ?? [] }) }
         }
       }))
       if (!finishHistory(sessionId, owner, eventWatermark)) {
@@ -323,7 +324,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
   },
 
-  submit: async (text, model, thinkingLevel, provider, attachments = [], directories = [], skills = [], command) => {
+  submit: async (text, model, thinkingLevel, provider, attachments = [], directories = [], skills = [], command, mcpResources = [], mcpPrompts = []) => {
     // 会话物化条件：**新聊天视图态优先于 activeSessionId**。
     // startNewChat 只翻视图态不清 activeSessionId —— 只看 id 会把"新聊天"里的
     // 首条消息落进残留的旧会话（权限暂存位随之被绕过：新聊天切自主，发消息后
@@ -384,7 +385,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         inputId: userMessage.id,
         ...(directories.length > 0 && { directories }),
         ...(skills.length > 0 && { skills }),
-        ...(command !== undefined && { command })
+        ...(command !== undefined && { command }),
+        ...(mcpResources.length > 0 && { mcpResources }),
+        ...(mcpPrompts.length > 0 && { mcpPrompts })
       })
       return sessionId
     } catch (error) {

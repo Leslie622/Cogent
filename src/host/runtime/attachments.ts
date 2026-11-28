@@ -67,6 +67,11 @@ export class AttachmentService {
     const r = this.record(id)
     return join(this.root, 'objects', r.ref.sha256 + r.extension)
   }
+  /** 压缩后的资产索引用：记录与原件都在才返回路径，已释放或丢失返回 undefined。 */
+  existingPath(id: string): string | undefined {
+    try { const path = this.path(id); return existsSync(path) ? path : undefined }
+    catch { return undefined }
+  }
   forSession(id: string, sessionId: string): AttachmentRef {
     const r = this.record(id)
     if (!r.sessions.includes(sessionId)) throw new Error('附件不属于当前会话')

@@ -1,4 +1,8 @@
-/** 附件草稿与媒体绑定的 Host 真源；磁盘读取和 RPC 都在这里校验。 */
+/**
+ * 附件草稿的 Host 真源；磁盘读取和 RPC 都在这里校验。
+ * `media` / `saveMedia` 是弃用兼容：read_attachment 不再消费媒体绑定（docs/计划/附件读取与MCP解耦实现.md），
+ * 两个 RPC 没有产品消费者，保留到下一次破坏性协议变更时随 PROTOCOL_VERSION 递增一并移除。
+ */
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'

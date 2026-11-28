@@ -45,7 +45,7 @@ let unbind: () => void
 const emit = (event: EngineEvent): void => { for (const handler of handlers) handler(event) }
 
 beforeEach(() => {
-  useAttachmentStore.setState({ drafts: { [`chat-${SID}`]: { ...EMPTY_DRAFT, loaded: true } }, media: {} })
+  useAttachmentStore.setState({ drafts: { [`chat-${SID}`]: { ...EMPTY_DRAFT, loaded: true } } })
   observers.length = 0
   engineRequest.mockReset().mockImplementation((method) => Promise.resolve(method === 'agent.abort' ? { aborted: true } : []))
   window.cogent = {

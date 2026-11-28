@@ -5,8 +5,10 @@
  * - 只能单独发送的命令（/compact、/continue）禁止与技能实体、附件或前置正文混发。
  */
 import type { SkillSummary } from '@/env.d'
+import type { McpPromptInfo, McpPromptRef, McpResourceInfo, McpResourceRef } from '@shared/mcp'
 import {
   ENTITY_SENTINEL,
+  composerEntityText,
   type ComposerEntity,
   type ComposerSuggestionItem,
   type SlashCommandDef
@@ -156,12 +158,31 @@ export function buildSkillSuggestions(skills: readonly SkillSummary[]): Composer
     }))
 }
 
+export function buildMcpResourceSuggestions(resources: readonly McpResourceInfo[]): ComposerSuggestionItem[] {
+  return resources.map(resource => ({
+    id: `mcp-resource:${resource.server}:${resource.uri}`, group: 'mcp-resource',
+    label: `@${resource.server}:${resource.name}`, description: resource.description ?? resource.uri,
+    badge: resource.server, keywords: [resource.name, resource.server, resource.uri, 'MCP', '资源'],
+    payload: { kind: 'mcp-resource', name: resource.name, server: resource.server, uri: resource.uri }
+  }))
+}
+
+export function buildMcpPromptSuggestions(prompts: readonly McpPromptInfo[]): ComposerSuggestionItem[] {
+  return prompts.map(prompt => ({
+    id: `mcp-prompt:${prompt.server}:${prompt.name}`, group: 'mcp-prompt',
+    label: `/mcp:${prompt.server}:${prompt.name}`, description: prompt.description ?? '',
+    badge: prompt.server, keywords: [prompt.name, prompt.server, 'MCP', '提示词'],
+    ...(prompt.arguments !== undefined && { argumentHint: prompt.arguments.map(argument => argument.required ? `<${argument.name}>` : `[${argument.name}]`).join(' ') }),
+    payload: { kind: 'mcp-prompt', prompt }
+  }))
+}
+
 export type PreparedSubmission =
   | { kind: 'empty' }
   | { kind: 'error'; message: string }
   | { kind: 'standalone'; name: 'compact'; instructions?: string }
   | { kind: 'standalone'; name: 'continue' }
-  | { kind: 'message'; text: string; skills: string[]; command?: { name: 'init' } }
+  | { kind: 'message'; text: string; skills: string[]; command?: { name: 'init' }; mcpResources?: McpResourceRef[]; mcpPrompts?: McpPromptRef[] }
 
 /**
  * 解析输入区草稿（含 `\uFFFC` 哨兵的 text + 有序 entities）并校验独占命令约束。
@@ -228,7 +249,15 @@ export function prepareComposerSubmission(
         .map((entity) => entity.name)
     )
   ]
-  const cleanText = rawText.replaceAll(ENTITY_SENTINEL, '').trim()
+  const mcpResources = entities.filter((entity): entity is Extract<ComposerEntity, { kind: 'mcp-resource' }> => entity.kind === 'mcp-resource')
+    .map(({ server, uri }) => ({ server, uri }))
+  const mcpPrompts = entities.filter((entity): entity is Extract<ComposerEntity, { kind: 'mcp-prompt' }> => entity.kind === 'mcp-prompt')
+    .map(({ server, name, arguments: args }) => ({ server, name, ...(args !== undefined && { arguments: args }) }))
+  let entityIndex = 0
+  const cleanText = rawText.replaceAll(ENTITY_SENTINEL, () => {
+    const entity = entities.at(entityIndex++)
+    return entity?.kind === 'mcp-resource' || entity?.kind === 'mcp-prompt' ? composerEntityText(entity) : ''
+  }).trim()
   const firstPrompt = promptCommands.at(0)
   const command = firstPrompt !== undefined ? { name: firstPrompt.name as 'init' } : undefined
 
@@ -240,6 +269,8 @@ export function prepareComposerSubmission(
     kind: 'message',
     text: cleanText,
     skills,
+    ...(mcpResources.length > 0 && { mcpResources }),
+    ...(mcpPrompts.length > 0 && { mcpPrompts }),
     ...(command !== undefined && { command })
   }
 }

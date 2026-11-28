@@ -1,7 +1,7 @@
 /** 草稿独立于页面生命周期；异步导入只拥有捕获的草稿/卡片身份。 */
 import { create } from 'zustand'
 import { ATTACHMENT_LIMITS, attachmentAdmissionIssue, attachmentMime, isAttachmentRef, isDirectoryRef,
-  type AttachmentMetadata, type AttachmentRef, type AttachmentRejection, type MediaBindings, type DirectoryRef } from '@shared/attachments'
+  type AttachmentMetadata, type AttachmentRef, type AttachmentRejection, type DirectoryRef } from '@shared/attachments'
 import { unwrapIpcError } from '@/lib/ipc'
 import { isComposerEntity, type ComposerEntity } from '@/features/home/composer/types'
 
@@ -69,7 +69,6 @@ function readJournal(id: string): { text: string; entities: ComposerEntity[]; it
 
 interface DraftState {
   drafts: Partial<Record<string, Draft>>
-  media: MediaBindings
   load: (id: string) => Promise<void>
   setText: (id: string, text: string) => void
   setContent: (id: string, text: string, entities: ComposerEntity[]) => void
@@ -204,8 +203,8 @@ async function runImport(id: string, key: string): Promise<void> {
     if (!controller.signal.aborted) { update((item) => ({ ...item, status: 'error', error: unwrapIpcError(error) })); save(id) }
   } finally { imports.delete(key); drain() }
 }
-export const useAttachmentStore = create<DraftState>((set, get) => ({
-  drafts: {}, media: {},
+export const useAttachmentStore = create<DraftState>((_set, get) => ({
+  drafts: {},
   load: async (id) => {
     if (get().drafts[id]?.loaded) return
     const pending = loading.get(id); if (pending !== undefined) return pending
@@ -215,9 +214,7 @@ export const useAttachmentStore = create<DraftState>((set, get) => ({
       if (!ownsLoad()) return
       try {
         const journal = readJournal(id)
-        const [draft, media] = await Promise.all([
-          window.cogent.engineRequest('attachments.draft', { id }), window.cogent.engineRequest('attachments.media', {})
-        ])
+        const draft = await window.cogent.engineRequest('attachments.draft', { id })
         if (!ownsLoad()) return
         const items: DraftAttachment[] = journal?.items ?? [
           ...draft.attachments.map((ref): DraftAttachment => ({ key: ref.id, name: ref.name, size: ref.size, ref, status: 'ready' })),
@@ -237,7 +234,6 @@ export const useAttachmentStore = create<DraftState>((set, get) => ({
         }))
         if (!ownsLoad()) return
         patch(id, () => ({ text: journal?.text ?? draft.text, entities: journal?.entities ?? [], items, loaded: true, error: null, edit: 0 }))
-        set({ media })
         if (journal !== undefined) save(id)
       } catch (error) {
         if (ownsLoad()) patch(id, (d) => ({ ...d, error: `草稿恢复失败：${unwrapIpcError(error)}` }))

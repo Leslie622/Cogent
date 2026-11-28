@@ -21,6 +21,7 @@ import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useChatStore } from '@/stores/chat'
+import type { PendingApproval } from '@/stores/chat'
 import { SwitchModeDropdown } from './SwitchModeDropdown'
 
 /** 「允许，并切换为」的可选档（F6 定稿，zcode 同款）：只列两档放宽模式 ——
@@ -33,7 +34,7 @@ interface ApprovalOption {
   label: string
   desc: string
   /** 附言与切换由面板逻辑处理，这里只挂 respond 语义 */
-  run: (respond: (approved: boolean, options?: { message?: string; always?: 'workspace'; switchMode?: SwitchMode }) => void) => void
+  run: (respond: (approved: boolean, options?: { message?: string; always?: 'workspace'; switchMode?: SwitchMode; mcpAlways?: 'tool' | 'server-readonly' }) => void) => void
   /** 带 switcher = 该行内嵌模式下拉（zcode 形态：⊙ 自主模式 ▾）；下拉自身的
       点击不触发行执行（stopPropagation），选档只改 state */
   switcher?: boolean
@@ -59,10 +60,14 @@ function PendingApprovalCard({
   summary,
   hasRoots,
   outsideRoots,
+  mcpMeta,
+  toolKind,
   autoFocus
 }: {
   requestId: string
   summary: string
+  mcpMeta?: PendingApproval['mcpMeta']
+  toolKind?: string
   /** 有绑定根才显「始终允许此工作区」（无根规则 = 全放主目录，过大） */
   hasRoots: boolean
   /** 越界写（引擎标记）：规则 = 根内信任记忆，永不覆盖越界 → 隐藏「始终允许」 */
@@ -84,14 +89,18 @@ function PendingApprovalCard({
   /** respondApproval 的本卡绑定形态（选项 run 的统一签名）：requestId 已闭包 */
   const respond = (
     approved: boolean,
-    options?: { message?: string; always?: 'workspace'; switchMode?: SwitchMode }
+    options?: { message?: string; always?: 'workspace'; switchMode?: SwitchMode; mcpAlways?: 'tool' | 'server-readonly' }
   ) => {
     void respondApproval(requestId, approved, options)
   }
 
   const options: ApprovalOption[] = [
     { label: '允许', desc: '仅允许这一次', run: (r) => r(true) },
-    ...(hasRoots && !outsideRoots
+    ...(mcpMeta !== undefined ? [
+      { label: '本会话始终允许此工具', desc: `${mcpMeta.serverName} · ${mcpMeta.originalToolName}`, run: (r: Parameters<ApprovalOption['run']>[0]) => r(true, { mcpAlways: 'tool' }) },
+      ...(toolKind === 'read' ? [{ label: '本会话允许此服务器的只读工具', desc: mcpMeta.serverName, run: (r: Parameters<ApprovalOption['run']>[0]) => r(true, { mcpAlways: 'server-readonly' }) }] : [])
+    ] : []),
+    ...(hasRoots && !outsideRoots && mcpMeta === undefined
       ? [
           {
             label: '始终允许此工作区',
@@ -147,7 +156,7 @@ function PendingApprovalCard({
     }
   }
 
-  const { fileName, dir } = splitPath(summary)
+  const { fileName, dir } = mcpMeta === undefined ? splitPath(summary) : { fileName: `${mcpMeta.serverName} · ${mcpMeta.originalToolName}`, dir: mcpMeta.destructive ? '高风险外部写入或破坏性操作' : toolKind === 'read' ? '只读外部工具' : '外部工具操作' }
 
   return (
     <div
@@ -287,6 +296,8 @@ export function ApprovalPanel() {
             summary={p.summary}
             hasRoots={hasRoots}
             outsideRoots={p.outsideRoots === true}
+            mcpMeta={p.mcpMeta}
+            toolKind={p.toolKind}
             autoFocus={i === 0}
           />
         ))}

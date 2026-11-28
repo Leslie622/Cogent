@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { MCP_IPC, type McpShellApi } from '../../shared/mcp-ipc'
 import type { FileActionRequest } from '../../shared/files'
 import { FILE_VIEWS_CHANNEL, type FileViewMethods } from '../../shared/file-views'
 import { BROWSER_CHANNEL, type BrowserMethods, type BrowserEvent } from '../../shared/browser'
@@ -34,6 +35,11 @@ type CustomProvidersPayload = { providers: CustomProviderDef[]; overrides: Provi
  * 暴露的 API 形状即 CogentApi，renderer 侧类型由此导出。
  */
 const api = {
+  mcp: {
+    elicitationRespond: params => ipcRenderer.invoke(MCP_IPC.elicitationRespond, params),
+    detectExternalConfigs: (selectedPaths?: string[]) => ipcRenderer.invoke(MCP_IPC.detectExternalConfigs, selectedPaths),
+    openUrl: (url: string) => ipcRenderer.invoke(MCP_IPC.openUrl, url)
+  } satisfies McpShellApi,
   fileViewsRequest: <M extends keyof FileViewMethods>(method: M, params: FileViewMethods[M]['params']): Promise<FileViewMethods[M]['result']> => ipcRenderer.invoke(FILE_VIEWS_CHANNEL, { method, params }),
   browserRequest: <M extends keyof BrowserMethods>(method: M, params: BrowserMethods[M]['params']): Promise<BrowserMethods[M]['result']> => ipcRenderer.invoke(BROWSER_CHANNEL.request, { method, params }),
   onBrowserEvent: (callback: (event: BrowserEvent) => void): (() => void) => {
@@ -93,7 +99,7 @@ const api = {
   respondApproval: (
     requestId: string,
     approved: boolean,
-    options?: { message?: string; always?: 'workspace'; switchMode?: 'auto' | 'autonomous' }
+    options?: { message?: string; always?: 'workspace'; switchMode?: 'auto' | 'autonomous'; mcpAlways?: 'tool' | 'server-readonly' }
   ): Promise<{ ok: true; summary?: SessionSummary }> =>
     ipcRenderer.invoke(IPC.approvalRespond, { requestId, approved, ...options }),
 

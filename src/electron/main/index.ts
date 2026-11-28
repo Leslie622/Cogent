@@ -11,6 +11,8 @@ import { HostManager } from './host/manager'
 import { refreshMcpAccessFile } from './host/mcp-access'
 import { resolveEngineNode } from './host/runtime'
 import { CredentialStore } from './credentials/store'
+import { McpCredentialStore } from './credentials/mcp-store'
+import { registerMcpIpc } from './ipc/mcp'
 import { registerIpc } from './ipc'
 import { readSettingsFile } from './ipc/settings'
 import { registerNotifyIpc, registerSoundScheme } from './notifications'
@@ -175,6 +177,7 @@ if (!app.requestSingleInstanceLock()) {
     // startupError，经 credentials:status 暴露给设置页呈现（同损坏降级一条通道）。
     // 降级链路细节见 credentials/store.ts 文件头：损坏/DPAPI 不匹配都不炸启动。
     const credentialStore = new CredentialStore()
+    const mcpCredentialStore = new McpCredentialStore()
     try {
       credentialStore.assertAvailable()
     } catch (error) {
@@ -193,11 +196,13 @@ if (!app.requestSingleInstanceLock()) {
       nodeBin: engineNodeBin,
       beforeSend: checkCurrentCaller,
       readCredentials: () => credentialStore.readAll(),
+      readMcpCredentials: () => mcpCredentialStore.readAll(),
       ...(bundledSkillsDir !== undefined && { bundledSkillsDir }),
       // HTTP 门默认开（阶段 3a 起：webview 页面消费者需要；loopback + 恒鉴权）
       enableHttpRpc: true
     })
     registerIpc({ host, getWindow: () => mainWindow }, credentialStore)
+    registerMcpIpc(host, mcpCredentialStore)
   // 通知域（toast 展示 / 声音文件管理 / cogent-sound 协议 handle）
   registerNotifyIpc({ getWindow: () => mainWindow })
 

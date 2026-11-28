@@ -1,11 +1,9 @@
 /** 设置搜索组件交互、定位滚动、高亮自动淡出与异步挂载测试。 */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SettingsMain } from '@/features/settings/SettingsMain'
 import { SettingsSidebar } from '@/features/settings/SettingsSidebar'
-import { useChatStore } from '@/stores/chat'
-import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
 
 const bridge = window.cogent
@@ -44,6 +42,7 @@ beforeEach(() => {
     platform: 'win32',
     backdropSupported: false,
     engineRequest: vi.fn().mockResolvedValue({ enabled: true, servers: [], errors: [] }),
+    onEngineEvent: vi.fn(() => () => {}),
     getSystemNotifyStatus: vi.fn().mockResolvedValue({ enabled: true }),
     getStorageUsage: vi.fn().mockResolvedValue({ root: 'C:\\Users\\test\\.cogent', totalBytes: 0, entries: [] }),
   } as typeof window.cogent
@@ -129,51 +128,21 @@ it('侧栏折叠时在主内容顶部提供同源搜索框与返回入口，IME 
   expect(input).toHaveValue('')
 })
 
-it('MCP 从项目上下文打开用户级配置行时自动切到本机·用户并等待异步加载后定位', async () => {
+it('MCP 搜索保留服务器页入口，不再提供附件分析配置入口', async () => {
   const user = userEvent.setup()
-  const scrollIntoViewMock = vi.fn()
-  HTMLElement.prototype.scrollIntoView = scrollIntoViewMock
-
-  useProjectStore.setState({
-    projects: [{ id: 'p1', name: 'Demo', cwds: ['C:\\repo'] }],
-  } as never)
-  useChatStore.setState({
-    activeSessionId: 's1',
-    sessions: [{ id: 's1', projectId: 'p1' }],
-  } as never)
-
-  let resolveList!: (val: { servers: unknown[]; errors: string[] }) => void
-  const listPromise = new Promise<{ servers: unknown[]; errors: string[] }>((resolve) => {
-    resolveList = resolve
-  })
-
-  window.cogent = {
-    ...window.cogent,
-    engineRequest: vi.fn((method: string) => {
-      if (method === 'mcp.list') return listPromise
-      if (method === 'attachments.media') return Promise.resolve({})
-      return Promise.resolve({})
-    }),
-  } as typeof window.cogent
-
   render(<SettingsMain sidebarCollapsed />)
-
-  await user.type(screen.getByRole('textbox', { name: '搜索设置' }), '图片分析')
-  await user.click(screen.getByRole('button', { name: '打开 图片分析' }))
-
-  // 列表尚未返回前，定位尚未被消费
-  expect(useSettingsStore.getState().locateRequest?.consumed).toBe(false)
-
-  act(() => {
-    resolveList({ servers: [], errors: [] })
-  })
-
-  await waitFor(() => {
-    const row = document.querySelector('[data-search-id="connections.media-image"]')
-    expect(row).not.toBeNull()
-    expect(row).toHaveAttribute('data-search-highlighted', 'true')
-  })
-  expect(useSettingsStore.getState().locateRequest?.consumed).toBe(true)
+  const input = screen.getByRole('textbox', { name: '搜索设置' })
+  for (const query of ['图片分析', '视频分析', '文档视觉分析']) {
+    await user.clear(input)
+    await user.type(input, query)
+    expect(screen.queryByRole('button', { name: `打开 ${query}` })).not.toBeInTheDocument()
+  }
+  await user.clear(input)
+  await user.type(input, 'MCP')
+  await user.click(screen.getByRole('button', { name: '打开 MCP 服务器' }))
+  await screen.findByRole('button', { name: '新建 MCP 服务器' })
+  expect(screen.queryByRole('button', { name: '高级 · 附件分析工具' })).not.toBeInTheDocument()
+  expect(window.cogent.engineRequest).not.toHaveBeenCalledWith('attachments.media', expect.anything())
 })
 
 it('切走并切回已访问设置页时保留分区实例，Slider 与异步 Switch 首帧不播过渡动画', () => {

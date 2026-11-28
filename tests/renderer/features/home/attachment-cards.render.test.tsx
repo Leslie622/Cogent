@@ -1,7 +1,7 @@
 /** 图片卡不显示文件详情，历史按图片/文件分行并保持用户消息的右侧对齐。 */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AttachmentCards } from '@/features/home/AttachmentCards'
+import { AttachmentCards, isReferenceOnlyAttachment } from '@/features/home/AttachmentCards'
 import { AttachmentRejections } from '@/features/home/AttachmentRejections'
 import { MessageRow } from '@/features/home/MessageRow'
 import type { DraftAttachment } from '@/stores/attachments'
@@ -88,5 +88,17 @@ describe('附件图片布局', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试 未完成.png' }))
     expect(retry).toHaveBeenCalledWith('pending')
     await waitFor(() => expect(container.querySelector('[data-slot=attachment-content]')).toBeNull())
+  })
+})
+
+describe('“作为文件发送”按事实判定', () => {
+  it('模型不能原生接收且宿主没有本地解析器时为真；原生图片和可本地提取的文档为假', () => {
+    const video: AttachmentRef = { ...image, name: '片段.mp4', mime: 'video/mp4' }
+    const pdf: AttachmentRef = { ...image, name: '说明.pdf', mime: 'application/pdf' }
+    expect(isReferenceOnlyAttachment(image, false)).toBe(true)
+    expect(isReferenceOnlyAttachment(image, true)).toBe(false)
+    expect(isReferenceOnlyAttachment(video, true)).toBe(true)
+    expect(isReferenceOnlyAttachment(file, false)).toBe(false)
+    expect(isReferenceOnlyAttachment(pdf, false)).toBe(false)
   })
 })

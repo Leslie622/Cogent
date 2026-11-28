@@ -76,8 +76,17 @@ export type AttachmentMessage = AgentMessage & {
   sourceId?: string
   attachmentInput?: AttachmentInput
   skillInput?: SkillInput
+  mcpInput?: McpInput
   fileContext?: FileContext
   toolFileRefs?: Record<string, FileReference[]>
+}
+/** 展开后的 MCP 内容留在模型转录，界面回显用户实际选择的引用及原始正文。 */
+export interface McpInput {
+  version: 1
+  userEntryId: string
+  text: string
+  resources?: import('../../protocol').McpResourceRef[]
+  prompts?: import('../../protocol').McpPromptRef[]
 }
 
 /**
@@ -124,6 +133,7 @@ export function readPiTranscript(cwd: string, hostRoot: string, sessionId: strin
   const branch = readSessionBranch(file, cwd, sessionId)
   const inputs = new Map<string, AttachmentInput>()
   const skillInputs = new Map<string, SkillInput>()
+  const mcpInputs = new Map<string, McpInput>()
   const contexts = new Map<string, FileContext>()
   const references: Record<string, FileReference[]> = {}
   for (const entry of branch) {
@@ -146,6 +156,13 @@ export function readPiTranscript(cwd: string, hostRoot: string, sessionId: strin
         typeof data.inputId !== 'string' || !Array.isArray(data.attachments) || !data.attachments.every(isAttachmentRef) ||
         (data.directories !== undefined && (!Array.isArray(data.directories) || !data.directories.every(isDirectoryRef)))) throw new Error('附件消息元数据损坏')
       inputs.set(data.userEntryId, data as AttachmentInput)
+    }
+    if (entry.type === 'custom' && entry.customType === 'cogent.mcp-input.v1') {
+      const data = entry.data as Partial<McpInput>
+      if (data.version !== 1 || typeof data.userEntryId !== 'string' || typeof data.text !== 'string' ||
+        (data.resources !== undefined && (!Array.isArray(data.resources) || !data.resources.every((ref: unknown) => typeof ref === 'object' && ref !== null && 'server' in ref && typeof ref.server === 'string' && 'uri' in ref && typeof ref.uri === 'string'))) ||
+        (data.prompts !== undefined && (!Array.isArray(data.prompts) || !data.prompts.every((ref: unknown) => typeof ref === 'object' && ref !== null && 'server' in ref && typeof ref.server === 'string' && 'name' in ref && typeof ref.name === 'string')))) throw new Error('MCP 引用消息元数据损坏')
+      mcpInputs.set(data.userEntryId, data as McpInput)
     }
     if (entry.type === 'custom' && entry.customType === 'cogent.skill-input.v1') {
       const data = entry.data as Partial<Record<keyof SkillInput, unknown>>
@@ -172,6 +189,7 @@ export function readPiTranscript(cwd: string, hostRoot: string, sessionId: strin
         sourceId: entry.id,
         ...(input !== undefined && { attachmentInput: input }),
         ...(skillInput !== undefined && { skillInput }),
+        ...(mcpInputs.has(entry.id) && { mcpInput: mcpInputs.get(entry.id) }),
         ...(context !== undefined && { fileContext: context }),
         toolFileRefs: references
       })

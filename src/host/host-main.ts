@@ -46,11 +46,6 @@ import {
   type CredentialsSetParams,
   type InitializeParams,
   type InitializeResult,
-  type McpExposure,
-  type McpOverrideParams,
-  type McpServerDef,
-  type McpSyncParams,
-  type McpSyncResult,
   type SkillExportParams,
   type SkillImportParams,
   type SkillImportResult,
@@ -81,6 +76,12 @@ import { SessionManager } from './runtime/session'
 import { ProjectRegistry } from './runtime/project'
 import { ApprovalRegistry } from './runtime/approvals'
 import { McpConfigStore } from './runtime/mcp-config'
+import { McpTrustStore } from './runtime/mcp-trust'
+import { McpRuntimeManager } from './runtime/mcp-runtime'
+import { McpSecretBridge } from './runtime/mcp-secrets'
+import { McpOAuthController } from './runtime/mcp-oauth'
+import { McpElicitationService } from './runtime/mcp-elicitation'
+import { mcpHandlers, parseMcpSecretSnapshot, parseMcpReferences } from './runtime/mcp-handlers'
 import { SkillStore } from './runtime/skill-store'
 import { InspectStore, JsonStorageDriver } from './storage'
 import { startHttpRpc } from './http/server'
@@ -161,7 +162,29 @@ async function main(): Promise<void> {
   // 审批规则表（~/.cogent/approvals.json 单文件，构造即恢复；「始终允许此工作区」）
   const approvals = new ApprovalRegistry(STORAGE_ROOT)
   // MCP 客户端配置（~/.cogent/mcp.json 用户级定义 + 项目级 override 合并，阶段 4a）
-  const mcpConfig = new McpConfigStore(STORAGE_ROOT)
+  const mcpTrust = new McpTrustStore(STORAGE_ROOT)
+  const mcpConfig = new McpConfigStore(STORAGE_ROOT, mcpTrust)
+  const mcpSecrets = new McpSecretBridge({ persist: (value) => notify('mcp.oauth.persistState', value) })
+  const mcpElicitation = new McpElicitationService(
+    (value) => notify('mcp.elicitation.request', value),
+    (value) => notify('mcp.elicitation.resolved', value)
+  )
+  const mcpOAuth: McpOAuthController = new McpOAuthController({
+    secrets: mcpSecrets,
+    notify: (event) => {
+      if (event.method === 'mcp.oauth.openUrl') notify(event.method, event.params)
+      else notify(event.method, event.params)
+    },
+    onAuthenticated: (def, scope) => mcpRuntime.reconnect(def.name, scope)
+  })
+  const mcpRuntime: McpRuntimeManager = new McpRuntimeManager({
+    config: mcpConfig,
+    hostRoot: STORAGE_ROOT,
+    authProvider: (entry, scope) => mcpOAuth.authProvider(entry.config, scope),
+    oauthAuthorized: (def, scope) => mcpOAuth.isAuthorized(def, scope),
+    onStatus: (servers, scope) => notify('mcp.statusChanged', { servers, ...scope }),
+    onElicitation: (params, context) => mcpElicitation.request(params, context)
+  })
   // 技能目录（7 级发现链：bundled 垫底 + 用户/项目 .cogent/.agents/.claude + 祖先至 .git）
   const skillStore = new SkillStore(STORAGE_ROOT, AGENTS_ROOT, {
     claudeRoot: CLAUDE_ROOT,
@@ -177,7 +200,9 @@ async function main(): Promise<void> {
     skillStore,
     inspectStore,
     modelRuntime,
-    STORAGE_ROOT
+    STORAGE_ROOT,
+    mcpRuntime,
+    mcpElicitation
   )
   const files = new FileService((sessionId, turnId) => sessions.fileContext(sessionId, turnId))
   const fileViews = new FileViewsService(files, sessions.outputs, undefined, (value) => notify('fileViews.directoryChanged', value))
@@ -209,7 +234,8 @@ async function main(): Promise<void> {
   function notify<E extends keyof ProtocolEvents>(method: E, params: ProtocolEvents[E]): void {
     const frame: RpcEvent = { jsonrpc: '2.0', method, params, sequence: ++eventWatermark }
     writeStdout(JSON.stringify(frame) + '\n')
-    broadcastEvent?.(frame)
+    // OAuth 凭据和浏览器指令只沿宿主管道传递，不广播到 HTTP/WS 消费者。
+    if (method !== 'mcp.oauth.persistState' && method !== 'mcp.oauth.openUrl') broadcastEvent?.(frame)
   }
 
   /** 响应发送 */
@@ -234,6 +260,10 @@ async function main(): Promise<void> {
     shutdownPromise = (async () => {
       try { await sessions.shutdown() }
       catch (error) { process.stderr.write(`[host] 退出清理: ${String(error)}\n`) }
+      mcpElicitation.dispose()
+      await mcpOAuth.dispose()
+      await mcpRuntime.disposeAll()
+      mcpSecrets.dispose()
       fileViews.dispose()
       await httpServer?.close()
     })()
@@ -264,6 +294,10 @@ async function main(): Promise<void> {
       await Promise.all(
         Object.entries(p.credentials).map(([providerId, c]) => applyRuntimeKey(providerId, c.apiKey))
       )
+    }
+    if (p.mcpOAuthStates !== undefined) {
+      if (transport !== 'stdio') throw new ProtocolError(RpcErrorCode.InvalidParams, 'MCP 凭据只接受 stdio 宿主提供')
+      mcpSecrets.sync(parseMcpSecretSnapshot({ oauthStates: p.mcpOAuthStates }))
     }
     if (transport === 'stdio') {
       startup('initialize 完成')
@@ -522,16 +556,17 @@ async function main(): Promise<void> {
       command = { name: 'init' }
     }
     const directories = p.directories === undefined ? [] : prepareDirectoryReferences(p.directories)
+    const mcpRefs = parseMcpReferences(p)
     if (
       p.text.trim().length === 0 &&
       (p.attachmentIds === undefined || p.attachmentIds.length === 0) &&
       directories.length === 0 &&
       skills.length === 0 &&
-      command === undefined
+      command === undefined && (mcpRefs.mcpResources?.length ?? 0) === 0 && (mcpRefs.mcpPrompts?.length ?? 0) === 0
     ) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, '正文和附件不能同时为空')
     }
-    const run = sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel, p.provider, p.attachmentIds, p.inputId, directories, skills, command)
+    const run = sessions.submit(p.sessionId, p.text, p.model, p.thinkingLevel, p.provider, p.attachmentIds, p.inputId, directories, skills, command, mcpRefs.mcpResources, mcpRefs.mcpPrompts)
     return { accepted: true as const, ...run }
   }
 
@@ -566,7 +601,11 @@ async function main(): Promise<void> {
     if (p.switchMode !== undefined && !p.approved) {
       throw new ProtocolError(RpcErrorCode.InvalidParams, 'switchMode（允许并切换为）只能伴随 approved=true')
     }
-    return sessions.respondApproval(p.requestId, p.approved, p.message, p.always, p.switchMode)
+    const mcpAlways = (params as { mcpAlways?: unknown }).mcpAlways
+    if (mcpAlways !== undefined && (mcpAlways !== 'tool' && mcpAlways !== 'server-readonly' || !p.approved || p.always !== undefined)) {
+      throw new ProtocolError(RpcErrorCode.InvalidParams, 'MCP 会话授权必须允许本次，且不能同时授予工作区规则')
+    }
+    return sessions.respondApproval(p.requestId, p.approved, p.message, p.always, p.switchMode, mcpAlways)
   }
 
   /** question.respond 入口校验（交互座 4c-2）：requestId 非空 + answers 数组
@@ -729,83 +768,6 @@ async function main(): Promise<void> {
     return { synced }
   }
 
-  /** mcp.sync 入口校验：每项按 stdio/http 判别联合逐字段收窄（stdio 帧载荷是
-      外部 JSON，协议类型只是声明）。名字字符规则/命名空间撞名在 store 的
-      pi-mcp 校验器里跑（单一权威，边界只管形状）。 */
-  function handleMcpSync(params: unknown): McpSyncResult {
-    const p = params as Partial<McpSyncParams>
-    const EXPOSURES = ['direct', 'deferred', 'codemode', 'hidden'] as const satisfies readonly McpExposure[]
-    const isStringRecord = (value: unknown): value is Record<string, string> =>
-      typeof value === 'object' && value !== null && !Array.isArray(value) &&
-      Object.values(value).every((s) => typeof s === 'string')
-    const isDef = (d: unknown): d is McpServerDef => {
-      if (typeof d !== 'object' || d === null) return false
-      const m = d as Record<string, unknown>
-      if (typeof m.name !== 'string' || m.name.length === 0) return false
-      // 判别字段先收窄，两类各自必填一组（command / url）
-      if (m.type === 'stdio') {
-        if (typeof m.command !== 'string' || m.command.length === 0) return false
-      } else if (m.type === 'http') {
-        if (typeof m.url !== 'string' || m.url.length === 0) return false
-      } else {
-        return false
-      }
-      if (m.args !== undefined && (!Array.isArray(m.args) || !m.args.every((a) => typeof a === 'string'))) return false
-      if (m.env !== undefined && !isStringRecord(m.env)) return false
-      if (m.cwd !== undefined && typeof m.cwd !== 'string') return false
-      if (m.headers !== undefined && !isStringRecord(m.headers)) return false
-      if (m.description !== undefined && typeof m.description !== 'string') return false
-      if (m.enabled !== undefined && typeof m.enabled !== 'boolean') return false
-      if (m.exposure !== undefined && (typeof m.exposure !== 'string' || !(EXPOSURES as readonly string[]).includes(m.exposure))) {
-        return false
-      }
-      if (m.timeout !== undefined && (typeof m.timeout !== 'number' || !Number.isFinite(m.timeout) || m.timeout <= 0)) {
-        return false
-      }
-      return true
-    }
-    if (!Array.isArray(p.servers) || !p.servers.every(isDef)) {
-      throw new ProtocolError(
-        RpcErrorCode.InvalidParams,
-        'mcp.sync 需要 servers: McpServerDef[]（stdio 需 command、http 需 url；字段值域见协议）'
-      )
-    }
-    return { synced: mcpConfig.sync(p.servers) }
-  }
-
-  /** mcp.list 入口校验：cwd 可选（带 = 项目合并视图，须非空 string） */
-  function handleMcpList(params: unknown) {
-    const p = params as Partial<{ cwd: unknown }>
-    if (p.cwd !== undefined && (typeof p.cwd !== 'string' || p.cwd.length === 0)) {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, 'mcp.list 的 cwd 必须是非空 string')
-    }
-    return mcpConfig.list(p.cwd)
-  }
-
-  /** mcp.override 入口校验：cwd/name 必填非空；enabled/exposure 带了就约束值域
-      （全量替换语义：都不带 = 清除该项 override） */
-  function handleMcpOverride(params: unknown) {
-    const p = params as Partial<McpOverrideParams>
-    if (typeof p.cwd !== 'string' || p.cwd.length === 0 || typeof p.name !== 'string' || p.name.length === 0) {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, 'mcp.override 需要 { cwd: string, name: string }')
-    }
-    if (p.enabled !== undefined && typeof p.enabled !== 'boolean') {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, 'mcp.override 的 enabled 必须是 boolean')
-    }
-    const EXPOSURES = ['direct', 'deferred', 'codemode', 'hidden'] as const satisfies readonly McpExposure[]
-    if (
-      p.exposure !== undefined &&
-      (typeof p.exposure !== 'string' || !(EXPOSURES as readonly string[]).includes(p.exposure))
-    ) {
-      throw new ProtocolError(RpcErrorCode.InvalidParams, 'mcp.override 的 exposure 必须是 direct|deferred|codemode|hidden 之一')
-    }
-    mcpConfig.override(p.cwd, p.name, {
-      ...(p.enabled !== undefined && { enabled: p.enabled }),
-      ...(p.exposure !== undefined && { exposure: p.exposure })
-    })
-    return { ok: true as const }
-  }
-
   /** skills.* 可写作用域校验（save/delete/setEnabled/import：scope=user|project）。 */
   function writableSkillScope(params: unknown): { scope: 'user' | 'project'; cwd: string | undefined } {
     const p = params as Partial<{ scope: unknown; cwd: unknown }>
@@ -930,6 +892,7 @@ async function main(): Promise<void> {
    * 由 dispatch 统一转成错误帧 —— 不要在 handler 里自行 try/catch。
    */
   const handlers = new Map<string, (params: unknown) => unknown>([
+    ...mcpHandlers({ config: mcpConfig, runtime: mcpRuntime, trust: mcpTrust, projects, oauth: mcpOAuth, secrets: mcpSecrets, elicitation: mcpElicitation }),
     ...fileHandlers(files),
     ...fileViewHandlers(fileViews),
     ...outputHandlers(sessions.outputs, files, (sessionId) => { sessions.fileContext(sessionId) }),
@@ -992,9 +955,6 @@ async function main(): Promise<void> {
     }],
     // MCP 座（4a + 作用域管理）：摘要/诊断只读（带 cwd = 项目合并视图）；
     // 全量写 user 级定义；项目级 override 全量替换（空 = 清除回落）
-    ['mcp.list', handleMcpList],
-    ['mcp.sync', handleMcpSync],
-    ['mcp.override', handleMcpOverride],
     // 技能座（4b）：摘要/诊断/正文只读（带 cwd = 两级合并视图）；写路径三条
     //（save 写 SKILL.md / delete 删目录 / setEnabled 写两级状态文件）
     ['skills.list', handleSkillsList],
@@ -1055,6 +1015,9 @@ async function main(): Promise<void> {
       return { jsonrpc: '2.0', id: frame.id, result: { ok: true } }
     }
     if (stopping) return { jsonrpc: '2.0', id: frame.id, error: { code: RpcErrorCode.InvalidRequest, message: 'Host 正在退出' } }
+    if (transport !== 'stdio' && ['mcp.secrets.sync', 'mcp.oauth.persistResult', 'mcp.elicitation.respond'].includes(frame.method)) {
+      return { jsonrpc: '2.0', id: frame.id, error: { code: RpcErrorCode.InvalidRequest, message: '此 MCP 方法只允许宿主专属通道调用' } }
+    }
     const handler = frame.method === 'initialize'
       ? (params: unknown) => handleInitialize(params, transport)
       : handlers.get(frame.method)

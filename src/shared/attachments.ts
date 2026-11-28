@@ -82,12 +82,6 @@ export const NATIVE_IMAGE_MIMES: readonly string[] = ['image/png', 'image/jpeg',
 export function hasLocalAttachmentReader(ref: AttachmentRef): boolean {
   return ref.mime.startsWith('text/') || /\.(?:pdf|docx|xlsx|pptx|txt|md|csv|tsv|json|jsonl|js|ts|tsx|jsx|py|rs|go|java|c|cpp|h|css|html|xml|yaml|yml|toml|log|sql|sh|ps1|ini|conf)$/i.test(ref.name)
 }
-export function mediaBindingIssue(ref: AttachmentRef, binding: MediaBinding): string | undefined {
-  if (binding.maxBytes !== undefined && ref.size > binding.maxBytes) return '超过分析工具的容量限制'
-  const extension = '.' + ref.name.split('.').at(-1)!.toLowerCase()
-  if (binding.formats.length > 0 && !binding.formats.includes(extension)) return '分析工具未声明支持此格式'
-  return undefined
-}
 
 export const SHELL_ATTACHMENT_METHODS = [
   'attachments.describe', 'attachments.importPath', 'attachments.begin', 'attachments.chunk', 'attachments.finish',

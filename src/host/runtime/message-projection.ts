@@ -3,7 +3,35 @@ import type { Usage } from '@earendil-works/pi-ai'
 import type { ChatMessage, MessageUsage, ToolCallRecord } from '../../protocol'
 import type { AttachmentMessage, CompactionBarSource } from '../kernel/transcript'
 import { toolMeta } from './tool-meta'
+import type { McpToolPresentation, ToolKind } from '../../protocol'
 const AUTO_CONTINUE_PREFIX = '[cogent:continue]'
+/** MCP 富内容来自工具结果；只投影声明的图像/链接字段，不执行服务器返回的标记。 */
+export function extractMcpResult(result: unknown, name: string): McpToolPresentation | undefined {
+  if (!name.startsWith('mcp__') || typeof result !== 'object' || result === null) return undefined
+  const source = result as { content?: unknown[]; details?: { structuredContent?: unknown; mcpContent?: unknown[] }; structuredContent?: { content?: unknown[]; structuredContent?: unknown } }
+  const content = source.details?.mcpContent ?? source.structuredContent?.content ?? source.content ?? []
+  const images: NonNullable<McpToolPresentation['images']> = []
+  const resourceLinks: NonNullable<McpToolPresentation['resourceLinks']> = []
+  for (const value of content) {
+    if (typeof value !== 'object' || value === null) continue
+    const block = value as Record<string, unknown>
+    if (block.type === 'image' && typeof block.data === 'string' && typeof block.mimeType === 'string' && ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(block.mimeType)) images.push({ data: block.data, mimeType: block.mimeType })
+    if (block.type === 'resource' && typeof block.resource === 'object' && block.resource !== null) {
+      const resource = block.resource as Record<string, unknown>
+      if (typeof resource.blob === 'string' && typeof resource.mimeType === 'string' && ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(resource.mimeType)) images.push({ data: resource.blob, mimeType: resource.mimeType })
+    }
+    if (block.type === 'resource_link' && typeof block.uri === 'string' && typeof block.name === 'string') resourceLinks.push({ uri: block.uri, name: block.name, ...(typeof block.description === 'string' && { description: block.description }) })
+  }
+  const structuredContent = source.details?.structuredContent ?? source.structuredContent?.structuredContent
+  if (structuredContent === undefined && images.length === 0 && resourceLinks.length === 0) return undefined
+  return { ...(structuredContent !== undefined && { structuredContent }), ...(images.length > 0 && { images }), ...(resourceLinks.length > 0 && { resourceLinks }) }
+}
+function persistedMcpKind(details: unknown): ToolKind | undefined {
+  if (typeof details !== 'object' || details === null) return undefined
+  const meta = (details as { mcpMeta?: { annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean } } }).mcpMeta
+  if (meta === undefined) return undefined
+  return meta.annotations?.readOnlyHint === true && meta.annotations.destructiveHint !== true ? 'read' : 'exec'
+}
 
 function toolResultText(result: unknown, separator: string): string {
   if (typeof result !== 'object' || result === null) return ''
@@ -113,7 +141,7 @@ export function toChatMessages(messages: Array<AttachmentMessage | CompactionBar
   // durationMs 反推起点）—— 历史回查与流式打点两条来源同一形状，重启不漂移
   const results = new Map<
     string,
-    { isError: boolean; text: string; diff?: string; startedAt?: number; endedAt?: number }
+    { isError: boolean; text: string; diff?: string; startedAt?: number; endedAt?: number; kind?: ToolKind; mcpResult?: McpToolPresentation }
   >()
   for (const message of messages) {
     if (message.role === 'toolResult') {
@@ -121,6 +149,8 @@ export function toChatMessages(messages: Array<AttachmentMessage | CompactionBar
         isError: message.isError,
         text: summarizeToolResult({ content: message.content }, message.toolName),
         diff: extractResultDiff({ details: message.details }),
+        kind: message.toolName.startsWith('mcp__') ? persistedMcpKind(message.details) : undefined,
+        mcpResult: extractMcpResult(message, message.toolName),
         endedAt: message.timestamp,
         startedAt: message.durationMs !== undefined ? message.timestamp - message.durationMs : undefined
       })
@@ -172,7 +202,7 @@ export function toChatMessages(messages: Array<AttachmentMessage | CompactionBar
       if (text.startsWith(AUTO_CONTINUE_PREFIX)) continue
       const attach = (message as AttachmentMessage).attachmentInput
       const skillIn = (message as AttachmentMessage).skillInput
-      const displayText = attach?.text ?? skillIn?.text ?? text
+      const displayText = attach?.text ?? skillIn?.text ?? (message as AttachmentMessage).mcpInput?.text ?? text
       result.push({
         // 位置式 id（同 assistant 的 a-N 手法）：timestamp 在同一毫秒内可撞
         // （React key 重复），投影位置在单写者下稳定且跨加载不变
@@ -204,10 +234,11 @@ export function toChatMessages(messages: Array<AttachmentMessage | CompactionBar
           callId: block.id,
           fileRefs: Object.entries(message.toolFileRefs ?? {}).filter(([id]) => id === block.id || id.startsWith(block.id + '/')).flatMap(([, refs]) => refs),
           name: block.name,
-          kind: meta?.kind ?? 'read',
+          kind: paired?.kind ?? meta?.kind ?? 'read',
           summary: meta !== undefined ? meta.summarize(block.arguments) : `${block.name}(?)`,
           status: paired?.isError ? 'error' : 'ok',
           resultSummary: paired?.text,
+          ...(paired?.mcpResult !== undefined && { mcpResult: paired.mcpResult }),
           diff: paired?.diff,
           startedAt: paired?.startedAt,
           endedAt: paired?.endedAt

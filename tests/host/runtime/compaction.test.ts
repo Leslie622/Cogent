@@ -298,8 +298,15 @@ describe('buildCompactionInstructions & buildShadowSessionAssetsSection', () => 
     expect(section).not.toBeNull()
     expect(section).toContain('att-uuid-1')
     expect(section).toContain('spec.pdf')
-    expect(section).toContain('read_attachment')
-    expect(section).toContain('切勿暴露内部 id')
+    // 索引只说明 id 与 path 是什么，不把模型引向任何工具。
+    expect(section).toContain('path 是原件路径')
+    expect(section).not.toContain('read_attachment')
+    expect(section).toContain('切勿暴露内部 id 或 path')
     expect(section).toContain('C:\\\\repo\\\\docs')
+    // 没有解析器时附件不带 path；解析得出时补在附件条目上。
+    expect(section).not.toContain('"size":1024,"path"')
+    const resolved = buildShadowSessionAssetsSection([attEntry, keptEntry, compactEntry], (id) => (id === 'att-uuid-1' ? 'C:\\objects\\att-uuid-1' : undefined))
+    expect(resolved).toContain('"size":1024,"path":"C:\\\\objects\\\\att-uuid-1"')
+    expect(buildShadowSessionAssetsSection([attEntry, keptEntry, compactEntry], () => undefined)).not.toContain('"size":1024,"path"')
   })
 })

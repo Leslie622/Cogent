@@ -130,11 +130,10 @@ describe('useSettingsStore 搜索导航状态', () => {
   })
 
   it('外部 setSection 退出旧搜索并清除定位', () => {
-    useSettingsStore.getState().setQuery('图片分析')
+    useSettingsStore.getState().setQuery('内容字体')
     useSettingsStore.getState().openSearchResult({
-      section: 'connections',
-      itemId: 'connections.media-image',
-      scope: 'user',
+      section: 'appearance',
+      itemId: 'appearance.content-font',
     })
 
     useSettingsStore.getState().setSection('models')

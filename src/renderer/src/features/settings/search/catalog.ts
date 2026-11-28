@@ -1,7 +1,7 @@
 /**
  * 设置搜索静态目录：
  *   - 页面入口覆盖 SETTINGS_GROUPS 全部 14 个分区（含占位页标题），附准确别名
- *   - 固定配置项覆盖常规、外观、通知、存储、MCP（用户级附件分析）可唯一定位行
+ *   - 固定配置项覆盖常规、外观、通知、存储中可唯一定位的行
  *   - 标题与静态纯文本说明由本目录与各 Section 共用（SETTING_COPY），避免双份文案漂移
  *   - 不包含配置值、密钥、路径值或用户资源正文
  */
@@ -18,7 +18,7 @@ export interface SettingItemEntry {
   kind: 'item'
   id: string
   section: SettingsSectionId
-  /** 组内路径（不含大分组与页面名，如 "对话" 或 "附件分析工具（本机 · 用户）"） */
+  /** 组内路径（不含大分组与页面名，如 "对话" 或 "空间占用"） */
   groupLabel: string
   /** 完整展示路径（如 "基础设置 › 外观 › 对话"） */
   path: string
@@ -203,19 +203,6 @@ export const SETTING_COPY = {
     desc: '应用数据的本地存储根文件夹位置',
   },
 
-  // MCP（本机 · 用户）
-  'connections.media-image': {
-    title: '图片分析',
-    desc: '选择图片的分析服务（本机 · 用户）',
-  },
-  'connections.media-video': {
-    title: '视频分析',
-    desc: '选择视频的分析服务（本机 · 用户）',
-  },
-  'connections.media-document': {
-    title: '文档视觉分析',
-    desc: '选择文档的视觉分析服务（本机 · 用户）',
-  },
 } as const
 
 export type SettingItemId = keyof typeof SETTING_COPY
@@ -247,7 +234,7 @@ const PAGE_ALIASES: Record<SettingsSectionId, readonly string[]> = {
   'computer-control': ['桌面控制', '自动化'],
   shortcuts: ['快捷键', '热键'],
   plugins: ['扩展', 'Plugin'],
-  connections: ['MCP', '服务器', '附件分析', 'Tools'],
+  connections: ['MCP', '服务器', 'Tools'],
   skills: ['Skill', '技能包', '指令'],
   commands: ['斜杠命令', 'Command'],
   hooks: ['Hook', '生命周期钩子'],
@@ -348,14 +335,4 @@ export const SETTING_ITEM_ENTRIES: readonly SettingItemEntry[] = [
   item('storage.detail', 'storage', '空间占用', ['会话转录大小', '磁盘明细'], 2),
   item('storage.data-folder', 'storage', '数据文件夹', ['存储路径', '打开文件夹', 'cogent 目录'], 3),
 
-  // MCP 用户级附件分析
-  item('connections.media-image', 'connections', '附件分析工具（本机 · 用户）', ['图像分析', '看图', '识图', 'MCP 附件'], 1, {
-    scope: 'user',
-  }),
-  item('connections.media-video', 'connections', '附件分析工具（本机 · 用户）', ['音轨分析', '视频理解', 'MCP 附件'], 2, {
-    scope: 'user',
-  }),
-  item('connections.media-document', 'connections', '附件分析工具（本机 · 用户）', ['PDF 分析', '文档识别', 'OCR', 'MCP 附件'], 3, {
-    scope: 'user',
-  }),
 ]

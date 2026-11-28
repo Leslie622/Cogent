@@ -66,6 +66,19 @@ function asStoredRules(doc: unknown): StoredRules {
 
 export class ApprovalRegistry {
   private rules: ApprovalRule[] = []
+  /** MCP 的显式放行仅属于当前会话，不写盘、不扩大为 exec 类别授权。 */
+  private mcpRules = new Map<string, Set<string>>()
+
+  allowsMcp(sessionId: string, tool: string, server: string, readOnly: boolean): boolean {
+    const rules = this.mcpRules.get(sessionId)
+    return rules?.has(`tool:${tool}`) === true || (readOnly && rules?.has(`server-readonly:${server}`) === true)
+  }
+  addMcp(sessionId: string, kind: 'tool' | 'server-readonly', tool: string, server: string): void {
+    const rules = this.mcpRules.get(sessionId) ?? new Set<string>()
+    rules.add(kind === 'tool' ? `tool:${tool}` : `server-readonly:${server}`)
+    this.mcpRules.set(sessionId, rules)
+  }
+  clearMcp(sessionId: string): void { this.mcpRules.delete(sessionId) }
 
   constructor(private readonly root: string) {
     const file = this.filePath
